@@ -3,10 +3,9 @@
 /**
  * Plugin Name:       Taxmod Stock
  * Description:       Stock keeping for the Taxonomy Modeller: stock count, goods receipt, consumption, stock list.
- * Version:           0.1.0
+ * Version:           0.1.1
  * Requires at least: 6.4
  * Requires PHP:      8.2
- * Requires Plugins:  wp-taxonomy-modeler
  * Author:            Stefan Fambach
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html

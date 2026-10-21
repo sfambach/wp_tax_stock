@@ -1,0 +1,66 @@
+name: Build and Package Plugin
+
+# Run via Actions → Run workflow. The tag points to a commit on branch `release` that carries
+# vendor/ (Composer autoloader) and leaves out the dev folders, so the updater can install the
+# tag zipball as it is — the same way as the Taxonomy Modeller.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag to create, e.g. v0.1.0'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          tools: composer
+
+      - name: Core tests
+        run: |
+          composer install --no-interaction --no-progress
+          php vendor/phpunit/phpunit/phpunit
+
+      - name: Install runtime autoloader
+        run: |
+          rm -rf vendor
+          composer install --no-dev --optimize-autoloader --no-interaction --no-progress
+
+      - name: Commit package to release branch
+        id: release_commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B release
+          git rm -r -q --cached tests scripts phpunit.xml.dist
+          rm -rf tests scripts phpunit.xml.dist
+          git add -f vendor
+          git commit -q -m "Release ${{ github.event.inputs.tag }} (packaged)"
+          git push -f origin release
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Create ZIP
+        run: |
+          mkdir -p ../dist/wp_tax_stock
+          git archive HEAD | tar -x -C ../dist/wp_tax_stock
+          cd ../dist && zip -qr "$GITHUB_WORKSPACE/wp_tax_stock-${{ github.event.inputs.tag }}.zip" wp_tax_stock
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag }}
+          target_commitish: ${{ steps.release_commit.outputs.sha }}
+          files: wp_tax_stock-${{ github.event.inputs.tag }}.zip
+          name: wp_tax_stock ${{ github.event.inputs.tag }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -42,7 +42,7 @@ final class Bookings
 
         foreach ($rows as $row) {
             $quantity = Quantity::positive($row->quantity);
-            $material = $row->material === null ? '@' . $this->newMaterial($row) : (string) $row->material;
+            $material = $row->material === null ? '@' . $this->newMaterial($row->thing, $row->name) : (string) $row->material;
             $value    = $row->value === null || $row->value === '' ? null : $this->moneyPart(Quantity::amount($row->value), null);
             $lot      = $this->lot($row->name, $material, null, $value, $row->note);
 
@@ -55,41 +55,41 @@ final class Bookings
     /**
      * A goods receipt of chosen purchases of one order (D-956: partial receipts are allowed).
      *
-     * ⚠️ R1: a purchase that is «not yet determined», or has no material, is refused — determine it first.
+     * Each purchase goes in as the material chosen for it; a choice other than «keep» is also written into the
+     * purchase's «Material», in the same list (D-967). ⚠️ R1: a purchase that is «not yet determined» is refused.
      *
-     * @param list<int>       $chosen   purchase record ids
-     * @param array<int, true> $received purchases some lot already names
+     * @param array<int, ReceiptChoice> $choices  purchase record id → its material
+     * @param array<int, true>          $received purchases some lot already names
      * @return list<array<string, mixed>>
      */
-    public function receipt(int $order, array $chosen, Table $orders, Table $purchases, Table $money, array $received, string $title): array
+    public function receipt(int $order, array $choices, Table $orders, Table $purchases, Table $materialTable, Table $money, array $received, string $title): array
     {
         $s       = $this->structure;
         $inOrder = array_map('intval', $orders->all($order, $s->field('order_lines')));
 
-        if ($chosen === []) {
+        if ($choices === []) {
             throw StockError::nothingToBook();
         }
 
         $this->start();
 
-        foreach ($chosen as $purchase) {
+        foreach ($choices as $purchase => $choice) {
             if (! in_array($purchase, $inOrder, true)) {
                 throw StockError::notInOrder($purchase);
+            }
+
+            if (isset($received[$purchase])) {
+                throw StockError::alreadyReceived($purchase);
             }
 
             if ($purchases->first($purchase, $s->field('purchase_undetermined')) === '1') {
                 throw StockError::purchaseUndetermined($purchase);
             }
 
-            $materials = $purchases->all($purchase, $s->field('purchase_material'));
-
-            if ($materials === []) {
-                throw StockError::purchaseWithoutMaterial($purchase);
-            }
-
-            $name  = (string) $purchases->first($purchase, $s->field('label'));
-            $count = $purchases->first($purchase, $s->field('purchase_quantity'));
-            $price = $this->priceOf($purchase, $purchases, $money);
+            $name      = (string) $purchases->first($purchase, $s->field('label'));
+            $materials = $this->materialsFor($purchase, $choice, $name, $purchases, $materialTable);
+            $count     = $purchases->first($purchase, $s->field('purchase_quantity'));
+            $price     = $this->priceOf($purchase, $purchases, $money);
 
             // One material: the purchase's quantity on one lot. Several: each is a single piece (concept §3.4, Käufe → Material).
             foreach ($materials as $material) {
@@ -100,7 +100,7 @@ final class Bookings
             }
         }
 
-        $all    = $inOrder !== [] && array_diff($inOrder, $chosen, array_keys($received)) === [];
+        $all    = $inOrder !== [] && array_diff($inOrder, array_keys($choices), array_keys($received)) === [];
         $status = $s->value($all ? 'status_received' : 'status_partial');
 
         $this->changes[] = ['op' => 'set_values', 'record' => $order, 'values' => [(string) $s->field('order_status') => (string) $status]];
@@ -133,19 +133,58 @@ final class Bookings
         $this->lineRefs = [];
     }
 
-    private function newMaterial(InventoryRow $row): string
+    /**
+     * The materials a purchase goes in as; a new one is created here, and the purchase is told its material.
+     *
+     * @return list<string> material ids or @refs
+     */
+    private function materialsFor(int $purchase, ReceiptChoice $choice, string $name, Table $purchases, Table $materials): array
+    {
+        $s = $this->structure;
+
+        if ($choice->keep) {
+            $kept = $purchases->all($purchase, $s->field('purchase_material'));
+
+            return $kept === [] ? throw StockError::purchaseWithoutMaterial($purchase) : $kept;
+        }
+
+        if ($choice->material !== null && ! $materials->has($choice->material)) {
+            throw StockError::notAMaterial($choice->material);
+        }
+
+        if ($choice->material !== null) {
+            $material = (string) $choice->material;
+        } else {
+            $model    = (int) $purchases->first($purchase, $s->field('purchase_model'));
+            $material = '@' . $this->newMaterial($choice->thing ?? ($model > 0 ? $model : null), $name);
+        }
+
+        $this->changes[] = ['op' => 'set_values', 'record' => $purchase, 'values' => [(string) $s->field('purchase_material') => ['values' => [$material]]]];
+
+        return [$material];
+    }
+
+    /** D-967: with a reference the material has no name of its own; without one the name is all it has. */
+    private function newMaterial(?int $thing, string $name): string
     {
         $s   = $this->structure;
         $ref = $this->ref('m');
 
-        $values = [
-            (string) $s->field('label')           => $row->name,
-            // A yes/no field is always 1..1 in the modeller; a counted row is stock, not a single piece.
-            (string) $s->field('material_single') => '0',
-        ];
+        if ($thing === null && trim($name) === '') {
+            throw StockError::materialWithoutName();
+        }
 
-        if ($row->thing !== null && $s->hasField('material_ref_record')) {
-            $values[(string) $s->field('material_ref_record')] = (string) $row->thing;
+        if ($thing !== null && ! $s->hasField('material_ref_record')) {
+            throw StockError::notConfigured('fields.material_ref_record');
+        }
+
+        // A yes/no field is always 1..1 in the modeller; stock is not a single piece.
+        $values = [(string) $s->field('material_single') => '0'];
+
+        if ($thing === null) {
+            $values[(string) $s->field('label')] = trim($name);
+        } else {
+            $values[(string) $s->field('material_ref_record')] = (string) $thing;
         }
 
         $this->changes[] = ['op' => 'create_record', 'ref' => $ref, 'node' => $s->node('material')];

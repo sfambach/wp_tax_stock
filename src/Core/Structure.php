@@ -25,8 +25,15 @@ final class Structure
         'money_amount', 'money_unit',
     ];
 
-    /** Fields the module uses when they are there and leaves out when they are not. */
-    private const OPTIONAL_FIELDS = ['description', 'material_ref_record', 'transaction_project'];
+    /** Nodes the module uses when they are there: the choices of «Verwendung». */
+    private const OPTIONAL_NODES = ['material_use'];
+
+    /**
+     * Fields the module uses when they are there and leaves out when they are not.
+     *
+     * `purchase_model` came with 0.1.2: an older pasted structure keeps working, only the goods receipt asks for it.
+     */
+    private const OPTIONAL_FIELDS = ['description', 'material_ref_record', 'material_use', 'material_location', 'transaction_project', 'purchase_model'];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];
 
@@ -48,7 +55,7 @@ final class Structure
     public static function fromArray(array $raw): self
     {
         return new self(
-            self::ids($raw, 'nodes', self::NODES, []),
+            self::ids($raw, 'nodes', self::NODES, self::OPTIONAL_NODES),
             self::ids($raw, 'fields', self::FIELDS, self::OPTIONAL_FIELDS),
             self::ids($raw, 'values', self::VALUES, self::OPTIONAL_VALUES),
         );
@@ -67,6 +74,11 @@ final class Structure
     public function value(string $key): int
     {
         return $this->values[$key] ?? throw StockError::notConfigured('values.' . $key);
+    }
+
+    public function hasNode(string $key): bool
+    {
+        return isset($this->nodes[$key]);
     }
 
     public function hasField(string $key): bool

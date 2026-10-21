@@ -29,6 +29,22 @@ final class StockError extends \RuntimeException
         return new self('purchase_without_material', (string) $purchaseId);
     }
 
+    public static function alreadyReceived(int $purchaseId): self
+    {
+        return new self('already_received', (string) $purchaseId);
+    }
+
+    public static function notAMaterial(int $recordId): self
+    {
+        return new self('not_a_material', (string) $recordId);
+    }
+
+    /** D-967: a material without «Bezug Ding» is known only by its own name. */
+    public static function materialWithoutName(): self
+    {
+        return new self('material_without_name', '');
+    }
+
     public static function notInOrder(int $purchaseId): self
     {
         return new self('not_in_order', (string) $purchaseId);

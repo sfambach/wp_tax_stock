@@ -7,7 +7,8 @@
         "location": 149000110146,
         "order": 149000110051,
         "purchase": 149000109585,
-        "money": 4232
+        "money": 4232,
+        "material_use": 149000110130
     },
     "fields": {
         "label": 149000103839,
@@ -15,6 +16,8 @@
         "material_ref_record": 149000110113,
         "material_min": 149000110117,
         "material_single": 149000110114,
+        "material_use": 149000110115,
+        "material_location": 149000110116,
         "lot_material": 149000110118,
         "lot_purchase": 149000110119,
         "lot_location": 149000110120,
@@ -32,6 +35,7 @@
         "order_status": 149000110134,
         "order_lines": 149000110064,
         "purchase_material": 149000110135,
+        "purchase_model": 149000109578,
         "purchase_quantity": 149000109581,
         "purchase_undetermined": 149000110102,
         "purchase_landed_price": 149000110065,

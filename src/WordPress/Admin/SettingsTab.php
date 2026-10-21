@@ -26,9 +26,11 @@ final class SettingsTab
         $tab = new self();
 
         return $tabs + [self::SLUG => [
-            'title'  => __('Lager', 'taxmod-stock'),
-            'render' => $tab->render(...),
-            'save'   => $tab->save(...),
+            'title'   => __('Lager', 'taxmod-stock'),
+            'render'  => $tab->render(...),
+            'save'    => $tab->save(...),
+            // D-968: the modeller shows each module's version under the tab bar.
+            'version' => defined('TAXMOD_STOCK_VERSION') ? (string) TAXMOD_STOCK_VERSION : '',
         ]];
     }
 
@@ -48,6 +50,10 @@ final class SettingsTab
             . '<p>' . esc_html__('Die Ids der Knoten, Felder und Werte, in denen das Lager seine Sätze schreibt.', 'taxmod-stock') . '</p>'
             . '<p><label for="taxmod-stock-structure"><strong>' . esc_html__('Struktur als JSON übernehmen', 'taxmod-stock') . '</strong></label><br>'
             . '<textarea id="taxmod-stock-structure" name="taxmod_stock_structure" rows="12" class="large-text code"></textarea></p>';
+
+        if (is_array($raw) && $raw !== [] && empty($raw['fields']['purchase_model'])) {
+            $html .= '<div class="notice notice-warning inline"><p>' . esc_html__('Der Wareneingang braucht fields.purchase_model (das Feld «Modell» der Käufe). Bitte die Struktur aus structure-live.json neu einfügen.', 'taxmod-stock') . '</p></div>';
+        }
 
         $html .= '<table class="widefat striped" style="max-width:40em"><thead><tr><th>' . esc_html__('Schlüssel', 'taxmod-stock') . '</th><th>Id</th></tr></thead><tbody>';
 

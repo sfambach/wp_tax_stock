@@ -184,11 +184,14 @@ final class StockPage
         $labels = $this->stock->labels('purchase');
         $models = $this->stock->recordLabels(array_values(array_filter(array_column($plan, 'model'))));
         $all    = $names->all();
+        $places = $this->stock->labels('location');
+        $where  = $this->stock->receiptLocations($plan, $names);
 
         $html .= $this->formStart('wareneingang') . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
-            . '<p>' . esc_html__('Je Kauf ein Material: vorgeschlagen ist das Material, das schon auf das «Modell» des Kaufs verweist, sonst ein neues mit diesem Bezug. Suchen filtert die Liste; «neu anlegen» nimmt den angegebenen Bezug, ohne Angabe das Modell.', 'taxmod-stock') . '</p>'
+            . '<p>' . esc_html__('Je Kauf ein Material: vorgeschlagen ist das Material, das schon auf das «Modell» des Kaufs verweist, sonst ein neues mit diesem Bezug. Suchen filtert die Liste; «neu anlegen» nimmt den angegebenen Bezug, ohne Angabe das Modell. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seines Zweigs (Reiter «Lager»).', 'taxmod-stock') . '</p>'
             . '<table class="widefat striped"><thead><tr><th></th><th>' . esc_html__('Kauf', 'taxmod-stock') . '</th><th>' . esc_html__('Modell', 'taxmod-stock')
-            . '</th><th>' . esc_html__('Material', 'taxmod-stock') . '</th><th>' . esc_html__('Bezug Ding für «neu anlegen»', 'taxmod-stock') . '</th></tr></thead><tbody>';
+            . '</th><th>' . esc_html__('Material', 'taxmod-stock') . '</th><th>' . esc_html__('Bezug Ding für «neu anlegen»', 'taxmod-stock')
+            . '</th><th>' . esc_html__('Lagerort', 'taxmod-stock') . '</th></tr></thead><tbody>';
 
         foreach ($plan as $purchase => $row) {
             $lock     = $row['lock'];
@@ -201,14 +204,15 @@ final class StockPage
                 . '<td>' . ($model === null ? '—' : esc_html('#' . $model . (($models[$model] ?? '') === '' ? '' : ' · ' . $models[$model]))) . '</td>';
 
             if ($lock !== null) {
-                $html .= '<td>' . esc_html(implode(', ', array_map($names->name(...), array_filter($row['materials'], $names->has(...))))) . '</td><td></td></tr>';
+                $html .= '<td>' . esc_html(implode(', ', array_map($names->name(...), array_filter($row['materials'], $names->has(...))))) . '</td><td></td><td></td></tr>';
                 continue;
             }
 
             $html .= '<td><input type="search" class="taxmod-stock-filter" data-for="' . esc_attr($select) . '" placeholder="' . esc_attr__('suchen …', 'taxmod-stock') . '" style="width:8em"> '
                 . '<select id="' . esc_attr($select) . '" name="choice[' . esc_attr((string) $purchase) . ']">'
                 . $this->choiceOptions($row['materials'], $proposal, $all, $names) . '</select></td>'
-                . '<td>' . $this->thingField('thing[' . $purchase . ']', 'taxmod-stock-thing-p' . $purchase, null) . '</td></tr>';
+                . '<td>' . $this->thingField('thing[' . $purchase . ']', 'taxmod-stock-thing-p' . $purchase, null) . '</td>'
+                . '<td><select name="location[' . esc_attr((string) $purchase) . ']">' . $this->options($places, '—', $where[$purchase] ?? 0) . '</select></td></tr>';
         }
 
         return $html . '</tbody></table>' . get_submit_button(__('Wareneingang buchen', 'taxmod-stock')) . '</form>';
@@ -314,7 +318,7 @@ final class StockPage
     }
 
     /**
-     * The ticked purchases with their material: «keep», «new» (with the Bezug typed, else the Modell) or a material id.
+     * The ticked purchases with their material — «keep», «new» (with the Bezug typed, else the Modell) or a material id — and their place.
      *
      * @return array<int, ReceiptChoice>
      */
@@ -322,17 +326,18 @@ final class StockPage
     {
         $choices = (array) ($_POST['choice'] ?? []);
         $things  = (array) ($_POST['thing'] ?? []);
+        $places  = (array) ($_POST['location'] ?? []);
         $out     = [];
 
         foreach (array_filter(array_map('absint', (array) ($_POST['purchases'] ?? []))) as $purchase) {
             $choice = sanitize_key((string) wp_unslash($choices[$purchase] ?? ''));
 
-            $out[$purchase] = match (true) {
+            $out[$purchase] = (match (true) {
                 $choice === 'keep'     => ReceiptChoice::keep(),
                 $choice === 'new'      => ReceiptChoice::create(absint($things[$purchase] ?? 0) ?: null),
                 absint($choice) > 0    => ReceiptChoice::existing(absint($choice)),
                 default                => throw StockError::purchaseWithoutMaterial($purchase),
-            };
+            })->at(absint($places[$purchase] ?? 0) ?: null);
         }
 
         return $out;

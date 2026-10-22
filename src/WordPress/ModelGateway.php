@@ -72,6 +72,40 @@ final class ModelGateway
     }
 
     /**
+     * The nodes below a node with their distance from it, and the node's own name — one `read-tree` call.
+     *
+     * @return array{name: string, steps: array<int, int>} node id → steps below `$root` (the root itself is 0)
+     */
+    public function subtree(int $root): array
+    {
+        $parents = [];
+        $name    = '';
+
+        foreach ($this->execute('taxmod/read-tree', ['root' => $root, 'depth' => 12])['rows'] ?? [] as $row) {
+            $parents[(int) $row['id']] = (int) ($row['parent'] ?? 0);
+            $name                      = (int) $row['id'] === $root ? (string) ($row['name'] ?? '') : $name;
+        }
+
+        $steps = [$root => 0];
+
+        foreach (array_keys($parents) as $node) {
+            $path = [];
+
+            for ($at = $node; ! isset($steps[$at]) && isset($parents[$at]) && ! in_array($at, $path, true); $at = $parents[$at]) {
+                $path[] = $at;
+            }
+
+            if (isset($steps[$at])) {
+                foreach (array_reverse($path) as $i => $on) {
+                    $steps[$on] = $steps[$at] + $i + 1;
+                }
+            }
+        }
+
+        return ['name' => $name, 'steps' => $steps];
+    }
+
+    /**
      * @param list<array<string, mixed>> $changes
      * @return array<string, mixed> the modeller's answer, with the new ids under `refs`
      */

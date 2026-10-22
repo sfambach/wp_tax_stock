@@ -94,7 +94,7 @@ final class Bookings
             // One material: the purchase's quantity on one lot. Several: each is a single piece (concept §3.4, Käufe → Material).
             foreach ($materials as $material) {
                 $quantity = count($materials) > 1 || $count === null || (int) $count < 1 ? '1' : (string) (int) $count;
-                $lot      = $this->lot($name, $material, (string) $purchase, $price, '');
+                $lot      = $this->lot($name, $material, (string) $purchase, $price, '', $choice->location);
 
                 $this->line($name, $lot, $quantity, null);
             }
@@ -194,7 +194,7 @@ final class Bookings
     }
 
     /** @param array<string, array<string, string>>|null $value */
-    private function lot(string $name, string $material, ?string $purchase, ?array $value, string $note): string
+    private function lot(string $name, string $material, ?string $purchase, ?array $value, string $note, ?int $location = null): string
     {
         $s   = $this->structure;
         $ref = $this->ref('l');
@@ -202,7 +202,7 @@ final class Bookings
         $values = [
             (string) $s->field('label')        => $name,
             (string) $s->field('lot_material') => $material,
-            (string) $s->field('lot_location') => (string) $s->value('location_default'),
+            (string) $s->field('lot_location') => (string) ($location ?? $s->value('location_default')),
             (string) $s->field('lot_date')     => $this->today,
         ];
 

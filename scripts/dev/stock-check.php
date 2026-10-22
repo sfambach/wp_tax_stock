@@ -89,6 +89,8 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     $field('k_preis', '@pur', 'Preis je Stück', $money, 'composition', '0..1'),
     ['op' => 'create_record', 'ref' => 'lager', 'node' => '@lo'],
     ['op' => 'set_values', 'record' => '@lager', 'values' => ['@label' => 'Lager']],
+    ['op' => 'create_record', 'ref' => 'platz', 'node' => '@lo'],
+    ['op' => 'set_values', 'record' => '@platz', 'values' => ['@label' => 'Platinen']],
     ['op' => 'create_record', 'ref' => 'lm', 'node' => '@mat'],
     ['op' => 'set_values', 'record' => '@lm', 'values' => ['@label' => 'LM2930T-5.0', '@m_einz' => '0', '@m_min' => '2']],
     ['op' => 'create_record', 'ref' => 'kaufA', 'node' => '@pur'],
@@ -179,7 +181,14 @@ $_GET = ['page' => StockPage::PAGE, 'tab' => 'wareneingang', 'order' => $r['best
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'value="' . $r['mt1'] . '" selected') && str_contains($html, 'value="new" selected') && str_contains($html, '#' . $r['t2'] . ' · MPSA56'), 'the receipt form preselects the proposals and shows the Modell');
 
-$antwort = $s->bookReceipt($r['best2'], [$r['kaufC'] => $plan[$r['kaufC']]['proposal'], $r['kaufD'] => $plan[$r['kaufD']]['proposal']], '2026-10-21', 'WE 2');
+// D-972 · the branch of the purchase's thing decides the place; the material's own place would win.
+update_option(StockService::LOCATIONS, ['branches' => [$r['teile'] => $r['platz']], 'unreferenced' => null]);
+$orte = (new StockService())->receiptLocations($plan, $s->materialNames());
+$pruefe(($orte[$r['kaufC']] ?? 0) === $r['platz'] && ($orte[$r['kaufD']] ?? 0) === $r['platz'], 'the receipt proposes the place mapped to the branch the Modell lies in');
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'name="location[' . $r['kaufD'] . ']"') && str_contains($html, 'value="' . $r['platz'] . '" selected'), 'the receipt form shows the proposed place, changeable');
+
+$antwort = $s->bookReceipt($r['best2'], [$r['kaufC'] => $plan[$r['kaufC']]['proposal']->at($orte[$r['kaufC']]), $r['kaufD'] => $plan[$r['kaufD']]['proposal']->at($orte[$r['kaufD']])], '2026-10-21', 'WE 2');
 $s       = new StockService();
 $neu     = (int) (array_values(array_filter($antwort['refs'] ?? [], static fn ($ref): bool => str_starts_with((string) $ref, 'm'), ARRAY_FILTER_USE_KEY))[0] ?? 0);
 $mat     = $s->table('material');
@@ -188,6 +197,16 @@ $pruefe($neu > 0 && $mat->first($neu, $r['label']) === null, 'the new material h
 $pruefe($s->table('purchase')->all($r['kaufD'], $r['k_mat']) === [(string) $neu] && $s->table('purchase')->all($r['kaufC'], $r['k_mat']) === [(string) $r['mt1']], 'the receipt writes the material into the purchase');
 $pruefe($s->ledger()->stockOf($r['mt1']) === 3.0 && $s->ledger()->stockOf($neu) === 2.0, 'both purchases are in stock');
 $pruefe($s->table('order')->first($r['best2'], $r['o_stat']) === (string) $r['s_ganz'], 'the order is received');
+$platz = $s->table('lot');
+$pruefe(array_filter($s->ledger()->lotsOf($r['mt1']), static fn (int $l): bool => $platz->first($l, $r['l_lo']) === (string) $r['platz']) !== [], 'the lot lies at the chosen place');
+$pruefe($s->table('lot')->first($lot, $r['l_lo']) === (string) $r['lager'], 'a receipt without a choice stays at the default place');
+
+try {
+    (new StockService())->bookReceipt($r['best'], [$r['kaufA'] => ReceiptChoice::keep()->at($r['lm'])], '2026-10-21', 'WE');
+    $pruefe(false, 'a place that is not a location is refused');
+} catch (StockError $e) {
+    $pruefe($e->reason === 'not_a_location', 'a place that is not a location is refused');
+}
 
 // D-967 · display: «#id · name of the Bezug», the own name only without one.
 $namen = $s->materialNames();
@@ -235,6 +254,9 @@ $pruefe(array_key_exists('version', TaxmodStock\WordPress\Admin\SettingsTab::reg
 $pruefe((new StockService())->structure()->node('material') === 149000110147 && (new StockService())->structure()->field('purchase_model') === 149000109578, 'pasting structure-live.json stores the live ids, purchase_model included');
 ($reiter['stock']['save'])(['taxmod_stock_structure' => '{"nodes": {}}']);
 $pruefe((new StockService())->structure()->node('material') === 149000110147, 'an incomplete structure is refused and the old one stays');
+($reiter['stock']['save'])(['taxmod_stock_branch' => [['node' => '500', 'location' => '7'], ['node' => '', 'location' => '3'], ['node' => '501', 'location' => '']], 'taxmod_stock_unreferenced' => '9']);
+$orte = (new StockService())->locationSettings();
+$pruefe($orte->branches === [500 => 7] && $orte->unreferenced === 9, 'the tab stores branch → place rows, half-filled rows are dropped (D-972)');
 
 echo $fehler === 0 ? "all green\n" : "{$fehler} red\n";
 exit($fehler === 0 ? 0 : 1);

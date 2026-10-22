@@ -2,12 +2,14 @@
 
 namespace TaxmodStock\WordPress\Admin;
 
+use TaxmodStock\Core\LocationSettings;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\Structure;
 use TaxmodStock\WordPress\StockService;
 
 /**
- * The module's tab on Taxonomy Modeller › Configuration (D-945): which nodes and fields hold the Stock tables.
+ * The module's tab on Taxonomy Modeller › Configuration (D-945): which nodes and fields hold the Stock tables,
+ * and which branch of `Model` the goods receipt puts where (D-972).
  *
  * The modeller draws the tab, checks capability and nonce, and calls {@see save()}; the ids are pasted as JSON
  * (`structure-live.json` holds those of fambach.net) rather than guessed from node names.
@@ -63,12 +65,68 @@ final class SettingsTab
             }
         }
 
-        return $html . '</tbody></table>';
+        return $html . '</tbody></table>' . $this->placesSection();
+    }
+
+    /** D-972: branch under `Model` → place; the nearest listed branch wins. Empty rows add a branch, an emptied one drops it. */
+    private function placesSection(): string
+    {
+        try {
+            $stock    = new StockService();
+            $places   = $stock->labels('location');
+            $branches = $stock->branches();
+        } catch (StockError $e) {
+            return '<h2>' . esc_html__('Einlagerung nach Typ', 'taxmod-stock') . '</h2><p>' . esc_html(Messages::of($e)) . '</p>';
+        }
+
+        $settings = $stock->locationSettings();
+        $select   = static function (string $name, ?int $chosen) use ($places): string {
+            $html = '<select name="' . esc_attr($name) . '"><option value="">—</option>';
+
+            foreach ($places as $id => $label) {
+                $html .= '<option value="' . esc_attr((string) $id) . '"' . selected($chosen, $id, false) . '>' . esc_html($label) . '</option>';
+            }
+
+            return $html . '</select>';
+        };
+
+        $html = '<h2>' . esc_html__('Einlagerung nach Typ', 'taxmod-stock') . '</h2>'
+            . '<p>' . esc_html__('Der Wareneingang schlägt den Standard-Lagerort des Materials vor, sonst den Ort des Zweigs unter Model, in dem das Ding des Kaufs liegt (der nächste eingetragene Zweig gewinnt), sonst den Standard-Ort der Struktur.', 'taxmod-stock') . '</p>'
+            . '<table class="widefat striped" style="max-width:48em"><thead><tr><th>' . esc_html__('Zweig (Knoten-Id)', 'taxmod-stock') . '</th><th>' . esc_html__('Name', 'taxmod-stock') . '</th><th>' . esc_html__('Lagerort', 'taxmod-stock') . '</th></tr></thead><tbody>';
+        $row  = 0;
+
+        $rows = array_map(null, array_keys($settings->branches), array_values($settings->branches));
+
+        foreach ([...$rows, [null, null], [null, null], [null, null]] as [$node, $location]) {
+            $html .= '<tr><td><input type="number" min="1" name="taxmod_stock_branch[' . $row . '][node]" value="' . esc_attr((string) ($node ?? '')) . '" style="width:12em"></td>'
+                . '<td>' . esc_html($node === null ? '' : ($branches[$node]['name'] ?? '')) . '</td>'
+                . '<td>' . $select('taxmod_stock_branch[' . $row . '][location]', $location) . '</td></tr>';
+            ++$row;
+        }
+
+        return $html . '<tr><td colspan="2"><strong>' . esc_html__('ohne Bezug (Verbrauchsmaterial)', 'taxmod-stock') . '</strong></td><td>'
+            . $select('taxmod_stock_unreferenced', $settings->unreferenced) . '</td></tr></tbody></table>';
     }
 
     /** @param array<string, mixed> $post already unslashed by the modeller */
     public function save(array $post): void
     {
+        if (isset($post['taxmod_stock_branch']) && is_array($post['taxmod_stock_branch'])) {
+            $branches = [];
+
+            foreach ($post['taxmod_stock_branch'] as $row) {
+                $node     = absint(is_array($row) ? ($row['node'] ?? 0) : 0);
+                $location = absint(is_array($row) ? ($row['location'] ?? 0) : 0);
+
+                if ($node > 0 && $location > 0) {
+                    $branches[$node] = $location;
+                }
+            }
+
+            $settings = LocationSettings::fromArray(['branches' => $branches, 'unreferenced' => absint($post['taxmod_stock_unreferenced'] ?? 0)]);
+            update_option(StockService::LOCATIONS, $settings->toArray(), false);
+        }
+
         $json = trim((string) ($post['taxmod_stock_structure'] ?? ''));
 
         if ($json === '') {

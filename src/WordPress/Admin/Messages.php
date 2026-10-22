@@ -27,6 +27,8 @@ final class Messages
             'already_received'          => sprintf(__('Kauf #%s ist schon eingegangen.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id */
             'not_a_material'            => sprintf(__('#%s ist kein Material.', 'taxmod-stock'), $error->detail),
+            /* translators: %s: record id */
+            'not_a_location'            => sprintf(__('#%s ist kein Lagerort.', 'taxmod-stock'), $error->detail),
             'material_without_name'     => __('Ein Material ohne «Bezug Ding» braucht eine Bezeichnung.', 'taxmod-stock'),
             /* translators: %s: record id of the purchase */
             'not_in_order'              => sprintf(__('Kauf #%s gehört nicht zu dieser Bestellung.', 'taxmod-stock'), $error->detail),

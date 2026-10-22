@@ -5,6 +5,8 @@ namespace TaxmodStock\WordPress;
 use TaxmodStock\Core\Bookings;
 use TaxmodStock\Core\InventoryRow;
 use TaxmodStock\Core\Ledger;
+use TaxmodStock\Core\LocationRules;
+use TaxmodStock\Core\LocationSettings;
 use TaxmodStock\Core\MaterialChanges;
 use TaxmodStock\Core\MaterialInput;
 use TaxmodStock\Core\MaterialNames;
@@ -20,6 +22,9 @@ use TaxmodStock\Core\Table;
 final class StockService
 {
     public const OPTION = 'taxmod_stock_structure';
+
+    /** D-972: which branch of `Model` goes to which place. */
+    public const LOCATIONS = 'taxmod_stock_locations';
 
     /** @var array<int, Table> node id → its records, read once */
     private array $tables = [];
@@ -130,6 +135,63 @@ final class StockService
         );
     }
 
+    public function locationSettings(): LocationSettings
+    {
+        $raw = get_option(self::LOCATIONS, []);
+
+        return LocationSettings::fromArray(is_array($raw) ? $raw : []);
+    }
+
+    /**
+     * The tab's branches with their names and subtrees — one `read-tree` per listed branch.
+     *
+     * @return array<int, array{name: string, steps: array<int, int>}>
+     */
+    public function branches(): array
+    {
+        $out = [];
+
+        foreach (array_keys($this->locationSettings()->branches) as $branch) {
+            $out[$branch] = $this->model->subtree($branch);
+        }
+
+        return $out;
+    }
+
+    /**
+     * D-972: the place proposed for each purchase of the plan — the material's own, else its thing's branch.
+     *
+     * @param array<int, array{lock: string|null, model: int|null, materials: list<int>, proposal: ReceiptChoice|null}> $plan
+     * @return array<int, int> purchase → location record
+     */
+    public function receiptLocations(array $plan, MaterialNames $names): array
+    {
+        $s         = $this->structure();
+        $settings  = $this->locationSettings();
+        $rules     = new LocationRules($settings->branches, array_map(static fn (array $b): array => $b['steps'], $this->branches()), $settings->unreferenced, $s->value('location_default'));
+        $materials = $this->table('material');
+        $things    = [];
+        $defaults  = [];
+
+        foreach ($plan as $purchase => $row) {
+            $material = $row['materials'][0] ?? $row['proposal']?->material;
+            $default  = $material !== null && $s->hasField('material_location') ? (int) $materials->first($material, $s->field('material_location')) : 0;
+
+            $defaults[$purchase] = $default > 0 ? $default : null;
+            $things[$purchase]   = ($material !== null ? $names->thingOf($material) : null) ?? $row['proposal']?->thing ?? $row['model'];
+        }
+
+        $nodes = $this->model->nodesOf(array_values(array_unique(array_filter($things))));
+        $out   = [];
+
+        foreach ($plan as $purchase => $row) {
+            $thing          = $things[$purchase];
+            $out[$purchase] = $rules->propose($defaults[$purchase], $thing === null ? null : ($nodes[$thing] ?? 0));
+        }
+
+        return $out;
+    }
+
     /**
      * @param list<InventoryRow> $rows
      * @return array<string, mixed>
@@ -172,6 +234,14 @@ final class StockService
         $s = $this->structure();
         // A structure pasted before 0.1.2 has no «Modell»: say so instead of proposing nothing.
         $s->field('purchase_model');
+
+        $places = $this->table('location');
+
+        foreach ($choices as $choice) {
+            if ($choice->location !== null && ! $places->has($choice->location)) {
+                throw StockError::notALocation($choice->location);
+            }
+        }
 
         $changes = (new Bookings($s, $today))->receipt(
             $order,

@@ -91,6 +91,19 @@ final class BookingsTest extends TestCase
     }
 
     #[Test]
+    public function a_receipt_puts_the_lot_where_the_choice_says_else_at_the_default_place(): void
+    {
+        $s                    = Fixture::structure();
+        [$orders, $purchases] = $this->order(['0', '0']);
+
+        $placed = $this->valuesByNode((new Bookings($s, '2026-10-21'))->receipt(70, [72 => ReceiptChoice::create(null)->at(3001)], $orders, $purchases, new Table([]), new Table([]), [], 'WE'));
+        self::assertSame('3001', $placed[2][(string) $s->field('lot_location')], 'D-972: the chosen place');
+
+        $plain = $this->valuesByNode((new Bookings($s, '2026-10-21'))->receipt(70, [72 => ReceiptChoice::create(null)], $orders, $purchases, new Table([]), new Table([]), [], 'WE'));
+        self::assertSame('207', $plain[2][(string) $s->field('lot_location')], 'no choice: the default place');
+    }
+
+    #[Test]
     public function a_received_purchase_or_an_unknown_material_is_refused(): void
     {
         $s                    = Fixture::structure();

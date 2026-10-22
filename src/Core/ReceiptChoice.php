@@ -6,7 +6,7 @@ namespace TaxmodStock\Core;
  * Which material a purchase goes in as: the ones it already names, an existing one, or a new one.
  *
  * A new material refers to `$thing`; without one it refers to the purchase's «Modell», and only without
- * both it carries the purchase's own name (D-967).
+ * both it carries the purchase's own name (D-967). `$location` is where its lot goes; null is the default place (D-972).
  */
 final class ReceiptChoice
 {
@@ -14,6 +14,7 @@ final class ReceiptChoice
         public readonly bool $keep,
         public readonly ?int $material,
         public readonly ?int $thing,
+        public readonly ?int $location = null,
     ) {
     }
 
@@ -30,6 +31,11 @@ final class ReceiptChoice
     public static function create(?int $thing): self
     {
         return new self(false, null, $thing);
+    }
+
+    public function at(?int $location): self
+    {
+        return new self($this->keep, $this->material, $this->thing, $location);
     }
 
     public function isNew(): bool

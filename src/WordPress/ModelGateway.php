@@ -11,7 +11,7 @@ use TaxmodStock\Core\Table;
  * Reading is `taxmod/read-node` — one call per node, which is one query per table (CD-7). Writing is
  * `taxmod/write-data` (D-936): records only, one change number, all or nothing.
  *
- * ⚠️ One exception, {@see nodesOf()}: no ability says which node a record belongs to, and «Bezug Ding» may point
+ * ⚠️ One exception, {@see nodesOf()}: no ability says which node a record belongs to, and «Bezug» may point
  * at a record under any node of `Model`. Reading every node to find a label would be hundreds of reads.
  */
 final class ModelGateway

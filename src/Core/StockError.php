@@ -45,7 +45,7 @@ final class StockError extends \RuntimeException
         return new self('not_a_location', (string) $recordId);
     }
 
-    /** D-967: a material without «Bezug Ding» is known only by its own name. */
+    /** D-967: a material without «Bezug» is known only by its own name. */
     public static function materialWithoutName(): self
     {
         return new self('material_without_name', '');

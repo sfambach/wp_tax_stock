@@ -5,7 +5,7 @@ namespace TaxmodStock\Core;
 /**
  * Creating or editing one material as one change list (tab «Material»).
  *
- * D-967: with «Bezug Ding» the material has no name of its own — an edit that sets a reference empties it.
+ * D-967: with «Bezug» the material has no name of its own — an edit that sets a reference empties it.
  *
  * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/NewConcept/90-decision-log.md D-967
  */

@@ -12,7 +12,7 @@ use TaxmodStock\WordPress\StockService;
 /**
  * The page «Lager» under the Taxonomy Modeller: stock list, materials, stock count, goods receipt, consumption (stage 1, D-958 F7).
  *
- * A material is shown as «#id · name», the name taken from «Bezug Ding» (D-967).
+ * A material is shown as «#id · name», the name taken from «Bezug» (D-967).
  *
  * Every form posts to one handler, which works in the order of CD-5 and books in one write (all or nothing).
  */
@@ -24,7 +24,7 @@ final class StockPage
     private const ROWS      = 6;
     private const TABS      = ['bestand', 'material', 'inventur', 'wareneingang', 'verbrauch'];
 
-    /** The modeller's search over every record under `Model` (D-958 F3a), reused for «Bezug Ding». */
+    /** The modeller's search over every record under `Model` (D-958 F3a), reused for «Bezug». */
     private const RECORD_SEARCH = 'taxmod_record_search';
 
     public function __construct(private readonly StockService $stock = new StockService())
@@ -151,9 +151,9 @@ final class StockPage
         $options = $this->options($this->stock->materialNames()->all(), __('— neues Material —', 'taxmod-stock'));
         $html    = $this->formStart('inventur')
             . '<p>' . esc_html__('Gezählter Bestand ohne Kauf. Jede Zeile wird ein Bestandsposten. Einem späteren Kauf zuordnen kommt mit Stufe 2 (F10).', 'taxmod-stock') . '</p>'
-            . '<p>' . esc_html__('Ein neues Material mit «Bezug Ding» heisst wie das Ding; einen eigenen Namen braucht nur ein Material ohne Bezug.', 'taxmod-stock') . '</p>'
+            . '<p>' . esc_html__('Ein neues Material mit «Bezug» heisst wie sein Bezug; einen eigenen Namen braucht nur ein Material ohne Bezug.', 'taxmod-stock') . '</p>'
             . '<table class="widefat"><thead><tr><th>' . esc_html__('Material', 'taxmod-stock') . '</th><th>' . esc_html__('oder neu: Name', 'taxmod-stock')
-            . '</th><th>' . esc_html__('Bezug Ding (Satz-Id)', 'taxmod-stock') . '</th><th>' . esc_html__('Menge', 'taxmod-stock') . '</th><th>'
+            . '</th><th>' . esc_html__('Bezug (Satz-Id)', 'taxmod-stock') . '</th><th>' . esc_html__('Menge', 'taxmod-stock') . '</th><th>'
             . esc_html__('Wert je Stück', 'taxmod-stock') . '</th><th>' . esc_html__('Hinweis', 'taxmod-stock') . '</th></tr></thead><tbody>';
 
         for ($i = 0; $i < self::ROWS; $i++) {
@@ -190,7 +190,7 @@ final class StockPage
         $html .= $this->formStart('wareneingang') . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
             . '<p>' . esc_html__('Je Kauf ein Material: vorgeschlagen ist das Material, das schon auf das «Modell» des Kaufs verweist, sonst ein neues mit diesem Bezug. Suchen filtert die Liste; «neu anlegen» nimmt den angegebenen Bezug, ohne Angabe das Modell. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seines Zweigs (Reiter «Lager»).', 'taxmod-stock') . '</p>'
             . '<table class="widefat striped"><thead><tr><th></th><th>' . esc_html__('Kauf', 'taxmod-stock') . '</th><th>' . esc_html__('Modell', 'taxmod-stock')
-            . '</th><th>' . esc_html__('Material', 'taxmod-stock') . '</th><th>' . esc_html__('Bezug Ding für «neu anlegen»', 'taxmod-stock')
+            . '</th><th>' . esc_html__('Material', 'taxmod-stock') . '</th><th>' . esc_html__('Bezug für «neu anlegen»', 'taxmod-stock')
             . '</th><th>' . esc_html__('Lagerort', 'taxmod-stock') . '</th></tr></thead><tbody>';
 
         foreach ($plan as $purchase => $row) {
@@ -251,7 +251,7 @@ final class StockPage
         $uses   = $this->stock->uses();
         $places = $this->stock->labels('location');
         $field  = static fn (string $key): ?int => $s->hasField($key) ? $s->field($key) : null;
-        $html   = '<table class="widefat striped"><thead><tr><th>' . esc_html__('Material', 'taxmod-stock') . '</th><th>' . esc_html__('Bezug Ding', 'taxmod-stock')
+        $html   = '<table class="widefat striped"><thead><tr><th>' . esc_html__('Material', 'taxmod-stock') . '</th><th>' . esc_html__('Bezug', 'taxmod-stock')
             . '</th><th>' . esc_html__('Einzelstück', 'taxmod-stock') . '</th><th>' . esc_html__('Verwendung', 'taxmod-stock') . '</th><th>'
             . esc_html__('Mindestbestand', 'taxmod-stock') . '</th><th>' . esc_html__('Bestand', 'taxmod-stock') . '</th><th></th></tr></thead><tbody>';
 
@@ -275,9 +275,9 @@ final class StockPage
             __('Material %s bearbeiten', 'taxmod-stock'),
             $names->name($edit)
         )) . '</h2>' . $this->formStart('material') . '<input type="hidden" name="material" value="' . esc_attr((string) $edit) . '">'
-            . '<p>' . esc_html__('Mit «Bezug Ding» heisst das Material wie das Ding, eine eigene Bezeichnung wird dann geleert. Ohne Bezug braucht es eine Bezeichnung.', 'taxmod-stock') . '</p>'
+            . '<p>' . esc_html__('Mit «Bezug» heisst das Material wie sein Bezug, eine eigene Bezeichnung wird dann geleert. Ohne Bezug braucht es eine Bezeichnung.', 'taxmod-stock') . '</p>'
             . '<table class="form-table"><tbody>'
-            . '<tr><th>' . esc_html__('Bezug Ding', 'taxmod-stock') . '</th><td>' . $this->thingField('thing', 'taxmod-stock-thing-m', $edit === 0 ? null : $names->thingOf($edit)) . '</td></tr>'
+            . '<tr><th>' . esc_html__('Bezug', 'taxmod-stock') . '</th><td>' . $this->thingField('thing', 'taxmod-stock-thing-m', $edit === 0 ? null : $names->thingOf($edit)) . '</td></tr>'
             . '<tr><th>' . esc_html__('Bezeichnung (nur ohne Bezug)', 'taxmod-stock') . '</th><td><input type="text" name="name" class="regular-text" value="' . esc_attr($names->thingOf($edit) === null ? $value($s->field('label')) : '') . '"></td></tr>'
             . '<tr><th>' . esc_html__('Einzelstück', 'taxmod-stock') . '</th><td><input type="checkbox" name="single" value="1"' . checked($value($s->field('material_single')), '1', false) . '></td></tr>';
 
@@ -357,15 +357,15 @@ final class StockPage
         );
     }
 
-    /** A record id field for «Bezug Ding», with the modeller's search over every record under Model beside it. */
+    /** A record id field for «Bezug», with the modeller's search over every record under Model beside it. */
     private function thingField(string $name, string $id, ?int $value): string
     {
         return '<input type="number" min="1" id="' . esc_attr($id) . '" name="' . esc_attr($name) . '" value="' . esc_attr((string) ($value ?? '')) . '" style="width:8em"> '
             . '<input type="search" class="taxmod-stock-thing-search" data-for="' . esc_attr($id) . '" list="' . esc_attr($id . '-hits') . '" placeholder="'
-            . esc_attr__('Ding suchen …', 'taxmod-stock') . '" style="width:12em"><datalist id="' . esc_attr($id . '-hits') . '"></datalist>';
+            . esc_attr__('Bezug suchen …', 'taxmod-stock') . '" style="width:12em"><datalist id="' . esc_attr($id . '-hits') . '"></datalist>';
     }
 
-    /** Filters a material list as one types, and asks the modeller's record search for «Bezug Ding». */
+    /** Filters a material list as one types, and asks the modeller's record search for «Bezug». */
     private function script(): string
     {
         $search = add_query_arg(['action' => self::RECORD_SEARCH, '_taxmod_nonce' => wp_create_nonce(self::RECORD_SEARCH)], admin_url('admin-post.php'));

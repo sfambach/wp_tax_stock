@@ -3,14 +3,14 @@
 namespace TaxmodStock\Core;
 
 /**
- * What a material is called: its number, and the name of the thing «Bezug Ding» points at (D-967).
+ * What a material is called: its number, and the name of the thing «Bezug» points at (D-967).
  *
  * Only a material without a reference has a name of its own. The names of the referenced things are read
  * beforehand, one read per node (CD-7), and handed in.
  *
  * ```mermaid
  * flowchart LR
- *   M["Material #43124"] -->|Bezug Ding| D["Ding 43101: BC640"]
+ *   M["Material #43124"] -->|Bezug| D["Ding 43101: BC640"]
  *   M --> A["#43124 · BC640"]
  * ```
  *

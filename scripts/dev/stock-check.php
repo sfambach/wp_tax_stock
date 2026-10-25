@@ -260,6 +260,10 @@ $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'filter' => 'instock', 
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'sorted desc') && str_contains($html, 'value="instock" selected') && ! str_contains($html, 'notice-error'), 'the material list sorts by stock and filters');
 
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'wareneingang', 'status' => '', 's' => 'MPSA56'];
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'Bestellung 2') && ! str_contains($html, 'Bestellung 1'), 'the goods receipt finds an order by what its purchases are');
+
 // A structure from before 0.1.2 still works, and the goods receipt says what it lacks.
 $alt = $struktur;
 unset($alt['fields']['purchase_model']);

@@ -219,6 +219,7 @@ final class StockPage
         $status  = sanitize_key((string) ($_GET['status'] ?? 'open'));
         $rows    = [];
         $states  = [];
+        $words   = $this->purchaseWords();
 
         foreach ($orders as $id => $label) {
             $state       = $this->orderState($table->first($id, $s->field('order_status')));
@@ -228,7 +229,8 @@ final class StockPage
                 continue;
             }
 
-            $rows[] = ['id' => $id, 'name' => $label, 'stock' => (float) count($table->all($id, $s->field('order_lines'))), 'low' => false, 'words' => []];
+            $rows[] = ['id' => $id, 'name' => $label, 'stock' => (float) count($table->all($id, $s->field('order_lines'))), 'low' => false,
+                'words' => array_merge(...array_map(static fn (string $purchase): array => $words[(int) $purchase] ?? [], $table->all($id, $s->field('order_lines'))))];
         }
 
         $shown = (new StockList($list->search, '', $list->orderBy, $list->descending))->apply($rows);
@@ -258,6 +260,34 @@ final class StockPage
 
         return $html . ListPage::table([$this->sortColumn('wareneingang', $list, 'name', __('Bestellung', 'taxmod-stock'), ''), [__('Status', 'taxmod-stock'), '12em'],
             $this->sortColumn('wareneingang', $list, 'stock', __('Positionen', 'taxmod-stock'), '8em')], $body);
+    }
+
+    /**
+     * What the search finds an order by besides its name: each purchase's name, description and the name of its
+     * «Modell» — «555» finds the order that holds an NE555 (his wish 2026-10-25). One read per node (CD-7).
+     *
+     * @return array<int, list<string>> purchase id → words
+     */
+    private function purchaseWords(): array
+    {
+        $s         = $this->stock->structure();
+        $purchases = $this->stock->table('purchase');
+        $model     = $s->hasField('purchase_model') ? $s->field('purchase_model') : null;
+        $models    = $model === null ? [] : $this->stock->recordLabels(array_values(array_unique(array_filter(array_map(
+            static fn (int $id): int => (int) $purchases->first($id, $model),
+            $purchases->ids()
+        )))));
+        $out       = [];
+
+        foreach ($purchases->ids() as $id) {
+            $out[$id] = array_values(array_filter([
+                (string) $purchases->first($id, $s->field('label')),
+                $s->hasField('description') ? (string) $purchases->first($id, $s->field('description')) : '',
+                $model === null ? '' : ($models[(int) $purchases->first($id, $model)] ?? ''),
+            ]));
+        }
+
+        return $out;
     }
 
     /** admin-post handler for one order's purchases, fetched when he opens the order: capability → nonce → validate → act. */

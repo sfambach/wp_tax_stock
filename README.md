@@ -39,6 +39,11 @@ decisions D-956, D-957, D-958, D-967, D-972.
 - `composer install`, then `vendor/bin/phpunit` (core, no WordPress).
 - `php scripts/dev/stock-check.php` against a local WordPress with the modeller active; nothing it writes survives.
 
+## Authors
+
+- **Stefan Fambach** (SteFam) – idea and concept, review and testing – https://www.fambach.net
+- **Claude** (Anthropic AI) – implementation, via Claude Code
+
 ## AI disclosure
 
-This repository is created and maintained with the help of AI (Claude by Anthropic). All changes are reviewed by the owner.
+This project is built with AI assistance. Stefan Fambach had the idea, wrote the concept and reviews and tests every change; the implementation (code and documentation) is written largely by Claude (Anthropic) via Claude Code.

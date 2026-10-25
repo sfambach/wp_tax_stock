@@ -235,6 +235,20 @@ foreach (['bestand' => 'LM2930T-5.0', 'material' => '#' . $r['mt1'] . ' · BC640
     $pruefe(str_contains($html, $erwartet) && ! str_contains($html, 'notice-error'), "tab «{$tab}» shows «{$erwartet}»");
 }
 
+// Laid out as the eBay shipping page (2026-10-25): «Wareneingang» first and default, list tables with search, filter and sorting.
+$_GET = ['page' => StockPage::PAGE];
+$html = (new StockPage())->render();
+$pruefe(strpos($html, 'nav-tab-active') !== false && strpos($html, 'Wareneingang') < strpos($html, 'Bestand') && str_contains($html, 'name="order"'), 'without a tab the page opens «Wareneingang», the first tab');
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'bestand'];
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'wp-list-table') && str_contains($html, 'search-box') && str_contains($html, '<tfoot>') && str_contains($html, 'sortable'), 'the stock list is a WordPress list table with search and sortable columns');
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'bestand', 's' => 'LM2930'];
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'LM2930T-5.0') && ! str_contains($html, 'BC640'), 'the search narrows the stock list');
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'filter' => 'instock', 'orderby' => 'stock', 'order' => 'desc'];
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'sorted desc') && ! str_contains($html, 'notice-error'), 'the material list sorts by stock and filters');
+
 // A structure from before 0.1.2 still works, and the goods receipt says what it lacks.
 $alt = $struktur;
 unset($alt['fields']['purchase_model']);

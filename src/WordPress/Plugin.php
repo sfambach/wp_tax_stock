@@ -34,6 +34,7 @@ final class Plugin
         // After the modeller (priority 10) has created its menu.
         add_action('admin_menu', [$this, 'registerMenu'], 20);
         add_action('admin_post_' . StockPage::ACTION, static fn () => (new StockPage())->handle());
+        add_action('admin_post_' . StockPage::POSITIONS, static fn () => (new StockPage())->positions());
     }
 
     public function registerMenu(): void

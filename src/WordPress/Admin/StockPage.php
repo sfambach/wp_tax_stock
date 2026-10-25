@@ -24,6 +24,7 @@ final class StockPage
 {
     public const PAGE       = 'taxmod-stock';
     public const ACTION     = 'taxmod_stock_book';
+    public const POSITIONS  = 'taxmod_stock_positions';
     private const NOTICE    = 'taxmod_stock_notice';
     private const ROWS      = 6;
     private const TABS      = ['wareneingang', 'bestand', 'material', 'inventur', 'verbrauch'];
@@ -57,7 +58,7 @@ final class StockPage
                 'material'     => $this->materialTab(absint($_GET['material'] ?? 0), $list),
                 'inventur'     => $this->inventoryForm(),
                 'verbrauch'    => $this->consumptionForm(),
-                default        => $this->receiptForm(absint($_GET['order'] ?? 0)),
+                default        => $this->receiptTab($list, absint($_GET['order'] ?? 0)),
             };
         } catch (StockError $e) {
             $html .= '<div class="notice notice-error"><p>' . esc_html(Messages::of($e)) . '</p></div>';
@@ -207,16 +208,115 @@ final class StockPage
         return $html . '</tbody></table>' . get_submit_button(__('Inventur buchen', 'taxmod-stock')) . '</form>';
     }
 
-    private function receiptForm(int $order): string
+    /**
+     * The orders as a list; each one opens to its purchases below, read only when he opens it.
+     *
+     * An order handed in with `order` (back from a refused booking) is open and loaded, whatever the filter says.
+     */
+    private function receiptTab(StockList $list, int $open): string
+    {
+        $s       = $this->stock->structure();
+        $orders  = $this->stock->labels('order');
+        $table   = $this->stock->table('order');
+        $status  = sanitize_key((string) ($_GET['status'] ?? 'open'));
+        $rows    = [];
+        $states  = [];
+
+        foreach ($orders as $id => $label) {
+            $state       = $this->orderState($table->first($id, $s->field('order_status')));
+            $states[$id] = $state;
+
+            if ($id !== $open && $status !== '' && ($status === 'open' ? $state === 'received' : $state !== $status)) {
+                continue;
+            }
+
+            $rows[] = ['id' => $id, 'name' => $label, 'stock' => (float) count($table->all($id, $s->field('order_lines'))), 'low' => false, 'words' => []];
+        }
+
+        $shown = (new StockList($list->search, '', $list->orderBy, $list->descending))->apply($rows);
+        $html  = '<form method="get" action="' . esc_url(admin_url('admin.php')) . '">'
+            . '<input type="hidden" name="page" value="' . esc_attr(self::PAGE) . '"><input type="hidden" name="tab" value="wareneingang">'
+            . '<p class="search-box"><label class="screen-reader-text" for="taxmod-stock-search">' . esc_html__('Bestellung suchen', 'taxmod-stock') . '</label>'
+            . '<input type="search" id="taxmod-stock-search" name="s" value="' . esc_attr($list->search) . '" placeholder="' . esc_attr__('Bestellung, Nummer …', 'taxmod-stock') . '"> '
+            . get_submit_button(__('Bestellung suchen', 'taxmod-stock'), '', '', false, ['id' => 'search-submit']) . '</p>'
+            . '<div class="tablenav top"><div class="alignleft actions"><label class="screen-reader-text" for="taxmod-stock-status">' . esc_html__('Status', 'taxmod-stock') . '</label>'
+            . '<select name="status" id="taxmod-stock-status">';
+
+        foreach (['open' => __('Nicht eingegangen', 'taxmod-stock'), 'partial' => __('Teilweise eingegangen', 'taxmod-stock'), 'received' => __('Eingegangen', 'taxmod-stock'), '' => __('Alle Bestellungen', 'taxmod-stock')] as $value => $text) {
+            $html .= '<option value="' . esc_attr($value) . '"' . selected($value, $status, false) . '>' . esc_html($text) . '</option>';
+        }
+
+        $html .= '</select>' . get_submit_button(__('Filtern', 'taxmod-stock'), '', 'filter_action', false)
+            . '</div><div class="tablenav-pages one-page"><span class="displaying-num">' . esc_html(sprintf(
+                /* translators: %d: number of orders */
+                _n('%d Bestellung', '%d Bestellungen', count($shown), 'taxmod-stock'),
+                count($shown)
+            )) . '</span></div><br class="clear"></div></form>';
+
+        $head  = '<tr>' . $this->sortable('wareneingang', $list, 'name', __('Bestellung', 'taxmod-stock'), '')
+            . '<th scope="col" class="manage-column" style="width:12em">' . esc_html__('Status', 'taxmod-stock') . '</th>'
+            . $this->sortable('wareneingang', $list, 'stock', __('Positionen', 'taxmod-stock'), 'width:8em') . '</tr>';
+        $html .= $this->tableStart($head) . ($shown === [] ? $this->noItems(3) : '');
+
+        foreach ($shown as $row) {
+            $id      = $row['id'];
+            $loaded  = $id === $open;
+            $html   .= '<tr><td><strong><a href="#" class="taxmod-stock-toggle" data-order="' . esc_attr((string) $id) . '" aria-expanded="' . ($loaded ? 'true' : 'false') . '">'
+                . '<span aria-hidden="true">' . ($loaded ? '▾' : '▸') . '</span> ' . esc_html($row['name']) . '</a></strong>'
+                . '<div class="row-actions"><span><a href="#" class="taxmod-stock-toggle" data-order="' . esc_attr((string) $id) . '">' . esc_html__('Positionen zeigen', 'taxmod-stock') . '</a></span></div></td>'
+                . '<td>' . esc_html($this->stateName($states[$id])) . '</td><td>' . esc_html((string) (int) $row['stock']) . '</td></tr>'
+                . '<tr class="taxmod-stock-positions"' . ($loaded ? '' : ' hidden') . ' data-order="' . esc_attr((string) $id) . '"' . ($loaded ? ' data-loaded="1"' : '') . '>'
+                . '<td colspan="3">' . ($loaded ? $this->receiptPositions($id) : '') . '</td></tr>';
+        }
+
+        return $html . $this->tableEnd($head);
+    }
+
+    /** admin-post handler for one order's purchases, fetched when he opens the order: capability → nonce → validate → act. */
+    public function positions(): void
+    {
+        if (! current_user_can('manage_options')) {
+            wp_send_json_error(['html' => esc_html__('Keine Berechtigung.', 'taxmod-stock')], 403);
+        }
+
+        check_ajax_referer(self::POSITIONS);
+        $order = absint($_GET['order'] ?? 0);
+
+        try {
+            wp_send_json_success(['html' => $this->receiptPositions($order)]);
+        } catch (StockError $e) {
+            wp_send_json_error(['html' => '<div class="notice notice-error inline"><p>' . esc_html(Messages::of($e)) . '</p></div>']);
+        }
+    }
+
+    /** «open», «partial» or «received», read from the order's status value. */
+    private function orderState(?string $value): string
+    {
+        $s = $this->stock->structure();
+
+        return match ((int) $value) {
+            $s->value('status_received') => 'received',
+            $s->value('status_partial')  => 'partial',
+            default                      => 'open',
+        };
+    }
+
+    private function stateName(string $state): string
+    {
+        return match ($state) {
+            'received' => __('eingegangen', 'taxmod-stock'),
+            'partial'  => __('teilweise eingegangen', 'taxmod-stock'),
+            default    => __('offen', 'taxmod-stock'),
+        };
+    }
+
+    /** The purchases of one order with their material, Bezug and place, as one booking form. */
+    private function receiptPositions(int $order): string
     {
         $orders = $this->stock->labels('order');
-        $html   = '<form method="get" class="tablenav top"><div class="alignleft actions"><input type="hidden" name="page" value="' . esc_attr(self::PAGE) . '"><input type="hidden" name="tab" value="wareneingang">'
-            . '<label class="screen-reader-text" for="taxmod-stock-order">' . esc_html__('Bestellung', 'taxmod-stock') . '</label>'
-            . '<select name="order" id="taxmod-stock-order">' . $this->options($orders, __('— Bestellung wählen —', 'taxmod-stock'), $order) . '</select> '
-            . get_submit_button(__('Positionen zeigen', 'taxmod-stock'), '', '', false) . '</div><br class="clear"></form>';
 
-        if ($order === 0 || ! isset($orders[$order])) {
-            return $html;
+        if (! isset($orders[$order])) {
+            throw StockError::nothingToBook();
         }
 
         $names  = $this->stock->materialNames();
@@ -227,7 +327,7 @@ final class StockPage
         $places = $this->stock->labels('location');
         $where  = $this->stock->receiptLocations($plan, $names);
 
-        $html .= $this->formStart('wareneingang') . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
+        $html  = $this->formStart('wareneingang') . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
             . '<p>' . esc_html__('Je Kauf ein Material: vorgeschlagen ist das Material, das schon auf das «Modell» des Kaufs verweist, sonst ein neues mit diesem Bezug. Suchen filtert die Liste; «neu anlegen» nimmt den angegebenen Bezug, ohne Angabe das Modell. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seines Zweigs (Reiter «Lager»).', 'taxmod-stock') . '</p>'
             . '<div class="tablenav top"><div class="tablenav-pages one-page"><span class="displaying-num">' . esc_html(sprintf(
                 /* translators: %d: number of purchases */
@@ -439,15 +539,24 @@ final class StockPage
     /** Filters a material list as one types, and asks the modeller's record search for «Bezug». */
     private function script(): string
     {
-        $search = add_query_arg(['action' => self::RECORD_SEARCH, '_taxmod_nonce' => wp_create_nonce(self::RECORD_SEARCH)], admin_url('admin-post.php'));
+        $search    = add_query_arg(['action' => self::RECORD_SEARCH, '_taxmod_nonce' => wp_create_nonce(self::RECORD_SEARCH)], admin_url('admin-post.php'));
+        $positions = add_query_arg(['action' => self::POSITIONS, '_ajax_nonce' => wp_create_nonce(self::POSITIONS)], admin_url('admin-post.php'));
 
         return '<script>(function(){'
-            . 'var url=' . wp_json_encode($search) . ';'
-            . 'document.querySelectorAll(".taxmod-stock-filter").forEach(function(f){var s=document.getElementById(f.dataset.for);if(!s){return;}var o=Array.prototype.slice.call(s.options);'
+            . 'var url=' . wp_json_encode($search) . ',pos=' . wp_json_encode($positions) . ';'
+            . 'function bind(root){'
+            . 'root.querySelectorAll(".taxmod-stock-filter").forEach(function(f){var s=document.getElementById(f.dataset.for);if(!s){return;}var o=Array.prototype.slice.call(s.options);'
             . 'f.addEventListener("input",function(){var q=f.value.toLowerCase(),first=null;o.forEach(function(x){var fix=x.value===""||x.value==="new"||x.value==="keep";x.hidden=q!==""&&!fix&&x.text.toLowerCase().indexOf(q)<0;if(!fix&&!x.hidden&&!first){first=x;}});if(q!==""&&first){s.value=first.value;}});});'
             . 'document.querySelectorAll(".taxmod-stock-thing-search").forEach(function(f){var t=document.getElementById(f.dataset.for),l=document.getElementById(f.getAttribute("list")),w;'
             . 'f.addEventListener("input",function(){var m=f.value.match(/^#(\\d+)/);if(m){t.value=m[1];return;}clearTimeout(w);if(f.value.trim().length<2){return;}'
             . 'w=setTimeout(function(){fetch(url+"&term="+encodeURIComponent(f.value),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){l.innerHTML="";(j.data||[]).forEach(function(h){var x=document.createElement("option");x.value="#"+h.id+" · "+h.word+(h.node?" ("+h.node+")":"");l.appendChild(x);});});},250);});});'
+            . '}bind(document);'
+            . 'document.querySelectorAll(".taxmod-stock-toggle").forEach(function(a){a.addEventListener("click",function(e){e.preventDefault();'
+            . 'var row=document.querySelector("tr.taxmod-stock-positions[data-order=\""+a.dataset.order+"\"]");if(!row){return;}var open=row.hidden;row.hidden=!open;'
+            . 'document.querySelectorAll(".taxmod-stock-toggle[data-order=\""+a.dataset.order+"\"][aria-expanded]").forEach(function(t){t.setAttribute("aria-expanded",open?"true":"false");t.firstChild.textContent=open?"▾":"▸";});'
+            . 'if(!open||row.dataset.loaded){return;}row.dataset.loaded="1";var cell=row.firstElementChild;cell.textContent="…";'
+            . 'fetch(pos+"&order="+encodeURIComponent(a.dataset.order),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){cell.innerHTML=(j.data&&j.data.html)||"";bind(cell);})'
+            . '.catch(function(){delete row.dataset.loaded;cell.textContent=' . wp_json_encode(__('Positionen konnten nicht geladen werden.', 'taxmod-stock')) . ';});});});'
             . '})();</script>';
     }
 
@@ -513,7 +622,10 @@ final class StockPage
         ];
         $materials = $this->stock->materialNames()->all();
         $ledger    = $this->stock->ledger();
+        $s         = $this->stock->structure();
+        $orderRows = $this->stock->table('order');
         $counts    = [
+            'wareneingang' => count(array_filter(array_keys($this->stock->labels('order')), fn (int $id): bool => $this->orderState($orderRows->first($id, $s->field('order_status'))) !== 'received')),
             'bestand'  => count(array_filter(array_keys($materials), static fn (int $id): bool => $ledger->stockOf($id) > 0.0)),
             'material' => count($materials),
         ];

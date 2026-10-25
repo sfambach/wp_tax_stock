@@ -238,7 +238,10 @@ foreach (['bestand' => 'LM2930T-5.0', 'material' => '#' . $r['mt1'] . ' · BC640
 // Laid out as the eBay shipping page (2026-10-25): «Wareneingang» first and default, list tables with search, filter and sorting.
 $_GET = ['page' => StockPage::PAGE];
 $html = (new StockPage())->render();
-$pruefe(strpos($html, 'nav-tab-active') !== false && strpos($html, 'Wareneingang') < strpos($html, 'Bestand') && str_contains($html, 'name="order"'), 'without a tab the page opens «Wareneingang», the first tab');
+$pruefe(strpos($html, 'nav-tab-active') !== false && strpos($html, 'Wareneingang') < strpos($html, 'Bestand') && str_contains($html, 'taxmod-stock-toggle'), 'without a tab the page opens «Wareneingang», the first tab');
+$pruefe(str_contains($html, 'Bestellung 1') && str_contains($html, 'tr class="taxmod-stock-positions" hidden') && ! str_contains($html, 'name="purchases[]"'), 'the orders are a list; their purchases stay folded and unloaded');
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'wareneingang', 'order' => $r['best']];
+$pruefe(str_contains((new StockPage())->render(), 'data-loaded="1"'), 'an order handed in is open and loaded');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'bestand'];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'wp-list-table') && str_contains($html, 'search-box') && str_contains($html, '<tfoot>') && str_contains($html, 'sortable'), 'the stock list is a WordPress list table with search and sortable columns');

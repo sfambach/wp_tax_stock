@@ -15,6 +15,7 @@ use TaxmodStock\Core\ReceiptPlan;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\Structure;
 use TaxmodStock\Core\Table;
+use TaxmodStock\Core\ViewSettings;
 
 /**
  * Reads the Stock tables once per request and hands bookings to the gateway — the seam between page and core.
@@ -25,6 +26,9 @@ final class StockService
 
     /** D-972: which branch of `Model` goes to which place. */
     public const LOCATIONS = 'taxmod_stock_locations';
+
+    /** Per tab whether its rows open by themselves (see {@see ViewSettings}). */
+    public const VIEWS = 'taxmod_stock_views';
 
     /** @var array<int, Table> node id → its records, read once */
     private array $tables = [];
@@ -133,6 +137,13 @@ final class StockService
             $names ?? $this->materialNames(),
             Ledger::receivedPurchases($s, $this->table('lot'))
         );
+    }
+
+    public function viewSettings(): ViewSettings
+    {
+        $raw = get_option(self::VIEWS, []);
+
+        return ViewSettings::fromArray(is_array($raw) ? $raw : []);
     }
 
     public function locationSettings(): LocationSettings

@@ -5,6 +5,7 @@ namespace TaxmodStock\WordPress\Admin;
 use TaxmodStock\Core\LocationSettings;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\Structure;
+use TaxmodStock\Core\ViewSettings;
 use TaxmodStock\WordPress\StockService;
 
 /**
@@ -65,7 +66,28 @@ final class SettingsTab
             }
         }
 
-        return $html . '</tbody></table>' . $this->placesSection();
+        return $html . '</tbody></table>' . $this->viewsSection() . $this->placesSection();
+    }
+
+    /** One section per tab of the stock page; «Gleich aufgeklappt» where its rows can be opened. */
+    private function viewsSection(): string
+    {
+        $views  = (new StockService())->viewSettings();
+        $titles = [
+            'wareneingang' => [__('Wareneingang', 'taxmod-stock'), __('Unter jeder Bestellung stehen ihre Käufe gleich offen da, ohne Klick. Sie laden, sobald sie ins Bild scrollen.', 'taxmod-stock')],
+            'bestand'      => [__('Bestand', 'taxmod-stock'), __('Unter jedem Material stehen seine Bestandsposten (Datum, Rest, Preis, Lagerort) gleich offen da.', 'taxmod-stock')],
+        ];
+        $html   = '<h2>' . esc_html__('Ansicht der Reiter', 'taxmod-stock') . '</h2>'
+            . '<input type="hidden" name="taxmod_stock_views_sent" value="1"><table class="form-table" role="presentation"><tbody>';
+
+        foreach ($titles as $tab => [$title, $explain]) {
+            $html .= '<tr><th scope="row">' . esc_html($title) . '</th><td><label><input type="checkbox" name="taxmod_stock_views[' . esc_attr($tab) . ']" value="1"'
+                . checked($views->expanded($tab), true, false) . '> ' . esc_html__('Gleich aufgeklappt', 'taxmod-stock') . '</label>'
+                . '<p class="description">' . esc_html($explain) . '</p></td></tr>';
+        }
+
+        return $html . '<tr><th scope="row">' . esc_html__('Material, Inventur, Verbrauch', 'taxmod-stock') . '</th><td><p class="description">'
+            . esc_html__('Diese Reiter haben keine Zeilen zum Aufklappen.', 'taxmod-stock') . '</p></td></tr></tbody></table>';
     }
 
     /** D-972: branch under `Model` → place; the nearest listed branch wins. Empty rows add a branch, an emptied one drops it. */
@@ -111,6 +133,17 @@ final class SettingsTab
     /** @param array<string, mixed> $post already unslashed by the modeller */
     public function save(array $post): void
     {
+        if (! empty($post['taxmod_stock_views_sent'])) {
+            $chosen = is_array($post['taxmod_stock_views'] ?? null) ? $post['taxmod_stock_views'] : [];
+            $views  = [];
+
+            foreach (array_keys(ViewSettings::DEFAULTS) as $tab) {
+                $views[$tab] = ['expand' => ! empty($chosen[$tab])];
+            }
+
+            update_option(StockService::VIEWS, ViewSettings::fromArray($views)->toArray(), false);
+        }
+
         if (isset($post['taxmod_stock_branch']) && is_array($post['taxmod_stock_branch'])) {
             $branches = [];
 

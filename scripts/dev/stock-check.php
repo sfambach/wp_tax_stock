@@ -239,7 +239,14 @@ foreach (['bestand' => 'LM2930T-5.0', 'material' => '<td>' . $r['mt1'] . '</td>'
 $_GET = ['page' => StockPage::PAGE];
 $html = (new StockPage())->render();
 $pruefe(strpos($html, 'nav-tab-active') !== false && strpos($html, 'Wareneingang') < strpos($html, 'Bestand') && str_contains($html, 'taxmod-stock-toggle'), 'without a tab the page opens «Wareneingang», the first tab');
-$pruefe(str_contains($html, 'Bestellung 1') && str_contains($html, 'tr class="taxmod-stock-positions" hidden') && ! str_contains($html, 'name="purchases[]"'), 'the orders are a list; their purchases stay folded and unloaded');
+$pruefe(str_contains($html, 'Bestellung 1') && str_contains($html, 'data-auto="1"') && ! str_contains($html, ' hidden data-order') && ! str_contains($html, 'name="purchases[]"'), 'by default the orders stand open, their purchases load as they scroll into view');
+(new TaxmodStock\WordPress\Admin\SettingsTab())->save(['taxmod_stock_views_sent' => '1', 'taxmod_stock_views' => ['bestand' => '1']]);
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'tr class="taxmod-stock-positions" hidden') && ! str_contains($html, 'data-auto="1"') && ! str_contains($html, 'name="purchases[]"'), 'with «Gleich aufgeklappt» off the purchases stay folded and unloaded');
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'bestand'];
+$pruefe(str_contains((new StockPage())->render(), '<details open>'), 'with «Gleich aufgeklappt» on for Bestand the lots stand open');
+delete_option(StockService::VIEWS);
+$_GET = ['page' => StockPage::PAGE];
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'wareneingang', 'order' => $r['best']];
 $pruefe(str_contains((new StockPage())->render(), 'data-loaded="1"'), 'an order handed in is open and loaded');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'bestand'];

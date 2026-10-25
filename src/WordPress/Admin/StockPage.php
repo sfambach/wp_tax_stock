@@ -161,6 +161,7 @@ final class StockPage
         }
 
         $shown = $list->apply($rows);
+        $open  = $this->stock->viewSettings()->expanded('bestand');
         $html  = $this->listTools('bestand', $list, [
             ''                  => __('Alle Materialien', 'taxmod-stock'),
             StockList::IN_STOCK => __('Nur mit Bestand', 'taxmod-stock'),
@@ -180,7 +181,7 @@ final class StockPage
                 . esc_html__('Material bearbeiten', 'taxmod-stock') . '</a></span></div></td>'
                 . '<td' . ($row['low'] ? ' style="color:#b32d2e;font-weight:600"' : '') . '>' . esc_html($this->number($row['stock'])) . '</td>'
                 . '<td>' . esc_html((string) ($mins[$id] ?? '—')) . '</td><td>'
-                . ($lis[$id] === '' ? '—' : '<details><summary>' . esc_html((string) $count) . '</summary><ul>' . $lis[$id] . '</ul></details>')
+                . ($lis[$id] === '' ? '—' : '<details' . ($open ? ' open' : '') . '><summary>' . esc_html((string) $count) . '</summary><ul>' . $lis[$id] . '</ul></details>')
                 . '</td></tr>';
         }
 
@@ -259,14 +260,17 @@ final class StockPage
             . $this->sortable('wareneingang', $list, 'stock', __('Positionen', 'taxmod-stock'), 'width:8em') . '</tr>';
         $html .= $this->tableStart($head) . ($shown === [] ? $this->noItems(3) : '');
 
+        $auto = $this->stock->viewSettings()->expanded('wareneingang');
+
         foreach ($shown as $row) {
             $id      = $row['id'];
             $loaded  = $id === $open;
-            $html   .= '<tr><td><strong><a href="#" class="taxmod-stock-toggle" data-order="' . esc_attr((string) $id) . '" aria-expanded="' . ($loaded ? 'true' : 'false') . '">'
-                . '<span aria-hidden="true">' . ($loaded ? '▾' : '▸') . '</span> ' . esc_html($row['name']) . '</a></strong>'
+            $isOpen  = $loaded || $auto;
+            $html   .= '<tr><td><strong><a href="#" class="taxmod-stock-toggle" data-order="' . esc_attr((string) $id) . '" aria-expanded="' . ($isOpen ? 'true' : 'false') . '">'
+                . '<span aria-hidden="true">' . ($isOpen ? '▾' : '▸') . '</span> ' . esc_html($row['name']) . '</a></strong>'
                 . '<div class="row-actions"><span><a href="#" class="taxmod-stock-toggle" data-order="' . esc_attr((string) $id) . '">' . esc_html__('Positionen zeigen', 'taxmod-stock') . '</a></span></div></td>'
                 . '<td>' . esc_html($this->stateName($states[$id])) . '</td><td>' . esc_html((string) (int) $row['stock']) . '</td></tr>'
-                . '<tr class="taxmod-stock-positions"' . ($loaded ? '' : ' hidden') . ' data-order="' . esc_attr((string) $id) . '"' . ($loaded ? ' data-loaded="1"' : '') . '>'
+                . '<tr class="taxmod-stock-positions"' . ($isOpen ? '' : ' hidden') . ' data-order="' . esc_attr((string) $id) . '"' . ($loaded ? ' data-loaded="1"' : ($auto ? ' data-auto="1"' : '')) . '>'
                 . '<td colspan="3">' . ($loaded ? $this->receiptPositions($id) : '') . '</td></tr>';
         }
 
@@ -562,12 +566,15 @@ final class StockPage
             . 'f.addEventListener("input",function(){var m=f.value.match(/^#(\\d+)/);if(m){t.value=m[1];return;}t.value="";clearTimeout(w);if(f.value.trim().length<2){return;}'
             . 'w=setTimeout(function(){fetch(url+"&term="+encodeURIComponent(f.value),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){l.innerHTML="";(j.data||[]).forEach(function(h){var x=document.createElement("option");x.value="#"+h.id+" · "+h.word+(h.node?" ("+h.node+")":"");l.appendChild(x);});});},250);});});'
             . '}bind(document);'
+            . 'function load(row){if(row.dataset.loaded){return;}row.dataset.loaded="1";var cell=row.firstElementChild;cell.textContent="…";'
+            . 'fetch(pos+"&order="+encodeURIComponent(row.dataset.order),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){cell.innerHTML=(j.data&&j.data.html)||"";bind(cell);})'
+            . '.catch(function(){delete row.dataset.loaded;cell.textContent=' . wp_json_encode(__('Positionen konnten nicht geladen werden.', 'taxmod-stock')) . ';});}'
             . 'document.querySelectorAll(".taxmod-stock-toggle").forEach(function(a){a.addEventListener("click",function(e){e.preventDefault();'
             . 'var row=document.querySelector("tr.taxmod-stock-positions[data-order=\""+a.dataset.order+"\"]");if(!row){return;}var open=row.hidden;row.hidden=!open;'
             . 'document.querySelectorAll(".taxmod-stock-toggle[data-order=\""+a.dataset.order+"\"][aria-expanded]").forEach(function(t){t.setAttribute("aria-expanded",open?"true":"false");t.firstChild.textContent=open?"▾":"▸";});'
-            . 'if(!open||row.dataset.loaded){return;}row.dataset.loaded="1";var cell=row.firstElementChild;cell.textContent="…";'
-            . 'fetch(pos+"&order="+encodeURIComponent(a.dataset.order),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){cell.innerHTML=(j.data&&j.data.html)||"";bind(cell);})'
-            . '.catch(function(){delete row.dataset.loaded;cell.textContent=' . wp_json_encode(__('Positionen konnten nicht geladen werden.', 'taxmod-stock')) . ';});});});'
+            . 'if(open){load(row);}});});'
+            . 'var seen="IntersectionObserver" in window?new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){seen.unobserve(e.target);load(e.target);}});},{rootMargin:"200px"}):null;'
+            . 'document.querySelectorAll("tr.taxmod-stock-positions[data-auto]").forEach(function(row){if(seen){seen.observe(row);}else{load(row);}});'
             . '})();</script>';
     }
 

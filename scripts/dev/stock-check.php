@@ -210,8 +210,8 @@ try {
 
 // D-967 · display: «#id · name of the Bezug», the own name only without one.
 $namen = $s->materialNames();
-$pruefe($namen->name($r['mt1']) === '#' . $r['mt1'] . ' · BC640' && $namen->name($neu) === '#' . $neu . ' · MPSA56', 'a material shows as «#id · name from Bezug Ding»');
-$pruefe($namen->name($r['lm']) === '#' . $r['lm'] . ' · LM2930T-5.0', 'without a Bezug it shows its own Bezeichnung');
+$pruefe($namen->name($r['mt1']) === 'BC640 (Nr. ' . $r['mt1'] . ')' && $namen->name($neu) === 'MPSA56 (Nr. ' . $neu . ')', 'a material is named by its Bezug, its number beside it (D-988)');
+$pruefe($namen->name($r['lm']) === 'LM2930T-5.0 (Nr. ' . $r['lm'] . ')', 'without a Bezug it shows its own Bezeichnung');
 
 // D-967 · a count row with a Bezug writes no Bezeichnung.
 $antwort = (new StockService())->bookInventory([new InventoryRow(null, '', $r['t2'], '4', null, '')], '2026-10-21', 'Inventur Bezug');
@@ -229,7 +229,7 @@ $mat = (new StockService())->table('material');
 $pruefe($mat->first($loet, $r['label']) === null && $mat->first($loet, $r['m_ding']) === (string) $r['t1'] && $mat->first($loet, $r['m_use']) === null && $mat->first($loet, $r['m_einz']) === '1', 'editing it to a Bezug empties the Bezeichnung and clears what was left empty');
 
 // The page renders its four tabs from the same data.
-foreach (['bestand' => 'LM2930T-5.0', 'material' => '#' . $r['mt1'] . ' · BC640', 'inventur' => 'BC547C', 'wareneingang' => 'Bestellung 1', 'verbrauch' => 'Rest 25'] as $tab => $erwartet) {
+foreach (['bestand' => 'LM2930T-5.0', 'material' => '<td>' . $r['mt1'] . '</td>', 'inventur' => 'BC547C', 'wareneingang' => 'Bestellung 1', 'verbrauch' => 'Rest 25'] as $tab => $erwartet) {
     $_GET = ['page' => StockPage::PAGE, 'tab' => $tab, 'order' => $r['best']];
     $html = (new StockPage())->render();
     $pruefe(str_contains($html, $erwartet) && ! str_contains($html, 'notice-error'), "tab «{$tab}» shows «{$erwartet}»");

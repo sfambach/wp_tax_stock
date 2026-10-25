@@ -37,9 +37,9 @@ final class StockListTest extends TestCase
     private function ids(StockList $list): array
     {
         return array_column($list->apply([
-            ['id' => 43200, 'name' => '#43200 · Lötzinn', 'stock' => 1.0, 'low' => true, 'words' => []],
-            ['id' => 43124, 'name' => '#43124 · BC640', 'stock' => 12.0, 'low' => false, 'words' => ['Bauteile']],
-            ['id' => 43201, 'name' => '#43201 · Zange', 'stock' => 0.0, 'low' => false, 'words' => ['Werkstatt']],
+            ['id' => 43200, 'name' => 'Lötzinn', 'stock' => 1.0, 'low' => true, 'words' => []],
+            ['id' => 43124, 'name' => 'BC640', 'stock' => 12.0, 'low' => false, 'words' => ['Bauteile']],
+            ['id' => 43201, 'name' => 'Zange', 'stock' => 0.0, 'low' => false, 'words' => ['Werkstatt']],
         ]), 'id');
     }
 }

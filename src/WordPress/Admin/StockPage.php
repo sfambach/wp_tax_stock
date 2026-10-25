@@ -13,7 +13,7 @@ use TaxmodStock\WordPress\StockService;
 /**
  * The page «Lager» under the Taxonomy Modeller: stock list, materials, stock count, goods receipt, consumption (stage 1, D-958 F7).
  *
- * A material is shown as «#id · name», the name taken from «Bezug» (D-967).
+ * A material is shown by the name of its «Bezug», its number in a column of its own (D-967, D-988).
  *
  * Tabs and tables are laid out as the eBay module's shipping page does it: counts in the tabs, a WordPress list table
  * with search, filter and sortable columns (his wish 2026-10-25). «Wareneingang» comes first, as the daily task.
@@ -119,7 +119,8 @@ final class StockPage
     {
         $s         = $this->stock->structure();
         $ledger    = $this->stock->ledger();
-        $materials = $this->stock->materialNames()->all();
+        $names     = $this->stock->materialNames();
+        $materials = $names->all();
         $places    = $this->stock->labels('location');
         $lots      = $this->stock->table('lot');
         $money     = $this->stock->table('money');
@@ -133,7 +134,7 @@ final class StockPage
         $mins = [];
         $lis  = [];
 
-        foreach ($materials as $id => $label) {
+        foreach (array_keys($materials) as $id) {
             $stock      = $ledger->stockOf($id);
             $min        = $matTable->first($id, $s->field('material_min'));
             $mins[$id]  = $min;
@@ -156,7 +157,7 @@ final class StockPage
                     . ($where === null ? '' : ' · ' . esc_html($where)) . '</li>';
             }
 
-            $rows[] = ['id' => $id, 'name' => $label, 'stock' => $stock, 'low' => $min !== null && $stock < (float) $min, 'words' => array_values(array_filter($words))];
+            $rows[] = ['id' => $id, 'name' => $names->word($id), 'stock' => $stock, 'low' => $min !== null && $stock < (float) $min, 'words' => array_values(array_filter($words))];
         }
 
         $shown = $list->apply($rows);
@@ -165,16 +166,16 @@ final class StockPage
             StockList::IN_STOCK => __('Nur mit Bestand', 'taxmod-stock'),
             StockList::LOW      => __('Unter Mindestbestand', 'taxmod-stock'),
         ], count($shown));
-        $head  = '<tr>' . $this->sortable('bestand', $list, 'name', __('Material', 'taxmod-stock'), '')
+        $head  = '<tr>' . $this->numberHead() . $this->sortable('bestand', $list, 'name', __('Material', 'taxmod-stock'), '')
             . $this->sortable('bestand', $list, 'stock', __('Bestand', 'taxmod-stock'), 'width:8em')
             . '<th scope="col" class="manage-column" style="width:10em">' . esc_html__('Mindestbestand', 'taxmod-stock') . '</th>'
             . '<th scope="col" class="manage-column" style="width:45%">' . esc_html__('Bestandsposten', 'taxmod-stock') . '</th></tr>';
-        $html .= $this->tableStart($head) . ($shown === [] ? $this->noItems(4) : '');
+        $html .= $this->tableStart($head) . ($shown === [] ? $this->noItems(5) : '');
 
         foreach ($shown as $row) {
             $id    = $row['id'];
             $count = count($ledger->lotsOf($id));
-            $html .= '<tr><td><strong>' . esc_html($row['name']) . '</strong><div class="row-actions"><span><a href="'
+            $html .= '<tr><td>' . esc_html((string) $id) . '</td><td><strong>' . esc_html($row['name'] === '' ? '—' : $row['name']) . '</strong><div class="row-actions"><span><a href="'
                 . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'material', 'material' => $id], admin_url('admin.php'))) . '">'
                 . esc_html__('Material bearbeiten', 'taxmod-stock') . '</a></span></div></td>'
                 . '<td' . ($row['low'] ? ' style="color:#b32d2e;font-weight:600"' : '') . '>' . esc_html($this->number($row['stock'])) . '</td>'
@@ -400,11 +401,11 @@ final class StockPage
         $field  = static fn (string $key): ?int => $s->hasField($key) ? $s->field($key) : null;
         $rows   = [];
 
-        foreach ($names->all() as $id => $label) {
+        foreach (array_keys($names->all()) as $id) {
             $use    = $field('material_use') === null ? null : $table->first($id, (int) $field('material_use'));
             $min    = $table->first($id, $s->field('material_min'));
             $stock  = $ledger->stockOf($id);
-            $rows[] = ['id' => $id, 'name' => $label, 'stock' => $stock, 'low' => $min !== null && $stock < (float) $min,
+            $rows[] = ['id' => $id, 'name' => $names->word($id), 'stock' => $stock, 'low' => $min !== null && $stock < (float) $min,
                 'words' => array_values(array_filter([(string) $names->thingOf($id), $use === null ? '' : ($uses[(int) $use] ?? '')]))];
         }
 
@@ -414,21 +415,21 @@ final class StockPage
             StockList::IN_STOCK => __('Nur mit Bestand', 'taxmod-stock'),
             StockList::LOW      => __('Unter Mindestbestand', 'taxmod-stock'),
         ], count($shown));
-        $head  = '<tr>' . $this->sortable('material', $list, 'name', __('Material', 'taxmod-stock'), '')
+        $head  = '<tr>' . $this->numberHead() . $this->sortable('material', $list, 'name', __('Material', 'taxmod-stock'), '')
             . '<th scope="col" class="manage-column" style="width:8em">' . esc_html__('Bezug', 'taxmod-stock') . '</th>'
             . '<th scope="col" class="manage-column" style="width:8em">' . esc_html__('Einzelstück', 'taxmod-stock') . '</th>'
             . '<th scope="col" class="manage-column">' . esc_html__('Verwendung', 'taxmod-stock') . '</th>'
             . '<th scope="col" class="manage-column" style="width:10em">' . esc_html__('Mindestbestand', 'taxmod-stock') . '</th>'
             . $this->sortable('material', $list, 'stock', __('Bestand', 'taxmod-stock'), 'width:8em') . '</tr>';
-        $html .= $this->tableStart($head) . ($shown === [] ? $this->noItems(6) : '');
+        $html .= $this->tableStart($head) . ($shown === [] ? $this->noItems(7) : '');
 
         foreach ($shown as $row) {
             $id    = $row['id'];
             $thing = $names->thingOf($id);
             $use   = $field('material_use') === null ? null : $table->first($id, (int) $field('material_use'));
 
-            $html .= '<tr><td><strong><a href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'material', 'material' => $id], admin_url('admin.php'))) . '">'
-                . esc_html($row['name']) . '</a></strong><div class="row-actions"><span><a href="'
+            $html .= '<tr><td>' . esc_html((string) $id) . '</td><td><strong><a href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'material', 'material' => $id], admin_url('admin.php'))) . '">'
+                . esc_html($row['name'] === '' ? '—' : $row['name']) . '</a></strong><div class="row-actions"><span><a href="'
                 . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'material', 'material' => $id], admin_url('admin.php'))) . '">' . esc_html__('bearbeiten', 'taxmod-stock') . '</a></span></div></td>'
                 . '<td>' . ($thing === null ? '—' : esc_html('#' . $thing)) . '</td><td>'
                 . esc_html($table->first($id, $s->field('material_single')) === '1' ? __('ja', 'taxmod-stock') : __('nein', 'taxmod-stock')) . '</td><td>'
@@ -711,6 +712,11 @@ final class StockPage
             . ($width === '' ? '' : ' style="' . esc_attr($width) . '"') . '>'
             . '<a href="' . esc_url($this->listUrl($tab, $list, ['orderby' => $key === 'name' ? '' : $key, 'order' => $next === 'desc' ? 'desc' : ''])) . '"><span>' . esc_html($label) . '</span>'
             . '<span class="sorting-indicators"><span class="sorting-indicator asc" aria-hidden="true"></span><span class="sorting-indicator desc" aria-hidden="true"></span></span></a></th>';
+    }
+
+    private function numberHead(): string
+    {
+        return '<th scope="col" class="manage-column" style="width:6em">' . esc_html__('Nr.', 'taxmod-stock') . '</th>';
     }
 
     private function tableStart(string $head): string

@@ -3,7 +3,7 @@
 namespace TaxmodStock\Core;
 
 /**
- * What a material is called: its number, and the name of the thing «Bezug» points at (D-967).
+ * What a material is called: the name of the thing «Bezug» points at; its number is the record id, shown beside it (D-967, D-988).
  *
  * Only a material without a reference has a name of its own. The names of the referenced things are read
  * beforehand, one read per node (CD-7), and handed in.
@@ -11,10 +11,10 @@ namespace TaxmodStock\Core;
  * ```mermaid
  * flowchart LR
  *   M["Material #43124"] -->|Bezug| D["Ding 43101: BC640"]
- *   M --> A["#43124 · BC640"]
+ *   M --> A["BC640 · Nr. 43124 in its own column"]
  * ```
  *
- * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/NewConcept/90-decision-log.md D-967
+ * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/NewConcept/90-decision-log.md D-967, D-988
  */
 final class MaterialNames
 {
@@ -78,14 +78,15 @@ final class MaterialNames
         return (string) $this->materials->first($material, $this->structure->field('label'));
     }
 
+    /** The name with its number after it, where a choice list has no column for the number (D-988). */
     public function name(int $material): string
     {
         $word = $this->word($material);
 
-        return '#' . $material . ($word === '' ? '' : ' · ' . $word);
+        return ($word === '' ? '' : $word . ' ') . '(Nr. ' . $material . ')';
     }
 
-    /** @return array<int, string> material id → «#id · name», sorted by name */
+    /** @return array<int, string> material id → «name (Nr. id)», sorted by name */
     public function all(): array
     {
         $out = [];

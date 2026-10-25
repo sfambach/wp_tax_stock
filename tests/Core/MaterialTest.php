@@ -11,17 +11,17 @@ use TaxmodStock\Core\ReceiptPlan;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\Table;
 
-/** D-967: a material is «#id · name of its Bezug»; the goods receipt proposes the material that refers to the Modell. */
+/** D-967, D-988: a material is named by its Bezug, its number stands beside the name; the goods receipt proposes the material that refers to the Modell. */
 final class MaterialTest extends TestCase
 {
     #[Test]
-    public function a_material_is_shown_as_its_number_and_the_name_of_its_bezug(): void
+    public function a_material_is_shown_with_the_name_of_its_bezug_and_its_number_beside_it(): void
     {
         $names = $this->names();
 
-        self::assertSame('#43124 · BC640', $names->name(43124), 'the referenced thing names it, not the stale own name');
-        self::assertSame('#43200 · Lötzinn', $names->name(43200), 'without a Bezug its own name');
-        self::assertSame('#43201', $names->name(43201));
+        self::assertSame('BC640 (Nr. 43124)', $names->name(43124), 'the referenced thing names it, not the stale own name');
+        self::assertSame('Lötzinn (Nr. 43200)', $names->name(43200), 'without a Bezug its own name');
+        self::assertSame('(Nr. 43201)', $names->name(43201));
         self::assertSame([43201, 43124, 43200], array_keys($names->all()), 'sorted by name, the nameless first');
         self::assertSame([43101], MaterialNames::referencedThings(Fixture::structure(), $this->materials()));
     }

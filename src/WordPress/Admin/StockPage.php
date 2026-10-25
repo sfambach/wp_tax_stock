@@ -16,8 +16,8 @@ use TaxmodStock\WordPress\StockService;
  *
  * A material is shown by the name of its «Bezug», its number in a column of its own (D-967, D-988).
  *
- * Tables are drawn with the modeller's shared list page (D-989): heading, bulk bar with «Expand all», the row's buttons
- * on the right, its details in a row below. Tabs with counts, search and filter stay here until the list page has them.
+ * Drawn with the modeller's shared list page (D-989): heading, tabs with counts, search, filters, bulk bar with
+ * «Expand all», sortable columns, the row's buttons on the right, its details in a row below.
  * «Wareneingang» comes first, as the daily task.
  *
  * Every form posts to one handler, which works in the order of CD-5 and books in one write (all or nothing).
@@ -32,7 +32,6 @@ final class StockPage
     private const TABS      = ['wareneingang', 'bestand', 'material', 'inventur', 'verbrauch'];
     private const FILTER_FORM = 'taxmod-stock-filter';
     private const BULK_FORM   = 'taxmod-stock-bulk';
-    private const SORTS       = ['name' => [false], 'name-desc' => [true], 'stock' => [false], 'stock-desc' => [true]];
 
     /** The modeller's search over every record under `Model` (D-958 F3a), reused for «Bezug». */
     private const RECORD_SEARCH = 'taxmod_record_search';
@@ -46,9 +45,9 @@ final class StockPage
         $tab  = sanitize_key((string) ($_GET['tab'] ?? self::TABS[0]));
         $tab  = in_array($tab, self::TABS, true) ? $tab : self::TABS[0];
         $list = $this->listRequest();
-        if (! class_exists(ListPage::class)) {
+        if (! class_exists(ListPage::class) || ! method_exists(ListPage::class, 'tabs')) {
             return '<div class="wrap"><h1>' . esc_html__('Lager', 'taxmod-stock') . '</h1><div class="notice notice-error"><p>'
-                . esc_html__('Die Lagerseite braucht den Taxonomy Modeller ab Version 0.1.63 (gemeinsame Listenseite).', 'taxmod-stock') . '</p></div></div>';
+                . esc_html__('Die Lagerseite braucht den Taxonomy Modeller ab Version 0.1.65 (gemeinsame Listenseite).', 'taxmod-stock') . '</p></div></div>';
         }
 
         $html = '<div class="wrap">' . ListPage::heading(__('Lager', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . $this->notice();
@@ -163,11 +162,7 @@ final class StockPage
 
         $shown = $list->apply($rows);
         $open  = $this->stock->viewSettings()->expanded('bestand');
-        $html  = $this->listTools('bestand', $list, 'filter', $list->filter, [
-            ''                  => __('Alle Materialien', 'taxmod-stock'),
-            StockList::IN_STOCK => __('Nur mit Bestand', 'taxmod-stock'),
-            StockList::LOW      => __('Unter Mindestbestand', 'taxmod-stock'),
-        ], __('Material, Nummer, Lagerort …', 'taxmod-stock')) . $this->bulkBar(sprintf(
+        $html  = $this->tools('bestand', $list, 'filter', $list->filter, $this->materialFilters(), __('Material, Nummer, Lagerort …', 'taxmod-stock'), sprintf(
             /* translators: %d: number of materials */
             _n('%d Material', '%d Materialien', count($shown), 'taxmod-stock'),
             count($shown)
@@ -185,7 +180,8 @@ final class StockPage
             ], $this->editButton($id), $lis[$id] === '' ? '—' : '<ul style="margin:0">' . $lis[$id] . '</ul>', $open);
         }
 
-        return $html . ListPage::table([[__('Nr.', 'taxmod-stock'), '6em'], [__('Material', 'taxmod-stock')], [__('Bestand', 'taxmod-stock'), '8em'], [__('Mindestbestand', 'taxmod-stock'), '10em'], [__('Bestandsposten', 'taxmod-stock'), '10em']], $body);
+        return $html . ListPage::table([[__('Nr.', 'taxmod-stock'), '6em'], $this->sortColumn('bestand', $list, 'name', __('Material', 'taxmod-stock'), ''), $this->sortColumn('bestand', $list, 'stock', __('Bestand', 'taxmod-stock'), '8em'),
+            [__('Mindestbestand', 'taxmod-stock'), '10em'], [__('Bestandsposten', 'taxmod-stock'), '10em']], $body);
     }
 
     private function inventoryForm(): string
@@ -237,12 +233,12 @@ final class StockPage
 
         $shown = (new StockList($list->search, '', $list->orderBy, $list->descending))->apply($rows);
         $auto  = $this->stock->viewSettings()->expanded('wareneingang');
-        $html  = $this->listTools('wareneingang', $list, 'status', $status, [
+        $html  = $this->tools('wareneingang', $list, 'status', $status, [
             'open'     => __('Nicht eingegangen', 'taxmod-stock'),
             'partial'  => __('Teilweise eingegangen', 'taxmod-stock'),
             'received' => __('Eingegangen', 'taxmod-stock'),
             ''         => __('Alle Bestellungen', 'taxmod-stock'),
-        ], __('Bestellung, Nummer …', 'taxmod-stock')) . $this->bulkBar(sprintf(
+        ], __('Bestellung, Nummer …', 'taxmod-stock'), sprintf(
             /* translators: %d: number of orders */
             _n('%d Bestellung', '%d Bestellungen', count($shown), 'taxmod-stock'),
             count($shown)
@@ -260,7 +256,8 @@ final class StockPage
                 . ($loaded ? $this->receiptPositions($id) : '') . '</div>', $loaded || $auto);
         }
 
-        return $html . ListPage::table([[__('Bestellung', 'taxmod-stock')], [__('Status', 'taxmod-stock'), '12em'], [__('Positionen', 'taxmod-stock'), '8em']], $body);
+        return $html . ListPage::table([$this->sortColumn('wareneingang', $list, 'name', __('Bestellung', 'taxmod-stock'), ''), [__('Status', 'taxmod-stock'), '12em'],
+            $this->sortColumn('wareneingang', $list, 'stock', __('Positionen', 'taxmod-stock'), '8em')], $body);
     }
 
     /** admin-post handler for one order's purchases, fetched when he opens the order: capability → nonce → validate → act. */
@@ -400,11 +397,7 @@ final class StockPage
         }
 
         $shown = $list->apply($rows);
-        $html  = $this->listTools('material', $list, 'filter', $list->filter, [
-            ''                  => __('Alle Materialien', 'taxmod-stock'),
-            StockList::IN_STOCK => __('Nur mit Bestand', 'taxmod-stock'),
-            StockList::LOW      => __('Unter Mindestbestand', 'taxmod-stock'),
-        ], __('Material, Nummer, Bezug …', 'taxmod-stock')) . $this->bulkBar(sprintf(
+        $html  = $this->tools('material', $list, 'filter', $list->filter, $this->materialFilters(), __('Material, Nummer, Bezug …', 'taxmod-stock'), sprintf(
             /* translators: %d: number of materials */
             _n('%d Material', '%d Materialien', count($shown), 'taxmod-stock'),
             count($shown)
@@ -430,8 +423,8 @@ final class StockPage
             )));
         }
 
-        $html .= ListPage::table([[__('Nr.', 'taxmod-stock'), '6em'], [__('Material', 'taxmod-stock')], [__('Bezug', 'taxmod-stock'), '8em'], [__('Einzelstück', 'taxmod-stock'), '7em'],
-            [__('Verwendung', 'taxmod-stock')], [__('Mindestbestand', 'taxmod-stock'), '9em'], [__('Bestand', 'taxmod-stock'), '7em']], $body);
+        $html .= ListPage::table([[__('Nr.', 'taxmod-stock'), '6em'], $this->sortColumn('material', $list, 'name', __('Material', 'taxmod-stock'), ''), [__('Bezug', 'taxmod-stock'), '8em'], [__('Einzelstück', 'taxmod-stock'), '7em'],
+            [__('Verwendung', 'taxmod-stock')], [__('Mindestbestand', 'taxmod-stock'), '9em'], $this->sortColumn('material', $list, 'stock', __('Bestand', 'taxmod-stock'), '7em')], $body);
 
         $edit  = $table->has($edit) ? $edit : 0;
         $value = static fn (?int $relation): string => $edit === 0 || $relation === null ? '' : (string) $table->first($edit, $relation);
@@ -617,42 +610,22 @@ final class StockPage
 
     private function tabBar(string $active, StockList $list): string
     {
-        $titles = [
-            'wareneingang' => __('Wareneingang', 'taxmod-stock'),
-            'bestand'      => __('Bestand', 'taxmod-stock'),
-            'material'     => __('Material', 'taxmod-stock'),
-            'inventur'     => __('Inventur', 'taxmod-stock'),
-            'verbrauch'    => __('Verbrauch', 'taxmod-stock'),
-        ];
         $materials = $this->stock->materialNames()->all();
         $ledger    = $this->stock->ledger();
         $s         = $this->stock->structure();
         $orderRows = $this->stock->table('order');
-        $counts    = [
-            'wareneingang' => count(array_filter(array_keys($this->stock->labels('order')), fn (int $id): bool => $this->orderState($orderRows->first($id, $s->field('order_status'))) !== 'received')),
-            'bestand'  => count(array_filter(array_keys($materials), static fn (int $id): bool => $ledger->stockOf($id) > 0.0)),
-            'material' => count($materials),
-        ];
-        $html = '<nav class="nav-tab-wrapper">';
 
-        foreach ($titles as $slug => $title) {
-            $html .= '<a class="nav-tab' . ($slug === $active ? ' nav-tab-active' : '') . '" href="'
-                . esc_url($this->listUrl($slug, $slug === $active ? $list : new StockList(), [])) . '">' . esc_html($title)
-                . (isset($counts[$slug]) ? ' <span class="count">(' . esc_html((string) $counts[$slug]) . ')</span>' : '') . '</a>';
-        }
-
-        return $html . '</nav>';
+        return ListPage::tabs([
+            ['wareneingang', __('Wareneingang', 'taxmod-stock'), count(array_filter(array_keys($this->stock->labels('order')), fn (int $id): bool => $this->orderState($orderRows->first($id, $s->field('order_status'))) !== 'received'))],
+            ['bestand', __('Bestand', 'taxmod-stock'), count(array_filter(array_keys($materials), static fn (int $id): bool => $ledger->stockOf($id) > 0.0))],
+            ['material', __('Material', 'taxmod-stock'), count($materials)],
+            ['inventur', __('Inventur', 'taxmod-stock')],
+            ['verbrauch', __('Verbrauch', 'taxmod-stock')],
+        ], $active, fn (string $slug): string => $this->listUrl($slug, $slug === $active ? $list : new StockList(), []));
     }
 
     private function listRequest(): StockList
     {
-        $sort = sanitize_key((string) ($_GET['sort'] ?? ''));
-
-        if (isset(self::SORTS[$sort])) {
-            $_GET['orderby'] = str_replace('-desc', '', $sort);
-            $_GET['order']   = self::SORTS[$sort][0] ? 'desc' : '';
-        }
-
         $orderBy = sanitize_key((string) ($_GET['orderby'] ?? ''));
 
         return new StockList(
@@ -683,50 +656,41 @@ final class StockPage
     }
 
     /**
-     * Search box, one filter and the sort order, as a WordPress list table lays them out; the list page has no search or
-     * filter yet (D-989), so they stay here.
+     * Search box, one filter, bulk bar with «Expand all» and the count, all from the shared list page (D-989).
      *
      * @param array<string, string> $filters
      */
-    private function listTools(string $tab, StockList $list, string $filterName, string $current, array $filters, string $placeholder): string
+    private function tools(string $tab, StockList $list, string $filterName, string $current, array $filters, string $placeholder, string $count): string
     {
-        $options = '';
+        $hidden = array_filter([
+            'page'    => self::PAGE,
+            'tab'     => $tab,
+            'orderby' => $list->orderBy === 'name' ? '' : $list->orderBy,
+            'order'   => $list->descending ? 'desc' : '',
+        ]);
 
-        foreach ($filters as $value => $text) {
-            $options .= '<option value="' . esc_attr($value) . '"' . selected($value, $current, false) . '>' . esc_html($text) . '</option>';
-        }
-
-        $sort   = $list->orderBy . ($list->descending ? '-desc' : '');
-        $sorts  = [
-            'name'       => __('Name A–Z', 'taxmod-stock'),
-            'name-desc'  => __('Name Z–A', 'taxmod-stock'),
-            'stock'      => $tab === 'wareneingang' ? __('Wenigste Positionen zuerst', 'taxmod-stock') : __('Kleinster Bestand zuerst', 'taxmod-stock'),
-            'stock-desc' => $tab === 'wareneingang' ? __('Meiste Positionen zuerst', 'taxmod-stock') : __('Größter Bestand zuerst', 'taxmod-stock'),
-        ];
-        $sorted = '';
-
-        foreach ($sorts as $value => $text) {
-            $sorted .= '<option value="' . esc_attr($value) . '"' . selected($value, $sort, false) . '>' . esc_html($text) . '</option>';
-        }
-
-        return '<form method="get" id="' . self::FILTER_FORM . '" action="' . esc_url(admin_url('admin.php')) . '">'
-            . '<input type="hidden" name="page" value="' . esc_attr(self::PAGE) . '"><input type="hidden" name="tab" value="' . esc_attr($tab) . '">'
-            . '<p class="search-box"><label class="screen-reader-text" for="taxmod-stock-search">' . esc_html__('Suchen', 'taxmod-stock') . '</label>'
-            . '<input type="search" id="taxmod-stock-search" name="s" value="' . esc_attr($list->search) . '" placeholder="' . esc_attr($placeholder) . '"> '
-            . get_submit_button(__('Suchen', 'taxmod-stock'), '', '', false, ['id' => 'search-submit']) . '</p>'
-            . '<div class="tablenav top" style="height:auto"><div class="alignleft actions">'
-            . '<label class="screen-reader-text" for="taxmod-stock-filter-select">' . esc_html__('Filter', 'taxmod-stock') . '</label>'
-            . '<select name="' . esc_attr($filterName) . '" id="taxmod-stock-filter-select">' . $options . '</select> '
-            . '<label class="screen-reader-text" for="taxmod-stock-sort">' . esc_html__('Sortierung', 'taxmod-stock') . '</label>'
-            . '<select name="sort" id="taxmod-stock-sort">' . $sorted . '</select>'
-            . get_submit_button(__('Filtern', 'taxmod-stock'), '', 'filter_action', false)
-            . '</div><br class="clear"></div></form>';
+        return ListPage::searchBox(self::FILTER_FORM, $list->search, $placeholder, $hidden, __('Suchen', 'taxmod-stock'))
+            . ListPage::bulkBar(self::BULK_FORM, self::ACTION, [], $count, ListPage::filters(self::FILTER_FORM, [[$filterName, $filters, $current, __('Filter', 'taxmod-stock')]]));
     }
 
-    /** The shared bulk bar with «Expand all»; the stock page has no bulk action yet. */
-    private function bulkBar(string $count): string
+    /** @return array<string, string> */
+    private function materialFilters(): array
     {
-        return ListPage::bulkBar(self::BULK_FORM, self::ACTION, [], $count);
+        return [
+            ''                  => __('Alle Materialien', 'taxmod-stock'),
+            StockList::IN_STOCK => __('Nur mit Bestand', 'taxmod-stock'),
+            StockList::LOW      => __('Unter Mindestbestand', 'taxmod-stock'),
+        ];
+    }
+
+    /** @return array{0: string, 1: string, 2: string, 3: ''|'asc'|'desc'} a sortable column for the shared list page */
+    private function sortColumn(string $tab, StockList $list, string $key, string $label, string $width): array
+    {
+        $current = $list->orderBy === $key;
+        $next    = $current && ! $list->descending ? 'desc' : 'asc';
+
+        return [$label, $width, $this->listUrl($tab, $list, ['orderby' => $key === 'name' ? '' : $key, 'order' => $next === 'desc' ? 'desc' : '']),
+            $current ? ($list->descending ? 'desc' : 'asc') : ''];
     }
 
     private function editButton(int $material): string

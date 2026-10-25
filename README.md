@@ -9,7 +9,7 @@ decisions D-956, D-957, D-958, D-967, D-972.
 ## What it does
 
 - **Page «Lager»** under the Taxonomy Modeller menu, drawn with the modeller's shared list page (D-989, needs the
-  modeller from 0.1.63), five tabs, «Wareneingang» first:
+  modeller from 0.1.65), five tabs, «Wareneingang» first:
   - **Bestand** — stock per material, with its lots (origin, value, rest) and the minimum stock.
   - **Material** — every material by the name from «Bezug Ding» (D-967), its number in a column of its own (D-988); create one, or edit
     its Bezug, own name (only without a Bezug), Einzelstück, Verwendung, Standard-Lagerort and Mindestbestand.

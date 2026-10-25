@@ -252,13 +252,13 @@ $_GET = ['page' => StockPage::PAGE, 'tab' => 'wareneingang', 'order' => $r['best
 $pruefe(str_contains((new StockPage())->render(), 'data-loaded="1"'), 'an order handed in is open and loaded');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'bestand'];
 $html = (new StockPage())->render();
-$pruefe(str_contains($html, 'taxmod-list') && str_contains($html, 'search-box') && str_contains($html, '<tfoot>') && str_contains($html, 'name="sort"') && str_contains($html, 'Taxonomy Modeller › Lager'), 'the stock list is the shared list page with search and sort order');
+$pruefe(str_contains($html, 'taxmod-list') && str_contains($html, 'search-box') && str_contains($html, '<tfoot>') && str_contains($html, 'sortable') && str_contains($html, 'nav-tab-active') && str_contains($html, 'Taxonomy Modeller › Lager'), 'the stock list is the shared list page with tabs, search and sortable columns');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'bestand', 's' => 'LM2930'];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'LM2930T-5.0') && ! str_contains($html, 'BC640'), 'the search narrows the stock list');
-$_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'filter' => 'instock', 'sort' => 'stock-desc'];
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'filter' => 'instock', 'orderby' => 'stock', 'order' => 'desc'];
 $html = (new StockPage())->render();
-$pruefe(str_contains($html, 'value="stock-desc" selected') && ! str_contains($html, 'notice-error'), 'the material list sorts by stock and filters');
+$pruefe(str_contains($html, 'sorted desc') && str_contains($html, 'value="instock" selected') && ! str_contains($html, 'notice-error'), 'the material list sorts by stock and filters');
 
 // A structure from before 0.1.2 still works, and the goods receipt says what it lacks.
 $alt = $struktur;

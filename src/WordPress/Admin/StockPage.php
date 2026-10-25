@@ -529,12 +529,22 @@ final class StockPage
         );
     }
 
-    /** A record id field for «Bezug», with the modeller's search over every record under Model beside it. */
+    /**
+     * «Bezug» as one search field that shows the record's name; its id travels in a hidden field beside it
+     * (his question 2026-10-25: «was hält uns davon ab den einfach aufzulösen ?»). Typing «#123» sets the id directly.
+     */
     private function thingField(string $name, string $id, ?int $value): string
     {
-        return '<input type="number" min="1" id="' . esc_attr($id) . '" name="' . esc_attr($name) . '" value="' . esc_attr((string) ($value ?? '')) . '" style="width:8em"> '
-            . '<input type="search" class="taxmod-stock-thing-search" data-for="' . esc_attr($id) . '" list="' . esc_attr($id . '-hits') . '" placeholder="'
-            . esc_attr__('Bezug suchen …', 'taxmod-stock') . '" style="width:12em"><datalist id="' . esc_attr($id . '-hits') . '"></datalist>';
+        $shown = '';
+
+        if ($value !== null) {
+            $label = $this->stock->recordLabels([$value])[$value] ?? '';
+            $shown = '#' . $value . ($label === '' ? '' : ' · ' . $label);
+        }
+
+        return '<input type="hidden" id="' . esc_attr($id) . '" name="' . esc_attr($name) . '" value="' . esc_attr((string) ($value ?? '')) . '">'
+            . '<input type="search" class="taxmod-stock-thing-search" data-for="' . esc_attr($id) . '" list="' . esc_attr($id . '-hits') . '" value="' . esc_attr($shown) . '" placeholder="'
+            . esc_attr__('Bezug suchen …', 'taxmod-stock') . '" style="width:18em"><datalist id="' . esc_attr($id . '-hits') . '"></datalist>';
     }
 
     /** Filters a material list as one types, and asks the modeller's record search for «Bezug». */
@@ -549,7 +559,7 @@ final class StockPage
             . 'root.querySelectorAll(".taxmod-stock-filter").forEach(function(f){var s=document.getElementById(f.dataset.for);if(!s){return;}var o=Array.prototype.slice.call(s.options);'
             . 'f.addEventListener("input",function(){var q=f.value.toLowerCase(),first=null;o.forEach(function(x){var fix=x.value===""||x.value==="new"||x.value==="keep";x.hidden=q!==""&&!fix&&x.text.toLowerCase().indexOf(q)<0;if(!fix&&!x.hidden&&!first){first=x;}});if(q!==""&&first){s.value=first.value;}});});'
             . 'document.querySelectorAll(".taxmod-stock-thing-search").forEach(function(f){var t=document.getElementById(f.dataset.for),l=document.getElementById(f.getAttribute("list")),w;'
-            . 'f.addEventListener("input",function(){var m=f.value.match(/^#(\\d+)/);if(m){t.value=m[1];return;}clearTimeout(w);if(f.value.trim().length<2){return;}'
+            . 'f.addEventListener("input",function(){var m=f.value.match(/^#(\\d+)/);if(m){t.value=m[1];return;}t.value="";clearTimeout(w);if(f.value.trim().length<2){return;}'
             . 'w=setTimeout(function(){fetch(url+"&term="+encodeURIComponent(f.value),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){l.innerHTML="";(j.data||[]).forEach(function(h){var x=document.createElement("option");x.value="#"+h.id+" · "+h.word+(h.node?" ("+h.node+")":"");l.appendChild(x);});});},250);});});'
             . '}bind(document);'
             . 'document.querySelectorAll(".taxmod-stock-toggle").forEach(function(a){a.addEventListener("click",function(e){e.preventDefault();'

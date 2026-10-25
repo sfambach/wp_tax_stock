@@ -238,26 +238,27 @@ foreach (['bestand' => 'LM2930T-5.0', 'material' => '<td>' . $r['mt1'] . '</td>'
 // Laid out as the eBay shipping page (2026-10-25): «Wareneingang» first and default, list tables with search, filter and sorting.
 $_GET = ['page' => StockPage::PAGE];
 $html = (new StockPage())->render();
-$pruefe(strpos($html, 'nav-tab-active') !== false && strpos($html, 'Wareneingang') < strpos($html, 'Bestand') && str_contains($html, 'taxmod-stock-toggle'), 'without a tab the page opens «Wareneingang», the first tab');
-$pruefe(str_contains($html, 'Bestellung 1') && str_contains($html, 'data-auto="1"') && ! str_contains($html, ' hidden data-order') && ! str_contains($html, 'name="purchases[]"'), 'by default the orders stand open, their purchases load as they scroll into view');
+$pruefe(strpos($html, 'nav-tab-active') !== false && strpos($html, 'Wareneingang') < strpos($html, 'Bestand') && str_contains($html, 'taxmod-list-details'), 'without a tab the page opens «Wareneingang», the first tab');
+$pruefe(str_contains($html, 'Bestellung 1') && str_contains($html, 'tr class="taxmod-list-details"><td') && ! str_contains($html, 'tr class="taxmod-list-details" hidden') && ! str_contains($html, 'name="purchases[]"'), 'by default the orders stand open (shared list page, D-989), their purchases load as they scroll into view');
 (new TaxmodStock\WordPress\Admin\SettingsTab())->save(['taxmod_stock_views_sent' => '1', 'taxmod_stock_views' => ['bestand' => '1']]);
 $html = (new StockPage())->render();
-$pruefe(str_contains($html, 'tr class="taxmod-stock-positions" hidden') && ! str_contains($html, 'data-auto="1"') && ! str_contains($html, 'name="purchases[]"'), 'with «Gleich aufgeklappt» off the purchases stay folded and unloaded');
+$pruefe(str_contains($html, 'tr class="taxmod-list-details" hidden') && ! str_contains($html, 'tr class="taxmod-list-details"><td') && ! str_contains($html, 'name="purchases[]"'), 'with «Gleich aufgeklappt» off the purchases stay folded and unloaded');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'bestand'];
-$pruefe(str_contains((new StockPage())->render(), '<details open>'), 'with «Gleich aufgeklappt» on for Bestand the lots stand open');
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'tr class="taxmod-list-details"><td') && ! str_contains($html, 'tr class="taxmod-list-details" hidden'), 'with «Gleich aufgeklappt» on for Bestand the lots stand open');
 delete_option(StockService::VIEWS);
 $_GET = ['page' => StockPage::PAGE];
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'wareneingang', 'order' => $r['best']];
 $pruefe(str_contains((new StockPage())->render(), 'data-loaded="1"'), 'an order handed in is open and loaded');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'bestand'];
 $html = (new StockPage())->render();
-$pruefe(str_contains($html, 'wp-list-table') && str_contains($html, 'search-box') && str_contains($html, '<tfoot>') && str_contains($html, 'sortable'), 'the stock list is a WordPress list table with search and sortable columns');
+$pruefe(str_contains($html, 'taxmod-list') && str_contains($html, 'search-box') && str_contains($html, '<tfoot>') && str_contains($html, 'name="sort"') && str_contains($html, 'Taxonomy Modeller › Lager'), 'the stock list is the shared list page with search and sort order');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'bestand', 's' => 'LM2930'];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'LM2930T-5.0') && ! str_contains($html, 'BC640'), 'the search narrows the stock list');
-$_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'filter' => 'instock', 'orderby' => 'stock', 'order' => 'desc'];
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'filter' => 'instock', 'sort' => 'stock-desc'];
 $html = (new StockPage())->render();
-$pruefe(str_contains($html, 'sorted desc') && ! str_contains($html, 'notice-error'), 'the material list sorts by stock and filters');
+$pruefe(str_contains($html, 'value="stock-desc" selected') && ! str_contains($html, 'notice-error'), 'the material list sorts by stock and filters');
 
 // A structure from before 0.1.2 still works, and the goods receipt says what it lacks.
 $alt = $struktur;

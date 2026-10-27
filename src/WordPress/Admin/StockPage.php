@@ -290,6 +290,34 @@ final class StockPage
         return $out;
     }
 
+    /**
+     * What tells a purchase apart beyond its short label: the seller's full title and the quantity.
+     *
+     * A label from a mail is often only the variant («DR15 Female»); the description holds the article's title.
+     *
+     * @param list<int> $purchases
+     * @return array<int, string>
+     */
+    private function purchaseAbout(array $purchases): array
+    {
+        $s     = $this->stock->structure();
+        $table = $this->stock->table('purchase');
+        $out   = [];
+
+        foreach ($purchases as $id) {
+            $label       = (string) $table->first($id, $s->field('label'));
+            $description = $s->hasField('description') ? trim((string) $table->first($id, $s->field('description'))) : '';
+            $quantity    = (int) $table->first($id, $s->field('purchase_quantity'));
+            $parts       = array_filter([
+                $description === $label ? '' : $description,
+                $quantity > 1 ? sprintf(/* translators: %d: quantity bought */ __('%d Stück', 'taxmod-stock'), $quantity) : '',
+            ]);
+            $out[$id] = implode(' · ', $parts);
+        }
+
+        return $out;
+    }
+
     /** admin-post handler for one order's purchases, fetched when he opens the order: capability → nonce → validate → act. */
     public function positions(): void
     {
@@ -340,6 +368,7 @@ final class StockPage
         $names  = $this->stock->materialNames();
         $plan   = $this->stock->receiptPlan($order, $names);
         $labels = $this->stock->labels('purchase');
+        $about  = $this->purchaseAbout(array_keys($plan));
         $models = $this->stock->recordLabels(array_values(array_filter(array_column($plan, 'model'))));
         $all    = $names->all();
         $places = $this->stock->labels('location');
@@ -365,7 +394,8 @@ final class StockPage
             $select   = 'taxmod-stock-choice-' . $purchase;
             $html    .= '<tr><th scope="row" class="check-column"><input type="checkbox" name="purchases[]" value="' . esc_attr((string) $purchase) . '"'
                 . ($lock === null && $proposal !== null ? ' checked' : '') . ($lock === null ? '' : ' disabled') . '></th>'
-                . '<td>' . esc_html($labels[$purchase] ?? '#' . $purchase) . ($lock === null ? '' : ' <em>(' . esc_html(Messages::lockReason($lock)) . ')</em>') . '</td>'
+                . '<td>' . esc_html($labels[$purchase] ?? '#' . $purchase) . ($lock === null ? '' : ' <em>(' . esc_html(Messages::lockReason($lock)) . ')</em>')
+                . (($about[$purchase] ?? '') === '' ? '' : '<br><span class="description">' . esc_html($about[$purchase]) . '</span>') . '</td>'
                 . '<td>' . ($model === null ? '—' : esc_html('#' . $model . (($models[$model] ?? '') === '' ? '' : ' · ' . $models[$model]))) . '</td>';
 
             if ($lock !== null) {

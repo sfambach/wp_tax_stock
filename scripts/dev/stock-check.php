@@ -180,6 +180,7 @@ $pruefe($plan[$r['kaufD']]['proposal']?->isNew() === true && $plan[$r['kaufD']][
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'wareneingang', 'order' => $r['best2']];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'value="' . $r['mt1'] . '" selected') && str_contains($html, 'value="new" selected') && str_contains($html, '#' . $r['t2'] . ' · MPSA56'), 'the receipt form preselects the proposals and shows the Modell');
+$pruefe(str_contains($html, '<span class="description">3 Stück</span>'), 'each purchase says how many were bought, under its label');
 
 // D-972 · the branch of the purchase's thing decides the place; the material's own place would win.
 update_option(StockService::LOCATIONS, ['branches' => [$r['teile'] => $r['platz']], 'unreferenced' => null]);

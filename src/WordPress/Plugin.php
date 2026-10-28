@@ -36,6 +36,7 @@ final class Plugin
         }
 
         add_filter('taxmod_config_tabs', [SettingsTab::class, 'register']);
+        add_action('init', [$this, 'registerSettings']);
         // After the modeller (priority 10) has created its menu.
         add_action('admin_menu', [$this, 'registerMenu'], 20);
         add_action('admin_post_' . StockPage::ACTION, static fn () => (new StockPage())->handle());
@@ -44,6 +45,17 @@ final class Plugin
         add_action('admin_post_' . StockPage::THING_NODES, static fn () => (new StockPage())->thingNodes());
         add_action('admin_post_' . StockPage::THING_BRANCH, static fn () => (new StockPage())->thingBranch());
         add_action('admin_post_' . InboundPage::ACTION, static fn () => (new InboundPage())->handle());
+    }
+
+    /** The branches without material, settable over REST (/wp/v2/settings) as well as on the configuration tab. */
+    public function registerSettings(): void
+    {
+        register_setting('taxmod_stock', StockService::NOT_MATERIAL, [
+            'type'              => 'array',
+            'default'           => [],
+            'sanitize_callback' => static fn ($value): array => array_values(array_filter(array_map('absint', is_array($value) ? $value : []))),
+            'show_in_rest'      => ['schema' => ['type' => 'array', 'items' => ['type' => 'integer']]],
+        ]);
     }
 
     public function registerMenu(): void

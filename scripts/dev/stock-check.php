@@ -203,6 +203,11 @@ $zweige = array_column($s->treeRows(), 'name', 'id');
 $pruefe(isset($zweige[$r['teile']]) && ! isset($zweige[$r['pur']]), 'the tree beside the material search holds the groups of things, not the Lager\'s own branch');
 $imAst = array_column($s->branchThings($r['teile']), 'id');
 $pruefe(in_array($r['t1'], $imAst, true) && ! in_array($r['kaufC'], $imAst, true), 'a group of the tree gives its things, never a purchase');
+// His report 2026-10-28: «LD1111V33 wird zweimal angezeigt … einmal als quellen verzeichnis» — a branch named as holding no material drops out.
+update_option(StockService::NOT_MATERIAL, [$r['teile']]);
+$ohne = new StockService();
+$pruefe(! in_array($r['t1'], array_column($ohne->searchThings('BC640'), 'id'), true) && ! isset(array_column($ohne->treeRows(), 'name', 'id')[$r['teile']]), 'a branch without material is neither searched nor in the tree');
+delete_option(StockService::NOT_MATERIAL);
 // His word 2026-10-28: «eigentlich haben wir doch den tax chooser» — the row holds the modeller's chooser, no «neu anlegen».
 $pruefe(str_contains($html, 'name="thing[' . $r['kaufC'] . ']" value="' . $r['t1'] . '" checked') && str_contains($html, '>BC640</span>')
     && str_contains($html, 'name="thing[' . $r['kaufD'] . ']" value="" checked') && ! str_contains($html, 'name="group[' . $r['kaufD'] . ']"'), 'the receipt row holds the modeller\'s chooser with the Modell, and no field for a new thing');

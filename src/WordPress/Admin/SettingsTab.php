@@ -67,7 +67,7 @@ final class SettingsTab
             }
         }
 
-        return $html . '</tbody></table>' . $this->viewsSection() . $this->placesSection() . $this->testsSection();
+        return $html . '</tbody></table>' . $this->viewsSection() . $this->placesSection() . $this->notMaterialSection() . $this->testsSection();
     }
 
     /** One section per tab of the stock page; «Gleich aufgeklappt» where its rows can be opened. */
@@ -131,6 +131,31 @@ final class SettingsTab
             . $select('taxmod_stock_unreferenced', $settings->unreferenced) . '</td></tr></tbody></table>';
     }
 
+    /** The branches under `Model` that hold no material: left out of the material search, the tree and the groups. */
+    private function notMaterialSection(): string
+    {
+        $stock = new StockService();
+        $rows  = $stock->notMaterial();
+
+        try {
+            $names = $stock->modelNames();
+        } catch (StockError) {
+            $names = [];
+        }
+
+        $html = '<h2>' . esc_html__('Kein Material', 'taxmod-stock') . '</h2>'
+            . '<p>' . esc_html__('Diese Zweige unter Model (mit allem darunter) enthalten kein Material, etwa das Quellenverzeichnis. Materialsuche, Baum und Materialgruppen lassen sie aus. Eine leere Zeile fügt einen Zweig hinzu, eine geleerte entfernt ihn.', 'taxmod-stock') . '</p>'
+            . '<input type="hidden" name="taxmod_stock_not_material_sent" value="1">'
+            . '<table class="widefat striped" style="max-width:40em"><thead><tr><th>' . esc_html__('Zweig (Knoten-Id)', 'taxmod-stock') . '</th><th>' . esc_html__('Name', 'taxmod-stock') . '</th></tr></thead><tbody>';
+
+        foreach ([...$rows, null, null, null] as $i => $node) {
+            $html .= '<tr><td><input type="number" min="1" name="taxmod_stock_not_material[' . $i . ']" value="' . esc_attr((string) ($node ?? '')) . '" style="width:12em"></td>'
+                . '<td>' . esc_html($node === null ? '' : ($names[$node] ?? '')) . '</td></tr>';
+        }
+
+        return $html . '</tbody></table>';
+    }
+
     /** D-1002: the branches under `Model` whose used goods are tested after the goods receipt (Wareneingang › Zu testen). */
     private function testsSection(): string
     {
@@ -188,6 +213,11 @@ final class SettingsTab
 
             $settings = LocationSettings::fromArray(['branches' => $branches, 'unreferenced' => absint($post['taxmod_stock_unreferenced'] ?? 0)]);
             update_option(StockService::LOCATIONS, $settings->toArray(), false);
+        }
+
+        if (! empty($post['taxmod_stock_not_material_sent'])) {
+            $nodes = array_map('absint', is_array($post['taxmod_stock_not_material'] ?? null) ? $post['taxmod_stock_not_material'] : []);
+            update_option(StockService::NOT_MATERIAL, array_values(array_unique(array_filter($nodes))), false);
         }
 
         if (! empty($post['taxmod_stock_tests_sent'])) {

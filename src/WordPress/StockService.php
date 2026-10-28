@@ -31,6 +31,13 @@ final class StockService
     /** D-972: which branch of `Model` goes to which place. */
     public const LOCATIONS = 'taxmod_stock_locations';
 
+    /**
+     * The branches under `Model` that hold no material — sources, page templates, price records — and so are no group of
+     * things (his report 2026-10-28: «LD1111V33 wird zweimal angezeigt einmal als spannungsregler und einmal als quellen
+     * verzeichnis»). A list of node ids; registered for REST so it can be set without the screen.
+     */
+    public const NOT_MATERIAL = 'taxmod_stock_not_material';
+
     /** D-1002: the branches under `Model` whose lots are tested after the goods receipt. */
     public const TESTS = 'taxmod_stock_tests';
 
@@ -156,9 +163,16 @@ final class StockService
 
         $tree = $root > 0 ? $this->model->tree($root) : [];
 
-        // The branch that holds the Lager view itself (Stock with its orders, purchases and lots) is no group of things.
+        // The branch that holds the Lager view itself (Stock with its orders, purchases and lots) is no group of things,
+        // nor is a branch he names as holding no material.
         $own  = $tree[$s->node('lager')]['parent'] ?? 0;
         $drop = $own > 0 && $own !== $root ? [$own => true] : [];
+
+        foreach ($this->notMaterial() as $branch) {
+            if ($branch !== $root && isset($tree[$branch])) {
+                $drop[$branch] = true;
+            }
+        }
 
         do {
             $before = count($drop);
@@ -281,6 +295,23 @@ final class StockService
         }
 
         return $out;
+    }
+
+    /** @return array<int, string> every node under the root of things, with its name — whether it holds material or not */
+    public function modelNames(): array
+    {
+        $s    = $this->structure();
+        $root = $this->model->fields($s->node('lager'))[$s->field('lager_thing')]['target'] ?? 0;
+
+        return $root > 0 ? array_map(static fn (array $node): string => (string) $node['name'], $this->model->tree($root)) : [];
+    }
+
+    /** @return list<int> the branches named as holding no material */
+    public function notMaterial(): array
+    {
+        $raw = get_option(self::NOT_MATERIAL, []);
+
+        return array_values(array_filter(array_map('absint', is_array($raw) ? $raw : [])));
     }
 
     /** The names from the root down to a node, «Bauteile ▸ Aktiv ▸ Transistor». */

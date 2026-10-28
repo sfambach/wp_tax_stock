@@ -32,7 +32,9 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
     purchase becomes its first part, every further part a purchase of the same order, each with its material.
   - **Inventur** — counted stock without a purchase, on an existing thing or a new one in a group.
   - **Verbrauch** — take a quantity from a lot; the oldest lot with a rest is proposed.
-- **Tab «Lager» on Configuration** — the ids of the Stock nodes and fields, pasted as JSON.
+- **Tab «Lager» on Configuration** — the ids of the Stock nodes and fields, pasted as JSON; and «Kein Material»: branches
+  under Model that hold no material (e.g. the source register), left out of search, tree and groups (also settable over
+  REST as `taxmod_stock_not_material`).
   `structure-live.json` holds those of fambach.net; a structure pasted before 0.2.0 still reads. Below it,
   «Einlagerung nach Typ»: rows «branch node id → place».
 

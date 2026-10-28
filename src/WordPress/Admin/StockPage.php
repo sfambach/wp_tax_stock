@@ -807,7 +807,7 @@ final class StockPage
 
         $html  = $this->formStart('wareneingang') . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
             . ($back === '' ? '' : '<input type="hidden" name="back" value="' . esc_attr($back) . '">')
-            . '<p>' . esc_html__('Je Kauf ein Material aus dem Baum: vorgeschlagen ist das «Modell» des Kaufs. Ohne Modell ein Material wählen oder suchen, oder «neu anlegen» mit Materialgruppe und Bezeichnung. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seiner Gruppe.', 'taxmod-stock') . '</p>'
+            . '<p>' . esc_html__('Je Kauf unter «Material» festlegen, was eingelagert wird: «wie im Kauf» übernimmt das Modell des Kaufs, «aus dem Lager wählen» ein schon gelagertes Material, «im Baum suchen» jedes andere, «neu anlegen» legt es mit Materialgruppe und Bezeichnung an. Unter «Auswahl» erscheinen nur die Felder dazu. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seiner Gruppe.', 'taxmod-stock') . '</p>'
             . '<div class="tablenav top"><div class="tablenav-pages one-page"><span class="displaying-num">' . esc_html(sprintf(
                 /* translators: %d: number of purchases */
                 _n('%d Kauf', '%d Käufe', count($plan), 'taxmod-stock'),
@@ -815,7 +815,7 @@ final class StockPage
             )) . '</span></div><br class="clear"></div>';
         $head  = '<tr><td class="manage-column column-cb check-column"><input type="checkbox" aria-label="' . esc_attr__('Alle wählen', 'taxmod-stock') . '"></td>'
             . '<th scope="col" class="manage-column">' . esc_html__('Kauf', 'taxmod-stock') . '</th><th scope="col" class="manage-column" style="width:25%">' . esc_html__('Material', 'taxmod-stock')
-            . '</th><th scope="col" class="manage-column">' . esc_html__('suchen oder neu anlegen', 'taxmod-stock')
+            . '</th><th scope="col" class="manage-column">' . esc_html__('Auswahl', 'taxmod-stock')
             . '</th><th scope="col" class="manage-column">' . esc_html__('Lagerort', 'taxmod-stock') . '</th></tr>';
         $html .= '<table class="wp-list-table widefat fixed striped table-view-list"><thead>' . $head . '</thead><tbody>' . ($plan === [] ? $this->noItems(3) : '');
 
@@ -837,18 +837,24 @@ final class StockPage
                 continue;
             }
 
-            $html .= '<td><input type="search" class="taxmod-stock-filter" data-for="' . esc_attr($select) . '" placeholder="' . esc_attr__('filtern …', 'taxmod-stock') . '" style="width:8em"> '
-                . '<select id="' . esc_attr($select) . '" name="choice[' . esc_attr((string) $purchase) . ']">'
-                . ($model === null ? '<option value="">' . esc_html__('— Material wählen —', 'taxmod-stock') . '</option>' : '<option value="keep" selected>' . esc_html(sprintf(
+            // One choice per purchase, and only the fields that choice needs (his question 2026-10-28: «die zweitelung im angekommen verstehe ich noch nicht»).
+            $mode  = static fn (string $which, string $inner): string => '<div class="taxmod-stock-mode" data-mode="' . esc_attr($which) . '" hidden>' . $inner . '</div>';
+            $html .= '<td><select class="taxmod-stock-how" name="choice[' . esc_attr((string) $purchase) . ']" style="max-width:100%">'
+                . ($model === null ? '<option value="">' . esc_html__('— bitte wählen —', 'taxmod-stock') . '</option>' : '<option value="keep" selected>' . esc_html(sprintf(
                     /* translators: %s: the purchase's «Modell» */
-                    __('Modell: %s', 'taxmod-stock'),
+                    __('wie im Kauf: %s', 'taxmod-stock'),
                     '#' . $model . ' · ' . ($models[$model] ?? '')
                 )) . '</option>')
-                . '<option value="search">' . esc_html__('gesuchtes Material →', 'taxmod-stock') . '</option>'
-                . '<option value="new">' . esc_html__('neu anlegen →', 'taxmod-stock') . '</option>' . $known . '</select></td>'
-                . '<td>' . $this->thingField('thing[' . $purchase . ']', 'taxmod-stock-thing-p' . $purchase, null)
-                . '<br><select name="group[' . esc_attr((string) $purchase) . ']" style="max-width:14em">' . $groups . '</select> '
-                . '<input type="text" name="name[' . esc_attr((string) $purchase) . ']" value="' . esc_attr($labels[$purchase] ?? '') . '" placeholder="' . esc_attr__('Bezeichnung', 'taxmod-stock') . '" style="width:14em"></td>'
+                . '<option value="list">' . esc_html__('aus dem Lager wählen …', 'taxmod-stock') . '</option>'
+                . '<option value="search">' . esc_html__('im Baum suchen …', 'taxmod-stock') . '</option>'
+                . '<option value="new">' . esc_html__('neu anlegen …', 'taxmod-stock') . '</option></select></td>'
+                . '<td>'
+                . $mode('list', '<input type="search" class="taxmod-stock-filter" data-for="' . esc_attr($select) . '" placeholder="' . esc_attr__('Liste filtern …', 'taxmod-stock') . '" style="width:100%;max-width:22em"><br>'
+                    . '<select id="' . esc_attr($select) . '" name="pick[' . esc_attr((string) $purchase) . ']" style="width:100%;max-width:22em"><option value="">—</option>' . $known . '</select>')
+                . $mode('search', $this->thingField('thing[' . $purchase . ']', 'taxmod-stock-thing-p' . $purchase, null))
+                . $mode('new', '<label>' . esc_html__('Materialgruppe', 'taxmod-stock') . '<br><select name="group[' . esc_attr((string) $purchase) . ']" style="width:100%;max-width:22em">' . $groups . '</select></label><br>'
+                    . '<label>' . esc_html__('Bezeichnung', 'taxmod-stock') . '<br><input type="text" name="name[' . esc_attr((string) $purchase) . ']" value="' . esc_attr($labels[$purchase] ?? '') . '" style="width:100%;max-width:22em"></label>')
+                . '</td>'
                 . '<td><select name="location[' . esc_attr((string) $purchase) . ']">' . $this->options($places, '—', $where[$purchase] ?? 0) . '</select></td></tr>';
         }
 
@@ -880,8 +886,8 @@ final class StockPage
     }
 
     /**
-     * The ticked purchases with their thing — «keep» (the Modell), «search» (the thing found), «new» (group and name)
-     * or a known thing — and their place.
+     * The ticked purchases with their thing — «keep» (the Modell), «list» (a thing picked from the Lager), «search»
+     * (the thing found), «new» (group and name) — and their place.
      *
      * @return array<int, ReceiptChoice>
      */
@@ -889,6 +895,7 @@ final class StockPage
     {
         $choices = (array) ($_POST['choice'] ?? []);
         $things  = (array) ($_POST['thing'] ?? []);
+        $picks   = (array) ($_POST['pick'] ?? []);
         $groups  = (array) ($_POST['group'] ?? []);
         $names   = (array) ($_POST['name'] ?? []);
         $places  = (array) ($_POST['location'] ?? []);
@@ -908,6 +915,7 @@ final class StockPage
 
             $out[$purchase] = (match (true) {
                 $choice === 'keep'   => ReceiptChoice::keep(),
+                $choice === 'list'   => ReceiptChoice::existing(absint($picks[$purchase] ?? 0) ?: throw StockError::purchaseWithoutThing($purchase)),
                 $choice === 'search' => ReceiptChoice::existing(absint($things[$purchase] ?? 0) ?: throw StockError::purchaseWithoutThing($purchase)),
                 $choice === 'new'    => ReceiptChoice::create(new NewThing(absint($groups[$purchase] ?? 0), sanitize_text_field(wp_unslash((string) ($names[$purchase] ?? ''))))),
                 absint($choice) > 0  => ReceiptChoice::existing(absint($choice)),
@@ -962,10 +970,11 @@ final class StockPage
             . 'function bind(root){'
             . 'root.querySelectorAll(".taxmod-stock-filter").forEach(function(f){var s=document.getElementById(f.dataset.for);if(!s){return;}var o=Array.prototype.slice.call(s.options);'
             . 'f.addEventListener("input",function(){var q=f.value.toLowerCase(),first=null;o.forEach(function(x){var fix=x.value===""||x.value==="new"||x.value==="keep"||x.value==="search";x.hidden=q!==""&&!fix&&x.text.toLowerCase().indexOf(q)<0;if(!fix&&!x.hidden&&!first){first=x;}});if(q!==""&&first){s.value=first.value;}});});'
-            . 'document.querySelectorAll(".taxmod-stock-thing-search").forEach(function(f){var t=document.getElementById(f.dataset.for),l=document.getElementById(f.getAttribute("list")),w;'
+            . 'root.querySelectorAll(".taxmod-stock-thing-search").forEach(function(f){var t=document.getElementById(f.dataset.for),l=document.getElementById(f.getAttribute("list")),w;'
             . 'f.addEventListener("input",function(){var m=f.value.match(/^#(\\d+)/);if(m){t.value=m[1];return;}t.value="";clearTimeout(w);if(f.value.trim().length<2){return;}'
             . 'w=setTimeout(function(){fetch(url+"&term="+encodeURIComponent(f.value),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){l.innerHTML="";(j.data||[]).forEach(function(h){var x=document.createElement("option");x.value="#"+h.id+" · "+h.word+(h.node?" ("+h.node+")":"");l.appendChild(x);});});},250);});});'
             . 'root.querySelectorAll("tr").forEach(function(tr){var cb=tr.querySelector("input[name=\\"purchases[]\\"]");if(!cb||cb.disabled){return;}tr.querySelectorAll("select,input[type=text],input[type=search]").forEach(function(f){f.addEventListener("change",function(){cb.checked=true;});});});'
+            . 'root.querySelectorAll(".taxmod-stock-how").forEach(function(h){var tr=h.closest("tr");var show=function(){tr.querySelectorAll(".taxmod-stock-mode").forEach(function(m){m.hidden=m.dataset.mode!==h.value;});};h.addEventListener("change",show);show();});'
             . '}bind(document);'
             . 'function load(box){if(box.dataset.loaded){return;}box.dataset.loaded="1";var cell=box;cell.textContent="…";'
             . 'fetch(pos+"&order="+encodeURIComponent(box.dataset.order)+(box.dataset.back?"&back="+encodeURIComponent(box.dataset.back):""),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){cell.innerHTML=(j.data&&j.data.html)||"";bind(cell);})'

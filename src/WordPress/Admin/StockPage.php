@@ -84,7 +84,8 @@ final class StockPage
 
         $kind  = sanitize_key((string) ($_POST['booking'] ?? ''));
         $today = current_time('Y-m-d');
-        $thing = absint($_POST['thing'] ?? 0);
+        // The goods receipt sends «thing» as a list (one per purchase); only the other forms send one thing.
+        $thing = is_array($_POST['thing'] ?? null) ? 0 : absint($_POST['thing'] ?? 0);
         $back  = ['material', []];
 
         try {
@@ -112,9 +113,10 @@ final class StockPage
             $this->remember('success', sprintf(__('Gebucht: %d Änderungen in einem Schritt.', 'taxmod-stock'), count((array) ($result['applied'] ?? []))));
 
             $back = match ($kind) {
-                'lager'    => ['material', ['thing' => $thing, 'view' => 'lager']],
-                'umbuchen' => ['material', ['thing' => $thing, 'view' => 'bestand']],
-                default    => ['material', $thing > 0 ? ['thing' => $thing, 'view' => 'bestand'] : []],
+                'lager'        => ['material', ['thing' => $thing, 'view' => 'lager']],
+                'umbuchen'     => ['material', ['thing' => $thing, 'view' => 'bestand']],
+                'wareneingang' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
+                default        => ['material', $thing > 0 ? ['thing' => $thing, 'view' => 'bestand'] : []],
             };
         } catch (StockError $e) {
             $this->remember('error', Messages::of($e));
@@ -798,7 +800,16 @@ final class StockPage
         $places  = (array) ($_POST['location'] ?? []);
         $out     = [];
 
-        foreach (array_filter(array_map('absint', (array) ($_POST['purchases'] ?? []))) as $purchase) {
+        $ticked = array_filter(array_map('absint', (array) ($_POST['purchases'] ?? [])));
+
+        // A purchase whose thing was chosen by hand is meant to go in, ticked or not (his report 2026-10-28: «nix passiert»).
+        foreach ($choices as $purchase => $choice) {
+            if (! in_array(sanitize_key((string) $choice), ['', 'keep'], true)) {
+                $ticked[] = absint($purchase);
+            }
+        }
+
+        foreach (array_unique(array_filter($ticked)) as $purchase) {
             $choice = sanitize_key((string) wp_unslash($choices[$purchase] ?? ''));
 
             $out[$purchase] = (match (true) {
@@ -857,6 +868,7 @@ final class StockPage
             . 'document.querySelectorAll(".taxmod-stock-thing-search").forEach(function(f){var t=document.getElementById(f.dataset.for),l=document.getElementById(f.getAttribute("list")),w;'
             . 'f.addEventListener("input",function(){var m=f.value.match(/^#(\\d+)/);if(m){t.value=m[1];return;}t.value="";clearTimeout(w);if(f.value.trim().length<2){return;}'
             . 'w=setTimeout(function(){fetch(url+"&term="+encodeURIComponent(f.value),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){l.innerHTML="";(j.data||[]).forEach(function(h){var x=document.createElement("option");x.value="#"+h.id+" · "+h.word+(h.node?" ("+h.node+")":"");l.appendChild(x);});});},250);});});'
+            . 'root.querySelectorAll("tr").forEach(function(tr){var cb=tr.querySelector("input[name=\\"purchases[]\\"]");if(!cb||cb.disabled){return;}tr.querySelectorAll("select,input[type=text],input[type=search]").forEach(function(f){f.addEventListener("change",function(){cb.checked=true;});});});'
             . '}bind(document);'
             . 'function load(box){if(box.dataset.loaded){return;}box.dataset.loaded="1";var cell=box;cell.textContent="…";'
             . 'fetch(pos+"&order="+encodeURIComponent(box.dataset.order),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){cell.innerHTML=(j.data&&j.data.html)||"";bind(cell);})'

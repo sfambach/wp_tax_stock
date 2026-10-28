@@ -41,7 +41,10 @@
         "purchase_unit_price": 149000110048,
         "money_amount": 4234,
         "money_unit": 4236,
-        "title_image": 149000108056
+        "title_image": 149000108056,
+        "lot_condition": 149000110122,
+        "lot_tested_on": 149000110176,
+        "lot_test_note": 149000110177
     },
     "values": {
         "kind_receipt": 149000110122,
@@ -53,6 +56,12 @@
         "status_received": 149000110140,
         "status_cancelled": 149000110141,
         "location_default": 43122,
-        "currency_default": 8571
+        "currency_default": 8571,
+        "test_ok": 149000108206,
+        "test_partial": 149000110196,
+        "test_maintenance": 149000110197,
+        "test_defect": 149000108208,
+        "condition_new": 149000108205,
+        "condition_untested": 149000108207
     }
 }

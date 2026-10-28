@@ -4,17 +4,18 @@ namespace TaxmodStock\WordPress;
 
 use TaxmodStock\Core\Bookings;
 use TaxmodStock\Core\InventoryRow;
+use TaxmodStock\Core\LagerChanges;
+use TaxmodStock\Core\LagerInput;
 use TaxmodStock\Core\Ledger;
 use TaxmodStock\Core\LocationRules;
 use TaxmodStock\Core\LocationSettings;
-use TaxmodStock\Core\MaterialChanges;
-use TaxmodStock\Core\MaterialInput;
-use TaxmodStock\Core\MaterialNames;
+use TaxmodStock\Core\NewThing;
 use TaxmodStock\Core\ReceiptChoice;
 use TaxmodStock\Core\ReceiptPlan;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\Structure;
 use TaxmodStock\Core\Table;
+use TaxmodStock\Core\Things;
 use TaxmodStock\Core\ViewSettings;
 
 /**
@@ -32,6 +33,11 @@ final class StockService
 
     /** @var array<int, Table> node id → its records, read once */
     private array $tables = [];
+
+    /** @var array<int, array{name: string, parent: int, class: string}>|null the tree under the things' root, read once */
+    private ?array $tree = null;
+
+    private ?Things $things = null;
 
     public function __construct(private readonly ModelGateway $model = new ModelGateway())
     {
@@ -54,28 +60,35 @@ final class StockService
         return $this->tables[$node] ??= $this->model->table($node);
     }
 
-    /** D-967: «#id · name», the name read from the referenced things — one read per node they live in (CD-7). */
-    public function materialNames(): MaterialNames
+    /** D-995: the things the stock knows, named by their own label — one read per node they live in (CD-7). */
+    public function things(): Things
     {
-        $s         = $this->structure();
-        $materials = $this->table('material');
+        if ($this->things !== null) {
+            return $this->things;
+        }
 
-        return new MaterialNames($s, $materials, $this->recordLabels(MaterialNames::referencedThings($s, $materials)));
+        $s     = $this->structure();
+        $lager = $this->table('lager');
+        $known = Things::known($s, $lager, $this->ledger());
+        $nodes = $this->model->nodesOf($known);
+
+        return $this->things = new Things($s, $lager, $this->recordLabels($known, $nodes), $nodes);
     }
 
     /**
      * The labels of records anywhere in the model, grouped by node so that each node is read once.
      *
-     * @param list<int> $records
+     * @param list<int>            $records
+     * @param array<int, int>|null $nodes record → node, when already known
      * @return array<int, string>
      */
-    public function recordLabels(array $records): array
+    public function recordLabels(array $records, ?array $nodes = null): array
     {
         $field  = $this->structure()->field('label');
         $byNode = [];
         $out    = [];
 
-        foreach ($this->model->nodesOf($records) as $record => $node) {
+        foreach ($nodes ?? $this->model->nodesOf($records) as $record => $node) {
             $byNode[$node][] = $record;
         }
 
@@ -90,12 +103,62 @@ final class StockService
         return $out;
     }
 
+    /** @return array<int, int> record → the node it lives in */
+    public function nodesOf(array $records): array
+    {
+        return $this->model->nodesOf($records);
+    }
+
+    /**
+     * The fields of a node with their names, for the tab «Technische Daten».
+     *
+     * @return array<int, array{name: string, target: int, type: string|null}>
+     */
+    public function fieldsOf(int $node): array
+    {
+        return $this->model->fields($node);
+    }
+
+    /**
+     * The groups a thing can live in: every node under the node «Ding» of the Lager view points at (D-995).
+     *
+     * @return array<int, array{name: string, parent: int, class: string}>
+     */
+    public function tree(): array
+    {
+        if ($this->tree !== null) {
+            return $this->tree;
+        }
+
+        $s    = $this->structure();
+        $root = $this->model->fields($s->node('lager'))[$s->field('lager_thing')]['target'] ?? 0;
+
+        return $this->tree = $root > 0 ? $this->model->tree($root) : [];
+    }
+
+    /** The names from the root down to a node, «Bauteile ▸ Aktiv ▸ Transistor». */
+    public function path(int $node): string
+    {
+        $tree  = $this->tree();
+        $names = [];
+
+        for ($at = $node, $seen = []; isset($tree[$at]) && ! isset($seen[$at]); $at = $tree[$at]['parent']) {
+            $seen[$at] = true;
+            array_unshift($names, $tree[$at]['name']);
+        }
+
+        // The root itself is «Model» for every thing and says nothing.
+        array_shift($names);
+
+        return implode(' ▸ ', $names);
+    }
+
     /** @return array<int, string> the choices of «Verwendung», empty if it is not configured */
     public function uses(): array
     {
         $s = $this->structure();
 
-        return $s->hasNode('material_use') ? $this->model->children($s->node('material_use')) : [];
+        return $s->hasNode('lager_use') ? $this->model->children($s->node('lager_use')) : [];
     }
 
     public function ledger(): Ledger
@@ -122,21 +185,13 @@ final class StockService
     /**
      * The goods receipt's proposal per purchase of the order, and why a purchase is locked.
      *
-     * @return array<int, array{lock: string|null, model: int|null, materials: list<int>, proposal: ReceiptChoice|null}>
+     * @return array<int, array{lock: string|null, model: int|null, proposal: ReceiptChoice|null}>
      */
-    public function receiptPlan(int $order, ?MaterialNames $names = null): array
+    public function receiptPlan(int $order): array
     {
         $s = $this->structure();
-        // A structure pasted before 0.1.2 has no «Modell»: say so instead of proposing nothing.
-        $s->field('purchase_model');
 
-        return (new ReceiptPlan($s))->of(
-            $order,
-            $this->table('order'),
-            $this->table('purchase'),
-            $names ?? $this->materialNames(),
-            Ledger::receivedPurchases($s, $this->table('lot'))
-        );
+        return (new ReceiptPlan($s))->of($order, $this->table('order'), $this->table('purchase'), Ledger::receivedPurchases($s, $this->table('lot')));
     }
 
     public function viewSettings(): ViewSettings
@@ -170,34 +225,28 @@ final class StockService
     }
 
     /**
-     * D-972: the place proposed for each purchase of the plan — the material's own, else its thing's branch.
+     * D-972: the place proposed for each purchase of the plan — the thing's own Standard-Lagerort, else its branch's.
      *
-     * @param array<int, array{lock: string|null, model: int|null, materials: list<int>, proposal: ReceiptChoice|null}> $plan
+     * @param array<int, array{lock: string|null, model: int|null, proposal: ReceiptChoice|null}> $plan
      * @return array<int, int> purchase → location record
      */
-    public function receiptLocations(array $plan, MaterialNames $names): array
+    public function receiptLocations(array $plan): array
     {
-        $s         = $this->structure();
-        $settings  = $this->locationSettings();
-        $rules     = new LocationRules($settings->branches, array_map(static fn (array $b): array => $b['steps'], $this->branches()), $settings->unreferenced, $s->value('location_default'));
-        $materials = $this->table('material');
-        $things    = [];
-        $defaults  = [];
+        $s        = $this->structure();
+        $settings = $this->locationSettings();
+        $rules    = new LocationRules($settings->branches, array_map(static fn (array $b): array => $b['steps'], $this->branches()), $settings->unreferenced, $s->value('location_default'));
+        $lager    = $this->table('lager');
+        $things   = $this->things();
+        $models   = array_values(array_unique(array_filter(array_column($plan, 'model'))));
+        $nodes    = $this->model->nodesOf($models);
+        $out      = [];
 
         foreach ($plan as $purchase => $row) {
-            $material = $row['materials'][0] ?? $row['proposal']?->material;
-            $default  = $material !== null && $s->hasField('material_location') ? (int) $materials->first($material, $s->field('material_location')) : 0;
+            $thing  = $row['model'];
+            $record = $thing === null ? null : $things->lagerOf($thing);
+            $own    = $record !== null && $s->hasField('lager_location') ? (int) $lager->first($record, $s->field('lager_location')) : 0;
 
-            $defaults[$purchase] = $default > 0 ? $default : null;
-            $things[$purchase]   = ($material !== null ? $names->thingOf($material) : null) ?? $row['proposal']?->thing ?? $row['model'];
-        }
-
-        $nodes = $this->model->nodesOf(array_values(array_unique(array_filter($things))));
-        $out   = [];
-
-        foreach ($plan as $purchase => $row) {
-            $thing          = $things[$purchase];
-            $out[$purchase] = $rules->propose($defaults[$purchase], $thing === null ? null : ($nodes[$thing] ?? 0));
+            $out[$purchase] = $rules->propose($own > 0 ? $own : null, $thing === null ? null : ($nodes[$thing] ?? 0));
         }
 
         return $out;
@@ -213,19 +262,16 @@ final class StockService
             throw StockError::nothingToBook();
         }
 
-        // The name of a row only labels its lot and line: an existing material is called «#id · name», a new one
-        // with a reference after the referenced thing (D-967).
-        $names  = $this->materialNames();
-        $things = $this->recordLabels(array_values(array_filter(array_map(static fn (InventoryRow $r): ?int => $r->material === null ? $r->thing : null, $rows))));
+        $this->checkThings(array_values(array_filter(array_map(static fn (InventoryRow $r): ?int => $r->thing, $rows))));
+        $this->checkGroups(array_values(array_filter(array_map(static fn (InventoryRow $r): ?NewThing => $r->new, $rows))));
+
+        // The name of a row only labels its lot and line: an existing thing lends its own, a new one is named as typed.
+        $labels = $this->recordLabels(array_values(array_filter(array_map(static fn (InventoryRow $r): ?int => $r->thing, $rows))));
         $named  = array_map(
             static fn (InventoryRow $r): InventoryRow => new InventoryRow(
-                $r->material,
-                match (true) {
-                    $r->material !== null => $names->has($r->material) ? $names->name($r->material) : throw StockError::notAMaterial($r->material),
-                    $r->name !== ''       => $r->name,
-                    default               => (string) ($things[(int) $r->thing] ?? ''),
-                },
                 $r->thing,
+                $r->new,
+                $r->new?->name ?? ($labels[(int) $r->thing] ?? ''),
                 $r->quantity,
                 $r->value,
                 $r->note
@@ -237,15 +283,12 @@ final class StockService
     }
 
     /**
-     * @param array<int, ReceiptChoice> $choices purchase id → its material
+     * @param array<int, ReceiptChoice> $choices purchase id → its thing
      * @return array<string, mixed>
      */
     public function bookReceipt(int $order, array $choices, string $today, string $title): array
     {
-        $s = $this->structure();
-        // A structure pasted before 0.1.2 has no «Modell»: say so instead of proposing nothing.
-        $s->field('purchase_model');
-
+        $s      = $this->structure();
         $places = $this->table('location');
 
         foreach ($choices as $choice) {
@@ -254,12 +297,14 @@ final class StockService
             }
         }
 
+        $this->checkThings(array_values(array_filter(array_map(static fn (ReceiptChoice $c): ?int => $c->thing, $choices))));
+        $this->checkGroups(array_values(array_filter(array_map(static fn (ReceiptChoice $c): ?NewThing => $c->new, $choices))));
+
         $changes = (new Bookings($s, $today))->receipt(
             $order,
             $choices,
             $this->table('order'),
             $this->table('purchase'),
-            $this->table('material'),
             $this->table('money'),
             Ledger::receivedPurchases($s, $this->table('lot')),
             $title
@@ -268,28 +313,78 @@ final class StockService
         return $this->model->write($changes);
     }
 
-    /** @return array<string, mixed> the modeller's answer; a new material's id is under `refs.m` */
-    public function saveMaterial(?int $material, MaterialInput $input): array
+    /** @return array<string, mixed> the modeller's answer */
+    public function saveLager(int $thing, LagerInput $input): array
     {
-        $changes = new MaterialChanges($this->structure());
+        $this->checkThings([$thing]);
 
-        if ($material !== null && ! $this->table('material')->has($material)) {
-            throw StockError::notAMaterial($material);
+        if ($input->location !== null && ! $this->table('location')->has($input->location)) {
+            throw StockError::notALocation($input->location);
         }
 
-        return $this->model->write($material === null ? $changes->create($input) : $changes->update($material, $input));
+        return $this->model->write((new LagerChanges($this->structure()))->save($thing, $this->things()->lagerOf($thing), $input));
     }
 
     /** @return array<string, mixed> */
-    public function bookConsumption(int $material, ?int $lot, string $quantity, ?int $project, string $today, string $title): array
+    public function bookConsumption(int $thing, ?int $lot, string $quantity, ?int $project, string $today, string $title): array
     {
         $ledger = $this->ledger();
-        $lot  ??= $ledger->proposedLot($material);
+        $lot  ??= $ledger->proposedLot($thing);
 
-        if ($ledger->materialOf($lot) !== $material) {
-            throw StockError::noLot($material);
+        if ($ledger->thingOf($lot) !== $thing) {
+            throw StockError::noLot($thing);
         }
 
         return $this->model->write((new Bookings($this->structure(), $today))->consumption($lot, $quantity, $project, $title));
+    }
+
+    /**
+     * «Umbuchen»: the whole lot moves to another place. ⚠️ INFERRED: D-997 names the button, not whether part of a
+     * lot can move; a part would need a lot of its own and is left for when he asks.
+     *
+     * @return array<string, mixed>
+     */
+    public function moveLot(int $lot, int $location): array
+    {
+        $s = $this->structure();
+
+        if (! $this->table('lot')->has($lot)) {
+            throw StockError::noLot($lot);
+        }
+
+        if (! $this->table('location')->has($location)) {
+            throw StockError::notALocation($location);
+        }
+
+        return $this->model->write([['op' => 'set_values', 'record' => $lot, 'values' => [(string) $s->field('lot_location') => (string) $location]]]);
+    }
+
+    /** @param list<int> $things each must be a record under the things' root */
+    private function checkThings(array $things): void
+    {
+        if ($things === []) {
+            return;
+        }
+
+        $tree  = $this->tree();
+        $nodes = $this->model->nodesOf($things);
+
+        foreach ($things as $thing) {
+            if (! isset($nodes[$thing], $tree[$nodes[$thing]])) {
+                throw StockError::notAThing($thing);
+            }
+        }
+    }
+
+    /** @param list<NewThing> $new each goes into a node under the things' root */
+    private function checkGroups(array $new): void
+    {
+        $tree = $this->tree();
+
+        foreach ($new as $thing) {
+            if (! isset($tree[$thing->node])) {
+                throw StockError::notAGroup($thing->node);
+            }
+        }
     }
 }

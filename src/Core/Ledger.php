@@ -8,7 +8,7 @@ namespace TaxmodStock\Core;
  * ```mermaid
  * flowchart LR
  *   P["Vorgänge Pos: Menge ±"] -->|sum per lot| L["Bestandsposten: rest"]
- *   L -->|sum per material| M["Material: Bestand"]
+ *   L -->|sum per thing| M["Ding: Bestand"]
  * ```
  *
  * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/lager/konzept.md §3.5a
@@ -18,8 +18,8 @@ final class Ledger
     /** @var array<int, float> lot id → rest */
     private array $rest = [];
 
-    /** @var array<int, int> lot id → material id */
-    private array $materialOf = [];
+    /** @var array<int, int> lot id → thing id (D-995: the thing is the material) */
+    private array $thingOf = [];
 
     /** @var array<int, string> lot id → receipt date */
     private array $dateOf = [];
@@ -27,7 +27,7 @@ final class Ledger
     public function __construct(Structure $structure, Table $lots, Table $lines)
     {
         foreach ($lots->ids() as $lot) {
-            $this->materialOf[$lot] = (int) $lots->first($lot, $structure->field('lot_material'));
+            $this->thingOf[$lot]    = (int) $lots->first($lot, $structure->field('lot_thing'));
             $this->dateOf[$lot]     = (string) $lots->first($lot, $structure->field('lot_date'));
             $this->rest[$lot]       = 0.0;
         }
@@ -47,11 +47,11 @@ final class Ledger
         return $this->rest[$lot] ?? 0.0;
     }
 
-    public function stockOf(int $material): float
+    public function stockOf(int $thing): float
     {
         $sum = 0.0;
 
-        foreach ($this->lotsOf($material) as $lot) {
+        foreach ($this->lotsOf($thing) as $lot) {
             $sum += $this->rest[$lot];
         }
 
@@ -59,13 +59,13 @@ final class Ledger
     }
 
     /**
-     * The lots of a material, oldest first (receipt date, then id).
+     * The lots of a thing, oldest first (receipt date, then id).
      *
      * @return list<int>
      */
-    public function lotsOf(int $material): array
+    public function lotsOf(int $thing): array
     {
-        $lots = array_keys(array_filter($this->materialOf, static fn (int $m): bool => $m === $material));
+        $lots = array_keys(array_filter($this->thingOf, static fn (int $t): bool => $t === $thing));
 
         usort($lots, fn (int $a, int $b): int => [$this->dateOf[$a], $a] <=> [$this->dateOf[$b], $b]);
 
@@ -76,9 +76,9 @@ final class Ledger
      * The lot a consumption takes from unless the user picks another: the oldest with something left (FIFO).
      * Without any such lot the oldest lot overall — a consumption may push the stock below zero (concept §11).
      */
-    public function proposedLot(int $material): int
+    public function proposedLot(int $thing): int
     {
-        $lots = $this->lotsOf($material);
+        $lots = $this->lotsOf($thing);
 
         foreach ($lots as $lot) {
             if ($this->rest[$lot] > 0) {
@@ -86,18 +86,18 @@ final class Ledger
             }
         }
 
-        return $lots[0] ?? throw StockError::noLot($material);
+        return $lots[0] ?? throw StockError::noLot($thing);
     }
 
-    public function materialOf(int $lot): ?int
+    public function thingOf(int $lot): ?int
     {
-        return $this->materialOf[$lot] ?? null;
+        return $this->thingOf[$lot] ?? null;
     }
 
     /** @return list<int> */
-    public function materials(): array
+    public function things(): array
     {
-        return array_values(array_unique($this->materialOf));
+        return array_values(array_unique($this->thingOf));
     }
 
     /**

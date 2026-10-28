@@ -3,13 +3,11 @@
 namespace TaxmodStock\Core;
 
 /**
- * The fields of a material as the form «Material» sends them; empty means not given.
+ * The fields of the tab «Lager» of one thing as its form sends them; null means not given (D-997).
  */
-final class MaterialInput
+final class LagerInput
 {
     public function __construct(
-        public readonly ?int $thing,
-        public readonly string $name,
         public readonly bool $single,
         public readonly ?int $use,
         public readonly ?int $location,

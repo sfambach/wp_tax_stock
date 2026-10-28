@@ -17,25 +17,28 @@ final class Messages
         }
 
         return match ($error->reason) {
-            /* translators: %s: key of the missing id, e.g. nodes.material */
+            /* translators: %s: key of the missing id, e.g. nodes.lager */
             'not_configured'            => sprintf(__('Die Lager-Struktur ist nicht vollständig eingestellt: %s fehlt (Taxonomy Modeller › Configuration › Lager).', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id of the purchase */
             'purchase_undetermined'     => sprintf(__('Kauf #%s ist noch nicht näher bestimmt — erst bestimmen, dann einbuchen.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id of the purchase */
-            'purchase_without_material' => sprintf(__('Kauf #%s hat kein Material — eines wählen oder «neu anlegen».', 'taxmod-stock'), $error->detail),
+            'purchase_without_thing'    => sprintf(__('Kauf #%s hat kein Ding — eines wählen, suchen oder «neu anlegen».', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id of the purchase */
             'already_received'          => sprintf(__('Kauf #%s ist schon eingegangen.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id */
-            'not_a_material'            => sprintf(__('#%s ist kein Material.', 'taxmod-stock'), $error->detail),
+            'not_a_thing'               => sprintf(__('#%s ist kein Ding im Baum.', 'taxmod-stock'), $error->detail),
+            /* translators: %s: node id */
+            'not_a_group'               => sprintf(__('Knoten %s ist keine Gruppe unter Model.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id */
             'not_a_location'            => sprintf(__('#%s ist kein Lagerort.', 'taxmod-stock'), $error->detail),
-            'material_without_name'     => __('Ein Material ohne «Bezug» braucht eine Bezeichnung.', 'taxmod-stock'),
+            'thing_without_name'        => __('Ein neues Ding braucht eine Bezeichnung.', 'taxmod-stock'),
+            'thing_without_group'       => __('Ein neues Ding braucht eine Gruppe im Baum.', 'taxmod-stock'),
             /* translators: %s: record id of the purchase */
             'not_in_order'              => sprintf(__('Kauf #%s gehört nicht zu dieser Bestellung.', 'taxmod-stock'), $error->detail),
             /* translators: %s: what was typed */
             'not_a_quantity'            => sprintf(__('«%s» ist keine gültige Menge.', 'taxmod-stock'), $error->detail),
             'nothing_to_book'           => __('Nichts zu buchen: keine Zeile ausgefüllt.', 'taxmod-stock'),
-            /* translators: %s: record id of the material */
+            /* translators: %s: record id of the thing */
             'no_lot'                    => sprintf(__('Material #%s hat keinen passenden Bestandsposten.', 'taxmod-stock'), $error->detail),
             /* translators: %s: the modeller's message */
             'model_refused'             => sprintf(__('Der Taxonomy Modeller hat die Buchung abgelehnt, nichts wurde geschrieben: %s', 'taxmod-stock'), $error->detail),
@@ -48,7 +51,7 @@ final class Messages
         return match ($reason) {
             'received'                  => __('schon eingegangen', 'taxmod-stock'),
             'purchase_undetermined'     => __('noch nicht näher bestimmt', 'taxmod-stock'),
-            'purchase_without_material' => __('kein Material', 'taxmod-stock'),
+            'purchase_without_thing'    => __('kein Ding', 'taxmod-stock'),
             default                     => $reason,
         };
     }

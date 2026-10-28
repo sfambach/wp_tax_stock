@@ -8,7 +8,7 @@ use TaxmodStock\Core\Ledger;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\Table;
 
-/** Stock is the sum of the lines, per lot and per material; a consumption takes from the oldest lot with a rest. */
+/** Stock is the sum of the lines, per lot and per thing; a consumption takes from the oldest lot with a rest. */
 final class LedgerTest extends TestCase
 {
     #[Test]
@@ -43,9 +43,9 @@ final class LedgerTest extends TestCase
     {
         $s    = Fixture::structure();
         $lots = new Table([
-            11 => [$s->field('lot_material') => ['50'], $s->field('lot_date') => ['2026-10-01 00:00:00']],
-            12 => [$s->field('lot_material') => ['50'], $s->field('lot_date') => ['2026-10-15 00:00:00']],
-            13 => [$s->field('lot_material') => ['60'], $s->field('lot_date') => ['2026-10-02 00:00:00']],
+            11 => [$s->field('lot_thing') => ['50'], $s->field('lot_date') => ['2026-10-01 00:00:00']],
+            12 => [$s->field('lot_thing') => ['50'], $s->field('lot_date') => ['2026-10-15 00:00:00']],
+            13 => [$s->field('lot_thing') => ['60'], $s->field('lot_date') => ['2026-10-02 00:00:00']],
         ]);
 
         $moves ??= [11 => ['5', '-3'], 12 => ['10'], 13 => ['1']];

@@ -12,32 +12,41 @@ namespace TaxmodStock\Core;
  */
 final class Structure
 {
-    private const NODES = ['material', 'lot', 'transaction', 'line', 'location', 'order', 'purchase', 'money'];
+    /** D-995: the thing in the tree is the material; «lager» is the Lager view, one record per thing. */
+    private const NODES = ['lager', 'lot', 'transaction', 'line', 'location', 'order', 'purchase', 'money'];
 
     private const FIELDS = [
         'label',
-        'material_single', 'material_min',
-        'lot_material', 'lot_purchase', 'lot_location', 'lot_value', 'lot_date',
+        'lager_thing', 'lager_single', 'lager_min',
+        'lot_thing', 'lot_purchase', 'lot_location', 'lot_value', 'lot_date',
         'transaction_kind', 'transaction_date', 'transaction_order', 'transaction_source', 'transaction_lines',
         'line_lot', 'line_quantity', 'line_counted',
         'order_status', 'order_lines',
-        'purchase_material', 'purchase_quantity', 'purchase_undetermined', 'purchase_landed_price', 'purchase_unit_price',
+        'purchase_model', 'purchase_quantity', 'purchase_undetermined', 'purchase_landed_price', 'purchase_unit_price',
         'money_amount', 'money_unit',
     ];
 
     /** Nodes the module uses when they are there: the choices of «Verwendung». */
-    private const OPTIONAL_NODES = ['material_use'];
+    private const OPTIONAL_NODES = ['lager_use'];
 
-    /**
-     * Fields the module uses when they are there and leaves out when they are not.
-     *
-     * `purchase_model` came with 0.1.2: an older pasted structure keeps working, only the goods receipt asks for it.
-     */
-    private const OPTIONAL_FIELDS = ['description', 'material_ref_record', 'material_use', 'material_location', 'transaction_project', 'purchase_model'];
+    /** Fields the module uses when they are there and leaves out when they are not. */
+    private const OPTIONAL_FIELDS = ['description', 'title_image', 'lager_use', 'lager_location', 'transaction_project'];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];
 
     private const OPTIONAL_VALUES = ['currency_default'];
+
+    /**
+     * The keys of a structure pasted before 0.2.0, when the Lager view was still a material of its own (D-967).
+     * The ids stay the same: «Material» of a lot was retargeted to the thing, not replaced (D-995).
+     */
+    private const FORMER_KEYS = [
+        'nodes'  => ['material' => 'lager', 'material_use' => 'lager_use'],
+        'fields' => [
+            'material_ref_record' => 'lager_thing', 'material_single' => 'lager_single', 'material_min' => 'lager_min',
+            'material_use' => 'lager_use', 'material_location' => 'lager_location', 'lot_material' => 'lot_thing',
+        ],
+    ];
 
     /**
      * @param array<string, int> $nodes
@@ -107,6 +116,10 @@ final class Structure
     {
         $given = is_array($raw[$group] ?? null) ? $raw[$group] : [];
         $ids   = [];
+
+        foreach (self::FORMER_KEYS[$group] ?? [] as $former => $key) {
+            $given[$key] ??= $given[$former] ?? null;
+        }
 
         foreach ([...$required, ...$optional] as $key) {
             $id = filter_var($given[$key] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);

@@ -75,7 +75,7 @@ final class SettingsTab
         $views  = (new StockService())->viewSettings();
         $titles = [
             'wareneingang' => [__('Wareneingang', 'taxmod-stock'), __('Unter jeder Bestellung stehen ihre Käufe gleich offen da, ohne Klick. Sie laden, sobald sie ins Bild scrollen.', 'taxmod-stock')],
-            'bestand'      => [__('Bestand', 'taxmod-stock'), __('Unter jedem Material stehen seine Bestandsposten (Datum, Rest, Preis, Lagerort) gleich offen da.', 'taxmod-stock')],
+            'material'     => [__('Material', 'taxmod-stock'), __('Unter jedem Material stehen seine Bestandsposten (Datum, Rest, Preis, Lagerort) gleich offen da.', 'taxmod-stock')],
         ];
         $html   = '<h2>' . esc_html__('Ansicht der Reiter', 'taxmod-stock') . '</h2>'
             . '<input type="hidden" name="taxmod_stock_views_sent" value="1"><table class="form-table" role="presentation"><tbody>';
@@ -86,7 +86,7 @@ final class SettingsTab
                 . '<p class="description">' . esc_html($explain) . '</p></td></tr>';
         }
 
-        return $html . '<tr><th scope="row">' . esc_html__('Material, Inventur, Verbrauch', 'taxmod-stock') . '</th><td><p class="description">'
+        return $html . '<tr><th scope="row">' . esc_html__('Inventur, Verbrauch', 'taxmod-stock') . '</th><td><p class="description">'
             . esc_html__('Diese Reiter haben keine Zeilen zum Aufklappen.', 'taxmod-stock') . '</p></td></tr></tbody></table>';
     }
 
@@ -113,7 +113,7 @@ final class SettingsTab
         };
 
         $html = '<h2>' . esc_html__('Einlagerung nach Typ', 'taxmod-stock') . '</h2>'
-            . '<p>' . esc_html__('Der Wareneingang schlägt den Standard-Lagerort des Materials vor, sonst den Ort des Zweigs unter Model, in dem der Bezug des Kaufs liegt (der nächste eingetragene Zweig gewinnt), sonst den Standard-Ort der Struktur.', 'taxmod-stock') . '</p>'
+            . '<p>' . esc_html__('Der Wareneingang schlägt den Standard-Lagerort des Dings vor, sonst den Ort des Zweigs unter Model, in dem das Ding des Kaufs liegt (der nächste eingetragene Zweig gewinnt), sonst den Standard-Ort der Struktur.', 'taxmod-stock') . '</p>'
             . '<table class="widefat striped" style="max-width:48em"><thead><tr><th>' . esc_html__('Zweig (Knoten-Id)', 'taxmod-stock') . '</th><th>' . esc_html__('Name', 'taxmod-stock') . '</th><th>' . esc_html__('Lagerort', 'taxmod-stock') . '</th></tr></thead><tbody>';
         $row  = 0;
 
@@ -126,7 +126,7 @@ final class SettingsTab
             ++$row;
         }
 
-        return $html . '<tr><td colspan="2"><strong>' . esc_html__('ohne Bezug (Verbrauchsmaterial)', 'taxmod-stock') . '</strong></td><td>'
+        return $html . '<tr><td colspan="2"><strong>' . esc_html__('ohne Ding', 'taxmod-stock') . '</strong></td><td>'
             . $select('taxmod_stock_unreferenced', $settings->unreferenced) . '</td></tr></tbody></table>';
     }
 

@@ -4,13 +4,13 @@ namespace TaxmodStock\Core;
 
 /**
  * How each tab of the stock page opens: with «Gleich aufgeklappt» the rows below a table row (an order's purchases,
- * a material's lots) are open without a click. On by default only for «Wareneingang» (his word 2026-10-25:
+ * a thing's lots) are open without a click. On by default only for «Wareneingang» (his word 2026-10-25:
  * «Standardeinstellung soll nur für den Wareneingang Expand automatically sein»).
  */
 final class ViewSettings
 {
     /** The tabs whose rows can be opened, with their default. */
-    public const DEFAULTS = ['wareneingang' => true, 'bestand' => false];
+    public const DEFAULTS = ['wareneingang' => true, 'material' => false];
 
     /** @param array<string, bool> $expanded */
     private function __construct(private readonly array $expanded)

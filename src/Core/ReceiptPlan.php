@@ -5,17 +5,13 @@ namespace TaxmodStock\Core;
 /**
  * What the goods receipt proposes for each purchase of an order, and which purchases stay locked.
  *
- * A purchase that names materials goes in as those. Otherwise its «Modell» decides: the material that already
- * refers to it, or a new one that will. Without either the user chooses (D-967 and the owner's word of
- * 2026-10-21: «wenn nein kann der benutzer suchen oder ein neues anlegen»).
+ * D-995: the thing is the material. A purchase with a «Modell» goes in as that thing; without one the user
+ * chooses an existing thing or creates one in a group of the tree.
  *
  * ```mermaid
  * flowchart LR
- *   K["Kauf"] -->|Material set| H["keep"]
- *   K -->|Modell| F{"material with this Bezug?"}
- *   F -->|yes| E["existing"]
- *   F -->|no| N["new, Bezug = Modell"]
- *   K -->|neither| U["user chooses"]
+ *   K["Kauf"] -->|Modell| H["keep: that thing"]
+ *   K -->|none| U["user chooses or creates"]
  * ```
  */
 final class ReceiptPlan
@@ -26,18 +22,17 @@ final class ReceiptPlan
 
     /**
      * @param array<int, true> $received purchases some lot already names
-     * @return array<int, array{lock: string|null, model: int|null, materials: list<int>, proposal: ReceiptChoice|null}>
+     * @return array<int, array{lock: string|null, model: int|null, proposal: ReceiptChoice|null}>
      */
-    public function of(int $order, Table $orders, Table $purchases, MaterialNames $names, array $received): array
+    public function of(int $order, Table $orders, Table $purchases, array $received): array
     {
         $s   = $this->structure;
         $out = [];
 
         foreach ($orders->all($order, $s->field('order_lines')) as $id) {
-            $id        = (int) $id;
-            $model     = (int) $purchases->first($id, $s->field('purchase_model'));
-            $model     = $model > 0 ? $model : null;
-            $materials = array_map('intval', $purchases->all($id, $s->field('purchase_material')));
+            $id    = (int) $id;
+            $model = (int) $purchases->first($id, $s->field('purchase_model'));
+            $model = $model > 0 ? $model : null;
 
             $lock = match (true) {
                 isset($received[$id])                                              => 'received',
@@ -45,14 +40,7 @@ final class ReceiptPlan
                 default                                                            => null,
             };
 
-            $proposal = match (true) {
-                $materials !== []                         => ReceiptChoice::keep(),
-                $model === null                           => null,
-                $names->forThing($model) !== null         => ReceiptChoice::existing((int) $names->forThing($model)),
-                default                                   => ReceiptChoice::create($model),
-            };
-
-            $out[$id] = ['lock' => $lock, 'model' => $model, 'materials' => $materials, 'proposal' => $proposal];
+            $out[$id] = ['lock' => $lock, 'model' => $model, 'proposal' => $model === null ? null : ReceiptChoice::keep()];
         }
 
         return $out;

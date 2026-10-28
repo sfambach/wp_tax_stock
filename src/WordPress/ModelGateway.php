@@ -16,9 +16,12 @@ use TaxmodStock\Core\Table;
  */
 final class ModelGateway
 {
+    /** @var array<int, array<string, mixed>> node id → the answer of `read-node`, read once per request */
+    private array $read = [];
+
     public function table(int $node): Table
     {
-        $result  = $this->execute('taxmod/read-node', ['node' => $node]);
+        $result  = $this->readNode($node);
         $records = [];
 
         foreach ($result['records'] ?? [] as $record) {
@@ -32,6 +35,42 @@ final class ModelGateway
         }
 
         return new Table($records);
+    }
+
+    /**
+     * The fields of a node as the modeller lists them, inherited ones included — from the same read as its records.
+     *
+     * @return array<int, array{name: string, target: int, type: string|null}> relation id → field
+     */
+    public function fields(int $node): array
+    {
+        $out = [];
+
+        foreach ($this->readNode($node)['fields'] ?? [] as $field) {
+            $out[(int) $field['relation_id']] = [
+                'name'   => (string) ($field['name'] ?? ''),
+                'target' => (int) ($field['target'] ?? 0),
+                'type'   => isset($field['type']) ? (string) $field['type'] : null,
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Every node under `$root` with its name and parent — one `read-tree` call.
+     *
+     * @return array<int, array{name: string, parent: int, class: string}>
+     */
+    public function tree(int $root): array
+    {
+        $out = [];
+
+        foreach ($this->execute('taxmod/read-tree', ['root' => $root, 'depth' => 12])['rows'] ?? [] as $row) {
+            $out[(int) $row['id']] = ['name' => (string) ($row['name'] ?? ''), 'parent' => (int) ($row['parent'] ?? 0), 'class' => (string) ($row['class'] ?? '')];
+        }
+
+        return $out;
     }
 
     /**
@@ -112,6 +151,12 @@ final class ModelGateway
     public function write(array $changes): array
     {
         return $this->execute('taxmod/write-data', ['changes' => $changes]);
+    }
+
+    /** @return array<string, mixed> */
+    private function readNode(int $node): array
+    {
+        return $this->read[$node] ??= $this->execute('taxmod/read-node', ['node' => $node]);
     }
 
     /**

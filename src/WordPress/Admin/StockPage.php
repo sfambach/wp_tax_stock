@@ -4,17 +4,19 @@ namespace TaxmodStock\WordPress\Admin;
 
 use Taxmod\WordPress\Admin\ListPage;
 use TaxmodStock\Core\InventoryRow;
-use TaxmodStock\Core\MaterialInput;
-use TaxmodStock\Core\MaterialNames;
+use TaxmodStock\Core\LagerInput;
+use TaxmodStock\Core\NewThing;
 use TaxmodStock\Core\ReceiptChoice;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\StockList;
+use TaxmodStock\Core\Things;
 use TaxmodStock\WordPress\StockService;
 
 /**
- * The page «Lager» under the Taxonomy Modeller: stock list, materials, stock count, goods receipt, consumption (stage 1, D-958 F7).
+ * The page «Lager» under the Taxonomy Modeller: goods receipt, materials, stock count, consumption (stage 1, D-958 F7).
  *
- * A material is shown by the name of its «Bezug», its number in a column of its own (D-967, D-988).
+ * D-995: the thing in the tree is the material. D-997: «Material» lists the things the stock knows; a click opens the
+ * whole thing — its head fixed, the views as tabs below (Technische Daten, Einkauf, Lager, Bestand, Verkauf).
  *
  * Drawn with the modeller's shared list page (D-989): heading, tabs with counts, search, filters, bulk bar with
  * «Expand all», sortable columns, the row's buttons on the right, its details in a row below.
@@ -29,11 +31,15 @@ final class StockPage
     public const POSITIONS  = 'taxmod_stock_positions';
     private const NOTICE    = 'taxmod_stock_notice';
     private const ROWS      = 6;
-    private const TABS      = ['wareneingang', 'bestand', 'material', 'inventur', 'verbrauch'];
+    private const TABS      = ['wareneingang', 'material', 'inventur', 'verbrauch'];
+    private const VIEWS     = ['daten', 'einkauf', 'lager', 'bestand', 'verkauf'];
     private const FILTER_FORM = 'taxmod-stock-filter';
     private const BULK_FORM   = 'taxmod-stock-bulk';
 
-    /** The modeller's search over every record under `Model` (D-958 F3a), reused for «Bezug». */
+    /** The thing's own fields that its head shows, or that say nothing in «Technische Daten». */
+    private const HEAD_FIELDS = ['label', 'description', 'title_image'];
+
+    /** The modeller's search over every record under `Model` (D-958 F3a), reused to pick a thing. */
     private const RECORD_SEARCH = 'taxmod_record_search';
 
     public function __construct(private readonly StockService $stock = new StockService())
@@ -53,12 +59,12 @@ final class StockPage
         $html = '<div class="wrap">' . ListPage::heading(__('Lager', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . $this->notice();
 
         try {
+            $thing = absint($_GET['thing'] ?? 0);
             $html .= $this->tabBar($tab, $list) . match ($tab) {
-                'bestand'      => $this->stockList($list),
-                'material'     => $this->materialTab(absint($_GET['material'] ?? 0), $list),
-                'inventur'     => $this->inventoryForm(),
-                'verbrauch'    => $this->consumptionForm(),
-                default        => $this->receiptTab($list, absint($_GET['order'] ?? 0)),
+                'material'  => $thing > 0 ? $this->thingView($thing) : $this->materialList($list),
+                'inventur'  => $this->inventoryForm(),
+                'verbrauch' => $this->consumptionForm($thing, absint($_GET['lot'] ?? 0)),
+                default     => $this->receiptTab($list, absint($_GET['order'] ?? 0)),
             };
         } catch (StockError $e) {
             $html .= '<div class="notice notice-error"><p>' . esc_html(Messages::of($e)) . '</p></div>';
@@ -78,12 +84,14 @@ final class StockPage
 
         $kind  = sanitize_key((string) ($_POST['booking'] ?? ''));
         $today = current_time('Y-m-d');
-        $back  = ['bestand', []];
+        $thing = absint($_POST['thing'] ?? 0);
+        $back  = ['material', []];
 
         try {
             $result = match ($kind) {
                 'inventur'     => $this->stock->bookInventory($this->inventoryRows(), $today, $this->title(__('Inventur', 'taxmod-stock'), $today)),
-                'material'     => $this->stock->saveMaterial(absint($_POST['material'] ?? 0) ?: null, $this->materialInput()),
+                'lager'        => $this->stock->saveLager($thing, $this->lagerInput()),
+                'umbuchen'     => $this->stock->moveLot(absint($_POST['lot'] ?? 0), absint($_POST['location'] ?? 0)),
                 'wareneingang' => $this->stock->bookReceipt(
                     absint($_POST['order'] ?? 0),
                     $this->receiptChoices(),
@@ -91,7 +99,7 @@ final class StockPage
                     $this->title(__('Wareneingang', 'taxmod-stock'), $today)
                 ),
                 'verbrauch'    => $this->stock->bookConsumption(
-                    absint($_POST['material'] ?? 0),
+                    $thing,
                     absint($_POST['lot'] ?? 0) ?: null,
                     sanitize_text_field(wp_unslash((string) ($_POST['quantity'] ?? ''))),
                     absint($_POST['project'] ?? 0) ?: null,
@@ -103,107 +111,434 @@ final class StockPage
             /* translators: %d: number of changes the modeller applied */
             $this->remember('success', sprintf(__('Gebucht: %d Änderungen in einem Schritt.', 'taxmod-stock'), count((array) ($result['applied'] ?? []))));
 
-            if ($kind === 'material') {
-                $back = ['material', []];
-            }
+            $back = match ($kind) {
+                'lager'    => ['material', ['thing' => $thing, 'view' => 'lager']],
+                'umbuchen' => ['material', ['thing' => $thing, 'view' => 'bestand']],
+                default    => ['material', $thing > 0 ? ['thing' => $thing, 'view' => 'bestand'] : []],
+            };
         } catch (StockError $e) {
             $this->remember('error', Messages::of($e));
-            $back = [$kind, $kind === 'wareneingang' ? ['order' => absint($_POST['order'] ?? 0)] : ($kind === 'material' ? ['material' => absint($_POST['material'] ?? 0)] : [])];
+            $back = match ($kind) {
+                'wareneingang'      => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
+                'lager', 'umbuchen' => ['material', ['thing' => $thing, 'view' => $kind === 'lager' ? 'lager' : 'bestand']],
+                'verbrauch'         => ['verbrauch', ['thing' => $thing]],
+                default             => [$kind, []],
+            };
         }
 
         wp_safe_redirect(add_query_arg(['page' => self::PAGE, 'tab' => $back[0]] + $back[1], admin_url('admin.php')));
         exit;
     }
 
-    private function stockList(StockList $list): string
+    /**
+     * D-997: the things the stock knows as one list; a group chosen adds the columns of its technical data, and a
+     * row's details are its lots.
+     */
+    private function materialList(StockList $list): string
     {
-        $s         = $this->stock->structure();
-        $ledger    = $this->stock->ledger();
-        $names     = $this->stock->materialNames();
-        $materials = $names->all();
-        $places    = $this->stock->labels('location');
-        $lots      = $this->stock->table('lot');
-        $money     = $this->stock->table('money');
-        $matTable  = $this->stock->table('material');
+        $s      = $this->stock->structure();
+        $things = $this->stock->things();
+        $all    = $things->all();
+        $ledger = $this->stock->ledger();
+        $lager  = $this->stock->table('lager');
+        $group  = absint($_GET['group'] ?? 0);
 
-        if ($materials === []) {
-            return '<p>' . esc_html__('Noch kein Material. Eine Inventur oder ein Wareneingang legt es an.', 'taxmod-stock') . '</p>';
+        if ($all === []) {
+            return '<p>' . esc_html__('Noch kein Material. Eine Inventur oder ein Wareneingang bringt das erste.', 'taxmod-stock') . '</p>';
         }
 
-        $rows = [];
-        $mins = [];
-        $lis  = [];
+        $groups = [];
+        $rows   = [];
+        $mins   = [];
 
-        foreach (array_keys($materials) as $id) {
-            $stock      = $ledger->stockOf($id);
-            $min        = $matTable->first($id, $s->field('material_min'));
-            $mins[$id]  = $min;
-            $lis[$id]   = '';
-            $words      = [];
+        foreach (array_keys($all) as $id) {
+            $node = $things->nodeOf($id);
 
-            foreach ($ledger->lotsOf($id) as $lot) {
-                $value    = $lots->first($lot, $s->field('lot_value'));
-                $amount   = $value === null ? null : $money->first((int) $value, $s->field('money_amount'));
-                $purchase = $lots->first($lot, $s->field('lot_purchase'));
-                $place    = $lots->first($lot, $s->field('lot_location'));
-                $where    = $place === null ? null : ($places[(int) $place] ?? '#' . $place);
-                $words[]  = (string) $where;
-                $words[]  = (string) $purchase;
-
-                $lis[$id] .= '<li>' . esc_html(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10))
-                    . ' · ' . esc_html__('Rest', 'taxmod-stock') . ' ' . esc_html($this->number($ledger->restOf($lot)))
-                    . ($amount === null ? '' : ' · ' . esc_html($amount) . ' ' . esc_html__('je Stück', 'taxmod-stock'))
-                    . ($purchase === null ? ' · ' . esc_html__('Inventur', 'taxmod-stock') : ' · ' . esc_html__('Kauf', 'taxmod-stock') . ' #' . esc_html($purchase))
-                    . ($where === null ? '' : ' · ' . esc_html($where)) . '</li>';
+            if ($node !== null) {
+                $groups[$node] ??= $this->stock->path($node);
             }
 
-            $rows[] = ['id' => $id, 'name' => $names->word($id), 'stock' => $stock, 'low' => $min !== null && $stock < (float) $min, 'words' => array_values(array_filter($words))];
+            if ($group > 0 && $node !== $group) {
+                continue;
+            }
+
+            $record    = $things->lagerOf($id);
+            $min       = $record === null ? null : $lager->first($record, $s->field('lager_min'));
+            $stock     = $ledger->stockOf($id);
+            $mins[$id] = $min;
+            $rows[]    = ['id' => $id, 'name' => $things->word($id), 'stock' => $stock, 'low' => $min !== null && $stock < (float) $min,
+                'words' => [$node === null ? '' : $groups[$node]]];
         }
 
-        $shown = $list->apply($rows);
-        $open  = $this->stock->viewSettings()->expanded('bestand');
-        $html  = $this->tools('bestand', $list, 'filter', $list->filter, $this->materialFilters(), __('Material, Nummer, Lagerort …', 'taxmod-stock'), sprintf(
+        asort($groups, SORT_NATURAL | SORT_FLAG_CASE);
+
+        $shown   = $list->apply($rows);
+        $columns = $group > 0 ? $this->technicalColumns($group) : [];
+        $data    = $group > 0 ? $this->stock->tableOf($group) : null;
+        $open    = $this->stock->viewSettings()->expanded('material');
+        $html    = $this->tools('material', $list, [
+            ['filter', $this->materialFilters(), $list->filter, __('Filter', 'taxmod-stock')],
+            ['group', ['' => __('Alle Gruppen', 'taxmod-stock')] + $groups, $group > 0 ? (string) $group : '', __('Gruppe', 'taxmod-stock')],
+        ], ['group' => $group > 0 ? (string) $group : ''], __('Material, Nummer, Gruppe …', 'taxmod-stock'), sprintf(
             /* translators: %d: number of materials */
             _n('%d Material', '%d Materialien', count($shown), 'taxmod-stock'),
             count($shown)
         ));
-        $body  = $shown === [] ? $this->noItems(5) : '';
+        $body    = $shown === [] ? $this->noItems(5 + count($columns)) : '';
 
         foreach ($shown as $row) {
             $id    = $row['id'];
-            $body .= ListPage::row(self::BULK_FORM, (string) $id, [
+            $cells = [
                 esc_html((string) $id),
-                '<strong>' . esc_html($row['name'] === '' ? '—' : $row['name']) . '</strong>',
-                '<span' . ($row['low'] ? ' style="color:#b32d2e;font-weight:600"' : '') . '>' . esc_html($this->number($row['stock'])) . '</span>',
-                esc_html((string) ($mins[$id] ?? '—')),
-                esc_html((string) count($ledger->lotsOf($id))),
-            ], $this->editButton($id), $lis[$id] === '' ? '—' : '<ul style="margin:0">' . $lis[$id] . '</ul>', $open);
+                '<strong><a href="' . esc_url($this->thingUrl($id, 'daten')) . '">' . esc_html($row['name'] === '' ? '—' : $row['name']) . '</a></strong>',
+                esc_html($row['words'][0] === '' ? '—' : $row['words'][0]),
+            ];
+
+            foreach (array_keys($columns) as $relation) {
+                $cells[] = esc_html(implode(', ', (array) $data?->all($id, $relation)));
+            }
+
+            $cells[] = '<span' . ($row['low'] ? ' style="color:#b32d2e;font-weight:600"' : '') . '>' . esc_html($this->number($row['stock'])) . '</span>';
+            $cells[] = esc_html((string) ($mins[$id] ?? '—'));
+            $body   .= ListPage::row(self::BULK_FORM, (string) $id, $cells, '<a class="button button-small" href="' . esc_url($this->thingUrl($id, 'daten')) . '">'
+                . esc_html__('Öffnen', 'taxmod-stock') . '</a>', $this->lotList($id, $ledger), $open);
         }
 
-        return $html . ListPage::table([[__('Nr.', 'taxmod-stock'), '6em'], $this->sortColumn('bestand', $list, 'name', __('Material', 'taxmod-stock'), ''), $this->sortColumn('bestand', $list, 'stock', __('Bestand', 'taxmod-stock'), '8em'),
-            [__('Mindestbestand', 'taxmod-stock'), '10em'], [__('Bestandsposten', 'taxmod-stock'), '10em']], $body);
+        $head = [[__('Nr.', 'taxmod-stock'), '6em'], $this->sortColumn('material', $list, 'name', __('Material', 'taxmod-stock'), ''), [__('Gruppe', 'taxmod-stock'), '']];
+
+        foreach ($columns as $name) {
+            $head[] = [$name, ''];
+        }
+
+        return $html . ListPage::table([...$head, $this->sortColumn('material', $list, 'stock', __('Bestand', 'taxmod-stock'), '7em'), [__('Mindestbestand', 'taxmod-stock'), '9em']], $body);
+    }
+
+    /**
+     * The fields of a group that make sense as list columns: plain values, not the head's, at most four.
+     *
+     * @return array<int, string> relation id → name
+     */
+    private function technicalColumns(int $group): array
+    {
+        $out = [];
+
+        foreach ($this->technicalFields($group) as $relation => $field) {
+            if (in_array($field['type'], ['text', 'int', 'decimal'], true)) {
+                $out[$relation] = $field['name'];
+            }
+        }
+
+        return array_slice($out, 0, 4, true);
+    }
+
+    /**
+     * The fields of a thing's node that belong to «Technische Daten»: all but the head's and the tree's own settings.
+     *
+     * @return array<int, array{name: string, target: int, type: string|null}>
+     */
+    private function technicalFields(int $node): array
+    {
+        $s    = $this->stock->structure();
+        $skip = [];
+
+        foreach (self::HEAD_FIELDS as $key) {
+            if ($s->hasField($key)) {
+                $skip[$s->field($key)] = true;
+            }
+        }
+
+        return array_filter(
+            $this->stock->fieldsOf($node),
+            static fn (array $field, int $relation): bool => ! isset($skip[$relation]) && $field['name'] !== 'position',
+            ARRAY_FILTER_USE_BOTH
+        );
+    }
+
+    /** The lots of a thing, one line each: date, rest, price, origin, place. */
+    private function lotList(int $thing, \TaxmodStock\Core\Ledger $ledger): string
+    {
+        $s      = $this->stock->structure();
+        $lots   = $this->stock->table('lot');
+        $money  = $this->stock->table('money');
+        $places = $this->stock->labels('location');
+        $html   = '';
+
+        foreach ($ledger->lotsOf($thing) as $lot) {
+            $value    = $lots->first($lot, $s->field('lot_value'));
+            $amount   = $value === null ? null : $money->first((int) $value, $s->field('money_amount'));
+            $purchase = $lots->first($lot, $s->field('lot_purchase'));
+            $place    = $lots->first($lot, $s->field('lot_location'));
+
+            $html .= '<li>' . esc_html(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10))
+                . ' · ' . esc_html__('Rest', 'taxmod-stock') . ' ' . esc_html($this->number($ledger->restOf($lot)))
+                . ($amount === null ? '' : ' · ' . esc_html($amount) . ' ' . esc_html__('je Stück', 'taxmod-stock'))
+                . ($purchase === null ? ' · ' . esc_html__('Inventur', 'taxmod-stock') : ' · ' . esc_html__('Kauf', 'taxmod-stock') . ' #' . esc_html($purchase))
+                . ($place === null ? '' : ' · ' . esc_html($places[(int) $place] ?? '#' . $place)) . '</li>';
+        }
+
+        return $html === '' ? '—' : '<ul style="margin:0">' . $html . '</ul>';
+    }
+
+    /** D-997: one thing opened whole — the head fixed, the views as tabs below. */
+    private function thingView(int $thing): string
+    {
+        $s     = $this->stock->structure();
+        $nodes = $this->stock->nodesOf([$thing]);
+        $node  = $nodes[$thing] ?? null;
+        $tree  = $this->stock->tree();
+
+        if ($node === null || ! isset($tree[$node])) {
+            throw StockError::notAThing($thing);
+        }
+
+        $view   = sanitize_key((string) ($_GET['view'] ?? 'daten'));
+        $view   = in_array($view, self::VIEWS, true) ? $view : 'daten';
+        $table  = $this->stock->tableOf($node);
+        $label  = (string) $table->first($thing, $s->field('label'));
+        $about  = $s->hasField('description') ? (string) $table->first($thing, $s->field('description')) : '';
+        $image  = $s->hasField('title_image') ? (string) $table->first($thing, $s->field('title_image')) : '';
+        $media  = str_starts_with($image, 'media:') ? absint(substr($image, 6)) : 0;
+        $back   = add_query_arg(['page' => self::PAGE, 'tab' => 'material'], admin_url('admin.php'));
+        $titles = [
+            'daten'   => __('Technische Daten', 'taxmod-stock'),
+            'einkauf' => __('Einkauf', 'taxmod-stock'),
+            'lager'   => __('Lager', 'taxmod-stock'),
+            'bestand' => __('Bestand', 'taxmod-stock'),
+            'verkauf' => __('Verkauf', 'taxmod-stock'),
+        ];
+
+        $html = '<p><a href="' . esc_url($back) . '">← ' . esc_html__('Zur Liste', 'taxmod-stock') . '</a></p>'
+            . '<div class="taxmod-stock-head" style="display:flex;gap:16px;align-items:flex-start;background:#fff;border:1px solid #c3c4c7;padding:16px;margin:8px 0 0">'
+            . ($media > 0 ? (string) wp_get_attachment_image($media, [96, 96], false, ['style' => 'width:96px;height:96px;object-fit:cover;border-radius:4px']) : '<div style="width:96px;height:96px;background:#f0f0f1;border-radius:4px"></div>')
+            . '<div><p style="margin:0;color:#50575e">' . esc_html(sprintf(/* translators: %d: record id of the thing */ __('Nr. %d', 'taxmod-stock'), $thing)) . ' · ' . esc_html($this->stock->path($node)) . '</p>'
+            . '<h2 style="margin:4px 0;font-size:1.6em">' . esc_html($label === '' ? '—' : $label) . '</h2>'
+            . ($about === '' ? '' : '<p style="margin:0">' . esc_html($about) . '</p>') . '</div></div>'
+            . '<nav class="nav-tab-wrapper" style="margin-top:0">';
+
+        foreach ($titles as $slug => $title) {
+            $html .= '<a href="' . esc_url($this->thingUrl($thing, $slug)) . '" class="nav-tab' . ($slug === $view ? ' nav-tab-active' : '') . '">' . esc_html($title) . '</a>';
+        }
+
+        return $html . '</nav><div style="background:#fff;border:1px solid #c3c4c7;border-top:0;padding:16px">' . match ($view) {
+            'einkauf' => $this->purchaseView($thing),
+            'lager'   => $this->lagerView($thing),
+            'bestand' => $this->stockView($thing),
+            'verkauf' => '<p>' . esc_html__('Die Verkaufs-Sicht (VK-Preis, Angebote) kommt später.', 'taxmod-stock') . '</p>',
+            default   => $this->dataView($thing, $node),
+        } . '</div>';
+    }
+
+    /** Every field of the thing's node but the head's; references show the name of what they point at. */
+    private function dataView(int $thing, int $node): string
+    {
+        $table  = $this->stock->tableOf($node);
+        $fields = $this->technicalFields($node);
+        $refs   = [];
+
+        foreach ($fields as $relation => $field) {
+            if (! in_array($field['type'], ['text', 'int', 'decimal', 'bool', 'date', 'datetime', 'media'], true)) {
+                foreach ($table->all($thing, $relation) as $value) {
+                    $refs[] = (int) $value;
+                }
+            }
+        }
+
+        $labels = $this->stock->recordLabels(array_values(array_unique(array_filter($refs))));
+        $html   = '<table class="form-table" role="presentation"><tbody>';
+
+        foreach ($fields as $relation => $field) {
+            $values = $table->all($thing, $relation);
+            $shown  = array_map(static fn (string $v): string => isset($labels[(int) $v]) && $labels[(int) $v] !== '' ? $labels[(int) $v] : $v, $values);
+            $html  .= '<tr><th scope="row">' . esc_html($field['name']) . '</th><td>' . esc_html($shown === [] ? '—' : implode(', ', $shown)) . '</td></tr>';
+        }
+
+        return $html . '</tbody></table><p class="description">' . esc_html__('Bearbeitet wird das Ding im Taxonomy Modeller; hier steht es zum Nachsehen.', 'taxmod-stock') . '</p>';
+    }
+
+    /** The purchases whose «Modell» is this thing. ⚠️ «Preisangaben» are not listed yet: no ability finds what points here. */
+    private function purchaseView(int $thing): string
+    {
+        $s         = $this->stock->structure();
+        $purchases = $this->stock->table('purchase');
+        $about     = [];
+
+        foreach ($purchases->ids() as $id) {
+            if ((int) $purchases->first($id, $s->field('purchase_model')) === $thing) {
+                $about[] = $id;
+            }
+        }
+
+        if ($about === []) {
+            return '<p>' . esc_html__('Noch kein Kauf zeigt auf dieses Ding.', 'taxmod-stock') . '</p>';
+        }
+
+        $money = $this->stock->table('money');
+        $html  = '<table class="widefat striped"><thead><tr><th>' . esc_html__('Kauf', 'taxmod-stock') . '</th><th>' . esc_html__('Menge', 'taxmod-stock') . '</th><th>'
+            . esc_html__('Preis je Stück', 'taxmod-stock') . '</th></tr></thead><tbody>';
+
+        foreach ($about as $id) {
+            $part   = $purchases->first($id, $s->field('purchase_landed_price')) ?? $purchases->first($id, $s->field('purchase_unit_price'));
+            $amount = $part === null ? null : $money->first((int) $part, $s->field('money_amount'));
+            $html  .= '<tr><td>' . esc_html((string) $purchases->first($id, $s->field('label'))) . ' <span class="description">#' . esc_html((string) $id) . '</span></td>'
+                . '<td>' . esc_html((string) ($purchases->first($id, $s->field('purchase_quantity')) ?? '—')) . '</td>'
+                . '<td>' . esc_html($amount ?? '—') . '</td></tr>';
+        }
+
+        return $html . '</tbody></table>';
+    }
+
+    /** D-997, tab «Lager»: Standard-Lagerort, Mindestbestand, Einzelstück (and «Verwendung» where it is set up). */
+    private function lagerView(int $thing): string
+    {
+        $s      = $this->stock->structure();
+        $record = $this->stock->things()->lagerOf($thing);
+        $lager  = $this->stock->table('lager');
+        $value  = static fn (string $key): string => $record === null || ! $s->hasField($key) ? '' : (string) $lager->first($record, $s->field($key));
+        $html   = $this->formStart('lager') . '<input type="hidden" name="thing" value="' . esc_attr((string) $thing) . '">'
+            . '<table class="form-table" role="presentation"><tbody>';
+
+        if ($s->hasField('lager_location')) {
+            $html .= '<tr><th>' . esc_html__('Standard-Lagerort', 'taxmod-stock') . '</th><td><select name="location">' . $this->options($this->stock->labels('location'), '—', (int) $value('lager_location')) . '</select></td></tr>';
+        }
+
+        $html .= '<tr><th>' . esc_html__('Mindestbestand', 'taxmod-stock') . '</th><td><input type="number" min="0" name="minimum" style="width:8em" value="' . esc_attr($value('lager_min')) . '"></td></tr>'
+            . '<tr><th>' . esc_html__('Einzelstück', 'taxmod-stock') . '</th><td><input type="checkbox" name="single" value="1"' . checked($value('lager_single'), '1', false) . '></td></tr>';
+
+        if ($s->hasField('lager_use') && $this->stock->uses() !== []) {
+            $html .= '<tr><th>' . esc_html__('Verwendung', 'taxmod-stock') . '</th><td><select name="use">' . $this->options($this->stock->uses(), '—', (int) $value('lager_use')) . '</select></td></tr>';
+        }
+
+        return $html . '</tbody></table>' . get_submit_button(__('Speichern', 'taxmod-stock')) . '</form>';
+    }
+
+    /**
+     * D-997, tab «Bestand»: quantity, value and minimum on top, the lots below with their movements, «Umbuchen» and «Ausbuchen».
+     */
+    private function stockView(int $thing): string
+    {
+        $s       = $this->stock->structure();
+        $ledger  = $this->stock->ledger();
+        $lots    = $this->stock->table('lot');
+        $money   = $this->stock->table('money');
+        $places  = $this->stock->labels('location');
+        $record  = $this->stock->things()->lagerOf($thing);
+        $min     = $record === null ? null : $this->stock->table('lager')->first($record, $s->field('lager_min'));
+        $stock   = $ledger->stockOf($thing);
+        $moves   = $this->movements($ledger->lotsOf($thing));
+        $worth   = 0.0;
+        $rows    = '';
+
+        foreach ($ledger->lotsOf($thing) as $lot) {
+            $value    = $lots->first($lot, $s->field('lot_value'));
+            $amount   = $value === null ? null : $money->first((int) $value, $s->field('money_amount'));
+            $purchase = $lots->first($lot, $s->field('lot_purchase'));
+            $place    = (int) $lots->first($lot, $s->field('lot_location'));
+            $rest     = $ledger->restOf($lot);
+            $worth   += $amount === null ? 0.0 : $rest * (float) $amount;
+
+            $rows .= '<tr><td>#' . esc_html((string) $lot) . '</td><td>' . esc_html($places[$place] ?? '—') . '</td><td>' . esc_html($this->number($rest)) . '</td>'
+                . '<td>' . esc_html($amount ?? '—') . '</td>'
+                . '<td>' . esc_html($purchase === null ? __('Inventur', 'taxmod-stock') : '#' . $purchase) . '</td>'
+                . '<td>' . esc_html(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10)) . '</td>'
+                . '<td style="white-space:nowrap">' . $this->formStart('umbuchen') . '<input type="hidden" name="thing" value="' . esc_attr((string) $thing) . '"><input type="hidden" name="lot" value="' . esc_attr((string) $lot) . '">'
+                . '<select name="location">' . $this->options($places, '', $place) . '</select> ' . get_submit_button(__('Umbuchen', 'taxmod-stock'), 'small', '', false) . '</form> '
+                . '<a class="button button-small" href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'verbrauch', 'thing' => $thing, 'lot' => $lot], admin_url('admin.php'))) . '">' . esc_html__('Ausbuchen', 'taxmod-stock') . '</a></td></tr>'
+                . '<tr><td></td><td colspan="6"><details><summary>' . esc_html__('Vorgänge', 'taxmod-stock') . '</summary>' . ($moves[$lot] ?? '—') . '</details></td></tr>';
+        }
+
+        $tile = static fn (string $label, string $value, string $tone): string => '<div style="flex:1;background:' . $tone . ';border-radius:6px;padding:10px 14px"><div style="color:#50575e">' . esc_html($label) . '</div><div style="font-size:1.6em;font-weight:600">' . esc_html($value) . '</div></div>';
+
+        return '<div style="display:flex;gap:12px;margin-bottom:16px">'
+            . $tile(__('Menge', 'taxmod-stock'), $this->number($stock), '#edfaef')
+            . $tile(__('Wert', 'taxmod-stock'), $this->number($worth), '#edfaef')
+            . $tile(__('Mindestbestand', 'taxmod-stock'), $min === null ? '—' : $min . ' ' . ($stock < (float) $min ? '✗' : '✓'), '#f6f7f7')
+            . '</div>'
+            . ($rows === '' ? '<p>' . esc_html__('Kein Bestandsposten.', 'taxmod-stock') . '</p>' : '<table class="widefat striped"><thead><tr><th>' . esc_html__('Posten', 'taxmod-stock') . '</th><th>' . esc_html__('Ort', 'taxmod-stock') . '</th><th>'
+            . esc_html__('Menge', 'taxmod-stock') . '</th><th>' . esc_html__('Wert je Stück', 'taxmod-stock') . '</th><th>' . esc_html__('Kauf', 'taxmod-stock') . '</th><th>' . esc_html__('Eingang', 'taxmod-stock') . '</th><th></th></tr></thead><tbody>' . $rows . '</tbody></table>');
+    }
+
+    /**
+     * The movements per lot: date, kind and quantity of each line, read from the Vorgänge in one go (CD-7).
+     *
+     * @param list<int> $lots
+     * @return array<int, string> lot → its movements as a list
+     */
+    private function movements(array $lots): array
+    {
+        $s       = $this->stock->structure();
+        $lines   = $this->stock->table('line');
+        $deals   = $this->stock->table('transaction');
+        $kinds   = [
+            $s->value('kind_receipt')     => __('Wareneingang', 'taxmod-stock'),
+            $s->value('kind_consumption') => __('Verbrauch', 'taxmod-stock'),
+            $s->value('kind_count')       => __('Inventur', 'taxmod-stock'),
+        ];
+        $wanted  = array_flip($lots);
+        $dealOf  = [];
+        $out     = [];
+
+        foreach ($deals->ids() as $deal) {
+            foreach ($deals->all($deal, $s->field('transaction_lines')) as $line) {
+                $dealOf[(int) $line] = $deal;
+            }
+        }
+
+        foreach ($lines->ids() as $line) {
+            $lot = (int) $lines->first($line, $s->field('line_lot'));
+
+            if (! isset($wanted[$lot])) {
+                continue;
+            }
+
+            $deal       = $dealOf[$line] ?? null;
+            $out[$lot]  = ($out[$lot] ?? '') . '<li>' . esc_html($deal === null ? '—' : substr((string) $deals->first($deal, $s->field('transaction_date')), 0, 10))
+                . ' · ' . esc_html($deal === null ? '' : ($kinds[(int) $deals->first($deal, $s->field('transaction_kind'))] ?? ''))
+                . ' · ' . esc_html((string) $lines->first($line, $s->field('line_quantity'))) . '</li>';
+        }
+
+        return array_map(static fn (string $html): string => '<ul style="margin:4px 0 0">' . $html . '</ul>', $out);
+    }
+
+    private function thingUrl(int $thing, string $view): string
+    {
+        return add_query_arg(['page' => self::PAGE, 'tab' => 'material', 'thing' => $thing, 'view' => $view], admin_url('admin.php'));
     }
 
     private function inventoryForm(): string
     {
-        $options = $this->options($this->stock->materialNames()->all(), __('— neues Material —', 'taxmod-stock'));
-        $html    = $this->formStart('inventur')
-            . '<p>' . esc_html__('Gezählter Bestand ohne Kauf. Jede Zeile wird ein Bestandsposten. Einem späteren Kauf zuordnen kommt mit Stufe 2 (F10).', 'taxmod-stock') . '</p>'
-            . '<p>' . esc_html__('Ein neues Material mit «Bezug» heisst wie sein Bezug; einen eigenen Namen braucht nur ein Material ohne Bezug.', 'taxmod-stock') . '</p>'
-            . '<table class="wp-list-table widefat striped table-view-list"><thead><tr><th scope="col" class="manage-column">' . esc_html__('Material', 'taxmod-stock') . '</th><th scope="col" class="manage-column">' . esc_html__('oder neu: Name', 'taxmod-stock')
-            . '</th><th scope="col" class="manage-column">' . esc_html__('Bezug (Satz-Id)', 'taxmod-stock') . '</th><th scope="col" class="manage-column">' . esc_html__('Menge', 'taxmod-stock') . '</th><th scope="col" class="manage-column">'
+        $groups = $this->groupOptions();
+        $html   = $this->formStart('inventur')
+            . '<p>' . esc_html__('Gezählter Bestand ohne Kauf. Jede Zeile wird ein Bestandsposten. Das Material ist ein Ding im Baum: eines suchen, oder ein neues in einer Gruppe anlegen.', 'taxmod-stock') . '</p>'
+            . '<table class="wp-list-table widefat striped table-view-list"><thead><tr><th scope="col" class="manage-column">' . esc_html__('Ding', 'taxmod-stock') . '</th><th scope="col" class="manage-column">' . esc_html__('oder neu: Gruppe', 'taxmod-stock')
+            . '</th><th scope="col" class="manage-column">' . esc_html__('und Bezeichnung', 'taxmod-stock') . '</th><th scope="col" class="manage-column">' . esc_html__('Menge', 'taxmod-stock') . '</th><th scope="col" class="manage-column">'
             . esc_html__('Wert je Stück', 'taxmod-stock') . '</th><th scope="col" class="manage-column">' . esc_html__('Hinweis', 'taxmod-stock') . '</th></tr></thead><tbody>';
 
         for ($i = 0; $i < self::ROWS; $i++) {
-            $html .= '<tr><td><select name="rows[' . $i . '][material]">' . $options . '</select></td>'
+            $html .= '<tr><td>' . $this->thingField('rows[' . $i . '][thing]', 'taxmod-stock-thing-' . $i, null) . '</td>'
+                . '<td><select name="rows[' . $i . '][group]" style="max-width:18em">' . $groups . '</select></td>'
                 . '<td><input type="text" name="rows[' . $i . '][name]"></td>'
-                . '<td>' . $this->thingField('rows[' . $i . '][thing]', 'taxmod-stock-thing-' . $i, null) . '</td>'
                 . '<td><input type="text" inputmode="decimal" name="rows[' . $i . '][quantity]" style="width:6em"></td>'
                 . '<td><input type="text" inputmode="decimal" name="rows[' . $i . '][value]" style="width:6em"></td>'
                 . '<td><input type="text" name="rows[' . $i . '][note]"></td></tr>';
         }
 
         return $html . '</tbody></table>' . get_submit_button(__('Inventur buchen', 'taxmod-stock')) . '</form>';
+    }
+
+    /** The groups a new thing can go into, by their path in the tree; the empty choice first. */
+    private function groupOptions(): string
+    {
+        $paths = [];
+
+        foreach ($this->stock->tree() as $node => $row) {
+            if ($row['class'] === 'Category') {
+                $paths[$node] = $this->stock->path($node);
+            }
+        }
+
+        asort($paths, SORT_NATURAL | SORT_FLAG_CASE);
+
+        return $this->options(array_filter($paths), '—');
     }
 
     /**
@@ -235,12 +570,12 @@ final class StockPage
 
         $shown = (new StockList($list->search, '', $list->orderBy, $list->descending))->apply($rows);
         $auto  = $this->stock->viewSettings()->expanded('wareneingang');
-        $html  = $this->tools('wareneingang', $list, 'status', $status, [
+        $html  = $this->tools('wareneingang', $list, [['status', [
             'open'     => __('Nicht eingegangen', 'taxmod-stock'),
             'partial'  => __('Teilweise eingegangen', 'taxmod-stock'),
             'received' => __('Eingegangen', 'taxmod-stock'),
             ''         => __('Alle Bestellungen', 'taxmod-stock'),
-        ], __('Bestellung, Nummer …', 'taxmod-stock'), sprintf(
+        ], $status, __('Filter', 'taxmod-stock')]], [], __('Bestellung, Nummer …', 'taxmod-stock'), sprintf(
             /* translators: %d: number of orders */
             _n('%d Bestellung', '%d Bestellungen', count($shown), 'taxmod-stock'),
             count($shown)
@@ -356,7 +691,7 @@ final class StockPage
         };
     }
 
-    /** The purchases of one order with their material, Bezug and place, as one booking form. */
+    /** The purchases of one order with their thing and place, as one booking form (D-995). */
     private function receiptPositions(int $order): string
     {
         $orders = $this->stock->labels('order');
@@ -365,170 +700,83 @@ final class StockPage
             throw StockError::nothingToBook();
         }
 
-        $names  = $this->stock->materialNames();
-        $plan   = $this->stock->receiptPlan($order, $names);
+        $things = $this->stock->things();
+        $plan   = $this->stock->receiptPlan($order);
         $labels = $this->stock->labels('purchase');
         $about  = $this->purchaseAbout(array_keys($plan));
         $models = $this->stock->recordLabels(array_values(array_filter(array_column($plan, 'model'))));
-        $all    = $names->all();
         $places = $this->stock->labels('location');
-        $where  = $this->stock->receiptLocations($plan, $names);
+        $where  = $this->stock->receiptLocations($plan);
+        $groups = $this->groupOptions();
+        $known  = '';
+
+        foreach ($things->all() as $id => $label) {
+            $known .= '<option value="' . esc_attr((string) $id) . '">' . esc_html($label) . '</option>';
+        }
 
         $html  = $this->formStart('wareneingang') . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
-            . '<p>' . esc_html__('Je Kauf ein Material: vorgeschlagen ist das Material, das schon auf das «Modell» des Kaufs verweist, sonst ein neues mit diesem Bezug. Suchen filtert die Liste; «neu anlegen» nimmt den angegebenen Bezug, ohne Angabe das Modell. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seines Zweigs (Reiter «Lager»).', 'taxmod-stock') . '</p>'
+            . '<p>' . esc_html__('Je Kauf ein Ding aus dem Baum: vorgeschlagen ist das «Modell» des Kaufs. Ohne Modell ein Ding wählen oder suchen, oder «neu anlegen» mit Gruppe und Bezeichnung. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Dings, sonst der Ort seines Zweigs.', 'taxmod-stock') . '</p>'
             . '<div class="tablenav top"><div class="tablenav-pages one-page"><span class="displaying-num">' . esc_html(sprintf(
                 /* translators: %d: number of purchases */
                 _n('%d Kauf', '%d Käufe', count($plan), 'taxmod-stock'),
                 count($plan)
             )) . '</span></div><br class="clear"></div>';
         $head  = '<tr><td class="manage-column column-cb check-column"><input type="checkbox" aria-label="' . esc_attr__('Alle wählen', 'taxmod-stock') . '"></td>'
-            . '<th scope="col" class="manage-column">' . esc_html__('Kauf', 'taxmod-stock') . '</th><th scope="col" class="manage-column">' . esc_html__('Modell', 'taxmod-stock')
-            . '</th><th scope="col" class="manage-column" style="width:25%">' . esc_html__('Material', 'taxmod-stock') . '</th><th scope="col" class="manage-column">' . esc_html__('Bezug für «neu anlegen»', 'taxmod-stock')
+            . '<th scope="col" class="manage-column">' . esc_html__('Kauf', 'taxmod-stock') . '</th><th scope="col" class="manage-column" style="width:25%">' . esc_html__('Ding', 'taxmod-stock')
+            . '</th><th scope="col" class="manage-column">' . esc_html__('suchen oder neu anlegen', 'taxmod-stock')
             . '</th><th scope="col" class="manage-column">' . esc_html__('Lagerort', 'taxmod-stock') . '</th></tr>';
-        $html .= '<table class="wp-list-table widefat fixed striped table-view-list"><thead>' . $head . '</thead><tbody>' . ($plan === [] ? $this->noItems(4) : '');
+        $html .= '<table class="wp-list-table widefat fixed striped table-view-list"><thead>' . $head . '</thead><tbody>' . ($plan === [] ? $this->noItems(3) : '');
 
         foreach ($plan as $purchase => $row) {
             $lock     = $row['lock'];
-            $proposal = $row['proposal'];
             $model    = $row['model'];
             $select   = 'taxmod-stock-choice-' . $purchase;
             $html    .= '<tr><th scope="row" class="check-column"><input type="checkbox" name="purchases[]" value="' . esc_attr((string) $purchase) . '"'
-                . ($lock === null && $proposal !== null ? ' checked' : '') . ($lock === null ? '' : ' disabled') . '></th>'
+                . ($lock === null && $model !== null ? ' checked' : '') . ($lock === null ? '' : ' disabled') . '></th>'
                 . '<td>' . esc_html($labels[$purchase] ?? '#' . $purchase) . ($lock === null ? '' : ' <em>(' . esc_html(Messages::lockReason($lock)) . ')</em>')
-                . (($about[$purchase] ?? '') === '' ? '' : '<br><span class="description">' . esc_html($about[$purchase]) . '</span>') . '</td>'
-                . '<td>' . ($model === null ? '—' : esc_html('#' . $model . (($models[$model] ?? '') === '' ? '' : ' · ' . $models[$model]))) . '</td>';
+                . (($about[$purchase] ?? '') === '' ? '' : '<br><span class="description">' . esc_html($about[$purchase]) . '</span>') . '</td>';
 
             if ($lock !== null) {
-                $html .= '<td>' . esc_html(implode(', ', array_map($names->name(...), array_filter($row['materials'], $names->has(...))))) . '</td><td></td><td></td></tr>';
+                $html .= '<td>' . esc_html($model === null ? '—' : '#' . $model . ' · ' . ($models[$model] ?? '')) . '</td><td></td><td></td></tr>';
                 continue;
             }
 
-            $html .= '<td><input type="search" class="taxmod-stock-filter" data-for="' . esc_attr($select) . '" placeholder="' . esc_attr__('suchen …', 'taxmod-stock') . '" style="width:8em"> '
+            $html .= '<td><input type="search" class="taxmod-stock-filter" data-for="' . esc_attr($select) . '" placeholder="' . esc_attr__('filtern …', 'taxmod-stock') . '" style="width:8em"> '
                 . '<select id="' . esc_attr($select) . '" name="choice[' . esc_attr((string) $purchase) . ']">'
-                . $this->choiceOptions($row['materials'], $proposal, $all, $names) . '</select></td>'
-                . '<td>' . $this->thingField('thing[' . $purchase . ']', 'taxmod-stock-thing-p' . $purchase, null) . '</td>'
+                . ($model === null ? '<option value="">' . esc_html__('— Ding wählen —', 'taxmod-stock') . '</option>' : '<option value="keep" selected>' . esc_html(sprintf(
+                    /* translators: %s: the purchase's «Modell» */
+                    __('Modell: %s', 'taxmod-stock'),
+                    '#' . $model . ' · ' . ($models[$model] ?? '')
+                )) . '</option>')
+                . '<option value="search">' . esc_html__('gesuchtes Ding →', 'taxmod-stock') . '</option>'
+                . '<option value="new">' . esc_html__('neu anlegen →', 'taxmod-stock') . '</option>' . $known . '</select></td>'
+                . '<td>' . $this->thingField('thing[' . $purchase . ']', 'taxmod-stock-thing-p' . $purchase, null)
+                . '<br><select name="group[' . esc_attr((string) $purchase) . ']" style="max-width:14em">' . $groups . '</select> '
+                . '<input type="text" name="name[' . esc_attr((string) $purchase) . ']" value="' . esc_attr($labels[$purchase] ?? '') . '" placeholder="' . esc_attr__('Bezeichnung', 'taxmod-stock') . '" style="width:14em"></td>'
                 . '<td><select name="location[' . esc_attr((string) $purchase) . ']">' . $this->options($places, '—', $where[$purchase] ?? 0) . '</select></td></tr>';
         }
 
         return $html . '</tbody></table>' . get_submit_button(__('Wareneingang buchen', 'taxmod-stock')) . '</form>';
     }
 
-    /**
-     * @param list<int>          $kept the materials the purchase already names
-     * @param array<int, string> $all  every material, «#id · name»
-     */
-    private function choiceOptions(array $kept, ?ReceiptChoice $proposal, array $all, MaterialNames $names): string
-    {
-        $html = $proposal === null ? '<option value="">' . esc_html__('— Material wählen —', 'taxmod-stock') . '</option>' : '';
-
-        if ($kept !== []) {
-            $html .= '<option value="keep"' . selected($proposal?->keep ?? false, true, false) . '>' . esc_html(
-                /* translators: %s: the materials the purchase names already */
-                sprintf(__('wie zugeordnet: %s', 'taxmod-stock'), implode(', ', array_map(static fn (int $m): string => $names->has($m) ? $names->name($m) : '#' . $m, $kept)))
-            ) . '</option>';
-        }
-
-        $html .= '<option value="new"' . selected($proposal !== null && $proposal->isNew(), true, false) . '>' . esc_html__('neu anlegen', 'taxmod-stock') . '</option>';
-
-        foreach ($all as $id => $label) {
-            $html .= '<option value="' . esc_attr((string) $id) . '"' . selected($proposal?->material, $id, false) . '>' . esc_html($label) . '</option>';
-        }
-
-        return $html;
-    }
-
-    private function materialTab(int $edit, StockList $list): string
-    {
-        $s      = $this->stock->structure();
-        $names  = $this->stock->materialNames();
-        $table  = $this->stock->table('material');
-        $ledger = $this->stock->ledger();
-        $uses   = $this->stock->uses();
-        $places = $this->stock->labels('location');
-        $field  = static fn (string $key): ?int => $s->hasField($key) ? $s->field($key) : null;
-        $rows   = [];
-
-        foreach (array_keys($names->all()) as $id) {
-            $use    = $field('material_use') === null ? null : $table->first($id, (int) $field('material_use'));
-            $min    = $table->first($id, $s->field('material_min'));
-            $stock  = $ledger->stockOf($id);
-            $rows[] = ['id' => $id, 'name' => $names->word($id), 'stock' => $stock, 'low' => $min !== null && $stock < (float) $min,
-                'words' => array_values(array_filter([(string) $names->thingOf($id), $use === null ? '' : ($uses[(int) $use] ?? '')]))];
-        }
-
-        $shown = $list->apply($rows);
-        $html  = $this->tools('material', $list, 'filter', $list->filter, $this->materialFilters(), __('Material, Nummer, Bezug …', 'taxmod-stock'), sprintf(
-            /* translators: %d: number of materials */
-            _n('%d Material', '%d Materialien', count($shown), 'taxmod-stock'),
-            count($shown)
-        ));
-        $body  = $shown === [] ? $this->noItems(7) : '';
-
-        foreach ($shown as $row) {
-            $id    = $row['id'];
-            $thing = $names->thingOf($id);
-            $use   = $field('material_use') === null ? null : $table->first($id, (int) $field('material_use'));
-            $body .= ListPage::row(self::BULK_FORM, (string) $id, [
-                esc_html((string) $id),
-                '<strong>' . esc_html($row['name'] === '' ? '—' : $row['name']) . '</strong>',
-                $thing === null ? '—' : esc_html('#' . $thing),
-                esc_html($table->first($id, $s->field('material_single')) === '1' ? __('ja', 'taxmod-stock') : __('nein', 'taxmod-stock')),
-                esc_html($use === null ? '—' : ($uses[(int) $use] ?? '#' . $use)),
-                esc_html((string) ($table->first($id, $s->field('material_min')) ?? '—')),
-                '<span' . ($row['low'] ? ' style="color:#b32d2e;font-weight:600"' : '') . '>' . esc_html($this->number($row['stock'])) . '</span>',
-            ], $this->editButton($id), esc_html(sprintf(
-                /* translators: %d: number of stock lots */
-                _n('%d Bestandsposten, Einzelheiten im Reiter «Bestand».', '%d Bestandsposten, Einzelheiten im Reiter «Bestand».', count($ledger->lotsOf($id)), 'taxmod-stock'),
-                count($ledger->lotsOf($id))
-            )));
-        }
-
-        $html .= ListPage::table([[__('Nr.', 'taxmod-stock'), '6em'], $this->sortColumn('material', $list, 'name', __('Material', 'taxmod-stock'), ''), [__('Bezug', 'taxmod-stock'), '8em'], [__('Einzelstück', 'taxmod-stock'), '7em'],
-            [__('Verwendung', 'taxmod-stock')], [__('Mindestbestand', 'taxmod-stock'), '9em'], $this->sortColumn('material', $list, 'stock', __('Bestand', 'taxmod-stock'), '7em')], $body);
-
-        $edit  = $table->has($edit) ? $edit : 0;
-        $value = static fn (?int $relation): string => $edit === 0 || $relation === null ? '' : (string) $table->first($edit, $relation);
-        $html .= '<h2 id="taxmod-stock-edit">' . esc_html($edit === 0 ? __('Neues Material', 'taxmod-stock') : sprintf(
-            /* translators: %s: «#id · name» of the material */
-            __('Material %s bearbeiten', 'taxmod-stock'),
-            $names->name($edit)
-        )) . '</h2>' . $this->formStart('material') . '<input type="hidden" name="material" value="' . esc_attr((string) $edit) . '">'
-            . '<p>' . esc_html__('Mit «Bezug» heisst das Material wie sein Bezug, eine eigene Bezeichnung wird dann geleert. Ohne Bezug braucht es eine Bezeichnung.', 'taxmod-stock') . '</p>'
-            . '<table class="form-table"><tbody>'
-            . '<tr><th>' . esc_html__('Bezug', 'taxmod-stock') . '</th><td>' . $this->thingField('thing', 'taxmod-stock-thing-m', $edit === 0 ? null : $names->thingOf($edit)) . '</td></tr>'
-            . '<tr><th>' . esc_html__('Bezeichnung (nur ohne Bezug)', 'taxmod-stock') . '</th><td><input type="text" name="name" class="regular-text" value="' . esc_attr($names->thingOf($edit) === null ? $value($s->field('label')) : '') . '"></td></tr>'
-            . '<tr><th>' . esc_html__('Einzelstück', 'taxmod-stock') . '</th><td><input type="checkbox" name="single" value="1"' . checked($value($s->field('material_single')), '1', false) . '></td></tr>';
-
-        if ($field('material_use') !== null) {
-            $html .= '<tr><th>' . esc_html__('Verwendung', 'taxmod-stock') . '</th><td><select name="use">' . $this->options($uses, '—', (int) $value($field('material_use'))) . '</select></td></tr>';
-        }
-
-        if ($field('material_location') !== null) {
-            $html .= '<tr><th>' . esc_html__('Standard-Lagerort', 'taxmod-stock') . '</th><td><select name="location">' . $this->options($places, '—', (int) $value($field('material_location'))) . '</select></td></tr>';
-        }
-
-        return $html . '<tr><th>' . esc_html__('Mindestbestand', 'taxmod-stock') . '</th><td><input type="number" min="0" name="minimum" style="width:8em" value="' . esc_attr($value($s->field('material_min'))) . '"></td></tr>'
-            . '</tbody></table>' . get_submit_button($edit === 0 ? __('Material anlegen', 'taxmod-stock') : __('Material speichern', 'taxmod-stock')) . '</form>';
-    }
-
-    private function consumptionForm(): string
+    private function consumptionForm(int $preset, int $presetLot): string
     {
         $ledger = $this->stock->ledger();
-        $labels = $this->stock->materialNames()->all();
+        $labels = $this->stock->things()->all();
         $lots   = $this->stock->table('lot');
         $date   = $this->stock->structure()->field('lot_date');
-        $have   = array_intersect_key($labels, array_flip($ledger->materials()));
+        $have   = array_intersect_key($labels, array_flip($ledger->things()));
         $choice = '<option value="0">' . esc_html__('automatisch: ältester Posten mit Rest', 'taxmod-stock') . '</option>';
 
-        foreach ($have as $material => $label) {
-            foreach ($ledger->lotsOf($material) as $lot) {
-                $choice .= '<option value="' . esc_attr((string) $lot) . '">' . esc_html($label . ' · ' . substr((string) $lots->first($lot, $date), 0, 10)
+        foreach ($have as $thing => $label) {
+            foreach ($ledger->lotsOf($thing) as $lot) {
+                $choice .= '<option value="' . esc_attr((string) $lot) . '"' . selected($lot, $presetLot, false) . '>' . esc_html($label . ' · ' . substr((string) $lots->first($lot, $date), 0, 10)
                     . ' · ' . __('Rest', 'taxmod-stock') . ' ' . $this->number($ledger->restOf($lot))) . '</option>';
             }
         }
 
         return $this->formStart('verbrauch')
-            . '<p><label>' . esc_html__('Material', 'taxmod-stock') . ' <select name="material" required>' . $this->options($have, '') . '</select></label></p>'
+            . '<p><label>' . esc_html__('Material', 'taxmod-stock') . ' <select name="thing" required>' . $this->options($have, '', $preset) . '</select></label></p>'
             . '<p><label>' . esc_html__('Menge', 'taxmod-stock') . ' <input type="text" inputmode="decimal" name="quantity" required style="width:6em"></label></p>'
             . '<p><label>' . esc_html__('Bestandsposten', 'taxmod-stock') . ' <select name="lot">' . $choice . '</select></label></p>'
             . '<p><label>' . esc_html__('Projekt (Satz-Id, optional)', 'taxmod-stock') . ' <input type="number" min="1" name="project" style="width:8em"></label></p>'
@@ -536,7 +784,8 @@ final class StockPage
     }
 
     /**
-     * The ticked purchases with their material — «keep», «new» (with the Bezug typed, else the Modell) or a material id — and their place.
+     * The ticked purchases with their thing — «keep» (the Modell), «search» (the thing found), «new» (group and name)
+     * or a known thing — and their place.
      *
      * @return array<int, ReceiptChoice>
      */
@@ -544,6 +793,8 @@ final class StockPage
     {
         $choices = (array) ($_POST['choice'] ?? []);
         $things  = (array) ($_POST['thing'] ?? []);
+        $groups  = (array) ($_POST['group'] ?? []);
+        $names   = (array) ($_POST['name'] ?? []);
         $places  = (array) ($_POST['location'] ?? []);
         $out     = [];
 
@@ -551,23 +802,22 @@ final class StockPage
             $choice = sanitize_key((string) wp_unslash($choices[$purchase] ?? ''));
 
             $out[$purchase] = (match (true) {
-                $choice === 'keep'     => ReceiptChoice::keep(),
-                $choice === 'new'      => ReceiptChoice::create(absint($things[$purchase] ?? 0) ?: null),
-                absint($choice) > 0    => ReceiptChoice::existing(absint($choice)),
-                default                => throw StockError::purchaseWithoutMaterial($purchase),
+                $choice === 'keep'   => ReceiptChoice::keep(),
+                $choice === 'search' => ReceiptChoice::existing(absint($things[$purchase] ?? 0) ?: throw StockError::purchaseWithoutThing($purchase)),
+                $choice === 'new'    => ReceiptChoice::create(new NewThing(absint($groups[$purchase] ?? 0), sanitize_text_field(wp_unslash((string) ($names[$purchase] ?? ''))))),
+                absint($choice) > 0  => ReceiptChoice::existing(absint($choice)),
+                default              => throw StockError::purchaseWithoutThing($purchase),
             })->at(absint($places[$purchase] ?? 0) ?: null);
         }
 
         return $out;
     }
 
-    private function materialInput(): MaterialInput
+    private function lagerInput(): LagerInput
     {
         $minimum = sanitize_text_field(wp_unslash((string) ($_POST['minimum'] ?? '')));
 
-        return new MaterialInput(
-            absint($_POST['thing'] ?? 0) ?: null,
-            sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? ''))),
+        return new LagerInput(
             ! empty($_POST['single']),
             absint($_POST['use'] ?? 0) ?: null,
             absint($_POST['location'] ?? 0) ?: null,
@@ -576,7 +826,7 @@ final class StockPage
     }
 
     /**
-     * «Bezug» as one search field that shows the record's name; its id travels in a hidden field beside it
+     * A thing as one search field that shows the record's name; its id travels in a hidden field beside it
      * (his question 2026-10-25: «was hält uns davon ab den einfach aufzulösen ?»). Typing «#123» sets the id directly.
      */
     private function thingField(string $name, string $id, ?int $value): string
@@ -590,10 +840,10 @@ final class StockPage
 
         return '<input type="hidden" id="' . esc_attr($id) . '" name="' . esc_attr($name) . '" value="' . esc_attr((string) ($value ?? '')) . '">'
             . '<input type="search" class="taxmod-stock-thing-search" data-for="' . esc_attr($id) . '" list="' . esc_attr($id . '-hits') . '" value="' . esc_attr($shown) . '" placeholder="'
-            . esc_attr__('Bezug suchen …', 'taxmod-stock') . '" style="width:18em"><datalist id="' . esc_attr($id . '-hits') . '"></datalist>';
+            . esc_attr__('Ding suchen …', 'taxmod-stock') . '" style="width:18em"><datalist id="' . esc_attr($id . '-hits') . '"></datalist>';
     }
 
-    /** Filters a material list as one types, and asks the modeller's record search for «Bezug». */
+    /** Filters a choice list as one types, and asks the modeller's record search for a thing. */
     private function script(): string
     {
         $search    = add_query_arg(['action' => self::RECORD_SEARCH, '_taxmod_nonce' => wp_create_nonce(self::RECORD_SEARCH)], admin_url('admin-post.php'));
@@ -603,7 +853,7 @@ final class StockPage
             . 'var url=' . wp_json_encode($search) . ',pos=' . wp_json_encode($positions) . ';'
             . 'function bind(root){'
             . 'root.querySelectorAll(".taxmod-stock-filter").forEach(function(f){var s=document.getElementById(f.dataset.for);if(!s){return;}var o=Array.prototype.slice.call(s.options);'
-            . 'f.addEventListener("input",function(){var q=f.value.toLowerCase(),first=null;o.forEach(function(x){var fix=x.value===""||x.value==="new"||x.value==="keep";x.hidden=q!==""&&!fix&&x.text.toLowerCase().indexOf(q)<0;if(!fix&&!x.hidden&&!first){first=x;}});if(q!==""&&first){s.value=first.value;}});});'
+            . 'f.addEventListener("input",function(){var q=f.value.toLowerCase(),first=null;o.forEach(function(x){var fix=x.value===""||x.value==="new"||x.value==="keep"||x.value==="search";x.hidden=q!==""&&!fix&&x.text.toLowerCase().indexOf(q)<0;if(!fix&&!x.hidden&&!first){first=x;}});if(q!==""&&first){s.value=first.value;}});});'
             . 'document.querySelectorAll(".taxmod-stock-thing-search").forEach(function(f){var t=document.getElementById(f.dataset.for),l=document.getElementById(f.getAttribute("list")),w;'
             . 'f.addEventListener("input",function(){var m=f.value.match(/^#(\\d+)/);if(m){t.value=m[1];return;}t.value="";clearTimeout(w);if(f.value.trim().length<2){return;}'
             . 'w=setTimeout(function(){fetch(url+"&term="+encodeURIComponent(f.value),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){l.innerHTML="";(j.data||[]).forEach(function(h){var x=document.createElement("option");x.value="#"+h.id+" · "+h.word+(h.node?" ("+h.node+")":"");l.appendChild(x);});});},250);});});'
@@ -624,21 +874,20 @@ final class StockPage
 
         foreach ((array) ($_POST['rows'] ?? []) as $row) {
             $row      = is_array($row) ? wp_unslash($row) : [];
-            $material = absint($row['material'] ?? 0) ?: null;
+            $thing    = absint($row['thing'] ?? 0) ?: null;
+            $group    = absint($row['group'] ?? 0);
             $name     = sanitize_text_field((string) ($row['name'] ?? ''));
             $quantity = sanitize_text_field((string) ($row['quantity'] ?? ''));
 
-            $thing    = absint($row['thing'] ?? 0) ?: null;
-
-            // An empty row is no row; a row with neither material, name nor Bezug cannot be booked and is left out the same way.
-            if ($quantity === '' || ($material === null && $name === '' && $thing === null)) {
+            // An empty row is no row; a row with neither a thing nor a name for a new one is left out the same way.
+            if ($quantity === '' || ($thing === null && $name === '')) {
                 continue;
             }
 
             $rows[] = new InventoryRow(
-                $material,
-                $name,
                 $thing,
+                $thing === null ? new NewThing($group, $name) : null,
+                $name,
                 $quantity,
                 sanitize_text_field((string) ($row['value'] ?? '')),
                 sanitize_text_field((string) ($row['note'] ?? ''))
@@ -670,15 +919,12 @@ final class StockPage
 
     private function tabBar(string $active, StockList $list): string
     {
-        $materials = $this->stock->materialNames()->all();
-        $ledger    = $this->stock->ledger();
         $s         = $this->stock->structure();
         $orderRows = $this->stock->table('order');
 
         return ListPage::tabs([
             ['wareneingang', __('Wareneingang', 'taxmod-stock'), count(array_filter(array_keys($this->stock->labels('order')), fn (int $id): bool => $this->orderState($orderRows->first($id, $s->field('order_status'))) !== 'received'))],
-            ['bestand', __('Bestand', 'taxmod-stock'), count(array_filter(array_keys($materials), static fn (int $id): bool => $ledger->stockOf($id) > 0.0))],
-            ['material', __('Material', 'taxmod-stock'), count($materials)],
+            ['material', __('Material', 'taxmod-stock'), count($this->stock->things()->all())],
             ['inventur', __('Inventur', 'taxmod-stock')],
             ['verbrauch', __('Verbrauch', 'taxmod-stock')],
         ], $active, fn (string $slug): string => $this->listUrl($slug, $slug === $active ? $list : new StockList(), []));
@@ -710,27 +956,29 @@ final class StockPage
             'filter'  => $list->filter,
             'orderby' => $list->orderBy === 'name' ? '' : $list->orderBy,
             'order'   => $list->descending ? 'desc' : '',
+            'group'   => $tab === 'material' ? sanitize_key((string) ($_GET['group'] ?? '')) : '',
         ]);
 
         return admin_url('admin.php?' . http_build_query(array_filter(array_merge($query, $change)), '', '&'));
     }
 
     /**
-     * Search box, one filter, bulk bar with «Expand all» and the count, all from the shared list page (D-989).
+     * Search box, the filters, bulk bar with «Expand all» and the count, all from the shared list page (D-989).
      *
-     * @param array<string, string> $filters
+     * @param list<array{0: string, 1: array<string, string>, 2: string, 3: string}> $filters
+     * @param array<string, string>                                                $keep    query values the search keeps
      */
-    private function tools(string $tab, StockList $list, string $filterName, string $current, array $filters, string $placeholder, string $count): string
+    private function tools(string $tab, StockList $list, array $filters, array $keep, string $placeholder, string $count): string
     {
         $hidden = array_filter([
             'page'    => self::PAGE,
             'tab'     => $tab,
             'orderby' => $list->orderBy === 'name' ? '' : $list->orderBy,
             'order'   => $list->descending ? 'desc' : '',
-        ]);
+        ] + $keep);
 
         return ListPage::searchBox(self::FILTER_FORM, $list->search, $placeholder, $hidden, __('Suchen', 'taxmod-stock'))
-            . ListPage::bulkBar(self::BULK_FORM, self::ACTION, [], $count, ListPage::filters(self::FILTER_FORM, [[$filterName, $filters, $current, __('Filter', 'taxmod-stock')]]));
+            . ListPage::bulkBar(self::BULK_FORM, self::ACTION, [], $count, ListPage::filters(self::FILTER_FORM, $filters));
     }
 
     /** @return array<string, string> */
@@ -751,12 +999,6 @@ final class StockPage
 
         return [$label, $width, $this->listUrl($tab, $list, ['orderby' => $key === 'name' ? '' : $key, 'order' => $next === 'desc' ? 'desc' : '']),
             $current ? ($list->descending ? 'desc' : 'asc') : ''];
-    }
-
-    private function editButton(int $material): string
-    {
-        return '<a class="button button-small" href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'material', 'material' => $material], admin_url('admin.php')) . '#taxmod-stock-edit') . '">'
-            . esc_html__('Bearbeiten', 'taxmod-stock') . '</a>';
     }
 
     /** @param int $columns the module's columns; the list page adds the checkbox and the actions column */

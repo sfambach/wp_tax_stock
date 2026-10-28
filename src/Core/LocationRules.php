@@ -10,7 +10,7 @@ namespace TaxmodStock\Core;
  *
  * ```mermaid
  * flowchart LR
- *   M{"material has a Standard-Lagerort?"} -->|yes| A["that place"]
+ *   M{"Lager view has a Standard-Lagerort?"} -->|yes| A["that place"]
  *   M -->|no| T{"thing under a listed branch?"}
  *   T -->|yes| B["place of the nearest branch"]
  *   T -->|no thing at all| V["place for «ohne Bezug»"]
@@ -51,10 +51,10 @@ final class LocationRules
     }
 
     /** @param int|null $thingNode the node of the purchase's thing; null when it has none */
-    public function propose(?int $materialDefault, ?int $thingNode): int
+    public function propose(?int $lagerDefault, ?int $thingNode): int
     {
         return match (true) {
-            $materialDefault !== null => $materialDefault,
+            $lagerDefault !== null => $lagerDefault,
             $thingNode === null       => $this->unreferenced ?? $this->fallback,
             default                   => $this->forNode($thingNode) ?? $this->fallback,
         };

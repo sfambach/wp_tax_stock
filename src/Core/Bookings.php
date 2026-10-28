@@ -6,12 +6,13 @@ namespace TaxmodStock\Core;
  * Turns a stock count, a goods receipt or a consumption into one change list for the modeller.
  *
  * Every booking is one Vorgang with its Pos lines; a receipt or a count also creates the Bestandsposten the lines
- * name (D-956). The list is written in one call, all or nothing — the module never writes half a booking.
+ * name (D-956). A lot belongs to a thing of the tree, which is the material (D-995); a new thing is created in the
+ * same list. The list is written in one call, all or nothing — the module never writes half a booking.
  *
  * ```mermaid
  * flowchart LR
  *   F["form"] --> B["Bookings: change list"] --> W["taxmod/write-data, one call"]
- *   B -.- V["Vorgang · Bestandsposten · Pos"]
+ *   B -.- V["(neues Ding) · Vorgang · Bestandsposten · Pos"]
  * ```
  *
  * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/lager/konzept.md §3.5, §3.5a, §4
@@ -42,9 +43,9 @@ final class Bookings
 
         foreach ($rows as $row) {
             $quantity = Quantity::positive($row->quantity);
-            $material = $row->material === null ? '@' . $this->newMaterial($row->thing, $row->name) : (string) $row->material;
+            $thing    = $row->new !== null ? '@' . $this->newThing($row->new) : (string) ($row->thing ?? throw StockError::nothingToBook());
             $value    = $row->value === null || $row->value === '' ? null : $this->moneyPart(Quantity::amount($row->value), null);
-            $lot      = $this->lot($row->name, $material, null, $value, $row->note);
+            $lot      = $this->lot($row->name, $thing, null, $value, $row->note);
 
             $this->line($row->name, $lot, $quantity, $quantity);
         }
@@ -55,14 +56,14 @@ final class Bookings
     /**
      * A goods receipt of chosen purchases of one order (D-956: partial receipts are allowed).
      *
-     * Each purchase goes in as the material chosen for it; a choice other than «keep» is also written into the
-     * purchase's «Material», in the same list (D-967). ⚠️ R1: a purchase that is «not yet determined» is refused.
+     * Each purchase goes in as the thing chosen for it; a choice other than «keep» is also written into the
+     * purchase's «Modell», in the same list (D-995). ⚠️ R1: a purchase that is «not yet determined» is refused.
      *
-     * @param array<int, ReceiptChoice> $choices  purchase record id → its material
+     * @param array<int, ReceiptChoice> $choices  purchase record id → its thing
      * @param array<int, true>          $received purchases some lot already names
      * @return list<array<string, mixed>>
      */
-    public function receipt(int $order, array $choices, Table $orders, Table $purchases, Table $materialTable, Table $money, array $received, string $title): array
+    public function receipt(int $order, array $choices, Table $orders, Table $purchases, Table $money, array $received, string $title): array
     {
         $s       = $this->structure;
         $inOrder = array_map('intval', $orders->all($order, $s->field('order_lines')));
@@ -87,17 +88,12 @@ final class Bookings
             }
 
             $name      = (string) $purchases->first($purchase, $s->field('label'));
-            $materials = $this->materialsFor($purchase, $choice, $name, $purchases, $materialTable);
-            $count     = $purchases->first($purchase, $s->field('purchase_quantity'));
-            $price     = $this->priceOf($purchase, $purchases, $money);
+            $thing    = $this->thingFor($purchase, $choice, $purchases);
+            $count    = $purchases->first($purchase, $s->field('purchase_quantity'));
+            $quantity = $count === null || (int) $count < 1 ? '1' : (string) (int) $count;
+            $lot      = $this->lot($name, $thing, (string) $purchase, $this->priceOf($purchase, $purchases, $money), '', $choice->location);
 
-            // One material: the purchase's quantity on one lot. Several: each is a single piece (concept §3.4, Käufe → Material).
-            foreach ($materials as $material) {
-                $quantity = count($materials) > 1 || $count === null || (int) $count < 1 ? '1' : (string) (int) $count;
-                $lot      = $this->lot($name, $material, (string) $purchase, $price, '', $choice->location);
-
-                $this->line($name, $lot, $quantity, null);
-            }
+            $this->line($name, $lot, $quantity, null);
         }
 
         $all    = $inOrder !== [] && array_diff($inOrder, array_keys($choices), array_keys($received)) === [];
@@ -133,75 +129,48 @@ final class Bookings
         $this->lineRefs = [];
     }
 
-    /**
-     * The materials a purchase goes in as; a new one is created here, and the purchase is told its material.
-     *
-     * @return list<string> material ids or @refs
-     */
-    private function materialsFor(int $purchase, ReceiptChoice $choice, string $name, Table $purchases, Table $materials): array
+    /** The thing a purchase goes in as; a new one is created here, and the purchase is told its «Modell». */
+    private function thingFor(int $purchase, ReceiptChoice $choice, Table $purchases): string
     {
         $s = $this->structure;
 
         if ($choice->keep) {
-            $kept = $purchases->all($purchase, $s->field('purchase_material'));
+            $model = (int) $purchases->first($purchase, $s->field('purchase_model'));
 
-            return $kept === [] ? throw StockError::purchaseWithoutMaterial($purchase) : $kept;
+            return $model > 0 ? (string) $model : throw StockError::purchaseWithoutThing($purchase);
         }
 
-        if ($choice->material !== null && ! $materials->has($choice->material)) {
-            throw StockError::notAMaterial($choice->material);
-        }
+        $thing = match (true) {
+            $choice->new !== null   => '@' . $this->newThing($choice->new),
+            $choice->thing !== null => (string) $choice->thing,
+            default                 => throw StockError::purchaseWithoutThing($purchase),
+        };
 
-        if ($choice->material !== null) {
-            $material = (string) $choice->material;
-        } else {
-            $model    = (int) $purchases->first($purchase, $s->field('purchase_model'));
-            $material = '@' . $this->newMaterial($choice->thing ?? ($model > 0 ? $model : null), $name);
-        }
+        $this->changes[] = ['op' => 'set_values', 'record' => $purchase, 'values' => [(string) $s->field('purchase_model') => $thing]];
 
-        $this->changes[] = ['op' => 'set_values', 'record' => $purchase, 'values' => [(string) $s->field('purchase_material') => ['values' => [$material]]]];
-
-        return [$material];
+        return $thing;
     }
 
-    /** D-967: with a reference the material has no name of its own; without one the name is all it has. */
-    private function newMaterial(?int $thing, string $name): string
+    /** D-995: a material that is not yet in the tree becomes a thing there, named and nothing more. */
+    private function newThing(NewThing $new): string
     {
-        $s   = $this->structure;
-        $ref = $this->ref('m');
+        $ref = $this->ref('d');
 
-        if ($thing === null && trim($name) === '') {
-            throw StockError::materialWithoutName();
-        }
-
-        if ($thing !== null && ! $s->hasField('material_ref_record')) {
-            throw StockError::notConfigured('fields.material_ref_record');
-        }
-
-        // A yes/no field is always 1..1 in the modeller; stock is not a single piece.
-        $values = [(string) $s->field('material_single') => '0'];
-
-        if ($thing === null) {
-            $values[(string) $s->field('label')] = trim($name);
-        } else {
-            $values[(string) $s->field('material_ref_record')] = (string) $thing;
-        }
-
-        $this->changes[] = ['op' => 'create_record', 'ref' => $ref, 'node' => $s->node('material')];
-        $this->changes[] = ['op' => 'set_values', 'record' => '@' . $ref, 'values' => $values];
+        $this->changes[] = ['op' => 'create_record', 'ref' => $ref, 'node' => $new->node];
+        $this->changes[] = ['op' => 'set_values', 'record' => '@' . $ref, 'values' => [(string) $this->structure->field('label') => trim($new->name)]];
 
         return $ref;
     }
 
     /** @param array<string, array<string, string>>|null $value */
-    private function lot(string $name, string $material, ?string $purchase, ?array $value, string $note, ?int $location = null): string
+    private function lot(string $name, string $thing, ?string $purchase, ?array $value, string $note, ?int $location = null): string
     {
         $s   = $this->structure;
         $ref = $this->ref('l');
 
         $values = [
             (string) $s->field('label')        => $name,
-            (string) $s->field('lot_material') => $material,
+            (string) $s->field('lot_thing')    => $thing,
             (string) $s->field('lot_location') => (string) ($location ?? $s->value('location_default')),
             (string) $s->field('lot_date')     => $this->today,
         ];

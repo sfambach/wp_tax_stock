@@ -24,9 +24,10 @@ final class StockError extends \RuntimeException
         return new self('purchase_undetermined', (string) $purchaseId);
     }
 
-    public static function purchaseWithoutMaterial(int $purchaseId): self
+    /** D-995: a purchase goes in as a thing — its «Modell», one chosen, or one created. */
+    public static function purchaseWithoutThing(int $purchaseId): self
     {
-        return new self('purchase_without_material', (string) $purchaseId);
+        return new self('purchase_without_thing', (string) $purchaseId);
     }
 
     public static function alreadyReceived(int $purchaseId): self
@@ -34,9 +35,15 @@ final class StockError extends \RuntimeException
         return new self('already_received', (string) $purchaseId);
     }
 
-    public static function notAMaterial(int $recordId): self
+    public static function notAThing(int $recordId): self
     {
-        return new self('not_a_material', (string) $recordId);
+        return new self('not_a_thing', (string) $recordId);
+    }
+
+    /** A new thing goes into a group of the tree under `Model`. */
+    public static function notAGroup(int $nodeId): self
+    {
+        return new self('not_a_group', (string) $nodeId);
     }
 
     /** D-972: the chosen place is not a record of «Lagerorte». */
@@ -45,10 +52,14 @@ final class StockError extends \RuntimeException
         return new self('not_a_location', (string) $recordId);
     }
 
-    /** D-967: a material without «Bezug» is known only by its own name. */
-    public static function materialWithoutName(): self
+    public static function thingWithoutName(): self
     {
-        return new self('material_without_name', '');
+        return new self('thing_without_name', '');
+    }
+
+    public static function thingWithoutGroup(): self
+    {
+        return new self('thing_without_group', '');
     }
 
     public static function notInOrder(int $purchaseId): self
@@ -66,9 +77,9 @@ final class StockError extends \RuntimeException
         return new self('nothing_to_book', '');
     }
 
-    public static function noLot(int $materialId): self
+    public static function noLot(int $thingId): self
     {
-        return new self('no_lot', (string) $materialId);
+        return new self('no_lot', (string) $thingId);
     }
 
     public static function modelRefused(string $message): self

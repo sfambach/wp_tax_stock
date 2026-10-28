@@ -12,20 +12,20 @@ final class Fixture
         $fields = [];
 
         foreach ([
-            'label', 'description', 'material_ref_record', 'material_single', 'material_min',
-            'lot_material', 'lot_purchase', 'lot_location', 'lot_value', 'lot_date',
+            'label', 'description', 'lager_thing', 'lager_single', 'lager_min',
+            'lot_thing', 'lot_purchase', 'lot_location', 'lot_value', 'lot_date',
             'transaction_kind', 'transaction_date', 'transaction_order', 'transaction_project', 'transaction_source', 'transaction_lines',
             'line_lot', 'line_quantity', 'line_counted',
             'order_status', 'order_lines',
-            'purchase_material', 'purchase_quantity', 'purchase_undetermined', 'purchase_landed_price', 'purchase_unit_price',
+            'purchase_quantity', 'purchase_undetermined', 'purchase_landed_price', 'purchase_unit_price',
             'money_amount', 'money_unit',
-            'purchase_model', 'material_use', 'material_location',
+            'purchase_model', 'lager_use', 'lager_location',
         ] as $i => $key) {
             $fields[$key] = 100 + $i;
         }
 
         return Structure::fromArray([
-            'nodes'  => ['material' => 1, 'lot' => 2, 'transaction' => 3, 'line' => 4, 'location' => 5, 'order' => 6, 'purchase' => 7, 'money' => 8, 'material_use' => 9],
+            'nodes'  => ['lager' => 1, 'lot' => 2, 'transaction' => 3, 'line' => 4, 'location' => 5, 'order' => 6, 'purchase' => 7, 'money' => 8, 'lager_use' => 9],
             'fields' => $fields,
             'values' => [
                 'kind_receipt' => 201, 'kind_consumption' => 202, 'kind_count' => 203, 'source_manual' => 204,

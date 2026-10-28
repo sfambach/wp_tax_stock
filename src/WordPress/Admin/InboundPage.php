@@ -296,7 +296,7 @@ final class InboundPage
             $cells[] = esc_html($this->stageName($stage));
         }
 
-        return ListPage::row(self::BULK_FORM, (string) $order->id, $cells, $this->buttons($order, $stage, $counts['booked'], $tab), $this->details($order, $stage, $tab, $open), $open || $stage === InboundStage::Arrived);
+        return ListPage::row(self::BULK_FORM, (string) $order->id, $cells, $this->buttons($order, $stage, $counts['booked'], $tab), $this->details($order, $stage, $tab, $open), $open);
     }
 
     /** Each tracking number with the DHL module's last stage, where it has one. */

@@ -8,11 +8,11 @@ use TaxmodStock\WordPress\Admin\StockPage;
 
 /**
  * Wires the module into WordPress: a tab on the modeller's Configuration, and the menu «Logistik» with the goods receipt
- * cockpit and the page «Lager» (D-1003: goods in, goods out and stock get a menu of their own beside the modeller's).
+ * cockpit and the page «Lager» (D-1004: goods in, goods out and stock get a menu of their own beside the modeller's).
  */
 final class Plugin
 {
-    /** D-1003: the menu of goods in, goods out and stock; other modules may hang their pages under this slug. */
+    /** D-1004: the menu of goods in, goods out and stock; other modules may hang their pages under this slug. */
     public const MENU = 'taxmod-logistik';
 
     /** Just below the modeller's own menu entry. */
@@ -48,7 +48,7 @@ final class Plugin
         $inbound = static fn () => print (new InboundPage())->render();
 
         add_menu_page(__('Logistik', 'taxmod-stock'), __('Logistik', 'taxmod-stock'), 'manage_options', self::MENU, $inbound, 'dashicons-archive', self::MENU_POSITION);
-        // The first entry under a menu repeats its slug; named «Wareneingang» it opens the cockpit (D-1000).
+        // The first entry under a menu repeats its slug; named «Wareneingang» it opens the cockpit (D-1001).
         add_submenu_page(self::MENU, __('Wareneingang', 'taxmod-stock'), __('Wareneingang', 'taxmod-stock'), 'manage_options', self::MENU, $inbound);
         add_submenu_page(self::MENU, __('Lager', 'taxmod-stock'), __('Lager', 'taxmod-stock'), 'manage_options', StockPage::PAGE, static fn () => print (new StockPage())->render());
     }

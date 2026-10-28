@@ -3,7 +3,7 @@
 namespace TaxmodStock\Core;
 
 /**
- * What the buttons of the goods receipt cockpit write: only fields of the order itself, one change list per click (D-1000).
+ * What the buttons of the goods receipt cockpit write: only fields of the order itself, one change list per click (D-1001).
  *
  * The relation ids are those of the modeller's import targets, so the cockpit writes where the inbox writes.
  *

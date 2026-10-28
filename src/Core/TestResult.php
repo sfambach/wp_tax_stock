@@ -3,7 +3,7 @@
 namespace TaxmodStock\Core;
 
 /**
- * The result of testing a lot after the goods receipt (D-1001); «Teilweise OK» and «Wartung nötig» need a reason.
+ * The result of testing a lot after the goods receipt (D-1002); «Teilweise OK» and «Wartung nötig» need a reason.
  *
  * Each case names the key of its value in the structure: the constants are choices of the lot's «Zustand» in the model
  * («funktioniert», «teilweise OK», «Wartung nötig», «defekt»), not names in code.

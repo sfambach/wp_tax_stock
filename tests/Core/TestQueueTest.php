@@ -12,7 +12,7 @@ use TaxmodStock\Core\TestQueue;
 use TaxmodStock\Core\TestResult;
 use TaxmodStock\Core\TestSettings;
 
-/** D-1001: used goods of tested groups wait for their test; the result stays at the lot, with a reason where one is due. */
+/** D-1002: used goods of tested groups wait for their test; the result stays at the lot, with a reason where one is due. */
 final class TestQueueTest extends TestCase
 {
     #[Test]

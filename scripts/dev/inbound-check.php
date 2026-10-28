@@ -1,7 +1,7 @@
 <?php declare(strict_types=1);
 
 /**
- * The goods receipt cockpit end to end against a local WordPress (D-1000): stages from what the inbox wrote, the buttons.
+ * The goods receipt cockpit end to end against a local WordPress (D-1001): stages from what the inbox wrote, the buttons.
  *
  *     php scripts/dev/inbound-check.php [path/to/wordpress]
  *
@@ -66,7 +66,7 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     $field('o_hand', '@ord', 'Händler', $text, 'composition', '0..1'),
     $field('o_nr', '@ord', 'Bestellnummer', $text, 'composition', '0..1'),
     $field('k_offen', '@pur', 'Noch nicht näher bestimmt', $bool, 'composition', '1..1'),
-    // D-1001: a group that is tested, two used lots in it and a new one, each with a rest.
+    // D-1002: a group that is tested, two used lots in it and a new one, each with a rest.
     ['op' => 'create_node', 'ref' => 'gk', 'name' => '__Grafikkarten', 'parent' => 402],
     ['op' => 'create_node', 'ref' => 'zust', 'name' => '__Zustaende', 'parent' => 410, 'class' => 'Choice'],
     ['op' => 'create_node', 'ref' => 'z_neu', 'name' => 'neu', 'parent' => '@zust'],
@@ -182,7 +182,7 @@ $pruefe((new StockService())->table('order')->all($r['o2'], $r['o_sn']) === ['00
 
 $pruefe((new InboundService())->refreshDhl([$r['o2'], $r['o3']]) === 2 && $asked === 2, '«DHL aktualisieren» asks DHL once per number');
 
-// D-1001 · the test after the goods receipt.
+// D-1002 · the test after the goods receipt.
 $pruefe((new InboundService())->lotsToTest() === [], 'no tested branch, nothing to test');
 update_option(StockService::TESTS, ['branches' => [$r['gk']]]);
 $pruefe((new InboundService())->lotsToTest() === [$r['lotA']], 'the «ungetestet» lot of a tested group waits; the new one does not');

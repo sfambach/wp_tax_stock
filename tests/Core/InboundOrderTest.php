@@ -10,7 +10,7 @@ use TaxmodStock\Core\InboundStage;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\Structure;
 
-/** D-1000: the stage of an incoming order follows from what mails and APIs wrote to it; the buttons write only the order. */
+/** D-1001: the stage of an incoming order follows from what mails and APIs wrote to it; the buttons write only the order. */
 final class InboundOrderTest extends TestCase
 {
     #[Test]

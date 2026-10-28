@@ -4,14 +4,14 @@ Stock keeping for the [Taxonomy Modeller](https://github.com/sfambach/wp-taxonom
 
 **Status: stage 1 built, 0.3.0.** Concept (German):
 [`docs/pakete/lager/konzept.md`](https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/lager/konzept.md),
-decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1000, D-1003.
+decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
 
 ## What it does
 
 - **The thing is the material (D-995).** A record in the tree under `Model` is the material; its record id is the
   material number. Lager, lots, purchases and sales are own records pointing to it.
-- **Menu «Logistik»** (D-1003) beside the Taxonomy Modeller menu, for goods in, goods out and stock.
-- **Page «Wareneingang»** (D-1000), the goods receipt cockpit, first under «Logistik»: every order in one stage, a tab per stage —
+- **Menu «Logistik»** (D-1004) beside the Taxonomy Modeller menu, for goods in, goods out and stock.
+- **Page «Wareneingang»** (D-1001), the goods receipt cockpit, first under «Logistik»: every order in one stage, a tab per stage —
   Bestellt → Versendet → Angekommen → Eingebucht. The stage is computed from what the inbox already wrote to the order
   (status, «Eingegangen am», tracking numbers) and the DHL module's last answer (filter `taxmod_dhl_tracking`); nothing
   extra is stored. Buttons: «Angekommen» (sets «Eingegangen am»), «Zurück», a tracking number by hand, «DHL ↻». In

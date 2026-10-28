@@ -32,13 +32,13 @@ final class Structure
     /** Fields the module uses when they are there and leaves out when they are not. */
     private const OPTIONAL_FIELDS = [
         'description', 'title_image', 'lager_use', 'lager_location', 'transaction_project',
-        // D-1001: the test after the goods receipt; its result is the lot's condition.
+        // D-1002: the test after the goods receipt; its result is the lot's condition.
         'lot_condition', 'lot_tested_on', 'lot_test_note',
     ];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];
 
-    /** D-1000: draft and cancelled orders stand in no stage of the goods receipt cockpit. */
+    /** D-1001: draft and cancelled orders stand in no stage of the goods receipt cockpit. */
     private const OPTIONAL_VALUES = [
         'currency_default', 'status_draft', 'status_cancelled',
         'test_ok', 'test_partial', 'test_maintenance', 'test_defect', 'condition_new', 'condition_untested',

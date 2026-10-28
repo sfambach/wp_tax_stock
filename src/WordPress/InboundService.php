@@ -9,7 +9,7 @@ use TaxmodStock\Core\TestQueue;
 use TaxmodStock\Core\TestResult;
 
 /**
- * Reads the incoming orders for the goods receipt cockpit and writes its buttons (D-1000).
+ * Reads the incoming orders for the goods receipt cockpit and writes its buttons (D-1001).
  *
  * The order fields come from the modeller's import targets — the inbox writes there, so they are one fact with one owner
  * (D-952). The DHL stages come from the DHL module's filter in its default mode, which hands back the last answer and
@@ -188,7 +188,7 @@ final class InboundService
     }
 
     /**
-     * D-1001: the lots that wait for their test, newest receipt first.
+     * D-1002: the lots that wait for their test, newest receipt first.
      *
      * @return list<int>
      */

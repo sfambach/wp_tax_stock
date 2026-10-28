@@ -3,7 +3,7 @@
 namespace TaxmodStock\Core;
 
 /**
- * Which lots wait for their test after the goods receipt, and the change list that records a result (D-1001).
+ * Which lots wait for their test after the goods receipt, and the change list that records a result (D-1002).
  *
  * A lot waits when its material lies in a tested branch, it has a rest, and its condition is empty or «ungetestet»: *his
  * word: «wenn ich dieses woanders kaufe, gebraucht, muss auch getestet werden»* — so the platform does not matter, and

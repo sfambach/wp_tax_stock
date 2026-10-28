@@ -88,7 +88,7 @@ final class StockPage
         // The goods receipt sends «thing» as a list (one per purchase); only the other forms send one thing.
         $thing = is_array($_POST['thing'] ?? null) ? 0 : absint($_POST['thing'] ?? 0);
         $back  = ['material', []];
-        // D-1000: a receipt booked from the goods receipt cockpit goes back there.
+        // D-1001: a receipt booked from the goods receipt cockpit goes back there.
         $fromCockpit = $kind === 'wareneingang' && sanitize_key((string) ($_POST['back'] ?? '')) === InboundPage::BACK;
 
         try {
@@ -705,7 +705,7 @@ final class StockPage
     /**
      * The purchases of one order with their thing and place, as one booking form (D-995).
      *
-     * @param string $back where the booking returns to: '' the Lager page, {@see InboundPage::BACK} the cockpit (D-1000)
+     * @param string $back where the booking returns to: '' the Lager page, {@see InboundPage::BACK} the cockpit (D-1001)
      */
     private function receiptPositions(int $order, string $back = ''): string
     {
@@ -870,7 +870,7 @@ final class StockPage
 
     /**
      * Filters a choice list as one types, and asks the modeller's record search for a thing; loads an order's purchases
-     * once its details show. Public because the goods receipt cockpit shows the same booking form (D-1000).
+     * once its details show. Public because the goods receipt cockpit shows the same booking form (D-1001).
      */
     public function script(): string
     {

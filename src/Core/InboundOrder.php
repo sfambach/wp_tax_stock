@@ -3,7 +3,7 @@
 namespace TaxmodStock\Core;
 
 /**
- * One order as the goods receipt cockpit reads it, and the stage that follows from it (D-1000).
+ * One order as the goods receipt cockpit reads it, and the stage that follows from it (D-1001).
  *
  * Nothing here is stored by the module: status, «Eingegangen am» and the tracking numbers are the order's own fields,
  * the DHL stages are the DHL module's last answers. The first rule that holds wins.

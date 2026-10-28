@@ -3,7 +3,7 @@
 namespace TaxmodStock\Core;
 
 /**
- * Where an incoming order stands on the goods receipt cockpit (D-1000): one tab per case, «none» only under «Alle».
+ * Where an incoming order stands on the goods receipt cockpit (D-1001): one tab per case, «none» only under «Alle».
  *
  * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/lager/cockpit-wareneingang.md WC1
  */

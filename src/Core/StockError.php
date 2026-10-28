@@ -82,7 +82,7 @@ final class StockError extends \RuntimeException
         return new self('no_lot', (string) $thingId);
     }
 
-    /** D-1000: «Zurück» from «Angekommen» while a purchase of the order is already in stock. */
+    /** D-1001: «Zurück» from «Angekommen» while a purchase of the order is already in stock. */
     public static function alreadyBooked(): self
     {
         return new self('already_booked', '');
@@ -93,13 +93,13 @@ final class StockError extends \RuntimeException
         return new self('no_tracking_number', '');
     }
 
-    /** D-1000: the cockpit reads the order fields from the modeller's import targets. */
+    /** D-1001: the cockpit reads the order fields from the modeller's import targets. */
     public static function noImportTargets(string $role): self
     {
         return new self('no_import_targets', $role);
     }
 
-    /** D-1001: «Teilweise OK» and «Wartung nötig» say what is wrong. */
+    /** D-1002: «Teilweise OK» and «Wartung nötig» say what is wrong. */
     public static function testWithoutReason(string $result): self
     {
         return new self('test_without_reason', $result);

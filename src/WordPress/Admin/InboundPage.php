@@ -10,7 +10,7 @@ use TaxmodStock\Core\TestResult;
 use TaxmodStock\WordPress\InboundService;
 
 /**
- * The page «Wareneingang», first under the menu «Logistik» (D-1003): every incoming order in one stage, a tab per stage (D-1000) —
+ * The page «Wareneingang», first under the menu «Logistik» (D-1004): every incoming order in one stage, a tab per stage (D-1001) —
  * Bestellt → Versendet → Angekommen → Eingebucht, like the eBay shipping page the other way round (D-985).
  *
  * Drawn with the modeller's shared list page (D-989). «Angekommen» is the goods receipt check: its details hold the
@@ -26,7 +26,7 @@ use TaxmodStock\WordPress\InboundService;
  */
 final class InboundPage
 {
-    /** The cockpit is the first page of the menu «Logistik» and shares its slug (D-1003). */
+    /** The cockpit is the first page of the menu «Logistik» and shares its slug (D-1004). */
     public const PAGE   = \TaxmodStock\WordPress\Plugin::MENU;
     public const ACTION = 'taxmod_stock_inbound';
 
@@ -34,7 +34,7 @@ final class InboundPage
     public const BACK = 'inbound';
 
     private const ALL         = 'all';
-    /** D-1001: the lots that wait for their test, after «Eingebucht». */
+    /** D-1002: the lots that wait for their test, after «Eingebucht». */
     private const TEST        = 'test';
     private const OVERDUE     = 'overdue';
     private const FILTER_FORM = 'taxmod-stock-inbound-filter';
@@ -194,7 +194,7 @@ final class InboundPage
     }
 
     /**
-     * D-1001: one row per lot that waits for its test; its details hold the form for the result.
+     * D-1002: one row per lot that waits for its test; its details hold the form for the result.
      *
      * @param list<int> $lots
      */

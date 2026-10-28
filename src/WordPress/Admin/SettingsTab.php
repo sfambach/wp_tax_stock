@@ -131,7 +131,7 @@ final class SettingsTab
             . $select('taxmod_stock_unreferenced', $settings->unreferenced) . '</td></tr></tbody></table>';
     }
 
-    /** D-1001: the branches under `Model` whose used goods are tested after the goods receipt (Wareneingang › Zu testen). */
+    /** D-1002: the branches under `Model` whose used goods are tested after the goods receipt (Wareneingang › Zu testen). */
     private function testsSection(): string
     {
         $stock = new StockService();

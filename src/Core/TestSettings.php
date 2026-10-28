@@ -3,7 +3,7 @@
 namespace TaxmodStock\Core;
 
 /**
- * Which branches under `Model` are tested after the goods receipt (D-1001), as stored in one option.
+ * Which branches under `Model` are tested after the goods receipt (D-1002), as stored in one option.
  *
  * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/lager/cockpit-wareneingang.md WC7
  */

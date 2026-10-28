@@ -29,7 +29,7 @@ final class StockService
     /** D-972: which branch of `Model` goes to which place. */
     public const LOCATIONS = 'taxmod_stock_locations';
 
-    /** D-1001: the branches under `Model` whose lots are tested after the goods receipt. */
+    /** D-1002: the branches under `Model` whose lots are tested after the goods receipt. */
     public const TESTS = 'taxmod_stock_tests';
 
     /** Per tab whether its rows open by themselves (see {@see ViewSettings}). */

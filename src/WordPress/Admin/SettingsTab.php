@@ -145,6 +145,8 @@ final class SettingsTab
 
         $html = '<h2>' . esc_html__('Test nach dem Wareneingang', 'taxmod-stock') . '</h2>'
             . '<p>' . esc_html__('Bestandsposten aus diesen Zweigen (mit allem darunter) stehen nach dem Wareneingang unter Logistik › Wareneingang › Zu testen, egal von welcher Plattform; Neuware nicht. Eine leere Zeile fügt einen Zweig hinzu, eine geleerte entfernt ihn.', 'taxmod-stock') . '</p>'
+            . '<p><label>' . esc_html__('Wareneingang ab', 'taxmod-stock') . ' <input type="date" name="taxmod_stock_inbound_since" value="' . esc_attr($stock->inboundSince()) . '"></label> '
+            . '<span class="description">' . esc_html__('Ältere Bestellungen gelten als Kaufhistorie und stehen im Cockpit nur unter «Alle».', 'taxmod-stock') . '</span></p>'
             . '<input type="hidden" name="taxmod_stock_tests_sent" value="1">'
             . '<table class="widefat striped" style="max-width:40em"><thead><tr><th>' . esc_html__('Zweig (Knoten-Id)', 'taxmod-stock') . '</th><th>' . esc_html__('Name', 'taxmod-stock') . '</th></tr></thead><tbody>';
 
@@ -189,6 +191,11 @@ final class SettingsTab
         if (! empty($post['taxmod_stock_tests_sent'])) {
             $nodes = array_map('absint', is_array($post['taxmod_stock_tests'] ?? null) ? $post['taxmod_stock_tests'] : []);
             update_option(StockService::TESTS, TestSettings::fromArray(['branches' => array_values($nodes)])->toArray(), false);
+            $since = sanitize_text_field((string) ($post['taxmod_stock_inbound_since'] ?? ''));
+
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $since) === 1) {
+                update_option(StockService::INBOUND_SINCE, $since, false);
+            }
         }
 
         $json = trim((string) ($post['taxmod_stock_structure'] ?? ''));

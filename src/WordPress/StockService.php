@@ -32,6 +32,12 @@ final class StockService
     /** D-1002: the branches under `Model` whose lots are tested after the goods receipt. */
     public const TESTS = 'taxmod_stock_tests';
 
+    /** The goods receipt cockpit's start day (Y-m-d): older orders are history and stand only under «Alle». */
+    public const INBOUND_SINCE = 'taxmod_stock_inbound_since';
+
+    /** INFERRED default, until he sets his own: the month the cockpit came. */
+    public const INBOUND_SINCE_DEFAULT = '2026-10-01';
+
     /** Per tab whether its rows open by themselves (see {@see ViewSettings}). */
     public const VIEWS = 'taxmod_stock_views';
 
@@ -239,6 +245,13 @@ final class StockService
         $raw = get_option(self::VIEWS, []);
 
         return ViewSettings::fromArray(is_array($raw) ? $raw : []);
+    }
+
+    public function inboundSince(): string
+    {
+        $since = (string) get_option(self::INBOUND_SINCE, self::INBOUND_SINCE_DEFAULT);
+
+        return preg_match('/^\d{4}-\d{2}-\d{2}$/', $since) === 1 ? $since : self::INBOUND_SINCE_DEFAULT;
     }
 
     public function testSettings(): TestSettings

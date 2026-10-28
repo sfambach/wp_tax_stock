@@ -119,7 +119,8 @@ final class InboundPage
         $today   = current_time('Y-m-d');
         $orders  = $this->inbound->orders();
         $labels  = $this->inbound->stock()->labels('order');
-        $stages  = array_map(static fn (InboundOrder $o): InboundStage => $o->stage($s), $orders);
+        $since   = $this->inbound->stock()->inboundSince();
+        $stages  = array_map(static fn (InboundOrder $o): InboundStage => $o->stage($s, $since), $orders);
         $tab     = sanitize_key((string) ($_GET['tab'] ?? InboundStage::Arrived->value));
         $tab     = in_array($tab, self::tabSlugs(), true) ? $tab : InboundStage::Arrived->value;
         $search  = sanitize_text_field(wp_unslash((string) ($_GET['s'] ?? '')));
@@ -152,7 +153,7 @@ final class InboundPage
                 continue;
             }
 
-            if ($filter === self::OVERDUE && ! $order->overdue($s, $today)) {
+            if ($filter === self::OVERDUE && ! $order->overdue($s, $today, $since)) {
                 continue;
             }
 
@@ -279,7 +280,7 @@ final class InboundPage
         $s      = $this->inbound->stock()->structure();
         $counts = $this->inbound->purchaseCounts($order->id);
         $about  = $this->inbound->about($order->id);
-        $late   = $order->overdue($s, $today);
+        $late   = $order->overdue($s, $today, $this->inbound->stock()->inboundSince());
         $cells  = [
             '<strong>' . esc_html($label) . '</strong>' . ($late ? ' <span style="color:#b32d2e;font-weight:600">' . esc_html__('überfällig', 'taxmod-stock') . '</span>' : '')
                 . ($about === '' ? '' : '<br><span class="description">' . esc_html($about) . '</span>'),

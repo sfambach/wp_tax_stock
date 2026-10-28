@@ -99,6 +99,7 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ...$order('o4', 'Per Mail zugestellt', ['@o_ein' => '2026-10-25', '@o_pos' => ['values' => ['@kauf']]]),
     ...$order('o5', 'Eingebucht', ['@o_stat' => '@s_ganz']),
     ...$order('o6', 'Entwurf', ['@o_stat' => '@s_entw']),
+    ...$order('o7', 'Amazon-Historie 2004', ['@o_best' => '2004-05-01']),
 ]]);
 
 if (is_wp_error($aufbau)) {
@@ -150,6 +151,12 @@ $pruefe($stage('o4') === InboundStage::Arrived, '«Eingegangen am» from a deliv
 $pruefe($stage('o5') === InboundStage::Booked, 'status «eingegangen» is «Eingebucht»');
 $pruefe($stage('o6') === InboundStage::None, 'a draft stands in no stage');
 $pruefe($orders[$r['o1']]->overdue($s, '2026-10-28'), 'ordered four weeks ago without a number is overdue');
+
+$_GET = ['page' => InboundPage::PAGE, 'tab' => 'ordered'];
+$html = (new InboundPage())->render();
+$pruefe(! str_contains($html, 'Amazon-Historie 2004'), 'an order from before the start day is history, not «Bestellt»');
+$_GET = ['page' => InboundPage::PAGE, 'tab' => 'all'];
+$pruefe(str_contains((new InboundPage())->render(), 'Amazon-Historie 2004'), 'it still stands under «Alle»');
 
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'shipped'];
 $html = (new InboundPage())->render();

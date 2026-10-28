@@ -12,6 +12,7 @@ namespace TaxmodStock\Core;
  * flowchart LR
  *   S["status draft/cancelled"] -->|none| X["no tab"]
  *   R["status received"] --> B["Booked"]
+ *   H["ordered before the start day"] -->|none| X
  *   A["partial · received on · DHL delivered"] --> AR["Arrived"]
  *   T["tracking number"] --> SH["Shipped"]
  *   E["else"] --> O["Ordered"]
@@ -44,13 +45,15 @@ final class InboundOrder
     ) {
     }
 
-    public function stage(Structure $s): InboundStage
+    /** @param string|null $since Y-m-d, the cockpit's start day: an older order is history, not an open receipt */
+    public function stage(Structure $s, ?string $since = null): InboundStage
     {
         $is = static fn (string $value, ?int $status): bool => $s->hasValue($value) && $status === $s->value($value);
 
         return match (true) {
             $is('status_draft', $this->status), $is('status_cancelled', $this->status) => InboundStage::None,
             $is('status_received', $this->status)                                      => InboundStage::Booked,
+            $this->isBefore($since)                                                    => InboundStage::None,
             $is('status_partial', $this->status), $this->hasArrived()                   => InboundStage::Arrived,
             $this->tracking !== []                                                      => InboundStage::Shipped,
             default                                                                     => InboundStage::Ordered,
@@ -64,7 +67,7 @@ final class InboundOrder
     }
 
     /** Overdue: ordered too long ago without a tracking number, or shipped too long ago and not arrived. */
-    public function overdue(Structure $s, string $today): bool
+    public function overdue(Structure $s, string $today, ?string $since = null): bool
     {
         if ($this->orderedOn === null || preg_match('/^\d{4}-\d{2}-\d{2}/', $this->orderedOn) !== 1) {
             return false;
@@ -72,10 +75,15 @@ final class InboundOrder
 
         $days = (int) ((strtotime(substr($today, 0, 10)) - strtotime(substr($this->orderedOn, 0, 10))) / 86400);
 
-        return match ($this->stage($s)) {
+        return match ($this->stage($s, $since)) {
             InboundStage::Ordered => $days > self::ORDERED_DAYS,
             InboundStage::Shipped => $days > self::SHIPPED_DAYS,
             default               => false,
         };
+    }
+
+    private function isBefore(?string $since): bool
+    {
+        return $since !== null && $since !== '' && ($this->orderedOn ?? '') !== '' && substr($this->orderedOn, 0, 10) < substr($since, 0, 10);
     }
 }

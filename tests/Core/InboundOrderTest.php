@@ -30,6 +30,19 @@ final class InboundOrderTest extends TestCase
     }
 
     #[Test]
+    public function an_order_from_before_the_start_day_is_history_unless_booked(): void
+    {
+        $s = $this->structure();
+
+        self::assertSame(InboundStage::None, (new InboundOrder(1, null, '2004-05-01', null, []))->stage($s, '2026-10-01'));
+        self::assertSame(InboundStage::None, (new InboundOrder(1, null, '2026-09-30 12:00:00', '2026-10-02', []))->stage($s, '2026-10-01'));
+        self::assertSame(InboundStage::Ordered, (new InboundOrder(1, null, '2026-10-01', null, []))->stage($s, '2026-10-01'));
+        self::assertSame(InboundStage::Ordered, (new InboundOrder(1, null, null, null, []))->stage($s, '2026-10-01'), 'no date, no verdict');
+        self::assertSame(InboundStage::Booked, (new InboundOrder(1, 206, '2004-05-01', null, []))->stage($s, '2026-10-01'));
+        self::assertFalse((new InboundOrder(1, null, '2004-05-01', null, []))->overdue($s, '2026-10-28', '2026-10-01'));
+    }
+
+    #[Test]
     public function without_the_optional_status_values_a_draft_counts_as_ordered(): void
     {
         self::assertSame(InboundStage::Ordered, (new InboundOrder(1, 209, null, null, []))->stage(Fixture::structure()));

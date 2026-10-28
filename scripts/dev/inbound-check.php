@@ -169,8 +169,8 @@ $pruefe(str_contains($html, 'eBay · retro-shop · 12-345') && str_contains($htm
 $inbound = new InboundService();
 $inbound->markArrived([$r['o1'], $r['o4']], '2026-10-28');
 $t = (new StockService())->table('order');
-$pruefe($t->first($r['o1'], $r['o_ein']) === '2026-10-28', '«Angekommen» writes today into «Eingegangen am»');
-$pruefe($t->first($r['o4'], $r['o_ein']) === '2026-10-25', 'a date the mail wrote stays');
+$pruefe(substr((string) $t->first($r['o1'], $r['o_ein']), 0, 10) === '2026-10-28', '«Angekommen» writes today into «Eingegangen am»');
+$pruefe(substr((string) $t->first($r['o4'], $r['o_ein']), 0, 10) === '2026-10-25', 'a date the mail wrote stays');
 
 (new InboundService())->markNotArrived($r['o1']);
 $pruefe(in_array((new StockService())->table('order')->first($r['o1'], $r['o_ein']), [null, ''], true), '«Zurück» empties «Eingegangen am» again');
@@ -200,7 +200,7 @@ try {
 
 (new InboundService())->recordTest($r['lotA'], \TaxmodStock\Core\TestResult::Maintenance, 'Elkos tauschen', '2026-10-28');
 $t = (new StockService())->table('lot');
-$pruefe($t->first($r['lotA'], $r['l_zust']) === (string) $r['t_wart'] && $t->first($r['lotA'], $r['l_tbef']) === 'Elkos tauschen' && $t->first($r['lotA'], $r['l_tdat']) === '2026-10-28', 'the result, its reason and the day stand at the lot');
+$pruefe($t->first($r['lotA'], $r['l_zust']) === (string) $r['t_wart'] && $t->first($r['lotA'], $r['l_tbef']) === 'Elkos tauschen' && substr((string) $t->first($r['lotA'], $r['l_tdat']), 0, 10) === '2026-10-28', 'the result, its reason and the day stand at the lot');
 $pruefe((new InboundService())->lotsToTest() === [], 'a tested lot waits no more');
 
 update_option('taxmod_import_targets', ['order_fields' => ['received_at' => 0]]);

@@ -105,6 +105,83 @@ final class Bookings
     }
 
     /**
+     * A lot purchase (Konvolut) told apart (concept R1, R3): the purchase itself becomes the first part, every further
+     * part a purchase of its own in the same order. Each part names its material, so each can go into the goods
+     * receipt. No booking yet — nothing is in stock until the receipt.
+     *
+     * ⚠️ Without prices the whole price stays on the first part (INFERRED); a price given for the first part also
+     * replaces its landed price, which the receipt would otherwise prefer.
+     *
+     * @param list<SplitRow> $rows
+     * @return list<array<string, mixed>>
+     */
+    public function split(int $order, int $purchase, array $rows, Table $orders, Table $purchases): array
+    {
+        $s       = $this->structure;
+        $inOrder = $orders->all($order, $s->field('order_lines'));
+
+        if (! in_array((string) $purchase, $inOrder, true)) {
+            throw StockError::notInOrder($purchase);
+        }
+
+        if ($rows === [] || $purchases->first($purchase, $s->field('purchase_undetermined')) !== '1') {
+            throw StockError::notALot($purchase);
+        }
+
+        $this->start();
+        $added = [];
+
+        foreach ($rows as $index => $row) {
+            $quantity = (string) (int) Quantity::positive($row->quantity);
+            $thing    = $row->new !== null ? '@' . $this->newThing($row->new) : (string) ($row->thing ?? throw StockError::purchaseWithoutThing($purchase));
+            $values   = [
+                (string) $s->field('label')                 => trim($row->name),
+                (string) $s->field('purchase_model')        => $thing,
+                (string) $s->field('purchase_quantity')     => $quantity === '0' ? '1' : $quantity,
+                (string) $s->field('purchase_undetermined') => '0',
+            ];
+            $first    = $index === 0;
+
+            if ($row->unitPrice !== null && $row->unitPrice !== '') {
+                $amount = Quantity::amount($row->unitPrice);
+                $values[(string) $s->field('purchase_unit_price')] = $this->priceFor($first ? $purchases->first($purchase, $s->field('purchase_unit_price')) : null, $amount);
+
+                if ($first && $purchases->first($purchase, $s->field('purchase_landed_price')) !== null) {
+                    $values[(string) $s->field('purchase_landed_price')] = $this->priceFor('held', $amount);
+                }
+            }
+
+            if ($first) {
+                $this->changes[] = ['op' => 'set_values', 'record' => $purchase, 'values' => $values];
+                continue;
+            }
+
+            $ref             = $this->ref('k');
+            $added[]         = '@' . $ref;
+            $this->changes[] = ['op' => 'create_record', 'ref' => $ref, 'node' => $s->node('purchase')];
+            $this->changes[] = ['op' => 'set_values', 'record' => '@' . $ref, 'values' => $values];
+        }
+
+        if ($added !== []) {
+            $this->changes[] = ['op' => 'set_values', 'record' => $order, 'values' => [(string) $s->field('order_lines') => ['values' => [...$inOrder, ...$added]]]];
+        }
+
+        return $this->changes;
+    }
+
+    /**
+     * A price on a purchase: the money part it already holds is filled (key «0»), else a new one is added.
+     *
+     * @return array<string, array<string, string>>
+     */
+    private function priceFor(?string $held, string $amount): array
+    {
+        $part = $this->moneyPart($amount, null);
+
+        return $held === null ? $part : ['0' => $part['neu']];
+    }
+
+    /**
      * A consumption: one line «−Menge» on the lot it is taken from.
      *
      * @return list<array<string, mixed>>

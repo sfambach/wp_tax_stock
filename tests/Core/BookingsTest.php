@@ -8,6 +8,7 @@ use TaxmodStock\Core\Bookings;
 use TaxmodStock\Core\InventoryRow;
 use TaxmodStock\Core\NewThing;
 use TaxmodStock\Core\ReceiptChoice;
+use TaxmodStock\Core\SplitRow;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\Table;
 
@@ -143,6 +144,49 @@ final class BookingsTest extends TestCase
         self::assertSame('-2.5', $values[4][(string) $s->field('line_quantity')]);
         self::assertSame('11', $values[4][(string) $s->field('line_lot')]);
         self::assertSame('18507', $values[3][(string) $s->field('transaction_project')]);
+    }
+
+    #[Test]
+    public function a_lot_purchase_split_becomes_its_first_part_and_further_purchases_of_the_order(): void
+    {
+        $s                    = Fixture::structure();
+        [$orders, $purchases] = $this->order(['1', '0']);
+
+        $changes = (new Bookings($s, '2026-10-28'))->split(70, 71, [
+            new SplitRow(55, null, 'Mainboard', '1', null),
+            new SplitRow(null, new NewThing(3640, 'Netzteil AT'), 'Netzteil AT', '2', '4,50'),
+        ], $orders, $purchases);
+        $values  = $this->valuesByNode($changes);
+        $first   = array_values(array_filter($changes, static fn (array $c): bool => $c['op'] === 'set_values' && $c['record'] === 71))[0]['values'];
+        $order   = array_values(array_filter($changes, static fn (array $c): bool => $c['op'] === 'set_values' && $c['record'] === 70))[0]['values'];
+
+        self::assertSame('Mainboard', $first[(string) $s->field('label')], 'the lot purchase itself becomes the first part');
+        self::assertSame('55', $first[(string) $s->field('purchase_model')]);
+        self::assertSame('0', $first[(string) $s->field('purchase_undetermined')], 'now determined, so the receipt takes it');
+        self::assertArrayNotHasKey((string) $s->field('purchase_unit_price'), $first, 'without a price the whole price stays on it');
+
+        $added = $values[$s->node('purchase')];
+        self::assertSame('@d1', $added[(string) $s->field('purchase_model')], 'a new material is created for its part');
+        self::assertSame('2', $added[(string) $s->field('purchase_quantity')]);
+        self::assertSame(['neu' => [(string) $s->field('money_amount') => '4.50', (string) $s->field('money_unit') => '208']], $added[(string) $s->field('purchase_unit_price')]);
+        self::assertSame(['values' => ['71', '72', '@k2']], $order[(string) $s->field('order_lines')], 'the new purchase joins the order');
+        self::assertArrayNotHasKey($s->node('transaction'), $values, 'no booking: nothing is in stock before the receipt');
+    }
+
+    #[Test]
+    public function only_an_undetermined_purchase_of_the_order_is_split(): void
+    {
+        [$orders, $purchases] = $this->order(['1', '0']);
+
+        try {
+            (new Bookings(Fixture::structure(), '2026-10-28'))->split(70, 72, [new SplitRow(55, null, 'X', '1', null)], $orders, $purchases);
+            self::fail('a determined purchase was split');
+        } catch (StockError $e) {
+            self::assertSame('not_a_lot', $e->reason);
+        }
+
+        $this->expectException(StockError::class);
+        (new Bookings(Fixture::structure(), '2026-10-28'))->split(70, 99, [new SplitRow(55, null, 'X', '1', null)], $orders, $purchases);
     }
 
     /** @return array{0: Table, 1: Table} */

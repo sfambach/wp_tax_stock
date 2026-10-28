@@ -27,6 +27,8 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
     below each row. «Öffnen» shows one thing: a fixed head (title image, Nr, Bezeichnung, Beschreibung, path) and the
     tabs Technische Daten, Einkauf, Lager (Standard-Lagerort, Mindestbestand, Einzelstück), Bestand (tiles, lots,
     Vorgänge, «Umbuchen», «Ausbuchen») and Verkauf (D-997).
+    A purchase «noch nicht näher bestimmt» (a lot, Konvolut) is first told apart with «Aufteilen» (concept R3): the
+    purchase becomes its first part, every further part a purchase of the same order, each with its material.
   - **Inventur** — counted stock without a purchase, on an existing thing or a new one in a group.
   - **Verbrauch** — take a quantity from a lot; the oldest lot with a rest is proposed.
 - **Tab «Lager» on Configuration** — the ids of the Stock nodes and fields, pasted as JSON.

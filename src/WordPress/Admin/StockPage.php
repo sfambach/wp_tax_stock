@@ -7,6 +7,7 @@ use TaxmodStock\Core\InventoryRow;
 use TaxmodStock\Core\LagerInput;
 use TaxmodStock\Core\NewThing;
 use TaxmodStock\Core\ReceiptChoice;
+use TaxmodStock\Core\SplitRow;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\StockList;
 use TaxmodStock\Core\Things;
@@ -65,7 +66,9 @@ final class StockPage
                 'material'  => $thing > 0 ? $this->thingView($thing) : $this->materialList($list),
                 'inventur'  => $this->inventoryForm(),
                 'verbrauch' => $this->consumptionForm($thing, absint($_GET['lot'] ?? 0)),
-                default     => $this->receiptTab($list, absint($_GET['order'] ?? 0)),
+                default     => absint($_GET['split'] ?? 0) > 0
+                    ? $this->splitForm(absint($_GET['order'] ?? 0), absint($_GET['split']), sanitize_key((string) ($_GET['back'] ?? '')))
+                    : $this->receiptTab($list, absint($_GET['order'] ?? 0)),
             };
         } catch (StockError $e) {
             $html .= '<div class="notice notice-error"><p>' . esc_html(Messages::of($e)) . '</p></div>';
@@ -89,7 +92,7 @@ final class StockPage
         $thing = is_array($_POST['thing'] ?? null) ? 0 : absint($_POST['thing'] ?? 0);
         $back  = ['material', []];
         // D-1001: a receipt booked from the goods receipt cockpit goes back there.
-        $fromCockpit = $kind === 'wareneingang' && sanitize_key((string) ($_POST['back'] ?? '')) === InboundPage::BACK;
+        $fromCockpit = in_array($kind, ['wareneingang', 'aufteilen'], true) && sanitize_key((string) ($_POST['back'] ?? '')) === InboundPage::BACK;
 
         try {
             $result = match ($kind) {
@@ -102,6 +105,7 @@ final class StockPage
                     $today,
                     $this->title(__('Wareneingang', 'taxmod-stock'), $today)
                 ),
+                'aufteilen'    => $this->stock->splitPurchase(absint($_POST['order'] ?? 0), absint($_POST['purchase'] ?? 0), $this->splitRows()),
                 'verbrauch'    => $this->stock->bookConsumption(
                     $thing,
                     absint($_POST['lot'] ?? 0) ?: null,
@@ -112,19 +116,22 @@ final class StockPage
                 ),
                 default        => throw StockError::nothingToBook(),
             };
-            /* translators: %d: number of changes the modeller applied */
-            $this->remember('success', sprintf(__('Gebucht: %d Änderungen in einem Schritt.', 'taxmod-stock'), count((array) ($result['applied'] ?? []))));
+            $this->remember('success', $kind === 'aufteilen'
+                ? __('Aufgeteilt: jede Zeile ist jetzt ein Kauf mit seinem Material und kann eingebucht werden.', 'taxmod-stock')
+                /* translators: %d: number of changes the modeller applied */
+                : sprintf(__('Gebucht: %d Änderungen in einem Schritt.', 'taxmod-stock'), count((array) ($result['applied'] ?? []))));
 
             $back = match ($kind) {
                 'lager'        => ['material', ['thing' => $thing, 'view' => 'lager']],
                 'umbuchen'     => ['material', ['thing' => $thing, 'view' => 'bestand']],
-                'wareneingang' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
+                'wareneingang', 'aufteilen' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
                 default        => ['material', $thing > 0 ? ['thing' => $thing, 'view' => 'bestand'] : []],
             };
         } catch (StockError $e) {
             $this->remember('error', Messages::of($e));
             $back = match ($kind) {
                 'wareneingang'      => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
+                'aufteilen'         => ['wareneingang', ['order' => absint($_POST['order'] ?? 0), 'split' => absint($_POST['purchase'] ?? 0)]],
                 'lager', 'umbuchen' => ['material', ['thing' => $thing, 'view' => $kind === 'lager' ? 'lager' : 'bestand']],
                 'verbrauch'         => ['verbrauch', ['thing' => $thing]],
                 default             => [$kind, []],
@@ -514,6 +521,75 @@ final class StockPage
         return add_query_arg(['page' => self::PAGE, 'tab' => 'material', 'thing' => $thing, 'view' => $view], admin_url('admin.php'));
     }
 
+    /**
+     * Concept R3: a lot purchase («noch nicht näher bestimmt») told apart. The first row rewrites the purchase, every
+     * further row becomes a purchase of the same order; nothing is in stock until the receipt books them.
+     */
+    private function splitForm(int $order, int $purchase, string $back): string
+    {
+        $labels = $this->stock->labels('purchase');
+        $about  = $this->purchaseAbout([$purchase]);
+        $groups = $this->groupOptions();
+        $html   = $this->formStart('aufteilen')
+            . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '"><input type="hidden" name="purchase" value="' . esc_attr((string) $purchase) . '">'
+            . ($back === InboundPage::BACK ? '<input type="hidden" name="back" value="' . esc_attr($back) . '">' : '')
+            . '<h2>' . esc_html(sprintf(
+                /* translators: %s: the lot purchase */
+                __('Konvolut aufteilen: %s', 'taxmod-stock'),
+                $labels[$purchase] ?? '#' . $purchase
+            )) . '</h2>'
+            . (($about[$purchase] ?? '') === '' ? '' : '<p class="description">' . esc_html($about[$purchase]) . '</p>')
+            . '<p>' . esc_html__('Je Teil eine Zeile: Material suchen oder neu in einer Materialgruppe anlegen, Anzahl, wahlweise Preis je Stück. Die erste Zeile übernimmt den Konvolut-Kauf (ohne Preise bleibt der ganze Preis dort), jede weitere wird ein eigener Kauf der Bestellung. Eingelagert wird erst mit dem Wareneingang.', 'taxmod-stock') . '</p>'
+            . '<table class="wp-list-table widefat striped table-view-list"><thead><tr><th scope="col" class="manage-column">' . esc_html__('Material', 'taxmod-stock') . '</th><th scope="col" class="manage-column">' . esc_html__('oder neu: Gruppe', 'taxmod-stock')
+            . '</th><th scope="col" class="manage-column">' . esc_html__('Bezeichnung', 'taxmod-stock') . '</th><th scope="col" class="manage-column">' . esc_html__('Anzahl', 'taxmod-stock') . '</th><th scope="col" class="manage-column">'
+            . esc_html__('Preis je Stück', 'taxmod-stock') . '</th></tr></thead><tbody>';
+
+        for ($i = 0; $i < self::ROWS; $i++) {
+            $html .= '<tr><td>' . $this->thingField('rows[' . $i . '][thing]', 'taxmod-stock-split-' . $i, null) . '</td>'
+                . '<td><select name="rows[' . $i . '][group]" style="max-width:18em">' . $groups . '</select></td>'
+                . '<td><input type="text" name="rows[' . $i . '][name]"></td>'
+                . '<td><input type="number" min="1" name="rows[' . $i . '][quantity]" style="width:5em"></td>'
+                . '<td><input type="text" inputmode="decimal" name="rows[' . $i . '][price]" style="width:6em"></td></tr>';
+        }
+
+        $cancel = $back === InboundPage::BACK
+            ? InboundPage::url(['order' => $order])
+            : add_query_arg(['page' => self::PAGE, 'tab' => 'wareneingang', 'order' => $order], admin_url('admin.php'));
+
+        return $html . '</tbody></table><p class="submit">' . get_submit_button(__('Aufteilen', 'taxmod-stock'), 'primary', 'submit', false)
+            . ' <a class="button" href="' . esc_url($cancel) . '">' . esc_html__('Abbrechen', 'taxmod-stock') . '</a></p></form>';
+    }
+
+    /** @return list<SplitRow> the filled rows; a row without a material and without a name is no row */
+    private function splitRows(): array
+    {
+        $rows = [];
+
+        foreach ((array) ($_POST['rows'] ?? []) as $row) {
+            $row   = is_array($row) ? wp_unslash($row) : [];
+            $thing = absint($row['thing'] ?? 0) ?: null;
+            $name  = sanitize_text_field((string) ($row['name'] ?? ''));
+
+            if ($thing === null && $name === '') {
+                continue;
+            }
+
+            if ($name === '' && $thing !== null) {
+                $name = $this->stock->recordLabels([$thing])[$thing] ?? '#' . $thing;
+            }
+
+            $rows[] = new SplitRow(
+                $thing,
+                $thing === null ? new NewThing(absint($row['group'] ?? 0), $name) : null,
+                $name,
+                sanitize_text_field((string) ($row['quantity'] ?? '')) ?: '1',
+                sanitize_text_field((string) ($row['price'] ?? '')) ?: null
+            );
+        }
+
+        return $rows;
+    }
+
     private function inventoryForm(): string
     {
         $groups = $this->groupOptions();
@@ -753,7 +829,11 @@ final class StockPage
                 . (($about[$purchase] ?? '') === '' ? '' : '<br><span class="description">' . esc_html($about[$purchase]) . '</span>') . '</td>';
 
             if ($lock !== null) {
-                $html .= '<td>' . esc_html($model === null ? '—' : '#' . $model . ' · ' . ($models[$model] ?? '')) . '</td><td></td><td></td></tr>';
+                // Concept R3: a lot purchase is told apart first; its parts are then received like any purchase.
+                $split = $lock === 'purchase_undetermined'
+                    ? '<a class="button button-small" href="' . esc_url(add_query_arg(array_filter(['page' => self::PAGE, 'tab' => 'wareneingang', 'order' => $order, 'split' => $purchase, 'back' => $back]), admin_url('admin.php'))) . '">' . esc_html__('Aufteilen', 'taxmod-stock') . '</a>'
+                    : '';
+                $html .= '<td>' . esc_html($model === null ? '—' : '#' . $model . ' · ' . ($models[$model] ?? '')) . '</td><td>' . $split . '</td><td></td></tr>';
                 continue;
             }
 

@@ -24,6 +24,7 @@ use TaxmodStock\Core\InventoryRow;
 use TaxmodStock\Core\LagerInput;
 use TaxmodStock\Core\NewThing;
 use TaxmodStock\Core\ReceiptChoice;
+use TaxmodStock\Core\SplitRow;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\WordPress\Admin\StockPage;
 use TaxmodStock\WordPress\StockService;
@@ -287,6 +288,28 @@ $pruefe(str_contains($html, 'sorted desc') && str_contains($html, 'value="instoc
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'wareneingang', 'status' => '', 's' => 'MPSA56'];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'Bestellung 2') && ! str_contains($html, 'Bestellung 1'), 'the goods receipt finds an order by what its purchases are');
+
+// Concept R3 · a lot purchase told apart: its parts become purchases of the order, each with its material, and can then be received.
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'wareneingang', 'order' => $r['best']];
+$pruefe(str_contains((new StockPage())->render(), 'split=' . $r['kaufA']), 'a lot purchase offers «Aufteilen»');
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'wareneingang', 'order' => $r['best'], 'split' => $r['kaufA']];
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'Konvolut aufteilen: Konvolut unbestimmt') && str_contains($html, 'name="rows[0][quantity]"') && ! str_contains($html, 'notice-error'), 'the split form names the lot purchase and offers rows');
+(new StockService())->splitPurchase($r['best'], $r['kaufA'], [
+    new SplitRow($r['t1'], null, 'BC640 aus Konvolut', '2', null),
+    new SplitRow(null, new NewThing($r['teile'], 'MPSA42'), 'MPSA42', '3', '0,30'),
+]);
+$s     = new StockService();
+$teile = $s->table('order')->all($r['best'], $r['o_pos']);
+$plan  = $s->receiptPlan($r['best']);
+$neuK  = (int) (array_values(array_diff($teile, [(string) $r['kaufA'], (string) $r['kaufB']]))[0] ?? 0);
+$pruefe(count($teile) === 3 && $neuK > 0, 'the second part joins the order as a purchase of its own');
+$pruefe($plan[$r['kaufA']]['lock'] === null && $plan[$r['kaufA']]['model'] === $r['t1'] && $s->table('purchase')->first($r['kaufA'], $r['label']) === 'BC640 aus Konvolut', 'the lot purchase became its first part, determined, with its material');
+$pruefe(isset($plan[$neuK]) && $plan[$neuK]['lock'] === null && ($plan[$neuK]['model'] ?? 0) > 0 && $s->table('purchase')->first($neuK, $r['k_anz']) === '3', 'the new part has its new material and its quantity');
+$vor = $s->ledger()->stockOf($r['t1']);
+(new StockService())->bookReceipt($r['best'], [$r['kaufA'] => ReceiptChoice::keep(), $neuK => ReceiptChoice::keep()], '2026-10-28', 'WE Konvolut');
+$s = new StockService();
+$pruefe($s->ledger()->stockOf($r['t1']) === $vor + 2.0 && $s->ledger()->stockOf((int) $plan[$neuK]['model']) === 3.0 && $s->table('order')->first($r['best'], $r['o_stat']) === (string) $r['s_ganz'], 'both parts are received and the order is complete');
 
 // A structure pasted before 0.2.0 still reads: the old keys name the same ids.
 $alt = $struktur;

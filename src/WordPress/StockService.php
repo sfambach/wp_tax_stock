@@ -13,6 +13,7 @@ use TaxmodStock\Core\LocationSettings;
 use TaxmodStock\Core\NewThing;
 use TaxmodStock\Core\ReceiptChoice;
 use TaxmodStock\Core\ReceiptPlan;
+use TaxmodStock\Core\SplitRow;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\Structure;
 use TaxmodStock\Core\Table;
@@ -390,6 +391,20 @@ final class StockService
         );
 
         return $this->model->write($changes);
+    }
+
+    /**
+     * Concept R3: a lot purchase told apart into its parts, each with its material; the receipt books them after.
+     *
+     * @param list<SplitRow> $rows
+     * @return array<string, mixed> the modeller's answer
+     */
+    public function splitPurchase(int $order, int $purchase, array $rows): array
+    {
+        $this->checkThings(array_values(array_filter(array_map(static fn (SplitRow $r): ?int => $r->thing, $rows))));
+        $this->checkGroups(array_values(array_filter(array_map(static fn (SplitRow $r): ?NewThing => $r->new, $rows))));
+
+        return $this->model->write((new Bookings($this->structure(), current_time('Y-m-d')))->split($order, $purchase, $rows, $this->table('order'), $this->table('purchase')));
     }
 
     /** @return array<string, mixed> the modeller's answer */

@@ -52,6 +52,12 @@ final class StockError extends \RuntimeException
         return new self('not_a_location', (string) $recordId);
     }
 
+    /** Concept R3: only a purchase «not yet determined» is split, and it needs at least one part. */
+    public static function notALot(int $purchaseId): self
+    {
+        return new self('not_a_lot', (string) $purchaseId);
+    }
+
     public static function thingWithoutName(): self
     {
         return new self('thing_without_name', '');

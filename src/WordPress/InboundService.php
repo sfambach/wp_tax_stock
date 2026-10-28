@@ -28,6 +28,9 @@ final class InboundService
     /** @var array<int, InboundOrder>|null read once per request */
     private ?array $orders = null;
 
+    /** @var array<int, list<int>>|null purchase → its lots, read once per request */
+    private ?array $lotsOfPurchase = null;
+
     /** @var array<string, array<string, mixed>> tracking number → the DHL module's last answer; `mixed`: its summary */
     private array $dhl = [];
 
@@ -226,6 +229,26 @@ final class InboundService
         }
 
         return $out;
+    }
+
+    /** @return list<int> the lots booked from a purchase — where its goods went */
+    public function lotsOf(int $purchase): array
+    {
+        if ($this->lotsOfPurchase === null) {
+            $s     = $this->stock->structure();
+            $table = $this->stock->table('lot');
+            $this->lotsOfPurchase = [];
+
+            foreach ($table->ids() as $lot) {
+                $from = (int) $table->first($lot, $s->field('lot_purchase'));
+
+                if ($from > 0) {
+                    $this->lotsOfPurchase[$from][] = $lot;
+                }
+            }
+        }
+
+        return $this->lotsOfPurchase[$purchase] ?? [];
     }
 
     /** @return array<string, mixed> */

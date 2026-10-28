@@ -2,7 +2,7 @@
 
 Stock keeping for the [Taxonomy Modeller](https://github.com/sfambach/wp-taxonomy-modeler) (WordPress plugin).
 
-**Status: stage 1 built, 0.3.0.** Concept (German):
+**Status: stage 1 built, 0.3.1.** Concept (German):
 [`docs/pakete/lager/konzept.md`](https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/lager/konzept.md),
 decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
 

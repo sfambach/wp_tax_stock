@@ -86,7 +86,9 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'create_record', 'ref' => 'lotA', 'node' => '@lot'],
     ['op' => 'set_values', 'record' => '@lotA', 'values' => ['@l_mat' => '@et4000', '@l_dat' => '2026-10-27', '@l_zust' => '@z_unget']],
     ['op' => 'create_record', 'ref' => 'lotN', 'node' => '@lot'],
-    ['op' => 'set_values', 'record' => '@lotN', 'values' => ['@l_mat' => '@et4000', '@l_dat' => '2026-10-27', '@l_zust' => '@z_neu']],
+    ['op' => 'create_record', 'ref' => 'kauf5', 'node' => '@pur'],
+    ['op' => 'set_values', 'record' => '@kauf5', 'values' => ['@label' => 'Ladegerät']],
+    ['op' => 'set_values', 'record' => '@lotN', 'values' => ['@l_mat' => '@et4000', '@l_dat' => '2026-10-27', '@l_zust' => '@z_neu', '@l_kauf' => '@kauf5']],
     ['op' => 'create_record', 'ref' => 'posA', 'node' => '@vp'],
     ['op' => 'set_values', 'record' => '@posA', 'values' => ['@p_lot' => '@lotA', '@p_menge' => '1']],
     ['op' => 'create_record', 'ref' => 'posN', 'node' => '@vp'],
@@ -97,7 +99,7 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ...$order('o2', 'Unterwegs', ['@o_best' => '2026-10-20', '@o_sn' => ['values' => ['00340434AA']]]),
     ...$order('o3', 'DHL zugestellt', ['@o_sn' => ['values' => ['00340434BB']]]),
     ...$order('o4', 'Per Mail zugestellt', ['@o_ein' => '2026-10-25', '@o_pos' => ['values' => ['@kauf']]]),
-    ...$order('o5', 'Eingebucht', ['@o_stat' => '@s_ganz']),
+    ...$order('o5', 'Eingebucht', ['@o_stat' => '@s_ganz', '@o_pos' => ['values' => ['@kauf5']]]),
     ...$order('o6', 'Entwurf', ['@o_stat' => '@s_entw']),
     ...$order('o7', 'Amazon-Historie 2004', ['@o_best' => '2004-05-01']),
 ]]);
@@ -157,6 +159,10 @@ $html = (new InboundPage())->render();
 $pruefe(! str_contains($html, 'Amazon-Historie 2004'), 'an order from before the start day is history, not «Bestellt»');
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'all'];
 $pruefe(str_contains((new InboundPage())->render(), 'Amazon-Historie 2004'), 'it still stands under «Alle»');
+
+$_GET = ['page' => InboundPage::PAGE, 'tab' => 'booked'];
+$html = (new InboundPage())->render();
+$pruefe(str_contains($html, 'Ladegerät') && str_contains($html, 'thing=' . $r['et4000']) && str_contains($html, 'view=bestand'), '«Eingebucht» shows where each purchase went, linked to its material');
 
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'shipped'];
 $html = (new InboundPage())->render();

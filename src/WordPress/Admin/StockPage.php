@@ -509,7 +509,7 @@ final class StockPage
         return array_map(static fn (string $html): string => '<ul style="margin:4px 0 0">' . $html . '</ul>', $out);
     }
 
-    private function thingUrl(int $thing, string $view): string
+    public static function thingUrl(int $thing, string $view): string
     {
         return add_query_arg(['page' => self::PAGE, 'tab' => 'material', 'thing' => $thing, 'view' => $view], admin_url('admin.php'));
     }

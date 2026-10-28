@@ -342,6 +342,27 @@ final class InboundPage
     }
 
     /** «Angekommen»: the Lager page's booking form, loaded once it shows; else the purchases, DHL's events and a tracking field. */
+    /** His question of 2026-10-28 on a booked order: «wo befinden die?» — each lot's material, linked to its stock, and its place. */
+    private function whereItWent(int $purchase): string
+    {
+        $stock  = $this->inbound->stock();
+        $s      = $stock->structure();
+        $lots   = $stock->table('lot');
+        $ledger = $stock->ledger();
+        $things = $stock->things();
+        $places = $stock->labels('location');
+        $out    = [];
+
+        foreach ($this->inbound->lotsOf($purchase) as $lot) {
+            $thing = $ledger->thingOf($lot);
+            $place = $places[(int) $lots->first($lot, $s->field('lot_location'))] ?? '';
+            $out[] = ($thing === null ? esc_html('#' . $lot) : '<a href="' . esc_url(StockPage::thingUrl($thing, 'bestand')) . '">' . esc_html($things->word($thing)) . '</a>')
+                . ($place === '' ? '' : ' · ' . esc_html($place));
+        }
+
+        return $out === [] ? '' : ' → ' . implode(', ', $out);
+    }
+
     private function details(InboundOrder $order, InboundStage $stage, string $tab, bool $open): string
     {
         if ($stage === InboundStage::Arrived) {
@@ -354,7 +375,7 @@ final class InboundPage
         $html      = '<h4 style="margin-bottom:.3em">' . esc_html__('Käufe', 'taxmod-stock') . '</h4><ul style="margin-top:0">';
 
         foreach ($purchases as $purchase) {
-            $html .= '<li>' . esc_html($labels[(int) $purchase] ?? '#' . $purchase) . '</li>';
+            $html .= '<li>' . esc_html($labels[(int) $purchase] ?? '#' . $purchase) . $this->whereItWent((int) $purchase) . '</li>';
         }
 
         $html .= '</ul>' . $this->events($order);

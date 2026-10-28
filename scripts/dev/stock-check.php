@@ -63,7 +63,7 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'create_node', 'ref' => 'verw', 'name' => '__Verwendungen', 'parent' => 410, 'class' => 'Choice'],
     ['op' => 'create_node', 'ref' => 'u_eigen', 'name' => 'Eigenbedarf', 'parent' => '@verw'],
     ['op' => 'create_node', 'ref' => 'teile', 'name' => '__Teile', 'parent' => 402],
-    $field('m_ding', '@mat', 'Ding', 402, 'aggregation', '1..1'),
+    $field('m_ding', '@mat', 'Material', 402, 'aggregation', '1..1'),
     $field('m_einz', '@mat', 'Einzelstück', $bool, 'composition', '1..1'),
     $field('m_min', '@mat', 'Mindestbestand', $int, 'composition', '0..1'),
     $field('m_use', '@mat', 'Verwendung', '@verw', 'aggregation', '0..1'),
@@ -243,7 +243,7 @@ $pruefe($s->things()->lagerOf($r['t1']) === $record && $s->table('lager')->first
 $pruefe((new StockService())->table('lot')->first($lot, $r['l_lo']) === (string) $r['platz'], '«Umbuchen» moves the lot to the chosen place');
 
 // The page renders its tabs from the same data.
-foreach (['material' => '<td>' . $r['lm'] . '</td>', 'inventur' => 'Ding suchen', 'wareneingang' => 'Bestellung 1', 'verbrauch' => 'Rest 25'] as $tab => $erwartet) {
+foreach (['material' => '<td>' . $r['lm'] . '</td>', 'inventur' => 'Material suchen', 'wareneingang' => 'Bestellung 1', 'verbrauch' => 'Rest 25'] as $tab => $erwartet) {
     $_GET = ['page' => StockPage::PAGE, 'tab' => $tab, 'order' => $r['best']];
     $html = (new StockPage())->render();
     $pruefe(str_contains($html, $erwartet) && ! str_contains($html, 'notice-error'), "tab «{$tab}» shows «{$erwartet}»");

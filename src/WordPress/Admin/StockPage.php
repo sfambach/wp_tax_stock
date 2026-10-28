@@ -362,7 +362,7 @@ final class StockPage
             $html  .= '<tr><th scope="row">' . esc_html($field['name']) . '</th><td>' . esc_html($shown === [] ? '—' : implode(', ', $shown)) . '</td></tr>';
         }
 
-        return $html . '</tbody></table><p class="description">' . esc_html__('Bearbeitet wird das Ding im Taxonomy Modeller; hier steht es zum Nachsehen.', 'taxmod-stock') . '</p>';
+        return $html . '</tbody></table><p class="description">' . esc_html__('Bearbeitet wird das Material im Taxonomy Modeller; hier steht es zum Nachsehen.', 'taxmod-stock') . '</p>';
     }
 
     /** The purchases whose «Modell» is this thing. ⚠️ «Preisangaben» are not listed yet: no ability finds what points here. */
@@ -379,7 +379,7 @@ final class StockPage
         }
 
         if ($about === []) {
-            return '<p>' . esc_html__('Noch kein Kauf zeigt auf dieses Ding.', 'taxmod-stock') . '</p>';
+            return '<p>' . esc_html__('Noch kein Kauf zeigt auf dieses Material.', 'taxmod-stock') . '</p>';
         }
 
         $money = $this->stock->table('money');
@@ -518,8 +518,8 @@ final class StockPage
     {
         $groups = $this->groupOptions();
         $html   = $this->formStart('inventur')
-            . '<p>' . esc_html__('Gezählter Bestand ohne Kauf. Jede Zeile wird ein Bestandsposten. Das Material ist ein Ding im Baum: eines suchen, oder ein neues in einer Gruppe anlegen.', 'taxmod-stock') . '</p>'
-            . '<table class="wp-list-table widefat striped table-view-list"><thead><tr><th scope="col" class="manage-column">' . esc_html__('Ding', 'taxmod-stock') . '</th><th scope="col" class="manage-column">' . esc_html__('oder neu: Gruppe', 'taxmod-stock')
+            . '<p>' . esc_html__('Gezählter Bestand ohne Kauf. Jede Zeile wird ein Bestandsposten. Das Material steht im Baum: eines suchen, oder ein neues in einer Materialgruppe anlegen.', 'taxmod-stock') . '</p>'
+            . '<table class="wp-list-table widefat striped table-view-list"><thead><tr><th scope="col" class="manage-column">' . esc_html__('Material', 'taxmod-stock') . '</th><th scope="col" class="manage-column">' . esc_html__('oder neu: Gruppe', 'taxmod-stock')
             . '</th><th scope="col" class="manage-column">' . esc_html__('und Bezeichnung', 'taxmod-stock') . '</th><th scope="col" class="manage-column">' . esc_html__('Menge', 'taxmod-stock') . '</th><th scope="col" class="manage-column">'
             . esc_html__('Wert je Stück', 'taxmod-stock') . '</th><th scope="col" class="manage-column">' . esc_html__('Hinweis', 'taxmod-stock') . '</th></tr></thead><tbody>';
 
@@ -731,14 +731,14 @@ final class StockPage
 
         $html  = $this->formStart('wareneingang') . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
             . ($back === '' ? '' : '<input type="hidden" name="back" value="' . esc_attr($back) . '">')
-            . '<p>' . esc_html__('Je Kauf ein Ding aus dem Baum: vorgeschlagen ist das «Modell» des Kaufs. Ohne Modell ein Ding wählen oder suchen, oder «neu anlegen» mit Gruppe und Bezeichnung. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Dings, sonst der Ort seines Zweigs.', 'taxmod-stock') . '</p>'
+            . '<p>' . esc_html__('Je Kauf ein Material aus dem Baum: vorgeschlagen ist das «Modell» des Kaufs. Ohne Modell ein Material wählen oder suchen, oder «neu anlegen» mit Materialgruppe und Bezeichnung. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seiner Gruppe.', 'taxmod-stock') . '</p>'
             . '<div class="tablenav top"><div class="tablenav-pages one-page"><span class="displaying-num">' . esc_html(sprintf(
                 /* translators: %d: number of purchases */
                 _n('%d Kauf', '%d Käufe', count($plan), 'taxmod-stock'),
                 count($plan)
             )) . '</span></div><br class="clear"></div>';
         $head  = '<tr><td class="manage-column column-cb check-column"><input type="checkbox" aria-label="' . esc_attr__('Alle wählen', 'taxmod-stock') . '"></td>'
-            . '<th scope="col" class="manage-column">' . esc_html__('Kauf', 'taxmod-stock') . '</th><th scope="col" class="manage-column" style="width:25%">' . esc_html__('Ding', 'taxmod-stock')
+            . '<th scope="col" class="manage-column">' . esc_html__('Kauf', 'taxmod-stock') . '</th><th scope="col" class="manage-column" style="width:25%">' . esc_html__('Material', 'taxmod-stock')
             . '</th><th scope="col" class="manage-column">' . esc_html__('suchen oder neu anlegen', 'taxmod-stock')
             . '</th><th scope="col" class="manage-column">' . esc_html__('Lagerort', 'taxmod-stock') . '</th></tr>';
         $html .= '<table class="wp-list-table widefat fixed striped table-view-list"><thead>' . $head . '</thead><tbody>' . ($plan === [] ? $this->noItems(3) : '');
@@ -759,12 +759,12 @@ final class StockPage
 
             $html .= '<td><input type="search" class="taxmod-stock-filter" data-for="' . esc_attr($select) . '" placeholder="' . esc_attr__('filtern …', 'taxmod-stock') . '" style="width:8em"> '
                 . '<select id="' . esc_attr($select) . '" name="choice[' . esc_attr((string) $purchase) . ']">'
-                . ($model === null ? '<option value="">' . esc_html__('— Ding wählen —', 'taxmod-stock') . '</option>' : '<option value="keep" selected>' . esc_html(sprintf(
+                . ($model === null ? '<option value="">' . esc_html__('— Material wählen —', 'taxmod-stock') . '</option>' : '<option value="keep" selected>' . esc_html(sprintf(
                     /* translators: %s: the purchase's «Modell» */
                     __('Modell: %s', 'taxmod-stock'),
                     '#' . $model . ' · ' . ($models[$model] ?? '')
                 )) . '</option>')
-                . '<option value="search">' . esc_html__('gesuchtes Ding →', 'taxmod-stock') . '</option>'
+                . '<option value="search">' . esc_html__('gesuchtes Material →', 'taxmod-stock') . '</option>'
                 . '<option value="new">' . esc_html__('neu anlegen →', 'taxmod-stock') . '</option>' . $known . '</select></td>'
                 . '<td>' . $this->thingField('thing[' . $purchase . ']', 'taxmod-stock-thing-p' . $purchase, null)
                 . '<br><select name="group[' . esc_attr((string) $purchase) . ']" style="max-width:14em">' . $groups . '</select> '
@@ -865,7 +865,7 @@ final class StockPage
 
         return '<input type="hidden" id="' . esc_attr($id) . '" name="' . esc_attr($name) . '" value="' . esc_attr((string) ($value ?? '')) . '">'
             . '<input type="search" class="taxmod-stock-thing-search" data-for="' . esc_attr($id) . '" list="' . esc_attr($id . '-hits') . '" value="' . esc_attr($shown) . '" placeholder="'
-            . esc_attr__('Ding suchen …', 'taxmod-stock') . '" style="width:18em"><datalist id="' . esc_attr($id . '-hits') . '"></datalist>';
+            . esc_attr__('Material suchen …', 'taxmod-stock') . '" style="width:18em"><datalist id="' . esc_attr($id . '-hits') . '"></datalist>';
     }
 
     /**

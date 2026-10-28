@@ -22,17 +22,17 @@ final class Messages
             /* translators: %s: record id of the purchase */
             'purchase_undetermined'     => sprintf(__('Kauf #%s ist noch nicht näher bestimmt — erst bestimmen, dann einbuchen.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id of the purchase */
-            'purchase_without_thing'    => sprintf(__('Kauf #%s hat kein Ding — eines wählen, suchen oder «neu anlegen».', 'taxmod-stock'), $error->detail),
+            'purchase_without_thing'    => sprintf(__('Kauf #%s hat kein Material — eines wählen, suchen oder «neu anlegen».', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id of the purchase */
             'already_received'          => sprintf(__('Kauf #%s ist schon eingegangen.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id */
-            'not_a_thing'               => sprintf(__('#%s ist kein Ding im Baum.', 'taxmod-stock'), $error->detail),
+            'not_a_thing'               => sprintf(__('#%s ist kein Material im Baum.', 'taxmod-stock'), $error->detail),
             /* translators: %s: node id */
             'not_a_group'               => sprintf(__('Knoten %s ist keine Gruppe unter Model.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id */
             'not_a_location'            => sprintf(__('#%s ist kein Lagerort.', 'taxmod-stock'), $error->detail),
-            'thing_without_name'        => __('Ein neues Ding braucht eine Bezeichnung.', 'taxmod-stock'),
-            'thing_without_group'       => __('Ein neues Ding braucht eine Gruppe im Baum.', 'taxmod-stock'),
+            'thing_without_name'        => __('Ein neues Material braucht eine Bezeichnung.', 'taxmod-stock'),
+            'thing_without_group'       => __('Ein neues Material braucht eine Materialgruppe im Baum.', 'taxmod-stock'),
             /* translators: %s: record id of the purchase */
             'not_in_order'              => sprintf(__('Kauf #%s gehört nicht zu dieser Bestellung.', 'taxmod-stock'), $error->detail),
             /* translators: %s: what was typed */
@@ -56,7 +56,7 @@ final class Messages
         return match ($reason) {
             'received'                  => __('schon eingegangen', 'taxmod-stock'),
             'purchase_undetermined'     => __('noch nicht näher bestimmt', 'taxmod-stock'),
-            'purchase_without_thing'    => __('kein Ding', 'taxmod-stock'),
+            'purchase_without_thing'    => __('kein Material', 'taxmod-stock'),
             default                     => $reason,
         };
     }

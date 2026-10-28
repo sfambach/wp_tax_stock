@@ -114,7 +114,7 @@ final class SettingsTab
         };
 
         $html = '<h2>' . esc_html__('Einlagerung nach Typ', 'taxmod-stock') . '</h2>'
-            . '<p>' . esc_html__('Der Wareneingang schlägt den Standard-Lagerort des Dings vor, sonst den Ort des Zweigs unter Model, in dem das Ding des Kaufs liegt (der nächste eingetragene Zweig gewinnt), sonst den Standard-Ort der Struktur.', 'taxmod-stock') . '</p>'
+            . '<p>' . esc_html__('Der Wareneingang schlägt den Standard-Lagerort des Materials vor, sonst den Ort des Zweigs unter Model, in dem das Material des Kaufs liegt (der nächste eingetragene Zweig gewinnt), sonst den Standard-Ort der Struktur.', 'taxmod-stock') . '</p>'
             . '<table class="widefat striped" style="max-width:48em"><thead><tr><th>' . esc_html__('Zweig (Knoten-Id)', 'taxmod-stock') . '</th><th>' . esc_html__('Name', 'taxmod-stock') . '</th><th>' . esc_html__('Lagerort', 'taxmod-stock') . '</th></tr></thead><tbody>';
         $row  = 0;
 
@@ -127,7 +127,7 @@ final class SettingsTab
             ++$row;
         }
 
-        return $html . '<tr><td colspan="2"><strong>' . esc_html__('ohne Ding', 'taxmod-stock') . '</strong></td><td>'
+        return $html . '<tr><td colspan="2"><strong>' . esc_html__('ohne Material', 'taxmod-stock') . '</strong></td><td>'
             . $select('taxmod_stock_unreferenced', $settings->unreferenced) . '</td></tr></tbody></table>';
     }
 

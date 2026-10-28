@@ -30,11 +30,19 @@ final class Structure
     private const OPTIONAL_NODES = ['lager_use'];
 
     /** Fields the module uses when they are there and leaves out when they are not. */
-    private const OPTIONAL_FIELDS = ['description', 'title_image', 'lager_use', 'lager_location', 'transaction_project'];
+    private const OPTIONAL_FIELDS = [
+        'description', 'title_image', 'lager_use', 'lager_location', 'transaction_project',
+        // D-1001: the test after the goods receipt; its result is the lot's condition.
+        'lot_condition', 'lot_tested_on', 'lot_test_note',
+    ];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];
 
-    private const OPTIONAL_VALUES = ['currency_default'];
+    /** D-1000: draft and cancelled orders stand in no stage of the goods receipt cockpit. */
+    private const OPTIONAL_VALUES = [
+        'currency_default', 'status_draft', 'status_cancelled',
+        'test_ok', 'test_partial', 'test_maintenance', 'test_defect', 'condition_new', 'condition_untested',
+    ];
 
     /**
      * The keys of a structure pasted before 0.2.0, when the Lager view was still a material of its own (D-967).
@@ -68,6 +76,42 @@ final class Structure
             self::ids($raw, 'fields', self::FIELDS, self::OPTIONAL_FIELDS),
             self::ids($raw, 'values', self::VALUES, self::OPTIONAL_VALUES),
         );
+    }
+
+    /**
+     * The stored ids, completed by the bundled ones (`structure-live.json`) where the stored structure is that one: every
+     * id both name is the same. A new release then reads the ids it added without pasting the JSON again; a structure of
+     * another site, which differs somewhere, stays as it is.
+     *
+     * @param array<string, mixed> $stored
+     * @param array<string, mixed> $bundled
+     * @return array<string, mixed>
+     */
+    public static function completed(array $stored, array $bundled): array
+    {
+        $shared = 0;
+
+        foreach (['nodes', 'fields', 'values'] as $group) {
+            foreach (is_array($stored[$group] ?? null) ? $stored[$group] : [] as $key => $id) {
+                if (isset($bundled[$group][$key])) {
+                    if ((int) $bundled[$group][$key] !== (int) $id) {
+                        return $stored;
+                    }
+
+                    ++$shared;
+                }
+            }
+        }
+
+        if ($shared === 0) {
+            return $stored;
+        }
+
+        foreach (['nodes', 'fields', 'values'] as $group) {
+            $stored[$group] = (is_array($stored[$group] ?? null) ? $stored[$group] : []) + (is_array($bundled[$group] ?? null) ? $bundled[$group] : []);
+        }
+
+        return $stored;
     }
 
     public function node(string $key): int

@@ -15,6 +15,7 @@ use TaxmodStock\Core\ReceiptPlan;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\Structure;
 use TaxmodStock\Core\Table;
+use TaxmodStock\Core\TestSettings;
 use TaxmodStock\Core\Things;
 use TaxmodStock\Core\ViewSettings;
 
@@ -27,6 +28,9 @@ final class StockService
 
     /** D-972: which branch of `Model` goes to which place. */
     public const LOCATIONS = 'taxmod_stock_locations';
+
+    /** D-1001: the branches under `Model` whose lots are tested after the goods receipt. */
+    public const TESTS = 'taxmod_stock_tests';
 
     /** Per tab whether its rows open by themselves (see {@see ViewSettings}). */
     public const VIEWS = 'taxmod_stock_views';
@@ -45,9 +49,11 @@ final class StockService
 
     public function structure(): Structure
     {
-        $raw = get_option(self::OPTION, []);
+        $raw     = get_option(self::OPTION, []);
+        $file    = dirname(__DIR__, 2) . '/structure-live.json';
+        $bundled = is_readable($file) ? json_decode((string) file_get_contents($file), true) : null;
 
-        return Structure::fromArray(is_array($raw) ? $raw : []);
+        return Structure::fromArray(Structure::completed(is_array($raw) ? $raw : [], is_array($bundled) ? $bundled : []));
     }
 
     public function table(string $node): Table
@@ -211,11 +217,35 @@ final class StockService
         return (new ReceiptPlan($s))->of($order, $this->table('order'), $this->table('purchase'), Ledger::receivedPurchases($s, $this->table('lot')));
     }
 
+    /** @return array<int, true> purchases some lot already names (D-956) */
+    public function receivedPurchases(): array
+    {
+        return Ledger::receivedPurchases($this->structure(), $this->table('lot'));
+    }
+
+    /**
+     * Writes a change list built by the core in one call, all or nothing.
+     *
+     * @param list<array<string, mixed>> $changes
+     * @return array<string, mixed> the modeller's answer
+     */
+    public function write(array $changes): array
+    {
+        return $this->model->write($changes);
+    }
+
     public function viewSettings(): ViewSettings
     {
         $raw = get_option(self::VIEWS, []);
 
         return ViewSettings::fromArray(is_array($raw) ? $raw : []);
+    }
+
+    public function testSettings(): TestSettings
+    {
+        $raw = get_option(self::TESTS, []);
+
+        return TestSettings::fromArray(is_array($raw) ? $raw : []);
     }
 
     public function locationSettings(): LocationSettings

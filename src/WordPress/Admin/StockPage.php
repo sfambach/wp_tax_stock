@@ -29,7 +29,8 @@ final class StockPage
     public const PAGE       = 'taxmod-stock';
     public const ACTION     = 'taxmod_stock_book';
     public const POSITIONS  = 'taxmod_stock_positions';
-    private const NOTICE    = 'taxmod_stock_notice';
+    /** The notice after a booking; the goods receipt cockpit shows it too, when the booking came from there. */
+    public const NOTICE     = 'taxmod_stock_notice';
     private const ROWS      = 6;
     private const TABS      = ['wareneingang', 'material', 'inventur', 'verbrauch'];
     private const VIEWS     = ['daten', 'einkauf', 'lager', 'bestand', 'verkauf'];
@@ -87,6 +88,8 @@ final class StockPage
         // The goods receipt sends «thing» as a list (one per purchase); only the other forms send one thing.
         $thing = is_array($_POST['thing'] ?? null) ? 0 : absint($_POST['thing'] ?? 0);
         $back  = ['material', []];
+        // D-1000: a receipt booked from the goods receipt cockpit goes back there.
+        $fromCockpit = $kind === 'wareneingang' && sanitize_key((string) ($_POST['back'] ?? '')) === InboundPage::BACK;
 
         try {
             $result = match ($kind) {
@@ -126,6 +129,11 @@ final class StockPage
                 'verbrauch'         => ['verbrauch', ['thing' => $thing]],
                 default             => [$kind, []],
             };
+        }
+
+        if ($fromCockpit) {
+            wp_safe_redirect(InboundPage::url(['tab' => 'arrived', 'order' => absint($_POST['order'] ?? 0)]));
+            exit;
         }
 
         wp_safe_redirect(add_query_arg(['page' => self::PAGE, 'tab' => $back[0]] + $back[1], admin_url('admin.php')));
@@ -664,9 +672,10 @@ final class StockPage
 
         check_ajax_referer(self::POSITIONS);
         $order = absint($_GET['order'] ?? 0);
+        $back  = sanitize_key((string) ($_GET['back'] ?? ''));
 
         try {
-            wp_send_json_success(['html' => $this->receiptPositions($order)]);
+            wp_send_json_success(['html' => $this->receiptPositions($order, $back === InboundPage::BACK ? $back : '')]);
         } catch (StockError $e) {
             wp_send_json_error(['html' => '<div class="notice notice-error inline"><p>' . esc_html(Messages::of($e)) . '</p></div>']);
         }
@@ -693,8 +702,12 @@ final class StockPage
         };
     }
 
-    /** The purchases of one order with their thing and place, as one booking form (D-995). */
-    private function receiptPositions(int $order): string
+    /**
+     * The purchases of one order with their thing and place, as one booking form (D-995).
+     *
+     * @param string $back where the booking returns to: '' the Lager page, {@see InboundPage::BACK} the cockpit (D-1000)
+     */
+    private function receiptPositions(int $order, string $back = ''): string
     {
         $orders = $this->stock->labels('order');
 
@@ -717,6 +730,7 @@ final class StockPage
         }
 
         $html  = $this->formStart('wareneingang') . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
+            . ($back === '' ? '' : '<input type="hidden" name="back" value="' . esc_attr($back) . '">')
             . '<p>' . esc_html__('Je Kauf ein Ding aus dem Baum: vorgeschlagen ist das «Modell» des Kaufs. Ohne Modell ein Ding wählen oder suchen, oder «neu anlegen» mit Gruppe und Bezeichnung. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Dings, sonst der Ort seines Zweigs.', 'taxmod-stock') . '</p>'
             . '<div class="tablenav top"><div class="tablenav-pages one-page"><span class="displaying-num">' . esc_html(sprintf(
                 /* translators: %d: number of purchases */
@@ -854,8 +868,11 @@ final class StockPage
             . esc_attr__('Ding suchen …', 'taxmod-stock') . '" style="width:18em"><datalist id="' . esc_attr($id . '-hits') . '"></datalist>';
     }
 
-    /** Filters a choice list as one types, and asks the modeller's record search for a thing. */
-    private function script(): string
+    /**
+     * Filters a choice list as one types, and asks the modeller's record search for a thing; loads an order's purchases
+     * once its details show. Public because the goods receipt cockpit shows the same booking form (D-1000).
+     */
+    public function script(): string
     {
         $search    = add_query_arg(['action' => self::RECORD_SEARCH, '_taxmod_nonce' => wp_create_nonce(self::RECORD_SEARCH)], admin_url('admin-post.php'));
         $positions = add_query_arg(['action' => self::POSITIONS, '_ajax_nonce' => wp_create_nonce(self::POSITIONS)], admin_url('admin-post.php'));
@@ -871,7 +888,7 @@ final class StockPage
             . 'root.querySelectorAll("tr").forEach(function(tr){var cb=tr.querySelector("input[name=\\"purchases[]\\"]");if(!cb||cb.disabled){return;}tr.querySelectorAll("select,input[type=text],input[type=search]").forEach(function(f){f.addEventListener("change",function(){cb.checked=true;});});});'
             . '}bind(document);'
             . 'function load(box){if(box.dataset.loaded){return;}box.dataset.loaded="1";var cell=box;cell.textContent="…";'
-            . 'fetch(pos+"&order="+encodeURIComponent(box.dataset.order),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){cell.innerHTML=(j.data&&j.data.html)||"";bind(cell);})'
+            . 'fetch(pos+"&order="+encodeURIComponent(box.dataset.order)+(box.dataset.back?"&back="+encodeURIComponent(box.dataset.back):""),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){cell.innerHTML=(j.data&&j.data.html)||"";bind(cell);})'
             . '.catch(function(){delete box.dataset.loaded;cell.textContent=' . wp_json_encode(__('Positionen konnten nicht geladen werden.', 'taxmod-stock')) . ';});}'
             // An order's purchases load once its details row shows: opened by hand, by «Expand all», or open from the start.
             . 'var seen="IntersectionObserver" in window?new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){seen.unobserve(e.target);load(e.target);}});},{rootMargin:"200px"}):null;'

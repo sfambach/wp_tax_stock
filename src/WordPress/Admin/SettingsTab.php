@@ -4,6 +4,7 @@ namespace TaxmodStock\WordPress\Admin;
 
 use TaxmodStock\Core\LocationSettings;
 use TaxmodStock\Core\StockError;
+use TaxmodStock\Core\TestSettings;
 use TaxmodStock\Core\Structure;
 use TaxmodStock\Core\ViewSettings;
 use TaxmodStock\WordPress\StockService;
@@ -66,7 +67,7 @@ final class SettingsTab
             }
         }
 
-        return $html . '</tbody></table>' . $this->viewsSection() . $this->placesSection();
+        return $html . '</tbody></table>' . $this->viewsSection() . $this->placesSection() . $this->testsSection();
     }
 
     /** One section per tab of the stock page; «Gleich aufgeklappt» where its rows can be opened. */
@@ -130,6 +131,31 @@ final class SettingsTab
             . $select('taxmod_stock_unreferenced', $settings->unreferenced) . '</td></tr></tbody></table>';
     }
 
+    /** D-1001: the branches under `Model` whose used goods are tested after the goods receipt (Wareneingang › Zu testen). */
+    private function testsSection(): string
+    {
+        $stock = new StockService();
+        $rows  = $stock->testSettings()->branches;
+
+        try {
+            $tree = $stock->tree();
+        } catch (StockError) {
+            $tree = [];
+        }
+
+        $html = '<h2>' . esc_html__('Test nach dem Wareneingang', 'taxmod-stock') . '</h2>'
+            . '<p>' . esc_html__('Bestandsposten aus diesen Zweigen (mit allem darunter) stehen nach dem Wareneingang unter Logistik › Wareneingang › Zu testen, egal von welcher Plattform; Neuware nicht. Eine leere Zeile fügt einen Zweig hinzu, eine geleerte entfernt ihn.', 'taxmod-stock') . '</p>'
+            . '<input type="hidden" name="taxmod_stock_tests_sent" value="1">'
+            . '<table class="widefat striped" style="max-width:40em"><thead><tr><th>' . esc_html__('Zweig (Knoten-Id)', 'taxmod-stock') . '</th><th>' . esc_html__('Name', 'taxmod-stock') . '</th></tr></thead><tbody>';
+
+        foreach ([...$rows, null, null, null] as $i => $node) {
+            $html .= '<tr><td><input type="number" min="1" name="taxmod_stock_tests[' . $i . ']" value="' . esc_attr((string) ($node ?? '')) . '" style="width:12em"></td>'
+                . '<td>' . esc_html($node === null ? '' : ($tree[$node]['name'] ?? '')) . '</td></tr>';
+        }
+
+        return $html . '</tbody></table>';
+    }
+
     /** @param array<string, mixed> $post already unslashed by the modeller */
     public function save(array $post): void
     {
@@ -158,6 +184,11 @@ final class SettingsTab
 
             $settings = LocationSettings::fromArray(['branches' => $branches, 'unreferenced' => absint($post['taxmod_stock_unreferenced'] ?? 0)]);
             update_option(StockService::LOCATIONS, $settings->toArray(), false);
+        }
+
+        if (! empty($post['taxmod_stock_tests_sent'])) {
+            $nodes = array_map('absint', is_array($post['taxmod_stock_tests'] ?? null) ? $post['taxmod_stock_tests'] : []);
+            update_option(StockService::TESTS, TestSettings::fromArray(['branches' => array_values($nodes)])->toArray(), false);
         }
 
         $json = trim((string) ($post['taxmod_stock_structure'] ?? ''));

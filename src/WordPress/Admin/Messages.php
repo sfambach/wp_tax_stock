@@ -40,6 +40,11 @@ final class Messages
             'nothing_to_book'           => __('Nichts zu buchen: keine Zeile ausgefüllt.', 'taxmod-stock'),
             /* translators: %s: record id of the thing */
             'no_lot'                    => sprintf(__('Material #%s hat keinen passenden Bestandsposten.', 'taxmod-stock'), $error->detail),
+            'already_booked'            => __('Von dieser Bestellung ist schon etwas eingebucht — sie bleibt angekommen.', 'taxmod-stock'),
+            'no_tracking_number'        => __('Keine Sendungsnummer eingegeben.', 'taxmod-stock'),
+            /* translators: %s: role of the order field, e.g. received_at */
+            'no_import_targets'         => sprintf(__('Das Feld «%s» der Bestellungen fehlt in den Ziel-Ids des Eingangs (Taxonomy Modeller › Configuration › Import).', 'taxmod-stock'), $error->detail),
+            'test_without_reason'       => __('«Teilweise OK» und «Wartung nötig» brauchen eine Begründung: was geht nicht, was ist zu tun.', 'taxmod-stock'),
             /* translators: %s: the modeller's message */
             'model_refused'             => sprintf(__('Der Taxonomy Modeller hat die Buchung abgelehnt, nichts wurde geschrieben: %s', 'taxmod-stock'), $error->detail),
             default                     => $error->getMessage(),

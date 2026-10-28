@@ -48,8 +48,10 @@
         "kind_consumption": 149000110123,
         "kind_count": 149000110128,
         "source_manual": 149000110143,
+        "status_draft": 149000110137,
         "status_partial": 149000110139,
         "status_received": 149000110140,
+        "status_cancelled": 149000110141,
         "location_default": 43122,
         "currency_default": 8571
     }

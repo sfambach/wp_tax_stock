@@ -2,16 +2,21 @@
 
 namespace TaxmodStock\WordPress;
 
+use TaxmodStock\WordPress\Admin\InboundPage;
 use TaxmodStock\WordPress\Admin\SettingsTab;
 use TaxmodStock\WordPress\Admin\StockPage;
 
 /**
- * Wires the module into WordPress: a tab on the modeller's Configuration and the page «Lager» under its menu.
+ * Wires the module into WordPress: a tab on the modeller's Configuration, and the menu «Logistik» with the goods receipt
+ * cockpit and the page «Lager» (D-1003: goods in, goods out and stock get a menu of their own beside the modeller's).
  */
 final class Plugin
 {
-    /** The modeller's menu slug; the page hangs under it rather than opening a menu of its own. */
-    private const PARENT_MENU = 'taxmod';
+    /** D-1003: the menu of goods in, goods out and stock; other modules may hang their pages under this slug. */
+    public const MENU = 'taxmod-logistik';
+
+    /** Just below the modeller's own menu entry. */
+    private const MENU_POSITION = 59;
 
     public function boot(): void
     {
@@ -35,17 +40,16 @@ final class Plugin
         add_action('admin_menu', [$this, 'registerMenu'], 20);
         add_action('admin_post_' . StockPage::ACTION, static fn () => (new StockPage())->handle());
         add_action('admin_post_' . StockPage::POSITIONS, static fn () => (new StockPage())->positions());
+        add_action('admin_post_' . InboundPage::ACTION, static fn () => (new InboundPage())->handle());
     }
 
     public function registerMenu(): void
     {
-        add_submenu_page(
-            self::PARENT_MENU,
-            __('Lager', 'taxmod-stock'),
-            __('Lager', 'taxmod-stock'),
-            'manage_options',
-            StockPage::PAGE,
-            static fn () => print (new StockPage())->render()
-        );
+        $inbound = static fn () => print (new InboundPage())->render();
+
+        add_menu_page(__('Logistik', 'taxmod-stock'), __('Logistik', 'taxmod-stock'), 'manage_options', self::MENU, $inbound, 'dashicons-archive', self::MENU_POSITION);
+        // The first entry under a menu repeats its slug; named «Wareneingang» it opens the cockpit (D-1000).
+        add_submenu_page(self::MENU, __('Wareneingang', 'taxmod-stock'), __('Wareneingang', 'taxmod-stock'), 'manage_options', self::MENU, $inbound);
+        add_submenu_page(self::MENU, __('Lager', 'taxmod-stock'), __('Lager', 'taxmod-stock'), 'manage_options', StockPage::PAGE, static fn () => print (new StockPage())->render());
     }
 }

@@ -2,15 +2,23 @@
 
 Stock keeping for the [Taxonomy Modeller](https://github.com/sfambach/wp-taxonomy-modeler) (WordPress plugin).
 
-**Status: stage 1 built, 0.2.0.** Concept (German):
+**Status: stage 1 built, 0.3.0.** Concept (German):
 [`docs/pakete/lager/konzept.md`](https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/lager/konzept.md),
-decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997.
+decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1000, D-1003.
 
 ## What it does
 
 - **The thing is the material (D-995).** A record in the tree under `Model` is the material; its record id is the
   material number. Lager, lots, purchases and sales are own records pointing to it.
-- **Page «Lager»** under the Taxonomy Modeller menu, drawn with the modeller's shared list page (D-989, needs the
+- **Menu «Logistik»** (D-1003) beside the Taxonomy Modeller menu, for goods in, goods out and stock.
+- **Page «Wareneingang»** (D-1000), the goods receipt cockpit, first under «Logistik»: every order in one stage, a tab per stage —
+  Bestellt → Versendet → Angekommen → Eingebucht. The stage is computed from what the inbox already wrote to the order
+  (status, «Eingegangen am», tracking numbers) and the DHL module's last answer (filter `taxmod_dhl_tracking`); nothing
+  extra is stored. Buttons: «Angekommen» (sets «Eingegangen am»), «Zurück», a tracking number by hand, «DHL ↻». In
+  «Angekommen» each order opens to the booking form of «Lager › Wareneingang». Filter «Überfällig» (14 days without a
+  tracking number, 21 days on the way). Concept:
+  [`docs/pakete/lager/cockpit-wareneingang.md`](https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/lager/cockpit-wareneingang.md).
+- **Page «Lager»** under «Logistik», drawn with the modeller's shared list page (D-989, needs the
   modeller from 0.1.65), four tabs, «Wareneingang» first:
   - **Wareneingang** — the orders as a list, each opening to its purchases; receive determined purchases (partial
     receipts allowed). Each purchase goes in as its «Modell», as another thing searched for, or as a new thing created
@@ -35,7 +43,7 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997.
 ## Development
 
 - `composer install`, then `vendor/bin/phpunit` (core, no WordPress).
-- `php scripts/dev/stock-check.php` against a local WordPress with the modeller active; nothing it writes survives.
+- `php scripts/dev/stock-check.php` and `php scripts/dev/inbound-check.php` against a local WordPress with the modeller active; nothing it writes survives.
 
 ## Authors
 

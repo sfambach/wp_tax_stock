@@ -96,6 +96,24 @@ final class ModelGateway
         return $out;
     }
 
+    /**
+     * The records in these nodes that every condition matches — the modeller's own record search (D-958 F3a).
+     *
+     * @param list<int>                                      $nodes
+     * @param list<array{text: string, nodes: list<int>}>    $conditions a word, found in a text value or in the name of one of these nodes
+     * @return list<int> empty if the modeller does not offer it
+     */
+    public function recordsMatching(array $nodes, array $conditions, int $limit): array
+    {
+        $repository = \Taxmod\WordPress\Persistence\WpdbRecordRepository::class;
+
+        if (! class_exists($repository) || ! method_exists($repository, 'recordsMatching')) {
+            return [];
+        }
+
+        return array_map('intval', (new $repository())->recordsMatching($nodes, $conditions, $limit));
+    }
+
     /** @return array<int, string> child node id → name */
     public function children(int $node): array
     {

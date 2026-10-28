@@ -42,7 +42,7 @@ final class StockPage
     private const HEAD_FIELDS = ['label', 'description', 'title_image'];
 
     /** The modeller's search over every record under `Model` (D-958 F3a), reused to pick a thing. */
-    private const RECORD_SEARCH = 'taxmod_record_search';
+    public const THING_SEARCH = 'taxmod_stock_thing_search';
 
     public function __construct(private readonly StockService $stock = new StockService())
     {
@@ -739,6 +739,22 @@ final class StockPage
         return $out;
     }
 
+    /** admin-post handler for the material search of {@see self::recordPicker()}: capability → nonce → validate → act. */
+    public function thingSearch(): void
+    {
+        if (! current_user_can('manage_options')) {
+            wp_send_json_error([], 403);
+        }
+
+        check_ajax_referer(self::THING_SEARCH);
+
+        try {
+            wp_send_json_success($this->stock->searchThings(sanitize_text_field(wp_unslash((string) ($_GET['term'] ?? '')))));
+        } catch (StockError $e) {
+            wp_send_json_error(['message' => Messages::of($e)]);
+        }
+    }
+
     /** admin-post handler for one order's purchases, fetched when he opens the order: capability → nonce → validate → act. */
     public function positions(): void
     {
@@ -791,31 +807,22 @@ final class StockPage
             throw StockError::nothingToBook();
         }
 
-        $things = $this->stock->things();
         $plan   = $this->stock->receiptPlan($order);
         $labels = $this->stock->labels('purchase');
         $about  = $this->purchaseAbout(array_keys($plan));
         $models = $this->stock->recordLabels(array_values(array_filter(array_column($plan, 'model'))));
         $places = $this->stock->labels('location');
         $where  = $this->stock->receiptLocations($plan);
-        $groups = $this->groupOptions();
-        $known  = '';
-
-        foreach ($things->all() as $id => $label) {
-            $known .= '<option value="' . esc_attr((string) $id) . '">' . esc_html($label) . '</option>';
-        }
-
         $html  = $this->formStart('wareneingang') . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
             . ($back === '' ? '' : '<input type="hidden" name="back" value="' . esc_attr($back) . '">')
-            . '<p>' . esc_html__('Je Kauf unter «Material» festlegen, was eingelagert wird: «wie im Kauf» übernimmt das Modell des Kaufs, «aus dem Lager wählen» ein schon gelagertes Material, «im Baum suchen» jedes andere, «neu anlegen» legt es mit Materialgruppe und Bezeichnung an. Unter «Auswahl» erscheinen nur die Felder dazu. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seiner Gruppe.', 'taxmod-stock') . '</p>'
+            . '<p>' . esc_html__('Je Kauf das Material: vorgeschlagen ist das «Modell» des Kaufs; der Mülleimer gibt die Suche frei. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seiner Gruppe.', 'taxmod-stock') . '</p>'
             . '<div class="tablenav top"><div class="tablenav-pages one-page"><span class="displaying-num">' . esc_html(sprintf(
                 /* translators: %d: number of purchases */
                 _n('%d Kauf', '%d Käufe', count($plan), 'taxmod-stock'),
                 count($plan)
             )) . '</span></div><br class="clear"></div>';
         $head  = '<tr><td class="manage-column column-cb check-column"><input type="checkbox" aria-label="' . esc_attr__('Alle wählen', 'taxmod-stock') . '"></td>'
-            . '<th scope="col" class="manage-column">' . esc_html__('Kauf', 'taxmod-stock') . '</th><th scope="col" class="manage-column" style="width:25%">' . esc_html__('Material', 'taxmod-stock')
-            . '</th><th scope="col" class="manage-column">' . esc_html__('Auswahl', 'taxmod-stock')
+            . '<th scope="col" class="manage-column">' . esc_html__('Kauf', 'taxmod-stock') . '</th><th scope="col" class="manage-column" style="width:40%">' . esc_html__('Material', 'taxmod-stock')
             . '</th><th scope="col" class="manage-column">' . esc_html__('Lagerort', 'taxmod-stock') . '</th></tr>';
         $html .= '<table class="wp-list-table widefat fixed striped table-view-list"><thead>' . $head . '</thead><tbody>' . ($plan === [] ? $this->noItems(3) : '');
 
@@ -833,28 +840,13 @@ final class StockPage
                 $split = $lock === 'purchase_undetermined'
                     ? '<a class="button button-small" href="' . esc_url(add_query_arg(array_filter(['page' => self::PAGE, 'tab' => 'wareneingang', 'order' => $order, 'split' => $purchase, 'back' => $back]), admin_url('admin.php'))) . '">' . esc_html__('Aufteilen', 'taxmod-stock') . '</a>'
                     : '';
-                $html .= '<td>' . esc_html($model === null ? '—' : '#' . $model . ' · ' . ($models[$model] ?? '')) . '</td><td>' . $split . '</td><td></td></tr>';
+                $html .= '<td>' . esc_html($model === null ? '—' : '#' . $model . ' · ' . ($models[$model] ?? '')) . ' ' . $split . '</td><td></td></tr>';
                 continue;
             }
 
-            // One choice per purchase, and only the fields that choice needs (his question 2026-10-28: «die zweitelung im angekommen verstehe ich noch nicht»).
-            $mode  = static fn (string $which, string $inner): string => '<div class="taxmod-stock-mode" data-mode="' . esc_attr($which) . '" hidden>' . $inner . '</div>';
-            $html .= '<td><select class="taxmod-stock-how" name="choice[' . esc_attr((string) $purchase) . ']" style="max-width:100%">'
-                . ($model === null ? '<option value="">' . esc_html__('— bitte wählen —', 'taxmod-stock') . '</option>' : '<option value="keep" selected>' . esc_html(sprintf(
-                    /* translators: %s: the purchase's «Modell» */
-                    __('wie im Kauf: %s', 'taxmod-stock'),
-                    '#' . $model . ' · ' . ($models[$model] ?? '')
-                )) . '</option>')
-                . '<option value="list">' . esc_html__('aus dem Lager wählen …', 'taxmod-stock') . '</option>'
-                . '<option value="search">' . esc_html__('im Baum suchen …', 'taxmod-stock') . '</option>'
-                . '<option value="new">' . esc_html__('neu anlegen …', 'taxmod-stock') . '</option></select></td>'
-                . '<td>'
-                . $mode('list', '<input type="search" class="taxmod-stock-filter" data-for="' . esc_attr($select) . '" placeholder="' . esc_attr__('Liste filtern …', 'taxmod-stock') . '" style="width:100%;max-width:22em"><br>'
-                    . '<select id="' . esc_attr($select) . '" name="pick[' . esc_attr((string) $purchase) . ']" style="width:100%;max-width:22em"><option value="">—</option>' . $known . '</select>')
-                . $mode('search', $this->thingField('thing[' . $purchase . ']', 'taxmod-stock-thing-p' . $purchase, null))
-                . $mode('new', '<label>' . esc_html__('Materialgruppe', 'taxmod-stock') . '<br><select name="group[' . esc_attr((string) $purchase) . ']" style="width:100%;max-width:22em">' . $groups . '</select></label><br>'
-                    . '<label>' . esc_html__('Bezeichnung', 'taxmod-stock') . '<br><input type="text" name="name[' . esc_attr((string) $purchase) . ']" value="' . esc_attr($labels[$purchase] ?? '') . '" style="width:100%;max-width:22em"></label>')
-                . '</td>'
+            // The modeller's own record chooser on the purchase's «Modell» (his word 2026-10-28: «eigentlich haben wir doch den tax chooser»).
+            $html .= '<td><input type="hidden" name="model[' . esc_attr((string) $purchase) . ']" value="' . esc_attr((string) ($model ?? '')) . '">'
+                . $this->recordPicker('thing[' . $purchase . ']', $model, $model === null ? '' : ($models[$model] ?? '#' . $model)) . '</td>'
                 . '<td><select name="location[' . esc_attr((string) $purchase) . ']">' . $this->options($places, '—', $where[$purchase] ?? 0) . '</select></td></tr>';
         }
 
@@ -886,40 +878,34 @@ final class StockPage
     }
 
     /**
-     * The ticked purchases with their thing — «keep» (the Modell), «list» (a thing picked from the Lager), «search»
-     * (the thing found), «new» (group and name) — and their place.
+     * The ticked purchases with their thing — «keep» when the chooser still holds the Modell, else the record chosen — and their place.
      *
      * @return array<int, ReceiptChoice>
      */
     private function receiptChoices(): array
     {
-        $choices = (array) ($_POST['choice'] ?? []);
-        $things  = (array) ($_POST['thing'] ?? []);
-        $picks   = (array) ($_POST['pick'] ?? []);
-        $groups  = (array) ($_POST['group'] ?? []);
-        $names   = (array) ($_POST['name'] ?? []);
-        $places  = (array) ($_POST['location'] ?? []);
-        $out     = [];
+        $things = (array) ($_POST['thing'] ?? []);
+        $models = (array) ($_POST['model'] ?? []);
+        $places = (array) ($_POST['location'] ?? []);
+        $out    = [];
 
         $ticked = array_filter(array_map('absint', (array) ($_POST['purchases'] ?? [])));
 
-        // A purchase whose thing was chosen by hand is meant to go in, ticked or not (his report 2026-10-28: «nix passiert»).
-        foreach ($choices as $purchase => $choice) {
-            if (! in_array(sanitize_key((string) $choice), ['', 'keep'], true)) {
+        // A purchase whose thing was changed by hand is meant to go in, ticked or not (his report 2026-10-28: «nix passiert»).
+        foreach ($things as $purchase => $thing) {
+            if (absint($thing) > 0 && absint($thing) !== absint($models[$purchase] ?? 0)) {
                 $ticked[] = absint($purchase);
             }
         }
 
         foreach (array_unique(array_filter($ticked)) as $purchase) {
-            $choice = sanitize_key((string) wp_unslash($choices[$purchase] ?? ''));
+            $thing = absint($things[$purchase] ?? 0);
+            $model = absint($models[$purchase] ?? 0);
 
             $out[$purchase] = (match (true) {
-                $choice === 'keep'   => ReceiptChoice::keep(),
-                $choice === 'list'   => ReceiptChoice::existing(absint($picks[$purchase] ?? 0) ?: throw StockError::purchaseWithoutThing($purchase)),
-                $choice === 'search' => ReceiptChoice::existing(absint($things[$purchase] ?? 0) ?: throw StockError::purchaseWithoutThing($purchase)),
-                $choice === 'new'    => ReceiptChoice::create(new NewThing(absint($groups[$purchase] ?? 0), sanitize_text_field(wp_unslash((string) ($names[$purchase] ?? ''))))),
-                absint($choice) > 0  => ReceiptChoice::existing(absint($choice)),
-                default              => throw StockError::purchaseWithoutThing($purchase),
+                $thing === 0                        => throw StockError::purchaseWithoutThing($purchase),
+                $model !== 0 && $thing === $model   => ReceiptChoice::keep(),
+                default                             => ReceiptChoice::existing($thing),
             })->at(absint($places[$purchase] ?? 0) ?: null);
         }
 
@@ -936,6 +922,45 @@ final class StockPage
             absint($_POST['location'] ?? 0) ?: null,
             $minimum === '' ? null : absint($minimum)
         );
+    }
+
+    /**
+     * The modeller's chooser for «every record under Model» (D-958 F3a): the chosen word with a bin, or a search field whose hits
+     * the material search answers (the modeller's record search, kept to the groups of things). Same markup as its summary field, so its script and stylesheet drive it.
+     */
+    private function recordPicker(string $name, ?int $value, string $word): string
+    {
+        $radio = static fn (string $choice, bool $on): string => '<label class="taxmod-record-choice"><input type="radio" name="' . esc_attr($name) . '" value="' . esc_attr($choice) . '"'
+            . ($on ? ' checked' : '') . '></label>';
+        $none  = $value === null;
+        $clear = __('Entfernen', 'taxmod-stock');
+
+        return '<span class="taxmod-record-pick taxmod-record-remote' . ($none ? '' : ' taxmod-record-taken') . '">'
+            . '<span class="taxmod-record-choices" hidden>' . $radio('', $none) . ($none ? '' : $radio((string) $value, true)) . '</span>'
+            . '<input type="search" class="taxmod-record-quick" autocomplete="off" placeholder="' . esc_attr__('Material suchen …', 'taxmod-stock') . '"' . ($none ? '' : ' hidden') . '>'
+            . '<span class="taxmod-record-dialog-open taxmod-record-word"' . ($none ? ' hidden' : '') . '>' . esc_html($word) . '</span>'
+            . ($none ? '' : ' <button type="button" class="button taxmod-icon-button taxmod-record-clear" style="color:#b32d2e" title="' . esc_attr($clear) . '">'
+                . '<span class="dashicons dashicons-trash" aria-hidden="true"></span><span class="screen-reader-text">' . esc_html($clear) . '</span></button>')
+            . '<span class="taxmod-record-hits" hidden></span>'
+            . '</span>';
+    }
+
+    /**
+     * The modeller's stylesheet and script for {@see self::recordPicker()}, and the one element its script reads the search address from.
+     */
+    private function modellerAssets(): string
+    {
+        if (class_exists(\Taxmod\WordPress\Plugin::class)) {
+            $root = dirname((string) (new \ReflectionClass(\Taxmod\WordPress\Plugin::class))->getFileName(), 3);
+            $base = WP_PLUGIN_DIR . '/' . basename($root) . '/x.php';
+            wp_enqueue_style('taxmod-admin', plugins_url('assets/admin.css', $base), ['dashicons', 'buttons'], (string) \Taxmod\WordPress\Plugin::VERSION);
+            wp_enqueue_script('taxmod-admin', plugins_url('assets/admin.js', $base), [], (string) \Taxmod\WordPress\Plugin::VERSION, true);
+        }
+
+        return '<span hidden id="taxmod-words" data-record-search="' . esc_url(add_query_arg([
+            'action'      => self::THING_SEARCH,
+            '_ajax_nonce' => wp_create_nonce(self::THING_SEARCH),
+        ], admin_url('admin-post.php'))) . '" data-no-hits="' . esc_attr__('Nichts gefunden.', 'taxmod-stock') . '"></span>';
     }
 
     /**
@@ -957,15 +982,15 @@ final class StockPage
     }
 
     /**
-     * Filters a choice list as one types, and asks the modeller's record search for a thing; loads an order's purchases
+     * Filters a choice list as one types, and asks the material search for a thing; loads an order's purchases
      * once its details show. Public because the goods receipt cockpit shows the same booking form (D-1001).
      */
     public function script(): string
     {
-        $search    = add_query_arg(['action' => self::RECORD_SEARCH, '_taxmod_nonce' => wp_create_nonce(self::RECORD_SEARCH)], admin_url('admin-post.php'));
+        $search    = add_query_arg(['action' => self::THING_SEARCH, '_ajax_nonce' => wp_create_nonce(self::THING_SEARCH)], admin_url('admin-post.php'));
         $positions = add_query_arg(['action' => self::POSITIONS, '_ajax_nonce' => wp_create_nonce(self::POSITIONS)], admin_url('admin-post.php'));
 
-        return '<script>(function(){'
+        return $this->modellerAssets() . '<script>(function(){'
             . 'var url=' . wp_json_encode($search) . ',pos=' . wp_json_encode($positions) . ';'
             . 'function bind(root){'
             . 'root.querySelectorAll(".taxmod-stock-filter").forEach(function(f){var s=document.getElementById(f.dataset.for);if(!s){return;}var o=Array.prototype.slice.call(s.options);'
@@ -974,7 +999,6 @@ final class StockPage
             . 'f.addEventListener("input",function(){var m=f.value.match(/^#(\\d+)/);if(m){t.value=m[1];return;}t.value="";clearTimeout(w);if(f.value.trim().length<2){return;}'
             . 'w=setTimeout(function(){fetch(url+"&term="+encodeURIComponent(f.value),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){l.innerHTML="";(j.data||[]).forEach(function(h){var x=document.createElement("option");x.value="#"+h.id+" · "+h.word+(h.node?" ("+h.node+")":"");l.appendChild(x);});});},250);});});'
             . 'root.querySelectorAll("tr").forEach(function(tr){var cb=tr.querySelector("input[name=\\"purchases[]\\"]");if(!cb||cb.disabled){return;}tr.querySelectorAll("select,input[type=text],input[type=search]").forEach(function(f){f.addEventListener("change",function(){cb.checked=true;});});});'
-            . 'root.querySelectorAll(".taxmod-stock-how").forEach(function(h){var tr=h.closest("tr");var show=function(){tr.querySelectorAll(".taxmod-stock-mode").forEach(function(m){m.hidden=m.dataset.mode!==h.value;});};h.addEventListener("change",show);show();});'
             . '}bind(document);'
             . 'function load(box){if(box.dataset.loaded){return;}box.dataset.loaded="1";var cell=box;cell.textContent="…";'
             . 'fetch(pos+"&order="+encodeURIComponent(box.dataset.order)+(box.dataset.back?"&back="+encodeURIComponent(box.dataset.back):""),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){cell.innerHTML=(j.data&&j.data.html)||"";bind(cell);})'

@@ -196,7 +196,11 @@ $pruefe($plan[$r['kaufD']]['proposal'] === null, 'without a Modell the user choo
 
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'wareneingang', 'order' => $r['best2']];
 $html = (new StockPage())->render();
-$pruefe(str_contains($html, 'value="keep" selected') && str_contains($html, '#' . $r['t1'] . ' · BC640') && str_contains($html, 'name="group[' . $r['kaufD'] . ']"'), 'the receipt form proposes the Modell and offers a group for a new thing');
+$hits = array_column($s->searchThings('BC640'), 'id');
+$pruefe(in_array($r['t1'], $hits, true) && ! in_array($r['kaufC'], $hits, true), 'the material search finds the thing, never the purchase named like it');
+// His word 2026-10-28: «eigentlich haben wir doch den tax chooser» — the row holds the modeller's chooser, no «neu anlegen».
+$pruefe(str_contains($html, 'name="thing[' . $r['kaufC'] . ']" value="' . $r['t1'] . '" checked') && str_contains($html, '>BC640</span>')
+    && str_contains($html, 'name="thing[' . $r['kaufD'] . ']" value="" checked') && ! str_contains($html, 'name="group[' . $r['kaufD'] . ']"'), 'the receipt row holds the modeller\'s chooser with the Modell, and no field for a new thing');
 $pruefe(str_contains($html, '<span class="description">3 Stück</span>'), 'each purchase says how many were bought, under its label');
 
 // D-972 · the branch of the purchase's thing decides the place; the thing's own place would win.

@@ -173,6 +173,42 @@ final class StockService
         return $this->tree = array_diff_key($tree, $drop);
     }
 
+    /**
+     * Things whose text or group name holds every word of the search — only in the groups of things, never in the Lager's own
+     * branch, so a purchase or a lot is no hit.
+     *
+     * @return list<array{id: int, word: string, node: string}>
+     */
+    public function searchThings(string $term, int $limit = 30): array
+    {
+        $words = array_slice(array_values(array_filter(
+            preg_split('/\s+/u', mb_strtolower(trim($term))) ?: [],
+            static fn (string $word): bool => mb_strlen($word) >= 2
+        )), 0, 5);
+        $tree  = $this->tree();
+
+        if ($words === [] || $tree === []) {
+            return [];
+        }
+
+        $conditions = [];
+
+        foreach ($words as $word) {
+            $conditions[] = ['text' => $word, 'nodes' => array_keys(array_filter($tree, static fn (array $node): bool => str_contains(mb_strtolower($node['name']), $word)))];
+        }
+
+        $ids    = $this->model->recordsMatching(array_keys($tree), $conditions, $limit);
+        $nodes  = $this->model->nodesOf($ids);
+        $labels = $this->recordLabels($ids, $nodes);
+        $out    = [];
+
+        foreach ($ids as $id) {
+            $out[] = ['id' => $id, 'word' => ($labels[$id] ?? '') === '' ? '#' . $id : $labels[$id], 'node' => $tree[$nodes[$id] ?? 0]['name'] ?? ''];
+        }
+
+        return $out;
+    }
+
     /** The names from the root down to a node, «Bauteile ▸ Aktiv ▸ Transistor». */
     public function path(int $node): string
     {

@@ -37,12 +37,13 @@ $pruefe = static function (bool $gut, string $was) use (&$fehler): void {
 };
 
 [$text, $int, $decimal, $bool, $date, $money] = [1175, 1171, 1173, 1179, 1183, 4232];
-$field = static fn (string $ref, string $node, string $name, int|string $target, string $kind, string $mult): array
+$field = static fn (string $ref, int|string $node, string $name, int|string $target, string $kind, string $mult): array
     => ['op' => 'add_field', 'ref' => $ref, 'node' => $node, 'name' => $name, 'target' => $target, 'kind' => $kind, 'multiplicity' => $mult];
 
 $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'create_node', 'ref' => 'stock', 'name' => '__Stock', 'parent' => 402],
-    $field('label', '@stock', 'Bezeichnung', $text, 'composition', '0..1'),
+    // On Model itself, so the things in __Teile carry it as well as the Stock records.
+    $field('label', 402, 'Bezeichnung', $text, 'composition', '0..1'),
     ['op' => 'create_node', 'ref' => 'mat', 'name' => 'Lager', 'parent' => '@stock'],
     ['op' => 'create_node', 'ref' => 'lot', 'name' => 'Bestandsposten', 'parent' => '@stock'],
     ['op' => 'create_node', 'ref' => 'vg', 'name' => 'Vorgänge', 'parent' => '@stock'],
@@ -61,7 +62,7 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'create_node', 'ref' => 'q_hand', 'name' => 'von Hand', 'parent' => '@quel'],
     ['op' => 'create_node', 'ref' => 'verw', 'name' => '__Verwendungen', 'parent' => 410, 'class' => 'Choice'],
     ['op' => 'create_node', 'ref' => 'u_eigen', 'name' => 'Eigenbedarf', 'parent' => '@verw'],
-    ['op' => 'create_node', 'ref' => 'teile', 'name' => '__Teile', 'parent' => '@stock'],
+    ['op' => 'create_node', 'ref' => 'teile', 'name' => '__Teile', 'parent' => 402],
     $field('m_ding', '@mat', 'Ding', 402, 'aggregation', '1..1'),
     $field('m_einz', '@mat', 'Einzelstück', $bool, 'composition', '1..1'),
     $field('m_min', '@mat', 'Mindestbestand', $int, 'composition', '0..1'),
@@ -154,6 +155,13 @@ try {
     $pruefe(false, 'a new thing outside the tree is refused');
 } catch (StockError $e) {
     $pruefe($e->reason === 'not_a_group', 'a new thing outside the tree is refused');
+}
+
+try {
+    (new StockService())->bookInventory([new InventoryRow(null, new NewThing($r['lo'], 'X'), 'X', '1', null, '')], '2026-10-21', 'Inventur');
+    $pruefe(false, 'the Lager branch itself is no group');
+} catch (StockError $e) {
+    $pruefe($e->reason === 'not_a_group', 'the Lager branch itself is no group');
 }
 
 // Consumption: FIFO lot, negative line.

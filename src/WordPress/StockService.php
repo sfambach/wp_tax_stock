@@ -120,7 +120,8 @@ final class StockService
     }
 
     /**
-     * The groups a thing can live in: every node under the node «Ding» of the Lager view points at (D-995).
+     * The groups a thing can live in: every node under the node «Ding» of the Lager view points at (D-995), except the
+     * branch the Lager view lives in.
      *
      * @return array<int, array{name: string, parent: int, class: string}>
      */
@@ -133,7 +134,23 @@ final class StockService
         $s    = $this->structure();
         $root = $this->model->fields($s->node('lager'))[$s->field('lager_thing')]['target'] ?? 0;
 
-        return $this->tree = $root > 0 ? $this->model->tree($root) : [];
+        $tree = $root > 0 ? $this->model->tree($root) : [];
+
+        // The branch that holds the Lager view itself (Stock with its orders, purchases and lots) is no group of things.
+        $own  = $tree[$s->node('lager')]['parent'] ?? 0;
+        $drop = $own > 0 && $own !== $root ? [$own => true] : [];
+
+        do {
+            $before = count($drop);
+
+            foreach ($tree as $id => $node) {
+                if (isset($drop[$node['parent']])) {
+                    $drop[$id] = true;
+                }
+            }
+        } while (count($drop) > $before);
+
+        return $this->tree = array_diff_key($tree, $drop);
     }
 
     /** The names from the root down to a node, «Bauteile ▸ Aktiv ▸ Transistor». */

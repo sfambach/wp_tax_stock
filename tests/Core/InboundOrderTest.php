@@ -67,6 +67,15 @@ final class InboundOrderTest extends TestCase
     }
 
     #[Test]
+    public function a_tracking_number_comes_off_again(): void
+    {
+        $order = new InboundOrder(7, null, null, null, ['00340434AA', '00340434BB']);
+
+        self::assertSame([['op' => 'set_values', 'record' => '7', 'values' => ['51' => ['values' => ['00340434BB']]]]], (new InboundChanges(50, 51))->untrack($order, '0034 0434-aa'));
+        self::assertSame([], (new InboundChanges(50, 51))->untrack($order, 'X'));
+    }
+
+    #[Test]
     public function arrived_sets_the_date_only_where_there_is_none(): void
     {
         $changes = (new InboundChanges(50, 51))->arrived([new InboundOrder(7, null, null, null, []), new InboundOrder(8, null, null, '2026-10-01', [])], '2026-10-28');

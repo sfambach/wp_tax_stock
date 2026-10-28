@@ -68,6 +68,19 @@ final class InboundChanges
     }
 
     /**
+     * D-1009: a tracking number taken off again — without one, a shipped order is «Bestellt» again.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function untrack(InboundOrder $order, string $number): array
+    {
+        $key  = static fn (string $n): string => strtoupper((string) preg_replace('/[^A-Za-z0-9]/', '', $n));
+        $left = array_values(array_filter($order->tracking, static fn (string $n): bool => $key($n) !== $key($number)));
+
+        return count($left) === count($order->tracking) ? [] : [$this->set($order->id, $this->trackingField, ['values' => $left])];
+    }
+
+    /**
      * @param string|array{values: list<string>} $value
      * @return array<string, mixed>
      */

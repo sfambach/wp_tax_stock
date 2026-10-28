@@ -90,7 +90,9 @@ final class InboundPage
             $text = match ($op) {
                 'arrived' => $this->applied($this->inbound->markArrived(array_values($ids), $today)),
                 'back'    => $this->applied($this->inbound->markNotArrived((int) ($ids[0] ?? 0))),
+                'unbook'  => $this->applied($this->inbound->unbook((int) ($ids[0] ?? 0))),
                 'tracking' => $this->applied($this->inbound->addTracking((int) ($ids[0] ?? 0), sanitize_text_field(wp_unslash((string) ($_POST['number'] ?? ''))))),
+                'untrack' => $this->applied($this->inbound->removeTracking((int) ($ids[0] ?? 0), sanitize_text_field(wp_unslash((string) ($_POST['number'] ?? ''))))),
                 'test'    => $this->applied($this->inbound->recordTest(
                     absint($_POST['lot'] ?? 0),
                     TestResult::tryFrom(sanitize_key((string) ($_POST['result'] ?? ''))) ?? throw StockError::nothingToBook(),
@@ -330,6 +332,12 @@ final class InboundPage
             $html .= $this->button($order->id, 'back', __('Zurück', 'taxmod-stock'), $tab, false);
         }
 
+        // D-1009: back from «Eingebucht» takes the goods out of stock again — he asked to be told before it happens.
+        if (in_array($stage, [InboundStage::Booked, InboundStage::Archived], true) && $booked > 0) {
+            $html .= $this->button($order->id, 'unbook', __('Zurück', 'taxmod-stock'), $tab, false,
+                __('Der Wareneingang dieser Bestellung wird wieder ausgebucht: Bestandsposten und Buchung werden gelöscht, die Bestellung steht wieder unter «Angekommen». Fortfahren?', 'taxmod-stock'));
+        }
+
         if ($order->tracking !== [] && $this->inbound->hasDhl() && ! in_array($stage, [InboundStage::Booked, InboundStage::Archived], true)) {
             $html .= $this->button($order->id, 'dhl', __('DHL ↻', 'taxmod-stock'), $tab, false);
         }
@@ -337,9 +345,10 @@ final class InboundPage
         return $html;
     }
 
-    private function button(int $order, string $op, string $label, string $tab, bool $primary): string
+    private function button(int $order, string $op, string $label, string $tab, bool $primary, string $confirm = ''): string
     {
-        return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'
+        return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline"'
+            . ($confirm === '' ? '' : ' onsubmit="return confirm(' . esc_attr((string) wp_json_encode($confirm)) . ')"') . '>'
             . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"><input type="hidden" name="op" value="' . esc_attr($op) . '">'
             . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '"><input type="hidden" name="tab" value="' . esc_attr($tab) . '">'
             . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
@@ -386,6 +395,15 @@ final class InboundPage
         $html .= '</ul>' . $this->events($order);
 
         if (! in_array($stage, [InboundStage::Booked, InboundStage::Archived], true)) {
+            // D-1009: every step can be taken back — a number added by mistake comes off here.
+            foreach ($order->tracking as $number) {
+                $html .= '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="margin:0 0 .3em">'
+                    . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"><input type="hidden" name="op" value="untrack">'
+                    . '<input type="hidden" name="order" value="' . esc_attr((string) $order->id) . '"><input type="hidden" name="tab" value="' . esc_attr($tab) . '">'
+                    . '<input type="hidden" name="number" value="' . esc_attr($number) . '">' . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
+                    . '<code>' . esc_html($number) . '</code> ' . get_submit_button(__('Entfernen', 'taxmod-stock'), 'small', '', false) . '</form>';
+            }
+
             $html .= '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">'
                 . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"><input type="hidden" name="op" value="tracking">'
                 . '<input type="hidden" name="order" value="' . esc_attr((string) $order->id) . '"><input type="hidden" name="tab" value="' . esc_attr($tab) . '">'

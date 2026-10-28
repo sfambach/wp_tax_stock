@@ -102,6 +102,9 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ...$order('o5', 'Eingebucht', ['@o_stat' => '@s_ganz', '@o_pos' => ['values' => ['@kauf5']]]),
     ...$order('o6', 'Entwurf', ['@o_stat' => '@s_entw']),
     ...$order('o7', 'Amazon-Historie 2004', ['@o_best' => '2004-05-01']),
+    ['op' => 'create_record', 'ref' => 'kauf8', 'node' => '@pur'],
+    ['op' => 'set_values', 'record' => '@kauf8', 'values' => ['@label' => 'Netzteil']],
+    ...$order('o8', 'Zum Zurückbuchen', ['@o_ein' => '2026-10-26', '@o_pos' => ['values' => ['@kauf8']]]),
 ]]);
 
 if (is_wp_error($aufbau)) {
@@ -192,6 +195,8 @@ $pruefe(in_array((new StockService())->table('order')->first($r['o1'], $r['o_ein
 
 (new InboundService())->addTracking($r['o1'], '0034 0434 CC');
 $pruefe((new StockService())->table('order')->all($r['o1'], $r['o_sn']) === ['00340434CC'], 'a tracking number typed by hand is added');
+(new InboundService())->removeTracking($r['o1'], '00340434CC');
+$pruefe((new StockService())->table('order')->all($r['o1'], $r['o_sn']) === [], '«Entfernen» takes the number off again (D-1009)');
 (new InboundService())->addTracking($r['o2'], '00340434-aa');
 $pruefe((new StockService())->table('order')->all($r['o2'], $r['o_sn']) === ['00340434AA'], 'the same number again adds nothing');
 
@@ -217,6 +222,22 @@ try {
 $t = (new StockService())->table('lot');
 $pruefe($t->first($r['lotA'], $r['l_zust']) === (string) $r['t_wart'] && $t->first($r['lotA'], $r['l_tbef']) === 'Elkos tauschen' && substr((string) $t->first($r['lotA'], $r['l_tdat']), 0, 10) === '2026-10-28', 'the result, its reason and the day stand at the lot');
 $pruefe((new InboundService())->lotsToTest() === [], 'a tested lot waits no more');
+
+// D-1009 · back from «Eingebucht».
+(new StockService())->bookReceipt($r['o8'], [$r['kauf8'] => \TaxmodStock\Core\ReceiptChoice::existing($r['et4000'])], '2026-10-28', 'WE');
+$pruefe((new InboundService())->orders()[$r['o8']]->stage((new StockService())->structure()) === InboundStage::Booked, 'a booked order stands under «Eingebucht»');
+$_GET = ['page' => InboundPage::PAGE, 'tab' => 'booked'];
+$pruefe(str_contains((new InboundPage())->render(), 'wieder ausgebucht'), 'its «Zurück» warns that the stock goes out again');
+(new InboundService())->unbook($r['o8']);
+$after = new InboundService();
+$pruefe($after->orders()[$r['o8']]->stage($after->stock()->structure()) === InboundStage::Arrived && $after->lotsOf($r['kauf8']) === [], '«Zurück» takes the lot out and the order stands under «Angekommen» again');
+
+try {
+    (new InboundService())->unbook($r['o5']);
+    $pruefe(false, 'a lot with another line keeps its receipt');
+} catch (StockError $e) {
+    $pruefe($e->reason === 'lot_already_used', 'a lot with another line keeps its receipt');
+}
 
 update_option('taxmod_import_targets', ['order_fields' => ['received_at' => 0]]);
 

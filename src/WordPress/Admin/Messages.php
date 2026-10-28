@@ -41,6 +41,9 @@ final class Messages
             /* translators: %s: record id of the thing */
             'no_lot'                    => sprintf(__('Material #%s hat keinen passenden Bestandsposten.', 'taxmod-stock'), $error->detail),
             'already_booked'            => __('Von dieser Bestellung ist schon etwas eingebucht — sie bleibt angekommen.', 'taxmod-stock'),
+            'nothing_to_unbook'         => __('Von dieser Bestellung ist nichts eingebucht.', 'taxmod-stock'),
+            /* translators: %s: record id of the lot */
+            'lot_already_used'          => sprintf(__('Bestandsposten #%s wurde seit dem Wareneingang verbraucht oder gezählt — der Wareneingang bleibt.', 'taxmod-stock'), $error->detail),
             'no_tracking_number'        => __('Keine Sendungsnummer eingegeben.', 'taxmod-stock'),
             /* translators: %s: role of the order field, e.g. received_at */
             'no_import_targets'         => sprintf(__('Das Feld «%s» der Bestellungen fehlt in den Ziel-Ids des Eingangs (Taxonomy Modeller › Configuration › Import).', 'taxmod-stock'), $error->detail),

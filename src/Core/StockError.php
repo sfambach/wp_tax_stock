@@ -88,6 +88,17 @@ final class StockError extends \RuntimeException
         return new self('already_booked', '');
     }
 
+    public static function nothingToUnbook(): self
+    {
+        return new self('nothing_to_unbook', '');
+    }
+
+    /** D-1009: a lot that was consumed or counted since the receipt keeps the receipt where it is. */
+    public static function lotAlreadyUsed(int $lot): self
+    {
+        return new self('lot_already_used', (string) $lot);
+    }
+
     public static function noTrackingNumber(): self
     {
         return new self('no_tracking_number', '');

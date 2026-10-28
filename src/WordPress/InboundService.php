@@ -4,6 +4,7 @@ namespace TaxmodStock\WordPress;
 
 use TaxmodStock\Core\InboundChanges;
 use TaxmodStock\Core\InboundOrder;
+use TaxmodStock\Core\ReceiptReversal;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\TestQueue;
 use TaxmodStock\Core\TestResult;
@@ -154,10 +155,31 @@ final class InboundService
         return $changes === [] ? ['applied' => []] : $this->stock->write($changes);
     }
 
+    /**
+     * D-1009: «Eingebucht» → «Angekommen», the receipt goes back out of stock.
+     *
+     * @return array<string, mixed>
+     */
+    public function unbook(int $id): array
+    {
+        $stock = $this->stock;
+        $this->pick([$id]);
+
+        return $stock->write((new ReceiptReversal($stock->structure()))->reverse($id, $stock->table('order'), $stock->table('lot'), $stock->table('line'), $stock->table('transaction')));
+    }
+
     /** @return array<string, mixed> */
     public function addTracking(int $id, string $number): array
     {
         $changes = $this->changes()->tracking($this->pick([$id])[0], $number);
+
+        return $changes === [] ? ['applied' => []] : $this->stock->write($changes);
+    }
+
+    /** @return array<string, mixed> */
+    public function removeTracking(int $id, string $number): array
+    {
+        $changes = $this->changes()->untrack($this->pick([$id])[0], $number);
 
         return $changes === [] ? ['applied' => []] : $this->stock->write($changes);
     }

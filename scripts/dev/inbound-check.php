@@ -156,9 +156,11 @@ $pruefe($orders[$r['o1']]->overdue($s, '2026-10-28'), 'ordered four weeks ago wi
 
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'ordered'];
 $html = (new InboundPage())->render();
-$pruefe(! str_contains($html, 'Amazon-Historie 2004'), 'an order from before the start day is history, not «Bestellt»');
+$pruefe(! str_contains($html, 'Amazon-Historie 2004'), 'an order from before the start day is not «Bestellt»');
+$_GET = ['page' => InboundPage::PAGE, 'tab' => 'archived'];
+$pruefe(str_contains((new InboundPage())->render(), 'Amazon-Historie 2004'), 'it stands under «Archiviert»');
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'all'];
-$pruefe(str_contains((new InboundPage())->render(), 'Amazon-Historie 2004'), 'it still stands under «Alle»');
+$pruefe(! str_contains((new InboundPage())->render(), 'Amazon-Historie 2004'), '«Alle» shows what is not archived');
 
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'booked'];
 $html = (new InboundPage())->render();

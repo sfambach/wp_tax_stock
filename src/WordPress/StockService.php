@@ -3,6 +3,7 @@
 namespace TaxmodStock\WordPress;
 
 use TaxmodStock\Core\Bookings;
+use TaxmodStock\Core\InboundArchive;
 use TaxmodStock\Core\InventoryRow;
 use TaxmodStock\Core\LagerChanges;
 use TaxmodStock\Core\LagerInput;
@@ -37,6 +38,12 @@ final class StockService
 
     /** INFERRED default, until he sets his own: the month the cockpit came. */
     public const INBOUND_SINCE_DEFAULT = '2026-10-01';
+
+    /** Days after its receipt a booked order moves to «Archiviert» (D-1008). */
+    public const INBOUND_ARCHIVE_DAYS = 'taxmod_stock_inbound_archive_days';
+
+    /** His word: «nach einem Monat oder so». */
+    public const INBOUND_ARCHIVE_DAYS_DEFAULT = 30;
 
     /** Per tab whether its rows open by themselves (see {@see ViewSettings}). */
     public const VIEWS = 'taxmod_stock_views';
@@ -252,6 +259,18 @@ final class StockService
         $since = (string) get_option(self::INBOUND_SINCE, self::INBOUND_SINCE_DEFAULT);
 
         return preg_match('/^\d{4}-\d{2}-\d{2}$/', $since) === 1 ? $since : self::INBOUND_SINCE_DEFAULT;
+    }
+
+    public function inboundArchiveDays(): int
+    {
+        $days = (int) get_option(self::INBOUND_ARCHIVE_DAYS, self::INBOUND_ARCHIVE_DAYS_DEFAULT);
+
+        return $days > 0 ? $days : self::INBOUND_ARCHIVE_DAYS_DEFAULT;
+    }
+
+    public function inboundArchive(string $today): InboundArchive
+    {
+        return new InboundArchive($this->inboundSince(), $this->inboundArchiveDays(), $today);
     }
 
     public function testSettings(): TestSettings

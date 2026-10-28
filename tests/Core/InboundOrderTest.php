@@ -4,6 +4,7 @@ namespace TaxmodStock\Tests\Core;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use TaxmodStock\Core\InboundArchive;
 use TaxmodStock\Core\InboundChanges;
 use TaxmodStock\Core\InboundOrder;
 use TaxmodStock\Core\InboundStage;
@@ -30,16 +31,20 @@ final class InboundOrderTest extends TestCase
     }
 
     #[Test]
-    public function an_order_from_before_the_start_day_is_history_unless_booked(): void
+    public function history_and_long_booked_orders_are_archived(): void
     {
-        $s = $this->structure();
+        $s       = $this->structure();
+        $archive = new InboundArchive('2026-10-01', 30, '2026-10-28');
 
-        self::assertSame(InboundStage::None, (new InboundOrder(1, null, '2004-05-01', null, []))->stage($s, '2026-10-01'));
-        self::assertSame(InboundStage::None, (new InboundOrder(1, null, '2026-09-30 12:00:00', '2026-10-02', []))->stage($s, '2026-10-01'));
-        self::assertSame(InboundStage::Ordered, (new InboundOrder(1, null, '2026-10-01', null, []))->stage($s, '2026-10-01'));
-        self::assertSame(InboundStage::Ordered, (new InboundOrder(1, null, null, null, []))->stage($s, '2026-10-01'), 'no date, no verdict');
-        self::assertSame(InboundStage::Booked, (new InboundOrder(1, 206, '2004-05-01', null, []))->stage($s, '2026-10-01'));
-        self::assertFalse((new InboundOrder(1, null, '2004-05-01', null, []))->overdue($s, '2026-10-28', '2026-10-01'));
+        self::assertSame(InboundStage::Archived, (new InboundOrder(1, null, '2004-05-01', null, []))->stage($s, $archive), 'history');
+        self::assertSame(InboundStage::Archived, (new InboundOrder(1, null, '2026-09-30 12:00:00', '2026-10-02', []))->stage($s, $archive));
+        self::assertSame(InboundStage::Ordered, (new InboundOrder(1, null, '2026-10-01', null, []))->stage($s, $archive));
+        self::assertSame(InboundStage::Ordered, (new InboundOrder(1, null, null, null, []))->stage($s, $archive), 'no date, no verdict');
+        self::assertSame(InboundStage::Booked, (new InboundOrder(1, 206, '2026-09-01', '2026-09-28', []))->stage($s, $archive), '30 days after the receipt still booked');
+        self::assertSame(InboundStage::Archived, (new InboundOrder(1, 206, '2026-09-01', '2026-09-27', []))->stage($s, $archive), 'then archived');
+        self::assertSame(InboundStage::Archived, (new InboundOrder(1, 206, '2004-05-01', null, []))->stage($s, $archive), 'without a receipt day the order day counts');
+        self::assertSame(InboundStage::None, (new InboundOrder(1, 209, '2004-05-01', null, []))->stage($s, $archive), 'a draft stays a draft');
+        self::assertFalse((new InboundOrder(1, null, '2004-05-01', null, []))->overdue($s, '2026-10-28', $archive));
     }
 
     #[Test]

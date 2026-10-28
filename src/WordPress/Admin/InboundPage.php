@@ -119,8 +119,8 @@ final class InboundPage
         $today   = current_time('Y-m-d');
         $orders  = $this->inbound->orders();
         $labels  = $this->inbound->stock()->labels('order');
-        $since   = $this->inbound->stock()->inboundSince();
-        $stages  = array_map(static fn (InboundOrder $o): InboundStage => $o->stage($s, $since), $orders);
+        $archive = $this->inbound->stock()->inboundArchive($today);
+        $stages  = array_map(static fn (InboundOrder $o): InboundStage => $o->stage($s, $archive), $orders);
         $tab     = sanitize_key((string) ($_GET['tab'] ?? InboundStage::Arrived->value));
         $tab     = in_array($tab, self::tabSlugs(), true) ? $tab : InboundStage::Arrived->value;
         $search  = sanitize_text_field(wp_unslash((string) ($_GET['s'] ?? '')));
@@ -140,7 +140,10 @@ final class InboundPage
             $tabs[] = [self::TEST, __('Zu testen', 'taxmod-stock'), count($toTest)];
         }
 
-        $tabs[] = [self::ALL, __('Alle', 'taxmod-stock'), count($orders)];
+        // D-1008: «Archiviert» after the working tabs; «Alle» is everything not archived.
+        $archived = $counts[InboundStage::Archived->value] ?? 0;
+        $tabs[]   = [InboundStage::Archived->value, $this->stageName(InboundStage::Archived), $archived];
+        $tabs[]   = [self::ALL, __('Alle', 'taxmod-stock'), count($orders) - $archived];
 
         if ($tab === self::TEST) {
             return ListPage::tabs($tabs, $tab, static fn (string $slug): string => self::url(['tab' => $slug])) . $this->testList($toTest);
@@ -149,11 +152,13 @@ final class InboundPage
         $shown  = [];
 
         foreach ($orders as $id => $order) {
-            if ($tab !== self::ALL && $stages[$id]->value !== $tab && $id !== $open) {
+            $inTab = $tab === self::ALL ? $stages[$id] !== InboundStage::Archived : $stages[$id]->value === $tab;
+
+            if (! $inTab && $id !== $open) {
                 continue;
             }
 
-            if ($filter === self::OVERDUE && ! $order->overdue($s, $today, $since)) {
+            if ($filter === self::OVERDUE && ! $order->overdue($s, $today, $archive)) {
                 continue;
             }
 
@@ -191,7 +196,7 @@ final class InboundPage
     /** @return list<string> */
     private static function tabSlugs(): array
     {
-        return [...array_map(static fn (InboundStage $st): string => $st->value, InboundStage::tabs()), self::TEST, self::ALL];
+        return [...array_map(static fn (InboundStage $st): string => $st->value, InboundStage::tabs()), self::TEST, InboundStage::Archived->value, self::ALL];
     }
 
     /**
@@ -280,7 +285,7 @@ final class InboundPage
         $s      = $this->inbound->stock()->structure();
         $counts = $this->inbound->purchaseCounts($order->id);
         $about  = $this->inbound->about($order->id);
-        $late   = $order->overdue($s, $today, $this->inbound->stock()->inboundSince());
+        $late   = $order->overdue($s, $today, $this->inbound->stock()->inboundArchive($today));
         $cells  = [
             '<strong>' . esc_html($label) . '</strong>' . ($late ? ' <span style="color:#b32d2e;font-weight:600">' . esc_html__('überfällig', 'taxmod-stock') . '</span>' : '')
                 . ($about === '' ? '' : '<br><span class="description">' . esc_html($about) . '</span>'),
@@ -325,7 +330,7 @@ final class InboundPage
             $html .= $this->button($order->id, 'back', __('Zurück', 'taxmod-stock'), $tab, false);
         }
 
-        if ($order->tracking !== [] && $this->inbound->hasDhl() && $stage !== InboundStage::Booked) {
+        if ($order->tracking !== [] && $this->inbound->hasDhl() && ! in_array($stage, [InboundStage::Booked, InboundStage::Archived], true)) {
             $html .= $this->button($order->id, 'dhl', __('DHL ↻', 'taxmod-stock'), $tab, false);
         }
 
@@ -380,7 +385,7 @@ final class InboundPage
 
         $html .= '</ul>' . $this->events($order);
 
-        if ($stage !== InboundStage::Booked) {
+        if (! in_array($stage, [InboundStage::Booked, InboundStage::Archived], true)) {
             $html .= '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">'
                 . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"><input type="hidden" name="op" value="tracking">'
                 . '<input type="hidden" name="order" value="' . esc_attr((string) $order->id) . '"><input type="hidden" name="tab" value="' . esc_attr($tab) . '">'
@@ -450,6 +455,7 @@ final class InboundPage
             InboundStage::Shipped => __('Versendet', 'taxmod-stock'),
             InboundStage::Arrived => __('Angekommen', 'taxmod-stock'),
             InboundStage::Booked  => __('Eingebucht', 'taxmod-stock'),
+            InboundStage::Archived => __('Archiviert', 'taxmod-stock'),
             InboundStage::None    => __('Entwurf/storniert', 'taxmod-stock'),
         };
     }

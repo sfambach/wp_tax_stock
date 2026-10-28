@@ -66,6 +66,12 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     $field('o_hand', '@ord', 'Händler', $text, 'composition', '0..1'),
     $field('o_nr', '@ord', 'Bestellnummer', $text, 'composition', '0..1'),
     $field('k_offen', '@pur', 'Noch nicht näher bestimmt', $bool, 'composition', '1..1'),
+    // D-1009: a receipt Vorgang as the Lager writes it, so «Zurück» from «Eingebucht» has something to take back.
+    ['op' => 'create_node', 'ref' => 'art', 'name' => '__Vorgangsart', 'parent' => 410, 'class' => 'Choice'],
+    ['op' => 'create_node', 'ref' => 'a_we', 'name' => 'Wareneingang', 'parent' => '@art'],
+    $field('v_art', '@vg', 'Art', '@art', 'aggregation', '0..1'),
+    $field('v_best', '@vg', 'Bestellung', '@ord', 'aggregation', '0..1'),
+    $field('v_pos', '@vg', 'Positionen', '@vp', 'aggregation', '0..*'),
     // D-1002: a group that is tested, two used lots in it and a new one, each with a rest.
     ['op' => 'create_node', 'ref' => 'gk', 'name' => '__Grafikkarten', 'parent' => 402],
     ['op' => 'create_node', 'ref' => 'zust', 'name' => '__Zustaende', 'parent' => 410, 'class' => 'Choice'],
@@ -104,7 +110,13 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ...$order('o7', 'Amazon-Historie 2004', ['@o_best' => '2004-05-01']),
     ['op' => 'create_record', 'ref' => 'kauf8', 'node' => '@pur'],
     ['op' => 'set_values', 'record' => '@kauf8', 'values' => ['@label' => 'Netzteil']],
-    ...$order('o8', 'Zum Zurückbuchen', ['@o_ein' => '2026-10-26', '@o_pos' => ['values' => ['@kauf8']]]),
+    ...$order('o8', 'Zum Zurückbuchen', ['@o_ein' => '2026-10-26', '@o_stat' => '@s_ganz', '@o_pos' => ['values' => ['@kauf8']]]),
+    ['op' => 'create_record', 'ref' => 'lot8', 'node' => '@lot'],
+    ['op' => 'set_values', 'record' => '@lot8', 'values' => ['@l_mat' => '@et4000', '@l_dat' => '2026-10-28', '@l_zust' => '@z_neu', '@l_kauf' => '@kauf8']],
+    ['op' => 'create_record', 'ref' => 'pos8', 'node' => '@vp'],
+    ['op' => 'set_values', 'record' => '@pos8', 'values' => ['@p_lot' => '@lot8', '@p_menge' => '1']],
+    ['op' => 'create_record', 'ref' => 'vg8', 'node' => '@vg'],
+    ['op' => 'set_values', 'record' => '@vg8', 'values' => ['@v_art' => '@a_we', '@v_best' => '@o8', '@v_pos' => ['values' => ['@pos8']]]],
 ]]);
 
 if (is_wp_error($aufbau)) {
@@ -117,15 +129,16 @@ $r = $aufbau['refs'];
 // Only what the cockpit reads; the rest of the structure is required by the reader and points at unused fields.
 update_option(StockService::OPTION, [
     'nodes'  => ['lager' => $r['mat'], 'lot' => $r['lot'], 'transaction' => $r['vg'], 'line' => $r['vp'], 'location' => $r['lo'], 'order' => $r['ord'], 'purchase' => $r['pur'], 'money' => $money],
-    'fields' => array_fill_keys(['lager_thing', 'lager_single', 'lager_min', 'lot_location', 'lot_value', 'transaction_kind', 'transaction_date',
-        'transaction_order', 'transaction_source', 'transaction_lines', 'line_counted', 'purchase_model', 'purchase_quantity',
+    'fields' => array_fill_keys(['lager_thing', 'lager_single', 'lager_min', 'lot_location', 'lot_value', 'transaction_date',
+        'transaction_source', 'line_counted', 'purchase_model', 'purchase_quantity',
         'purchase_landed_price', 'purchase_unit_price'], 1) + [
         'lot_date' => $r['l_dat'], 'line_lot' => $r['p_lot'], 'line_quantity' => $r['p_menge'],
+        'transaction_kind' => $r['v_art'], 'transaction_order' => $r['v_best'], 'transaction_lines' => $r['v_pos'],
         'lot_tested_on' => $r['l_tdat'], 'lot_test_note' => $r['l_tbef'], 'lot_condition' => $r['l_zust'],
         'label' => $r['label'], 'lot_thing' => $r['l_mat'], 'lot_purchase' => $r['l_kauf'], 'order_status' => $r['o_stat'], 'order_lines' => $r['o_pos'],
         'purchase_undetermined' => $r['k_offen'], 'money_amount' => 4234, 'money_unit' => 4236,
     ],
-    'values' => ['kind_receipt' => 1, 'kind_consumption' => 1, 'kind_count' => 1, 'source_manual' => 1, 'location_default' => 1,
+    'values' => ['kind_receipt' => $r['a_we'], 'kind_consumption' => 1, 'kind_count' => 1, 'source_manual' => 1, 'location_default' => 1,
         'status_partial' => $r['s_teil'], 'status_received' => $r['s_ganz'], 'status_draft' => $r['s_entw'],
         'test_ok' => $r['t_ok'], 'test_partial' => $r['t_teil'], 'test_maintenance' => $r['t_wart'], 'test_defect' => $r['t_def'], 'condition_new' => $r['z_neu'], 'condition_untested' => $r['z_unget']],
 ]);
@@ -224,7 +237,6 @@ $pruefe($t->first($r['lotA'], $r['l_zust']) === (string) $r['t_wart'] && $t->fir
 $pruefe((new InboundService())->lotsToTest() === [], 'a tested lot waits no more');
 
 // D-1009 · back from «Eingebucht».
-(new StockService())->bookReceipt($r['o8'], [$r['kauf8'] => \TaxmodStock\Core\ReceiptChoice::existing($r['et4000'])], '2026-10-28', 'WE');
 $pruefe((new InboundService())->orders()[$r['o8']]->stage((new StockService())->structure()) === InboundStage::Booked, 'a booked order stands under «Eingebucht»');
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'booked'];
 $pruefe(str_contains((new InboundPage())->render(), 'wieder ausgebucht'), 'its «Zurück» warns that the stock goes out again');

@@ -198,6 +198,11 @@ $_GET = ['page' => StockPage::PAGE, 'tab' => 'wareneingang', 'order' => $r['best
 $html = (new StockPage())->render();
 $hits = array_column($s->searchThings('BC640'), 'id');
 $pruefe(in_array($r['t1'], $hits, true) && ! in_array($r['kaufC'], $hits, true), 'the material search finds the thing, never the purchase named like it');
+// D-1011, his word «Erst Text, dann Baum»: the tree beside the search shows the groups of things, and a group its things.
+$zweige = array_column($s->treeRows(), 'name', 'id');
+$pruefe(isset($zweige[$r['teile']]) && ! isset($zweige[$r['pur']]), 'the tree beside the material search holds the groups of things, not the Lager\'s own branch');
+$imAst = array_column($s->branchThings($r['teile']), 'id');
+$pruefe(in_array($r['t1'], $imAst, true) && ! in_array($r['kaufC'], $imAst, true), 'a group of the tree gives its things, never a purchase');
 // His word 2026-10-28: «eigentlich haben wir doch den tax chooser» — the row holds the modeller's chooser, no «neu anlegen».
 $pruefe(str_contains($html, 'name="thing[' . $r['kaufC'] . ']" value="' . $r['t1'] . '" checked') && str_contains($html, '>BC640</span>')
     && str_contains($html, 'name="thing[' . $r['kaufD'] . ']" value="" checked') && ! str_contains($html, 'name="group[' . $r['kaufD'] . ']"'), 'the receipt row holds the modeller\'s chooser with the Modell, and no field for a new thing');

@@ -209,6 +209,80 @@ final class StockService
         return $out;
     }
 
+    /**
+     * The groups of things as rows of a tree, depth first, for the tree beside the material search (D-1011).
+     *
+     * @return list<array{id: int, name: string, depth: int}>
+     */
+    public function treeRows(): array
+    {
+        $tree     = $this->tree();
+        $children = [];
+        $roots    = [];
+
+        foreach ($tree as $id => $node) {
+            if (isset($tree[$node['parent']])) {
+                $children[$node['parent']][] = $id;
+            } else {
+                $roots[] = $id;
+            }
+        }
+
+        $rows = [];
+        $walk = function (int $id, int $depth) use (&$walk, &$rows, $tree, $children): void {
+            $rows[] = ['id' => $id, 'name' => $tree[$id]['name'], 'depth' => $depth];
+
+            foreach ($children[$id] ?? [] as $child) {
+                $walk($child, $depth + 1);
+            }
+        };
+
+        // The root is «Model» for every thing and says nothing; its children are the top of the tree.
+        foreach ($roots as $root) {
+            foreach ($children[$root] ?? [] as $top) {
+                $walk($top, 0);
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * The things in a group and the groups below it, with their name — at most `$limit`.
+     *
+     * @return list<array{id: int, word: string, node: int}>
+     */
+    public function branchThings(int $group, int $limit = 300): array
+    {
+        $tree = $this->tree();
+
+        if (! isset($tree[$group])) {
+            throw StockError::notAGroup($group);
+        }
+
+        $branch = [$group => true];
+
+        do {
+            $before = count($branch);
+
+            foreach ($tree as $id => $node) {
+                if (isset($branch[$node['parent']])) {
+                    $branch[$id] = true;
+                }
+            }
+        } while (count($branch) > $before);
+
+        $nodes  = $this->model->recordsOf(array_keys($branch), $limit);
+        $labels = $this->recordLabels(array_keys($nodes), $nodes);
+        $out    = [];
+
+        foreach ($nodes as $id => $node) {
+            $out[] = ['id' => $id, 'word' => ($labels[$id] ?? '') === '' ? '#' . $id : $labels[$id], 'node' => $node];
+        }
+
+        return $out;
+    }
+
     /** The names from the root down to a node, «Bauteile ▸ Aktiv ▸ Transistor». */
     public function path(int $node): string
     {
@@ -427,6 +501,20 @@ final class StockService
         );
 
         return $this->model->write($changes);
+    }
+
+    /**
+     * The material of some purchases kept without a receipt (the interim state of a goods receipt).
+     *
+     * @param array<int, int> $things purchase id → thing
+     * @return array<string, mixed> the modeller's answer; nothing written when nothing changed
+     */
+    public function assignPurchases(int $order, array $things): array
+    {
+        $this->checkThings(array_values($things));
+        $changes = (new Bookings($this->structure(), current_time('Y-m-d')))->assign($order, $things, $this->table('order'), $this->table('purchase'));
+
+        return $changes === [] ? ['applied' => []] : $this->model->write($changes);
     }
 
     /**

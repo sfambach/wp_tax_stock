@@ -170,6 +170,33 @@ final class Bookings
     }
 
     /**
+     * The material chosen for some purchases of an order, kept without a receipt — his word 2026-10-28: «zwischenstände
+     * speichern also wenn ich was zugeordnet habe will ich das auch speichern können ohne we». Only the purchase's «Modell»
+     * changes; nothing is booked.
+     *
+     * @param array<int, int> $things purchase id → the thing it is
+     * @return list<array<string, mixed>>
+     */
+    public function assign(int $order, array $things, Table $orders, Table $purchases): array
+    {
+        $s       = $this->structure;
+        $inOrder = array_map('intval', $orders->all($order, $s->field('order_lines')));
+        $this->start();
+
+        foreach ($things as $purchase => $thing) {
+            if (! in_array($purchase, $inOrder, true)) {
+                throw StockError::notInOrder($purchase);
+            }
+
+            if ((int) $purchases->first($purchase, $s->field('purchase_model')) !== $thing) {
+                $this->changes[] = ['op' => 'set_values', 'record' => $purchase, 'values' => [(string) $s->field('purchase_model') => (string) $thing]];
+            }
+        }
+
+        return $this->changes;
+    }
+
+    /**
      * A price on a purchase: the money part it already holds is filled (key «0»), else a new one is added.
      *
      * @return array<string, array<string, string>>

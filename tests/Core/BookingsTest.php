@@ -189,6 +189,20 @@ final class BookingsTest extends TestCase
         (new Bookings(Fixture::structure(), '2026-10-28'))->split(70, 99, [new SplitRow(55, null, 'X', '1', null)], $orders, $purchases);
     }
 
+    #[Test]
+    public function an_assignment_keeps_the_material_in_the_purchase_and_books_nothing(): void
+    {
+        $s                    = Fixture::structure();
+        [$orders, $purchases] = $this->order(['0', '0']);
+
+        $changes = (new Bookings($s, '2026-10-28'))->assign(70, [71 => 55, 72 => 43101], $orders, $purchases);
+
+        self::assertSame([['op' => 'set_values', 'record' => 71, 'values' => [(string) $s->field('purchase_model') => '55']]], $changes, 'only the changed purchase is written, and nothing is booked');
+
+        $this->expectException(StockError::class);
+        (new Bookings($s, '2026-10-28'))->assign(70, [99 => 55], $orders, $purchases);
+    }
+
     /** @return array{0: Table, 1: Table} */
     private function order(array $undetermined): array
     {

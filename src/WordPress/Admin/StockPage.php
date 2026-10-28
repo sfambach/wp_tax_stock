@@ -43,6 +43,8 @@ final class StockPage
 
     /** The modeller's search over every record under `Model` (D-958 F3a), reused to pick a thing. */
     public const THING_SEARCH = 'taxmod_stock_thing_search';
+    public const THING_NODES  = 'taxmod_stock_thing_nodes';
+    public const THING_BRANCH = 'taxmod_stock_thing_branch';
 
     public function __construct(private readonly StockService $stock = new StockService())
     {
@@ -92,7 +94,7 @@ final class StockPage
         $thing = is_array($_POST['thing'] ?? null) ? 0 : absint($_POST['thing'] ?? 0);
         $back  = ['material', []];
         // D-1001: a receipt booked from the goods receipt cockpit goes back there.
-        $fromCockpit = in_array($kind, ['wareneingang', 'aufteilen'], true) && sanitize_key((string) ($_POST['back'] ?? '')) === InboundPage::BACK;
+        $fromCockpit = in_array($kind, ['wareneingang', 'aufteilen', 'zuordnen'], true) && sanitize_key((string) ($_POST['back'] ?? '')) === InboundPage::BACK;
 
         try {
             $result = match ($kind) {
@@ -106,6 +108,7 @@ final class StockPage
                     $this->title(__('Wareneingang', 'taxmod-stock'), $today)
                 ),
                 'aufteilen'    => $this->stock->splitPurchase(absint($_POST['order'] ?? 0), absint($_POST['purchase'] ?? 0), $this->splitRows()),
+                'zuordnen'     => $this->stock->assignPurchases(absint($_POST['order'] ?? 0), $this->assignedThings()),
                 'verbrauch'    => $this->stock->bookConsumption(
                     $thing,
                     absint($_POST['lot'] ?? 0) ?: null,
@@ -116,21 +119,27 @@ final class StockPage
                 ),
                 default        => throw StockError::nothingToBook(),
             };
-            $this->remember('success', $kind === 'aufteilen'
-                ? __('Aufgeteilt: jede Zeile ist jetzt ein Kauf mit seinem Material und kann eingebucht werden.', 'taxmod-stock')
+            $this->remember('success', match ($kind) {
+                'aufteilen' => __('Aufgeteilt: jede Zeile ist jetzt ein Kauf mit seinem Material und kann eingebucht werden.', 'taxmod-stock'),
+                'zuordnen'  => sprintf(
+                    /* translators: %d: number of purchases whose material was kept */
+                    _n('Zuordnung gespeichert: %d Kauf, noch nichts eingebucht.', 'Zuordnung gespeichert: %d Käufe, noch nichts eingebucht.', count((array) ($result['applied'] ?? [])), 'taxmod-stock'),
+                    count((array) ($result['applied'] ?? []))
+                ),
                 /* translators: %d: number of changes the modeller applied */
-                : sprintf(__('Gebucht: %d Änderungen in einem Schritt.', 'taxmod-stock'), count((array) ($result['applied'] ?? []))));
+                default     => sprintf(__('Gebucht: %d Änderungen in einem Schritt.', 'taxmod-stock'), count((array) ($result['applied'] ?? []))),
+            });
 
             $back = match ($kind) {
                 'lager'        => ['material', ['thing' => $thing, 'view' => 'lager']],
                 'umbuchen'     => ['material', ['thing' => $thing, 'view' => 'bestand']],
-                'wareneingang', 'aufteilen' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
+                'wareneingang', 'aufteilen', 'zuordnen' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
                 default        => ['material', $thing > 0 ? ['thing' => $thing, 'view' => 'bestand'] : []],
             };
         } catch (StockError $e) {
             $this->remember('error', Messages::of($e));
             $back = match ($kind) {
-                'wareneingang'      => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
+                'wareneingang', 'zuordnen' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
                 'aufteilen'         => ['wareneingang', ['order' => absint($_POST['order'] ?? 0), 'split' => absint($_POST['purchase'] ?? 0)]],
                 'lager', 'umbuchen' => ['material', ['thing' => $thing, 'view' => $kind === 'lager' ? 'lager' : 'bestand']],
                 'verbrauch'         => ['verbrauch', ['thing' => $thing]],
@@ -755,6 +764,38 @@ final class StockPage
         }
     }
 
+    /** admin-post handler for the groups of the tree beside the material search (D-1011): capability → nonce → act. */
+    public function thingNodes(): void
+    {
+        if (! current_user_can('manage_options')) {
+            wp_send_json_error([], 403);
+        }
+
+        check_ajax_referer(self::THING_NODES);
+
+        try {
+            wp_send_json_success($this->stock->treeRows());
+        } catch (StockError $e) {
+            wp_send_json_error(['message' => Messages::of($e)]);
+        }
+    }
+
+    /** admin-post handler for the things of one group in that tree: capability → nonce → validate → act. */
+    public function thingBranch(): void
+    {
+        if (! current_user_can('manage_options')) {
+            wp_send_json_error([], 403);
+        }
+
+        check_ajax_referer(self::THING_BRANCH);
+
+        try {
+            wp_send_json_success($this->stock->branchThings(absint($_GET['node'] ?? 0)));
+        } catch (StockError $e) {
+            wp_send_json_error(['message' => Messages::of($e)]);
+        }
+    }
+
     /** admin-post handler for one order's purchases, fetched when he opens the order: capability → nonce → validate → act. */
     public function positions(): void
     {
@@ -850,7 +891,9 @@ final class StockPage
                 . '<td><select name="location[' . esc_attr((string) $purchase) . ']">' . $this->options($places, '—', $where[$purchase] ?? 0) . '</select></td></tr>';
         }
 
-        return $html . '</tbody></table>' . get_submit_button(__('Wareneingang buchen', 'taxmod-stock')) . '</form>';
+        // His word 2026-10-28: «zwischenstände speichern … ohne we» — the second button keeps the chosen material, books nothing.
+        return $html . '</tbody></table><p class="submit">' . get_submit_button(__('Wareneingang buchen', 'taxmod-stock'), 'primary', 'submit', false)
+            . ' <button type="submit" class="button" name="booking" value="zuordnen">' . esc_html__('Zuordnung speichern', 'taxmod-stock') . '</button></p></form>';
     }
 
     private function consumptionForm(int $preset, int $presetLot): string
@@ -912,6 +955,24 @@ final class StockPage
         return $out;
     }
 
+    /**
+     * The material chosen per purchase in the goods receipt form, whatever is ticked — the interim state he keeps without a receipt.
+     *
+     * @return array<int, int> purchase id → thing
+     */
+    private function assignedThings(): array
+    {
+        $out = [];
+
+        foreach ((array) ($_POST['thing'] ?? []) as $purchase => $thing) {
+            if (absint($purchase) > 0 && absint($thing) > 0) {
+                $out[absint($purchase)] = absint($thing);
+            }
+        }
+
+        return $out;
+    }
+
     private function lagerInput(): LagerInput
     {
         $minimum = sanitize_text_field(wp_unslash((string) ($_POST['minimum'] ?? '')));
@@ -925,8 +986,9 @@ final class StockPage
     }
 
     /**
-     * The modeller's chooser for «every record under Model» (D-958 F3a): the chosen word with a bin, or a search field whose hits
-     * the material search answers (the modeller's record search, kept to the groups of things). Same markup as its summary field, so its script and stylesheet drive it.
+     * The modeller's chooser for «every record under Model» (D-958 F3a, D-1011): the chosen word with a bin, or a search field and
+     * a tree button. Hits and tree come from the material endpoints, kept to the groups of things. Same markup as the modeller's
+     * summary field, so its script and stylesheet drive it.
      */
     private function recordPicker(string $name, ?int $value, string $word): string
     {
@@ -934,19 +996,23 @@ final class StockPage
             . ($on ? ' checked' : '') . '></label>';
         $none  = $value === null;
         $clear = __('Entfernen', 'taxmod-stock');
+        $tree  = __('Im Baum wählen', 'taxmod-stock');
 
         return '<span class="taxmod-record-pick taxmod-record-remote' . ($none ? '' : ' taxmod-record-taken') . '">'
             . '<span class="taxmod-record-choices" hidden>' . $radio('', $none) . ($none ? '' : $radio((string) $value, true)) . '</span>'
             . '<input type="search" class="taxmod-record-quick" autocomplete="off" placeholder="' . esc_attr__('Material suchen …', 'taxmod-stock') . '"' . ($none ? '' : ' hidden') . '>'
+            . '<button type="button" class="button taxmod-icon-button taxmod-record-browse"' . ($none ? '' : ' hidden') . ' title="' . esc_attr($tree) . '">'
+                . '<span class="dashicons dashicons-networking" aria-hidden="true"></span><span class="screen-reader-text">' . esc_html($tree) . '</span></button>'
             . '<span class="taxmod-record-dialog-open taxmod-record-word"' . ($none ? ' hidden' : '') . '>' . esc_html($word) . '</span>'
-            . ($none ? '' : ' <button type="button" class="button taxmod-icon-button taxmod-record-clear" style="color:#b32d2e" title="' . esc_attr($clear) . '">'
-                . '<span class="dashicons dashicons-trash" aria-hidden="true"></span><span class="screen-reader-text">' . esc_html($clear) . '</span></button>')
+            . '<button type="button" class="button taxmod-icon-button taxmod-record-clear"' . ($none ? ' hidden' : '') . ' style="color:#b32d2e" title="' . esc_attr($clear) . '">'
+                . '<span class="dashicons dashicons-trash" aria-hidden="true"></span><span class="screen-reader-text">' . esc_html($clear) . '</span></button>'
             . '<span class="taxmod-record-hits" hidden></span>'
             . '</span>';
     }
 
     /**
-     * The modeller's stylesheet and script for {@see self::recordPicker()}, and the one element its script reads the search address from.
+     * The modeller's stylesheet and script for {@see self::recordPicker()}, and the one element its script reads the material
+     * endpoints from: search, the tree's groups and a group's things.
      */
     private function modellerAssets(): string
     {
@@ -957,10 +1023,12 @@ final class StockPage
             wp_enqueue_script('taxmod-admin', plugins_url('assets/admin.js', $base), [], (string) \Taxmod\WordPress\Plugin::VERSION, true);
         }
 
-        return '<span hidden id="taxmod-words" data-record-search="' . esc_url(add_query_arg([
-            'action'      => self::THING_SEARCH,
-            '_ajax_nonce' => wp_create_nonce(self::THING_SEARCH),
-        ], admin_url('admin-post.php'))) . '" data-no-hits="' . esc_attr__('Nichts gefunden.', 'taxmod-stock') . '"></span>';
+        $address = static fn (string $action): string => esc_url(add_query_arg(['action' => $action, '_ajax_nonce' => wp_create_nonce($action)], admin_url('admin-post.php')));
+
+        return '<span hidden id="taxmod-words" data-record-search="' . $address(self::THING_SEARCH) . '"'
+            . ' data-record-nodes="' . $address(self::THING_NODES) . '" data-record-branch="' . $address(self::THING_BRANCH) . '"'
+            . ' data-browse-title="' . esc_attr__('Material im Baum wählen', 'taxmod-stock') . '"'
+            . ' data-no-hits="' . esc_attr__('Nichts gefunden.', 'taxmod-stock') . '"></span>';
     }
 
     /**

@@ -22,8 +22,8 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
   modeller from 0.1.65), four tabs, «Wareneingang» first:
   - **Wareneingang** — the orders as a list, each opening to its purchases; receive determined purchases (partial
     receipts allowed). Each purchase goes in as its «Modell» or as another thing picked in the modeller's record chooser
-    (search under the groups of things); the choice is written into the purchase's «Modell». Each gets a proposed place
-    (D-972).
+    (search or tree, both over the groups of things; D-1011); the choice is written into the purchase's «Modell». Each gets a proposed place
+    (D-972). «Zuordnung speichern» keeps the chosen materials without booking anything.
   - **Material** — the things per group in the shared table template, the group's technical data as columns, lots
     below each row. «Öffnen» shows one thing: a fixed head (title image, Nr, Bezeichnung, Beschreibung, path) and the
     tabs Technische Daten, Einkauf, Lager (Standard-Lagerort, Mindestbestand, Einzelstück), Bestand (tiles, lots,

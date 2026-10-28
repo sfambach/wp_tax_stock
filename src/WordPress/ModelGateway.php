@@ -114,6 +114,35 @@ final class ModelGateway
         return array_map('intval', (new $repository())->recordsMatching($nodes, $conditions, $limit));
     }
 
+    /**
+     * The user records of these nodes, at most `$limit`, with the node each lives in.
+     *
+     * @param list<int> $nodes
+     * @return array<int, int> record id → node id; empty if the modeller does not offer it
+     */
+    public function recordsOf(array $nodes, int $limit): array
+    {
+        $repository = \Taxmod\WordPress\Persistence\WpdbRecordRepository::class;
+
+        if ($nodes === [] || ! class_exists($repository) || ! method_exists($repository, 'ofNodes')) {
+            return [];
+        }
+
+        $out = [];
+
+        foreach ((new $repository())->ofNodes($nodes) as $node => $records) {
+            foreach ($records as $record) {
+                if (count($out) >= $limit || $record->recordType === \Taxmod\Core\Model\RecordType::Settings) {
+                    continue;
+                }
+
+                $out[(int) $record->id] = (int) $node;
+            }
+        }
+
+        return $out;
+    }
+
     /** @return array<int, string> child node id → name */
     public function children(int $node): array
     {

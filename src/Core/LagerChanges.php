@@ -27,7 +27,7 @@ final class LagerChanges
             (string) $s->field('lager_min')    => $input->minimum === null ? '' : (string) $input->minimum,
         ];
 
-        foreach (['lager_use' => $input->use, 'lager_location' => $input->location] as $key => $value) {
+        foreach (['lager_use' => $input->use, 'lager_location' => $input->location, 'lager_unit' => $input->unit, 'lager_prefix' => $input->prefix] as $key => $value) {
             if ($s->hasField($key)) {
                 $values[(string) $s->field($key)] = $value === null ? '' : (string) $value;
             }
@@ -81,7 +81,7 @@ final class LagerChanges
             $parts[$row->part === null ? 'new' . $i : (string) $row->part] = [
                 (string) $s->field('source_firm')   => $row->firm === null ? '' : (string) $row->firm,
                 (string) $s->field('source_number') => $row->number,
-            ];
+            ] + ($s->hasField('source_content') ? [(string) $s->field('source_content') => $row->content] : []);
         }
 
         return [$parts, $removed];

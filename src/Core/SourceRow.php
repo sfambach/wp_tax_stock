@@ -14,11 +14,13 @@ final class SourceRow
         public readonly ?int $part,
         public readonly ?int $firm,
         public readonly string $number,
+        /** D-1019: how much one pack holds, in the thing's base unit; '' when not given */
+        public readonly string $content = '',
     ) {
     }
 
     public function isEmpty(): bool
     {
-        return $this->firm === null && $this->number === '';
+        return $this->firm === null && $this->number === '' && $this->content === '';
     }
 }

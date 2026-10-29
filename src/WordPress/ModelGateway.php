@@ -60,14 +60,14 @@ final class ModelGateway
     /**
      * Every node under `$root` with its name and parent — one `read-tree` call.
      *
-     * @return array<int, array{name: string, parent: int, class: string}>
+     * @return array<int, array{name: string, parent: int, class: string, hidden: bool}>
      */
     public function tree(int $root): array
     {
         $out = [];
 
         foreach ($this->execute('taxmod/read-tree', ['root' => $root, 'depth' => 12])['rows'] ?? [] as $row) {
-            $out[(int) $row['id']] = ['name' => (string) ($row['name'] ?? ''), 'parent' => (int) ($row['parent'] ?? 0), 'class' => (string) ($row['class'] ?? '')];
+            $out[(int) $row['id']] = ['name' => (string) ($row['name'] ?? ''), 'parent' => (int) ($row['parent'] ?? 0), 'class' => (string) ($row['class'] ?? ''), 'hidden' => ! empty($row['hidden'])];
         }
 
         return $out;

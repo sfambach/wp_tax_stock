@@ -596,6 +596,31 @@ final class StockService
     }
 
     /**
+     * D-1019: the units and the prefixes a base unit is made of, each one read-tree; hidden ones left out.
+     *
+     * @return array{units: array<int, string>, prefixes: array<int, string>}
+     */
+    public function baseUnits(): array
+    {
+        $s   = $this->structure();
+        $out = ['units' => [], 'prefixes' => []];
+
+        foreach (['units' => 'base_units', 'prefixes' => 'prefixes'] as $kind => $key) {
+            if (! $s->hasNode($key)) {
+                continue;
+            }
+
+            foreach ($this->model->tree($s->node($key)) as $id => $row) {
+                if (! $row['hidden'] && in_array($row['class'], ['Unit', 'Constant'], true)) {
+                    $out[$kind][$id] = $row['name'];
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * D-1018: the sources on a Lager record, as its form shows them.
      *
      * @return list<SourceRow>
@@ -613,7 +638,12 @@ final class StockService
 
         foreach ($this->table('lager')->all($lagerRecord, $s->field('lager_sources')) as $part) {
             $firm  = $parts->first((int) $part, $s->field('source_firm'));
-            $out[] = new SourceRow((int) $part, $firm === null ? null : (int) $firm, (string) ($parts->first((int) $part, $s->field('source_number')) ?? ''));
+            $out[] = new SourceRow(
+                (int) $part,
+                $firm === null ? null : (int) $firm,
+                (string) ($parts->first((int) $part, $s->field('source_number')) ?? ''),
+                $s->hasField('source_content') ? (string) ($parts->first((int) $part, $s->field('source_content')) ?? '') : ''
+            );
         }
 
         return $out;
@@ -634,6 +664,16 @@ final class StockService
             if ($row->firm !== null && ! isset($firms[$row->firm])) {
                 throw StockError::notAFirm($row->firm);
             }
+
+            if ($row->content !== '' && (! is_numeric($row->content) || (float) $row->content <= 0)) {
+                throw StockError::notAPackContent($row->content);
+            }
+        }
+
+        $units = $this->baseUnits();
+
+        if (($input->unit !== null && ! isset($units['units'][$input->unit])) || ($input->prefix !== null && ! isset($units['prefixes'][$input->prefix]))) {
+            throw StockError::notAUnit((int) ($input->unit ?? $input->prefix));
         }
 
         return $this->model->write((new LagerChanges($this->structure()))->save($thing, $this->things()->lagerOf($thing), $input));

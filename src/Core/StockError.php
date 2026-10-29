@@ -58,6 +58,18 @@ final class StockError extends \RuntimeException
         return new self('not_a_firm', (string) $recordId);
     }
 
+    /** D-1019: a pack holds a positive number of the base unit. */
+    public static function notAPackContent(string $given): self
+    {
+        return new self('not_a_pack_content', $given);
+    }
+
+    /** D-1019: a base unit and its prefix come from «Base units» and «Prefixes». */
+    public static function notAUnit(int $nodeId): self
+    {
+        return new self('not_a_unit', (string) $nodeId);
+    }
+
     /** Concept R3: only a purchase «not yet determined» is split, and it needs at least one part. */
     public static function notALot(int $purchaseId): self
     {

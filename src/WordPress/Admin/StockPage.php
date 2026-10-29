@@ -435,6 +435,13 @@ final class StockPage
             $html .= '<tr><th>' . esc_html__('Verwendung', 'taxmod-stock') . '</th><td><select name="use">' . $this->options($this->stock->uses(), '—', (int) $value('lager_use')) . '</select></td></tr>';
         }
 
+        if ($s->hasField('lager_unit') && $s->hasField('lager_prefix')) {
+            $units = $this->stock->baseUnits();
+            $html .= '<tr><th>' . esc_html__('Basiseinheit', 'taxmod-stock') . '</th><td><select name="prefix">' . $this->options($units['prefixes'], '—', (int) $value('lager_prefix')) . '</select> '
+                . '<select name="unit">' . $this->options($units['units'], '—', (int) $value('lager_unit')) . '</select>'
+                . '<p class="description">' . esc_html__('Worin das Lager zählt, z. B. milli + Liter für ml. Ohne Angabe: Stück.', 'taxmod-stock') . '</p></td></tr>';
+        }
+
         return $html . '</tbody></table>' . $this->sourcesTable($record) . get_submit_button(__('Speichern', 'taxmod-stock')) . '</form>';
     }
 
@@ -454,7 +461,7 @@ final class StockPage
         $html  = '<h3>' . esc_html__('Bezugsquellen', 'taxmod-stock') . '</h3>'
             . '<p class="description">' . esc_html__('Wo es das Material gibt: Hersteller oder Händler und seine Nummer. Eine geleerte Zeile wird entfernt.', 'taxmod-stock') . '</p>'
             . '<table class="widefat striped" style="max-width:720px"><thead><tr><th>' . esc_html__('Firma', 'taxmod-stock') . '</th><th>'
-            . esc_html__('Nummer', 'taxmod-stock') . '</th></tr></thead><tbody>';
+            . esc_html__('Nummer', 'taxmod-stock') . '</th>' . ($s->hasField('source_content') ? '<th>' . esc_html__('Packungsinhalt', 'taxmod-stock') . '</th>' : '') . '</tr></thead><tbody>';
 
         foreach ($rows as $i => $row) {
             $options = '<option value="">—</option>';
@@ -471,7 +478,9 @@ final class StockPage
 
             $html .= '<tr><td>' . ($row->part === null ? '' : '<input type="hidden" name="sources[' . $i . '][part]" value="' . esc_attr((string) $row->part) . '">')
                 . '<select name="sources[' . $i . '][firm]">' . $options . '</select></td>'
-                . '<td><input type="text" class="regular-text" name="sources[' . $i . '][number]" value="' . esc_attr($row->number) . '"></td></tr>';
+                . '<td><input type="text" class="regular-text" name="sources[' . $i . '][number]" value="' . esc_attr($row->number) . '"></td>'
+                . ($s->hasField('source_content') ? '<td><input type="text" inputmode="decimal" style="width:7em" name="sources[' . $i . '][content]" value="' . esc_attr($row->content) . '" title="'
+                    . esc_attr__('Wie viel eine Packung enthält, in der Basiseinheit', 'taxmod-stock') . '"></td>' : '') . '</tr>';
         }
 
         return $html . '</tbody></table><input type="hidden" name="has_sources" value="1">';
@@ -1022,7 +1031,9 @@ final class StockPage
             absint($_POST['use'] ?? 0) ?: null,
             absint($_POST['location'] ?? 0) ?: null,
             $minimum === '' ? null : absint($minimum),
-            empty($_POST['has_sources']) ? null : $this->sourceRows()
+            empty($_POST['has_sources']) ? null : $this->sourceRows(),
+            absint($_POST['unit'] ?? 0) ?: null,
+            absint($_POST['prefix'] ?? 0) ?: null
         );
     }
 
@@ -1039,7 +1050,8 @@ final class StockPage
             $rows[] = new SourceRow(
                 absint($line['part'] ?? 0) ?: null,
                 absint($line['firm'] ?? 0) ?: null,
-                sanitize_text_field((string) ($line['number'] ?? ''))
+                sanitize_text_field((string) ($line['number'] ?? '')),
+                str_replace(',', '.', sanitize_text_field((string) ($line['content'] ?? '')))
             );
         }
 

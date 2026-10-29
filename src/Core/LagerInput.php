@@ -14,6 +14,9 @@ final class LagerInput
         public readonly ?int $minimum,
         /** @var list<SourceRow>|null null when the form had no «Bezugsquellen» */
         public readonly ?array $sources = null,
+        /** D-1019: the base unit and its prefix (node ids); none means «Stück». */
+        public readonly ?int $unit = null,
+        public readonly ?int $prefix = null,
     ) {
     }
 }

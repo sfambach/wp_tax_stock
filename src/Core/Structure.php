@@ -27,7 +27,7 @@ final class Structure
     ];
 
     /** Nodes the module uses when they are there: the choices of «Verwendung». */
-    private const OPTIONAL_NODES = ['lager_use', 'source', 'firm'];
+    private const OPTIONAL_NODES = ['lager_use', 'source', 'firm', 'base_units', 'prefixes'];
 
     /** Fields the module uses when they are there and leaves out when they are not. */
     private const OPTIONAL_FIELDS = [
@@ -36,6 +36,8 @@ final class Structure
         'lot_condition', 'lot_tested_on', 'lot_test_note',
         // D-1018: «Bezugsquellen» of the Lager view — firm and number — and the name of a firm.
         'lager_sources', 'source_firm', 'source_number', 'firm_name',
+        // D-1019: the base unit the Lager view counts in, and how much of it one pack of a source holds.
+        'lager_unit', 'lager_prefix', 'source_content',
     ];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];

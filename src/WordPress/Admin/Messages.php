@@ -32,6 +32,8 @@ final class Messages
             /* translators: %s: record id */
             'not_a_location'            => sprintf(__('#%s ist kein Lagerort.', 'taxmod-stock'), $error->detail),
             'not_a_firm'                => sprintf(__('#%s ist keine Firma unter «Organisation».', 'taxmod-stock'), $error->detail),
+            'not_a_pack_content'        => sprintf(__('«%s» ist kein Packungsinhalt: eine Zahl größer als null.', 'taxmod-stock'), $error->detail),
+            'not_a_unit'                => sprintf(__('#%s ist keine Basiseinheit und kein Vorsatz.', 'taxmod-stock'), $error->detail),
             'not_a_lot'                 => sprintf(__('Kauf #%s ist kein Konvolut: Aufteilen geht nur bei «noch nicht näher bestimmt», und es braucht mindestens eine Zeile.', 'taxmod-stock'), $error->detail),
             'thing_without_name'        => __('Ein neues Material braucht eine Bezeichnung.', 'taxmod-stock'),
             'thing_without_group'       => __('Ein neues Material braucht eine Materialgruppe im Baum.', 'taxmod-stock'),

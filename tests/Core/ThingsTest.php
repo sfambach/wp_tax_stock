@@ -89,15 +89,30 @@ final class ThingsTest extends TestCase
 
         $update = (new LagerChanges($s))->save(43101, 43124, new LagerInput(false, null, null, null, $rows));
 
-        self::assertSame(['51' => [$firm => '35197', $number => 'K104K15X7RF53H5'], 'new2' => [$firm => '39497', $number => 'C15849']], $update[0]['values'][$sources]);
+        $content = (string) $s->field('source_content');
+        self::assertSame(['51' => [$firm => '35197', $number => 'K104K15X7RF53H5', $content => ''], 'new2' => [$firm => '39497', $number => 'C15849', $content => '']], $update[0]['values'][$sources]);
         self::assertSame(['op' => 'remove_record', 'record' => 52], $update[1], 'an emptied line removes its part');
         self::assertCount(2, $update, 'an empty new line writes nothing');
 
         $create = (new LagerChanges($s))->save(43101, null, new LagerInput(false, null, null, null, [new SourceRow(null, 35197, 'X')]));
-        self::assertSame(['new0' => [$firm => '35197', $number => 'X']], $create[1]['values'][$sources]);
+        self::assertSame(['new0' => [$firm => '35197', $number => 'X', $content => '']], $create[1]['values'][$sources]);
 
         $none = (new LagerChanges($s))->save(43101, 43124, new LagerInput(false, null, null, null));
         self::assertArrayNotHasKey($sources, $none[0]['values'], 'a form without the lines leaves the sources alone');
+    }
+
+    #[Test]
+    public function a_material_counts_in_its_base_unit_and_a_source_says_what_a_pack_holds(): void
+    {
+        $s      = Fixture::structure();
+        $update = (new LagerChanges($s))->save(43101, 43124, new LagerInput(false, null, null, null, [new SourceRow(null, 35197, '123', '10')], 4038, 4014))[0]['values'];
+
+        self::assertSame('4038', $update[(string) $s->field('lager_unit')], 'Liter …');
+        self::assertSame('4014', $update[(string) $s->field('lager_prefix')], '… with milli: ml');
+        self::assertSame('10', $update[(string) $s->field('lager_sources')]['new0'][(string) $s->field('source_content')], 'a 10 ml pack');
+
+        $none = (new LagerChanges($s))->save(43101, 43124, new LagerInput(false, null, null, null))[0]['values'];
+        self::assertSame('', $none[(string) $s->field('lager_unit')], 'no unit given: Stück, so the old one is cleared');
     }
 
     #[Test]

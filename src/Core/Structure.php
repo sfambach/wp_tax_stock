@@ -38,6 +38,8 @@ final class Structure
         'lager_sources', 'source_firm', 'source_number', 'firm_name',
         // D-1019: the base unit the Lager view counts in, and how much of it one pack of a source holds.
         'lager_unit', 'lager_prefix', 'source_content',
+        // D-1022: shipping and fees of a purchase, from which the model calculates the landed price.
+        'purchase_shipping_share', 'purchase_fees_share',
     ];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];

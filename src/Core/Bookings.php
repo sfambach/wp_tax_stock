@@ -109,13 +109,14 @@ final class Bookings
      * part a purchase of its own in the same order. Each part names its material, so each can go into the goods
      * receipt. No booking yet — nothing is in stock until the receipt.
      *
-     * ⚠️ Without prices the whole price stays on the first part (INFERRED); a price given for the first part also
-     * replaces its landed price, which the receipt would otherwise prefer.
+     * ⚠️ Without prices the whole price stays on the first part (INFERRED). The landed price is not written: the model
+     * calculates it from the unit price and the shares of shipping and fees (D-1022), so the shares are divided instead —
+     * by the value of each part, by its quantity when no part has a price (INFERRED).
      *
      * @param list<SplitRow> $rows
      * @return list<array<string, mixed>>
      */
-    public function split(int $order, int $purchase, array $rows, Table $orders, Table $purchases): array
+    public function split(int $order, int $purchase, array $rows, Table $orders, Table $purchases, Table $money): array
     {
         $s       = $this->structure;
         $inOrder = $orders->all($order, $s->field('order_lines'));
@@ -129,7 +130,8 @@ final class Bookings
         }
 
         $this->start();
-        $added = [];
+        $added  = [];
+        $shares = $this->sharesOf($purchase, $rows, $purchases, $money);
 
         foreach ($rows as $index => $row) {
             $quantity = (string) (int) Quantity::positive($row->quantity);
@@ -145,9 +147,11 @@ final class Bookings
             if ($row->unitPrice !== null && $row->unitPrice !== '') {
                 $amount = Quantity::amount($row->unitPrice);
                 $values[(string) $s->field('purchase_unit_price')] = $this->priceFor($first ? $purchases->first($purchase, $s->field('purchase_unit_price')) : null, $amount);
+            }
 
-                if ($first && $purchases->first($purchase, $s->field('purchase_landed_price')) !== null) {
-                    $values[(string) $s->field('purchase_landed_price')] = $this->priceFor('held', $amount);
+            foreach ($shares as $key => $parts) {
+                if ($parts[$index] !== null) {
+                    $values[(string) $s->field($key)] = $parts[$index];
                 }
             }
 
@@ -194,6 +198,66 @@ final class Bookings
         }
 
         return $this->changes;
+    }
+
+    /**
+     * The shares of shipping and fees (D-1022) of a lot purchase divided over its parts, as money parts per row: the first
+     * part fills the part it holds and takes what rounding leaves over, so the sum stays the lot's.
+     *
+     * @param list<SplitRow> $rows
+     * @return array<string, list<array<string, array<string, string>>|null>>
+     */
+    private function sharesOf(int $purchase, array $rows, Table $purchases, Table $money): array
+    {
+        $s       = $this->structure;
+        $weights = $this->weightsOf($purchase, $rows, $purchases, $money);
+        $total   = array_sum($weights);
+        $out     = [];
+
+        foreach (['purchase_shipping_share', 'purchase_fees_share'] as $key) {
+            $held   = $s->hasField($key) ? $purchases->first($purchase, $s->field($key)) : null;
+            $amount = $held === null ? null : $money->first((int) $held, $s->field('money_amount'));
+
+            if ($amount === null || (float) $amount === 0.0 || count($rows) < 2) {
+                continue;
+            }
+
+            $unit  = $money->first((int) $held, $s->field('money_unit'));
+            $cents = (int) round((float) $amount * 100);
+            $parts = array_map(static fn (float $w): int => (int) floor($cents * $w / $total), $weights);
+            $parts[0] += $cents - array_sum($parts);
+            $out[$key] = [];
+
+            foreach ($parts as $index => $part) {
+                $text = number_format($part / 100, 2, '.', '');
+                $out[$key][] = $index === 0 ? ['0' => $this->moneyPart($text, $unit)['neu']] : ($part === 0 ? null : $this->moneyPart($text, $unit));
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * What each part is worth: its price times its quantity; a first part without a price keeps the lot's. When no part
+     * has a price, each counts by its quantity.
+     *
+     * @param list<SplitRow> $rows
+     * @return list<float>
+     */
+    private function weightsOf(int $purchase, array $rows, Table $purchases, Table $money): array
+    {
+        $s       = $this->structure;
+        $held    = $purchases->first($purchase, $s->field('purchase_unit_price'));
+        $lotUnit = $held === null ? null : $money->first((int) $held, $s->field('money_amount'));
+        $values  = [];
+
+        foreach ($rows as $index => $row) {
+            $quantity = (float) Quantity::positive($row->quantity);
+            $price    = $row->unitPrice !== null && $row->unitPrice !== '' ? Quantity::amount($row->unitPrice) : ($index === 0 ? $lotUnit : null);
+            $values[] = $price === null ? 0.0 : (float) $price * $quantity;
+        }
+
+        return array_sum($values) > 0.0 ? $values : array_map(static fn (SplitRow $r): float => (float) Quantity::positive($r->quantity), $rows);
     }
 
     /**

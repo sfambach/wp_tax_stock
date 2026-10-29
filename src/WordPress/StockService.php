@@ -560,7 +560,7 @@ final class StockService
         $this->checkThings(array_values(array_filter(array_map(static fn (SplitRow $r): ?int => $r->thing, $rows))));
         $this->checkGroups(array_values(array_filter(array_map(static fn (SplitRow $r): ?NewThing => $r->new, $rows))));
 
-        return $this->model->write((new Bookings($this->structure(), current_time('Y-m-d')))->split($order, $purchase, $rows, $this->table('order'), $this->table('purchase')));
+        return $this->model->write((new Bookings($this->structure(), current_time('Y-m-d')))->split($order, $purchase, $rows, $this->table('order'), $this->table('purchase'), $this->table('money')));
     }
 
     /**

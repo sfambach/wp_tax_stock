@@ -21,6 +21,7 @@ final class Fixture
             'money_amount', 'money_unit',
             'purchase_model', 'lager_use', 'lager_location',
             'lager_sources', 'source_firm', 'source_number', 'firm_name', 'lager_unit', 'lager_prefix', 'source_content',
+            'purchase_shipping_share', 'purchase_fees_share',
         ] as $i => $key) {
             $fields[$key] = 100 + $i;
         }

@@ -155,7 +155,7 @@ final class BookingsTest extends TestCase
         $changes = (new Bookings($s, '2026-10-28'))->split(70, 71, [
             new SplitRow(55, null, 'Mainboard', '1', null),
             new SplitRow(null, new NewThing(3640, 'Netzteil AT'), 'Netzteil AT', '2', '4,50'),
-        ], $orders, $purchases);
+        ], $orders, $purchases, new Table([]));
         $values  = $this->valuesByNode($changes);
         $first   = array_values(array_filter($changes, static fn (array $c): bool => $c['op'] === 'set_values' && $c['record'] === 71))[0]['values'];
         $order   = array_values(array_filter($changes, static fn (array $c): bool => $c['op'] === 'set_values' && $c['record'] === 70))[0]['values'];
@@ -174,19 +174,50 @@ final class BookingsTest extends TestCase
     }
 
     #[Test]
+    public function a_split_divides_shipping_and_fees_by_the_value_of_the_parts_and_writes_no_landed_price(): void
+    {
+        $s       = Fixture::structure();
+        $orders  = new Table([70 => [$s->field('order_lines') => ['71']]]);
+        $lot     = new Table([71 => [
+            $s->field('purchase_undetermined')   => ['1'],
+            $s->field('purchase_unit_price')     => ['501'],
+            $s->field('purchase_landed_price')   => ['502'],
+            $s->field('purchase_shipping_share') => ['503'],
+            $s->field('purchase_fees_share')     => ['504'],
+        ]]);
+        $money   = new Table([
+            501 => [$s->field('money_amount') => ['30']],
+            503 => [$s->field('money_amount') => ['10'], $s->field('money_unit') => ['208']],
+            504 => [$s->field('money_amount') => ['0']],
+        ]);
+        $changes = (new Bookings($s, '2026-10-29'))->split(70, 71, [
+            new SplitRow(55, null, 'Mainboard', '1', '20'),
+            new SplitRow(56, null, 'Netzteil', '2', '5'),
+        ], $orders, $lot, $money);
+        $first   = array_values(array_filter($changes, static fn (array $c): bool => $c['op'] === 'set_values' && $c['record'] === 71))[0]['values'];
+        $added   = $this->valuesByNode($changes)[$s->node('purchase')];
+        $amount  = (string) $s->field('money_amount');
+
+        self::assertArrayNotHasKey((string) $s->field('purchase_landed_price'), $first, 'the model calculates it (D-1022)');
+        self::assertSame(['0' => [$amount => '6.67', (string) $s->field('money_unit') => '208']], $first[(string) $s->field('purchase_shipping_share')], 'value 20 of 30, plus the rounding');
+        self::assertSame(['neu' => [$amount => '3.33', (string) $s->field('money_unit') => '208']], $added[(string) $s->field('purchase_shipping_share')]);
+        self::assertArrayNotHasKey((string) $s->field('purchase_fees_share'), $first, 'a zero share stays as it is');
+    }
+
+    #[Test]
     public function only_an_undetermined_purchase_of_the_order_is_split(): void
     {
         [$orders, $purchases] = $this->order(['1', '0']);
 
         try {
-            (new Bookings(Fixture::structure(), '2026-10-28'))->split(70, 72, [new SplitRow(55, null, 'X', '1', null)], $orders, $purchases);
+            (new Bookings(Fixture::structure(), '2026-10-28'))->split(70, 72, [new SplitRow(55, null, 'X', '1', null)], $orders, $purchases, new Table([]));
             self::fail('a determined purchase was split');
         } catch (StockError $e) {
             self::assertSame('not_a_lot', $e->reason);
         }
 
         $this->expectException(StockError::class);
-        (new Bookings(Fixture::structure(), '2026-10-28'))->split(70, 99, [new SplitRow(55, null, 'X', '1', null)], $orders, $purchases);
+        (new Bookings(Fixture::structure(), '2026-10-28'))->split(70, 99, [new SplitRow(55, null, 'X', '1', null)], $orders, $purchases, new Table([]));
     }
 
     #[Test]

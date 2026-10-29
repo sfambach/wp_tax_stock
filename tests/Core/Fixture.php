@@ -20,12 +20,13 @@ final class Fixture
             'purchase_quantity', 'purchase_undetermined', 'purchase_landed_price', 'purchase_unit_price',
             'money_amount', 'money_unit',
             'purchase_model', 'lager_use', 'lager_location',
+            'lager_sources', 'source_firm', 'source_number', 'firm_name',
         ] as $i => $key) {
             $fields[$key] = 100 + $i;
         }
 
         return Structure::fromArray([
-            'nodes'  => ['lager' => 1, 'lot' => 2, 'transaction' => 3, 'line' => 4, 'location' => 5, 'order' => 6, 'purchase' => 7, 'money' => 8, 'lager_use' => 9],
+            'nodes'  => ['lager' => 1, 'lot' => 2, 'transaction' => 3, 'line' => 4, 'location' => 5, 'order' => 6, 'purchase' => 7, 'money' => 8, 'lager_use' => 9, 'source' => 10, 'firm' => 11],
             'fields' => $fields,
             'values' => [
                 'kind_receipt' => 201, 'kind_consumption' => 202, 'kind_count' => 203, 'source_manual' => 204,

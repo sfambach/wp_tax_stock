@@ -31,6 +31,7 @@ final class Messages
             'not_a_group'               => sprintf(__('Knoten %s ist keine Gruppe unter Model.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id */
             'not_a_location'            => sprintf(__('#%s ist kein Lagerort.', 'taxmod-stock'), $error->detail),
+            'not_a_firm'                => sprintf(__('#%s ist keine Firma unter «Organisation».', 'taxmod-stock'), $error->detail),
             'not_a_lot'                 => sprintf(__('Kauf #%s ist kein Konvolut: Aufteilen geht nur bei «noch nicht näher bestimmt», und es braucht mindestens eine Zeile.', 'taxmod-stock'), $error->detail),
             'thing_without_name'        => __('Ein neues Material braucht eine Bezeichnung.', 'taxmod-stock'),
             'thing_without_group'       => __('Ein neues Material braucht eine Materialgruppe im Baum.', 'taxmod-stock'),

@@ -12,6 +12,8 @@ final class LagerInput
         public readonly ?int $use,
         public readonly ?int $location,
         public readonly ?int $minimum,
+        /** @var list<SourceRow>|null null when the form had no «Bezugsquellen» */
+        public readonly ?array $sources = null,
     ) {
     }
 }

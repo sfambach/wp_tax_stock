@@ -5,6 +5,7 @@ namespace TaxmodStock\WordPress\Admin;
 use Taxmod\WordPress\Admin\ListPage;
 use TaxmodStock\Core\InventoryRow;
 use TaxmodStock\Core\LagerInput;
+use TaxmodStock\Core\SourceRow;
 use TaxmodStock\Core\NewThing;
 use TaxmodStock\Core\ReceiptChoice;
 use TaxmodStock\Core\SplitRow;
@@ -434,7 +435,46 @@ final class StockPage
             $html .= '<tr><th>' . esc_html__('Verwendung', 'taxmod-stock') . '</th><td><select name="use">' . $this->options($this->stock->uses(), '—', (int) $value('lager_use')) . '</select></td></tr>';
         }
 
-        return $html . '</tbody></table>' . get_submit_button(__('Speichern', 'taxmod-stock')) . '</form>';
+        return $html . '</tbody></table>' . $this->sourcesTable($record) . get_submit_button(__('Speichern', 'taxmod-stock')) . '</form>';
+    }
+
+    /**
+     * D-1018, «Bezugsquellen»: a firm and its number per line, the existing ones and two empty lines to add. Clearing a line removes it.
+     */
+    private function sourcesTable(?int $record): string
+    {
+        $s = $this->stock->structure();
+
+        if (! $s->hasField('lager_sources') || ! $s->hasNode('source')) {
+            return '';
+        }
+
+        $firms = $this->stock->firms();
+        $rows  = [...$this->stock->sourcesOf($record), new SourceRow(null, null, ''), new SourceRow(null, null, '')];
+        $html  = '<h3>' . esc_html__('Bezugsquellen', 'taxmod-stock') . '</h3>'
+            . '<p class="description">' . esc_html__('Wo es das Material gibt: Hersteller oder Händler und seine Nummer. Eine geleerte Zeile wird entfernt.', 'taxmod-stock') . '</p>'
+            . '<table class="widefat striped" style="max-width:720px"><thead><tr><th>' . esc_html__('Firma', 'taxmod-stock') . '</th><th>'
+            . esc_html__('Nummer', 'taxmod-stock') . '</th></tr></thead><tbody>';
+
+        foreach ($rows as $i => $row) {
+            $options = '<option value="">—</option>';
+
+            foreach ($firms as $group => $names) {
+                $options .= '<optgroup label="' . esc_attr($group) . '">';
+
+                foreach ($names as $id => $name) {
+                    $options .= '<option value="' . esc_attr((string) $id) . '"' . selected($row->firm, $id, false) . '>' . esc_html($name) . '</option>';
+                }
+
+                $options .= '</optgroup>';
+            }
+
+            $html .= '<tr><td>' . ($row->part === null ? '' : '<input type="hidden" name="sources[' . $i . '][part]" value="' . esc_attr((string) $row->part) . '">')
+                . '<select name="sources[' . $i . '][firm]">' . $options . '</select></td>'
+                . '<td><input type="text" class="regular-text" name="sources[' . $i . '][number]" value="' . esc_attr($row->number) . '"></td></tr>';
+        }
+
+        return $html . '</tbody></table><input type="hidden" name="has_sources" value="1">';
     }
 
     /**
@@ -981,8 +1021,29 @@ final class StockPage
             ! empty($_POST['single']),
             absint($_POST['use'] ?? 0) ?: null,
             absint($_POST['location'] ?? 0) ?: null,
-            $minimum === '' ? null : absint($minimum)
+            $minimum === '' ? null : absint($minimum),
+            empty($_POST['has_sources']) ? null : $this->sourceRows()
         );
+    }
+
+    /** @return list<SourceRow> */
+    private function sourceRows(): array
+    {
+        $rows = [];
+
+        foreach (is_array($_POST['sources'] ?? null) ? wp_unslash($_POST['sources']) : [] as $line) {
+            if (! is_array($line)) {
+                continue;
+            }
+
+            $rows[] = new SourceRow(
+                absint($line['part'] ?? 0) ?: null,
+                absint($line['firm'] ?? 0) ?: null,
+                sanitize_text_field((string) ($line['number'] ?? ''))
+            );
+        }
+
+        return $rows;
     }
 
     /**

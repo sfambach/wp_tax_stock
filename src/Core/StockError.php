@@ -52,6 +52,12 @@ final class StockError extends \RuntimeException
         return new self('not_a_location', (string) $recordId);
     }
 
+    /** D-1018: a source names a firm under «Organisation». */
+    public static function notAFirm(int $recordId): self
+    {
+        return new self('not_a_firm', (string) $recordId);
+    }
+
     /** Concept R3: only a purchase «not yet determined» is split, and it needs at least one part. */
     public static function notALot(int $purchaseId): self
     {

@@ -8,6 +8,7 @@ use TaxmodStock\Core\LagerChanges;
 use TaxmodStock\Core\LagerInput;
 use TaxmodStock\Core\Ledger;
 use TaxmodStock\Core\ReceiptPlan;
+use TaxmodStock\Core\SourceRow;
 use TaxmodStock\Core\Structure;
 use TaxmodStock\Core\Table;
 use TaxmodStock\Core\Things;
@@ -75,6 +76,28 @@ final class ThingsTest extends TestCase
         self::assertSame(43124, $update['record']);
         self::assertSame('', $update['values'][(string) $s->field('lager_min')], 'an empty value clears it');
         self::assertSame('9001', $update['values'][(string) $s->field('lager_use')]);
+    }
+
+    #[Test]
+    public function the_sources_of_a_thing_are_parts_of_its_lager_record(): void
+    {
+        $s       = Fixture::structure();
+        $sources = (string) $s->field('lager_sources');
+        $firm    = (string) $s->field('source_firm');
+        $number  = (string) $s->field('source_number');
+        $rows    = [new SourceRow(51, 35197, 'K104K15X7RF53H5'), new SourceRow(52, null, ''), new SourceRow(null, 39497, 'C15849'), new SourceRow(null, null, '')];
+
+        $update = (new LagerChanges($s))->save(43101, 43124, new LagerInput(false, null, null, null, $rows));
+
+        self::assertSame(['51' => [$firm => '35197', $number => 'K104K15X7RF53H5'], 'new2' => [$firm => '39497', $number => 'C15849']], $update[0]['values'][$sources]);
+        self::assertSame(['op' => 'remove_record', 'record' => 52], $update[1], 'an emptied line removes its part');
+        self::assertCount(2, $update, 'an empty new line writes nothing');
+
+        $create = (new LagerChanges($s))->save(43101, null, new LagerInput(false, null, null, null, [new SourceRow(null, 35197, 'X')]));
+        self::assertSame(['new0' => [$firm => '35197', $number => 'X']], $create[1]['values'][$sources]);
+
+        $none = (new LagerChanges($s))->save(43101, 43124, new LagerInput(false, null, null, null));
+        self::assertArrayNotHasKey($sources, $none[0]['values'], 'a form without the lines leaves the sources alone');
     }
 
     #[Test]

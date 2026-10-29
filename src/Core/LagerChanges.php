@@ -33,13 +33,57 @@ final class LagerChanges
             }
         }
 
+        [$parts, $removed] = $this->sources($input);
+
         if ($lagerRecord !== null) {
-            return [['op' => 'set_values', 'record' => $lagerRecord, 'values' => $values]];
+            $values += $parts === [] ? [] : [(string) $s->field('lager_sources') => $parts];
+
+            return [
+                ['op' => 'set_values', 'record' => $lagerRecord, 'values' => $values],
+                ...array_map(static fn (int $part): array => ['op' => 'remove_record', 'record' => $part], $removed),
+            ];
         }
+
+        $values = array_filter($values, static fn (string $v): bool => $v !== '');
 
         return [
             ['op' => 'create_record', 'ref' => 'lager', 'node' => $s->node('lager')],
-            ['op' => 'set_values', 'record' => '@lager', 'values' => array_filter($values, static fn (string $v): bool => $v !== '')],
+            ['op' => 'set_values', 'record' => '@lager', 'values' => $values + ($parts === [] ? [] : [(string) $s->field('lager_sources') => $parts])],
         ];
+    }
+
+    /**
+     * The lines as the modeller's parts: an existing part by its record id, a new one under a key of its own; an emptied line
+     * removes its part.
+     *
+     * @return array{0: array<string, array<string, string>>, 1: list<int>}
+     */
+    private function sources(LagerInput $input): array
+    {
+        $s = $this->structure;
+
+        if ($input->sources === null || ! $s->hasField('lager_sources')) {
+            return [[], []];
+        }
+
+        $parts   = [];
+        $removed = [];
+
+        foreach ($input->sources as $i => $row) {
+            if ($row->isEmpty()) {
+                if ($row->part !== null) {
+                    $removed[] = $row->part;
+                }
+
+                continue;
+            }
+
+            $parts[$row->part === null ? 'new' . $i : (string) $row->part] = [
+                (string) $s->field('source_firm')   => $row->firm === null ? '' : (string) $row->firm,
+                (string) $s->field('source_number') => $row->number,
+            ];
+        }
+
+        return [$parts, $removed];
     }
 }

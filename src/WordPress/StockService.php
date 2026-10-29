@@ -13,6 +13,7 @@ use TaxmodStock\Core\LocationSettings;
 use TaxmodStock\Core\NewThing;
 use TaxmodStock\Core\ReceiptChoice;
 use TaxmodStock\Core\ReceiptPlan;
+use TaxmodStock\Core\SourceRow;
 use TaxmodStock\Core\SplitRow;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\Structure;
@@ -562,6 +563,62 @@ final class StockService
         return $this->model->write((new Bookings($this->structure(), current_time('Y-m-d')))->split($order, $purchase, $rows, $this->table('order'), $this->table('purchase')));
     }
 
+    /**
+     * D-1018: the firms a source can name, grouped by the node they live in under «Organisation» (maker, seller …), each node
+     * read once.
+     *
+     * @return array<string, array<int, string>> node name → record id → firm name
+     */
+    public function firms(): array
+    {
+        $s = $this->structure();
+
+        if (! $s->hasNode('firm')) {
+            return [];
+        }
+
+        $name = $s->hasField('firm_name') ? $s->field('firm_name') : $s->field('label');
+        $out  = [];
+
+        foreach ($this->model->tree($s->node('firm')) as $node => $row) {
+            $table = $this->tableOf($node);
+
+            foreach ($table->ids() as $id) {
+                $out[$row['name']][$id] = (string) ($table->first($id, $name) ?? '#' . $id);
+            }
+
+            if (isset($out[$row['name']])) {
+                asort($out[$row['name']], SORT_NATURAL | SORT_FLAG_CASE);
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * D-1018: the sources on a Lager record, as its form shows them.
+     *
+     * @return list<SourceRow>
+     */
+    public function sourcesOf(?int $lagerRecord): array
+    {
+        $s = $this->structure();
+
+        if ($lagerRecord === null || ! $s->hasNode('source') || ! $s->hasField('lager_sources')) {
+            return [];
+        }
+
+        $parts = $this->table('source');
+        $out   = [];
+
+        foreach ($this->table('lager')->all($lagerRecord, $s->field('lager_sources')) as $part) {
+            $firm  = $parts->first((int) $part, $s->field('source_firm'));
+            $out[] = new SourceRow((int) $part, $firm === null ? null : (int) $firm, (string) ($parts->first((int) $part, $s->field('source_number')) ?? ''));
+        }
+
+        return $out;
+    }
+
     /** @return array<string, mixed> the modeller's answer */
     public function saveLager(int $thing, LagerInput $input): array
     {
@@ -569,6 +626,14 @@ final class StockService
 
         if ($input->location !== null && ! $this->table('location')->has($input->location)) {
             throw StockError::notALocation($input->location);
+        }
+
+        $firms = array_replace([], ...array_values($this->firms()));
+
+        foreach ($input->sources ?? [] as $row) {
+            if ($row->firm !== null && ! isset($firms[$row->firm])) {
+                throw StockError::notAFirm($row->firm);
+            }
         }
 
         return $this->model->write((new LagerChanges($this->structure()))->save($thing, $this->things()->lagerOf($thing), $input));

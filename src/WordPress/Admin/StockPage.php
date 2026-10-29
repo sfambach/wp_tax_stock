@@ -339,7 +339,9 @@ final class StockPage
             . ($media > 0 ? (string) wp_get_attachment_image($media, [96, 96], false, ['style' => 'width:96px;height:96px;object-fit:cover;border-radius:4px']) : '<div style="width:96px;height:96px;background:#f0f0f1;border-radius:4px"></div>')
             . '<div><p style="margin:0;color:#50575e">' . esc_html(sprintf(/* translators: %d: record id of the thing */ __('Nr. %d', 'taxmod-stock'), $thing)) . ' · ' . esc_html($this->stock->path($node)) . '</p>'
             . '<h2 style="margin:4px 0;font-size:1.6em">' . esc_html($label === '' ? '—' : $label) . '</h2>'
-            . ($about === '' ? '' : '<p style="margin:0">' . esc_html($about) . '</p>') . '</div></div>'
+            . ($about === '' ? '' : '<p style="margin:0">' . esc_html($about) . '</p>') . '</div>'
+            . '<a class="button" style="margin-left:auto" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $thing], admin_url('admin.php'))) . '">'
+            . esc_html__('Material bearbeiten', 'taxmod-stock') . '</a></div>'
             . '<nav class="nav-tab-wrapper" style="margin-top:0">';
 
         foreach ($titles as $slug => $title) {
@@ -379,7 +381,7 @@ final class StockPage
             $html  .= '<tr><th scope="row">' . esc_html($field['name']) . '</th><td>' . esc_html($shown === [] ? '—' : implode(', ', $shown)) . '</td></tr>';
         }
 
-        return $html . '</tbody></table><p class="description">' . esc_html__('Bearbeitet wird das Material im Taxonomy Modeller; hier steht es zum Nachsehen.', 'taxmod-stock') . '</p>';
+        return $html . '</tbody></table><p class="description">' . esc_html__('Bearbeitet wird das Material über «Material bearbeiten» oben rechts, im Formular des Taxonomy Modellers.', 'taxmod-stock') . '</p>';
     }
 
     /** The purchases whose «Modell» is this thing. ⚠️ «Preisangaben» are not listed yet: no ability finds what points here. */

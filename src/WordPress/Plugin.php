@@ -8,16 +8,16 @@ use TaxmodStock\WordPress\Admin\SettingsTab;
 use TaxmodStock\WordPress\Admin\StockPage;
 
 /**
- * Wires the module into WordPress: a tab on the modeller's Configuration, and the menu «Logistik» with the goods receipt
- * cockpit, the page «Lager» and the page «Einkauf» (D-1004, D-1027: goods in, goods out and stock get a menu of their own beside the modeller's).
+ * Wires the module into WordPress: a tab on the modeller's Configuration, and the goods receipt cockpit, the page «Lager» and
+ * the page «Einkauf» under the modeller's menu (D-1028: one Taxmod menu, not two; D-1027).
  */
 final class Plugin
 {
-    /** D-1004: the menu of goods in, goods out and stock; other modules may hang their pages under this slug. */
+    /** The slug of the goods receipt cockpit; kept from the former menu «Logistik» so bookmarks and links still work (D-1028). */
     public const MENU = 'taxmod-logistik';
 
-    /** Just below the modeller's own menu entry. */
-    private const MENU_POSITION = 59;
+    /** The modeller's menu, which every Taxmod module hangs its pages under (D-1028). */
+    private const PARENT = 'taxmod';
 
     public function boot(): void
     {
@@ -64,11 +64,9 @@ final class Plugin
     {
         $inbound = static fn () => print (new InboundPage())->render();
 
-        add_menu_page(__('Logistik', 'taxmod-stock'), __('Logistik', 'taxmod-stock'), 'manage_options', self::MENU, $inbound, 'dashicons-archive', self::MENU_POSITION);
-        // The first entry under a menu repeats its slug; named «Wareneingang» it opens the cockpit (D-1001).
-        add_submenu_page(self::MENU, __('Wareneingang', 'taxmod-stock'), __('Wareneingang', 'taxmod-stock'), 'manage_options', self::MENU, $inbound);
-        add_submenu_page(self::MENU, __('Lager', 'taxmod-stock'), __('Lager', 'taxmod-stock'), 'manage_options', StockPage::PAGE, static fn () => print (new StockPage())->render());
+        add_submenu_page(self::PARENT, __('Wareneingang', 'taxmod-stock'), __('Wareneingang', 'taxmod-stock'), 'manage_options', self::MENU, $inbound);
+        add_submenu_page(self::PARENT, __('Lager', 'taxmod-stock'), __('Lager', 'taxmod-stock'), 'manage_options', StockPage::PAGE, static fn () => print (new StockPage())->render());
         // D-1027: demand, source, order per supplier — he orders at the shop himself.
-        add_submenu_page(self::MENU, __('Einkauf', 'taxmod-stock'), __('Einkauf', 'taxmod-stock'), 'manage_options', PurchasePage::PAGE, static fn () => print (new PurchasePage())->render());
+        add_submenu_page(self::PARENT, __('Einkauf', 'taxmod-stock'), __('Einkauf', 'taxmod-stock'), 'manage_options', PurchasePage::PAGE, static fn () => print (new PurchasePage())->render());
     }
 }

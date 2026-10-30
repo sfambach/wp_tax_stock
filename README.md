@@ -10,15 +10,15 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
 
 - **The thing is the material (D-995).** A record in the tree under `Model` is the material; its record id is the
   material number. Lager, lots, purchases and sales are own records pointing to it.
-- **Menu «Logistik»** (D-1004) beside the Taxonomy Modeller menu, for goods in, goods out and stock.
-- **Page «Wareneingang»** (D-1001), the goods receipt cockpit, first under «Logistik»: every order in one stage, a tab per stage —
+- **No menu of its own** (D-1028): Wareneingang, Lager and Einkauf hang under the Taxonomy Modeller menu, like every Taxmod module.
+- **Page «Wareneingang»** (D-1001), the goods receipt cockpit: every order in one stage, a tab per stage —
   Bestellt → Versendet → Angekommen → Eingebucht. The stage is computed from what the inbox already wrote to the order
   (status, «Eingegangen am», tracking numbers) and the DHL module's last answer (filter `taxmod_dhl_tracking`); nothing
   extra is stored. Buttons: «Angekommen» (sets «Eingegangen am»), «Zurück», a tracking number by hand, «DHL ↻». In
   «Angekommen» each order opens to the booking form of «Lager › Wareneingang». Filter «Überfällig» (14 days without a
   tracking number, 21 days on the way). Concept:
   [`docs/pakete/lager/cockpit-wareneingang.md`](https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/lager/cockpit-wareneingang.md).
-- **Page «Lager»** under «Logistik», drawn with the modeller's shared list page (D-989, needs the
+- **Page «Lager»**, drawn with the modeller's shared list page (D-989, needs the
   modeller from 0.1.65), four tabs, «Wareneingang» first:
   - **Wareneingang** — the orders as a list, each opening to its purchases; receive determined purchases (partial
     receipts allowed). Each purchase goes in as its «Modell» or as another thing picked in the modeller's record chooser
@@ -32,7 +32,7 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
     purchase becomes its first part, every further part a purchase of the same order, each with its material.
   - **Inventur** — counted stock without a purchase, on an existing thing or a new one in a group.
   - **Verbrauch** — take a quantity from a lot; the oldest lot with a rest is proposed.
-- **Page «Einkauf»** under «Logistik» (D-1027), purchasing in three steps: a **demand** without a supplier (an order
+- **Page «Einkauf»** (D-1027), purchasing in three steps: a **demand** without a supplier (an order
   «Entwurf» without «Händler»), a **source** per position (firm, article number, price — the position moves into that
   supplier's draft and keeps pointing at its demand, field «Bedarf» of the purchase), and **one order per supplier**, which
   he orders at the shop himself and then marks «bestellt» with its number; from there the cockpit takes over. Tabs:

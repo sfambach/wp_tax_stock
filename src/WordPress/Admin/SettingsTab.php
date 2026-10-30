@@ -169,7 +169,7 @@ final class SettingsTab
         }
 
         $html = '<h2>' . esc_html__('Test nach dem Wareneingang', 'taxmod-stock') . '</h2>'
-            . '<p>' . esc_html__('Bestandsposten aus diesen Zweigen (mit allem darunter) stehen nach dem Wareneingang unter Logistik › Wareneingang › Zu testen, egal von welcher Plattform; Neuware nicht. Eine leere Zeile fügt einen Zweig hinzu, eine geleerte entfernt ihn.', 'taxmod-stock') . '</p>'
+            . '<p>' . esc_html__('Bestandsposten aus diesen Zweigen (mit allem darunter) stehen nach dem Wareneingang unter Taxmod › Wareneingang › Zu testen, egal von welcher Plattform; Neuware nicht. Eine leere Zeile fügt einen Zweig hinzu, eine geleerte entfernt ihn.', 'taxmod-stock') . '</p>'
             . '<p><label>' . esc_html__('Wareneingang ab', 'taxmod-stock') . ' <input type="date" name="taxmod_stock_inbound_since" value="' . esc_attr($stock->inboundSince()) . '"></label> '
             . '<span class="description">' . esc_html__('Ältere Bestellungen gelten als Kaufhistorie und stehen gleich unter «Archiviert».', 'taxmod-stock') . '</span></p>'
             . '<p><label>' . esc_html__('Archivieren nach', 'taxmod-stock') . ' <input type="number" min="1" name="taxmod_stock_inbound_archive_days" value="' . esc_attr((string) $stock->inboundArchiveDays()) . '" style="width:6em"> ' . esc_html__('Tagen', 'taxmod-stock') . '</label> '

@@ -10,7 +10,7 @@ use TaxmodStock\WordPress\InboundService;
 use TaxmodStock\WordPress\StockService;
 
 /**
- * The page «Einkauf» under «Logistik» (D-1027): what to reorder, the demands without a supplier, the supplier's drafts to
+ * The page «Einkauf» under the Taxmod menu (D-1027, D-1028): what to reorder, the demands without a supplier, the supplier's drafts to
  * order, and what is ordered. He orders at the shop himself; the page prepares the list and records what he did.
  *
  * ```mermaid

@@ -360,8 +360,18 @@ final class StockPage
     /** Every field of the thing's node but the head's; references show the name of what they point at. */
     private function dataView(int $thing, int $node): string
     {
-        $table  = $this->stock->tableOf($node);
         $fields = $this->technicalFields($node);
+        $note   = '<p class="description">' . esc_html__('Bearbeitet wird das Material über «Material bearbeiten» oben rechts, im Formular des Taxonomy Modellers.', 'taxmod-stock') . '</p>';
+
+        // The modeller draws the record as readers see it — units, parts and choices in their own words; the plain table
+        // below is only for a modeller without that block.
+        if (\WP_Block_Type_Registry::get_instance()->is_registered('taxmod/record')) {
+            wp_enqueue_style('taxmod-record-block');
+
+            return render_block(['blockName' => 'taxmod/record', 'attrs' => ['record' => $thing, 'rowFields' => implode(',', array_keys($fields))], 'innerBlocks' => []]) . $note;
+        }
+
+        $table  = $this->stock->tableOf($node);
         $refs   = [];
 
         foreach ($fields as $relation => $field) {
@@ -381,7 +391,7 @@ final class StockPage
             $html  .= '<tr><th scope="row">' . esc_html($field['name']) . '</th><td>' . esc_html($shown === [] ? '—' : implode(', ', $shown)) . '</td></tr>';
         }
 
-        return $html . '</tbody></table><p class="description">' . esc_html__('Bearbeitet wird das Material über «Material bearbeiten» oben rechts, im Formular des Taxonomy Modellers.', 'taxmod-stock') . '</p>';
+        return $html . '</tbody></table>' . $note;
     }
 
     /** The purchases whose «Modell» is this thing. ⚠️ «Preisangaben» are not listed yet: no ability finds what points here. */

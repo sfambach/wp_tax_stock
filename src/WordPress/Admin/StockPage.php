@@ -216,7 +216,7 @@ final class StockPage
         foreach ($shown as $row) {
             $id    = $row['id'];
             $cells = [
-                esc_html((string) $id),
+                '<a href="' . esc_url($this->thingUrl($id, 'daten')) . '">' . esc_html((string) $id) . '</a>',
                 '<strong><a href="' . esc_url($this->thingUrl($id, 'daten')) . '">' . esc_html($row['name'] === '' ? '—' : $row['name']) . '</a></strong>',
                 esc_html($row['words'][0] === '' ? '—' : $row['words'][0]),
             ];

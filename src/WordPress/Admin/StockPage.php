@@ -35,7 +35,7 @@ final class StockPage
     public const NOTICE     = 'taxmod_stock_notice';
     private const ROWS      = 6;
     private const TABS      = ['wareneingang', 'material', 'inventur', 'verbrauch'];
-    private const VIEWS     = ['daten', 'einkauf', 'lager', 'bestand', 'verkauf'];
+    private const VIEWS     = ['daten', 'bearbeiten', 'einkauf', 'lager', 'bestand', 'verkauf'];
     private const FILTER_FORM = 'taxmod-stock-filter';
     private const BULK_FORM   = 'taxmod-stock-bulk';
 
@@ -340,15 +340,17 @@ final class StockPage
             . '<div><p style="margin:0;color:#50575e">' . esc_html(sprintf(/* translators: %d: record id of the thing */ __('Nr. %d', 'taxmod-stock'), $thing)) . ' · ' . esc_html($this->stock->path($node)) . '</p>'
             . '<h2 style="margin:4px 0;font-size:1.6em">' . esc_html($label === '' ? '—' : $label) . '</h2>'
             . ($about === '' ? '' : '<p style="margin:0">' . esc_html($about) . '</p>') . '</div>'
-            . '<a class="button" style="margin-left:auto" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $thing], admin_url('admin.php'))) . '">'
+            . '<a class="button" style="margin-left:auto" href="' . esc_url($this->thingUrl($thing, 'bearbeiten')) . '">'
             . esc_html__('Material bearbeiten', 'taxmod-stock') . '</a></div>'
             . '<nav class="nav-tab-wrapper" style="margin-top:0">';
 
         foreach ($titles as $slug => $title) {
-            $html .= '<a href="' . esc_url($this->thingUrl($thing, $slug)) . '" class="nav-tab' . ($slug === $view ? ' nav-tab-active' : '') . '">' . esc_html($title) . '</a>';
+            $active = $slug === $view || ($slug === 'daten' && $view === 'bearbeiten');
+            $html  .= '<a href="' . esc_url($this->thingUrl($thing, $slug)) . '" class="nav-tab' . ($active ? ' nav-tab-active' : '') . '">' . esc_html($title) . '</a>';
         }
 
         return $html . '</nav><div style="background:#fff;border:1px solid #c3c4c7;border-top:0;padding:16px">' . match ($view) {
+            'bearbeiten' => $this->editView($thing, $node),
             'einkauf' => $this->purchaseView($thing),
             'lager'   => $this->lagerView($thing),
             'bestand' => $this->stockView($thing),
@@ -357,11 +359,27 @@ final class StockPage
         } . '</div>';
     }
 
+    /**
+     * D-1025: the modeller's own form for the thing, saved here and coming back here. A modeller without that form still
+     * opens its own page.
+     */
+    private function editView(int $thing, int $node): string
+    {
+        $form = (string) apply_filters('taxmod_record_editor', '', $thing, $this->thingUrl($thing, 'daten'));
+
+        if ($form === '') {
+            return '<p><a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $thing], admin_url('admin.php'))) . '">'
+                . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a></p>';
+        }
+
+        return $form . '<p><a href="' . esc_url($this->thingUrl($thing, 'daten')) . '">' . esc_html__('Abbrechen', 'taxmod-stock') . '</a></p>';
+    }
+
     /** Every field of the thing's node but the head's; references show the name of what they point at. */
     private function dataView(int $thing, int $node): string
     {
         $fields = $this->technicalFields($node);
-        $note   = '<p class="description">' . esc_html__('Bearbeitet wird das Material über «Material bearbeiten» oben rechts, im Formular des Taxonomy Modellers.', 'taxmod-stock') . '</p>';
+        $note   = '<p><a class="button" href="' . esc_url($this->thingUrl($thing, 'bearbeiten')) . '">' . esc_html__('Bearbeiten', 'taxmod-stock') . '</a></p>';
 
         // The modeller draws the record as readers see it — units, parts and choices in their own words; the plain table
         // below is only for a modeller without that block.
@@ -1324,7 +1342,10 @@ final class StockPage
         $notice = get_transient(self::NOTICE . get_current_user_id());
 
         if (! is_array($notice)) {
-            return '';
+            // D-1025: what the modeller said after saving the material here.
+            $said = isset($_GET['taxmod_message']) ? sanitize_text_field(rawurldecode(wp_unslash((string) $_GET['taxmod_message']))) : '';
+
+            return $said === '' ? '' : '<div class="notice notice-' . ($said === 'ok' ? 'success' : 'info') . ' is-dismissible"><p>' . esc_html($said === 'ok' ? __('Gespeichert.', 'taxmod-stock') : $said) . '</p></div>';
         }
 
         delete_transient(self::NOTICE . get_current_user_id());

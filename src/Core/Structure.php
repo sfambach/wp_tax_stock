@@ -42,13 +42,15 @@ final class Structure
         'purchase_shipping_share', 'purchase_fees_share',
         // The purchase tab of a material: who sold it, when, and what it cost in all.
         'order_merchant', 'order_platform', 'order_date', 'purchase_total_price',
+        // D-1027, purchasing: the supplier's order number, the article number of a purchase, and the demand it came from.
+        'order_number', 'purchase_number', 'purchase_demand',
     ];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];
 
     /** D-1001: draft and cancelled orders stand in no stage of the goods receipt cockpit. */
     private const OPTIONAL_VALUES = [
-        'currency_default', 'status_draft', 'status_cancelled',
+        'currency_default', 'status_draft', 'status_cancelled', 'status_ordered',
         'test_ok', 'test_partial', 'test_maintenance', 'test_defect', 'condition_new', 'condition_untested',
     ];
 

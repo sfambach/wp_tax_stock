@@ -2,7 +2,7 @@
 
 Stock keeping for the [Taxonomy Modeller](https://github.com/sfambach/wp-taxonomy-modeler) (WordPress plugin).
 
-**Status: stage 1 built, 0.3.2.** Concept (German):
+**Status: stage 1 built, purchasing added, 0.4.0.** Concept (German):
 [`docs/pakete/lager/konzept.md`](https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/lager/konzept.md),
 decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
 
@@ -32,6 +32,16 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
     purchase becomes its first part, every further part a purchase of the same order, each with its material.
   - **Inventur** — counted stock without a purchase, on an existing thing or a new one in a group.
   - **Verbrauch** — take a quantity from a lot; the oldest lot with a rest is proposed.
+- **Page «Einkauf»** under «Logistik» (D-1027), purchasing in three steps: a **demand** without a supplier (an order
+  «Entwurf» without «Händler»), a **source** per position (firm, article number, price — the position moves into that
+  supplier's draft and keeps pointing at its demand, field «Bedarf» of the purchase), and **one order per supplier**, which
+  he orders at the shop himself and then marks «bestellt» with its number; from there the cockpit takes over. Tabs:
+  Nachbestellen (below the minimum, counting what is wanted or ordered) · Bedarf · Bestellen (with a cart list
+  «article number quantity» for the shop's quick order) · Bestellt · Verworfen. Every step has its way back: position back
+  into the demand, «bestellt» back to draft while nothing arrived, discard (cancelled, not deleted) and restore.
+  The button **«Nachbestellen»** on every material opens the dialog: quantity (minimum − stock − open, at least 1) and an
+  open demand or a new one. Concept:
+  [`docs/pakete/lager/einkauf.md`](https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/lager/einkauf.md).
 - **Tab «Lager» on Configuration** — the ids of the Stock nodes and fields, pasted as JSON; and «Kein Material»: branches
   under Model that hold no material (e.g. the source register), left out of search, tree and groups (also settable over
   REST as `taxmod_stock_not_material`).

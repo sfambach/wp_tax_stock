@@ -340,8 +340,9 @@ final class StockPage
             . '<div><p style="margin:0;color:#50575e">' . esc_html(sprintf(/* translators: %d: record id of the thing */ __('Nr. %d', 'taxmod-stock'), $thing)) . ' · ' . esc_html($this->stock->path($node)) . '</p>'
             . '<h2 style="margin:4px 0;font-size:1.6em">' . esc_html($label === '' ? '—' : $label) . '</h2>'
             . ($about === '' ? '' : '<p style="margin:0">' . esc_html($about) . '</p>') . '</div>'
-            . '<a class="button" style="margin-left:auto" href="' . esc_url($this->thingUrl($thing, 'bearbeiten')) . '">'
-            . esc_html__('Material bearbeiten', 'taxmod-stock') . '</a></div>'
+            . '<span style="margin-left:auto;white-space:nowrap"><a class="button button-primary" href="' . esc_url(PurchasePage::reorderUrl($thing)) . '">'
+            . esc_html__('Nachbestellen', 'taxmod-stock') . '</a> <a class="button" href="' . esc_url($this->thingUrl($thing, 'bearbeiten')) . '">'
+            . esc_html__('Material bearbeiten', 'taxmod-stock') . '</a></span></div>'
             . '<nav class="nav-tab-wrapper" style="margin-top:0">';
 
         foreach ($titles as $slug => $title) {

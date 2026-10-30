@@ -140,6 +140,28 @@ final class StockError extends \RuntimeException
         return new self('test_without_reason', $result);
     }
 
+    /** D-1027: a demand is an order «Entwurf» without a supplier. */
+    public static function notADemand(int $orderId): self
+    {
+        return new self('not_a_demand', (string) $orderId);
+    }
+
+    public static function demandWithoutName(): self
+    {
+        return new self('demand_without_name', '');
+    }
+
+    public static function noMerchant(): self
+    {
+        return new self('no_merchant', '');
+    }
+
+    /** D-1027: the step needs an order in another status — a draft, an ordered one or a cancelled one. */
+    public static function notADraft(int $orderId): self
+    {
+        return new self('not_a_draft', (string) $orderId);
+    }
+
     public static function modelRefused(string $message): self
     {
         return new self('model_refused', $message);

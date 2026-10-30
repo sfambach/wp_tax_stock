@@ -3,12 +3,13 @@
 namespace TaxmodStock\WordPress;
 
 use TaxmodStock\WordPress\Admin\InboundPage;
+use TaxmodStock\WordPress\Admin\PurchasePage;
 use TaxmodStock\WordPress\Admin\SettingsTab;
 use TaxmodStock\WordPress\Admin\StockPage;
 
 /**
  * Wires the module into WordPress: a tab on the modeller's Configuration, and the menu «Logistik» with the goods receipt
- * cockpit and the page «Lager» (D-1004: goods in, goods out and stock get a menu of their own beside the modeller's).
+ * cockpit, the page «Lager» and the page «Einkauf» (D-1004, D-1027: goods in, goods out and stock get a menu of their own beside the modeller's).
  */
 final class Plugin
 {
@@ -45,6 +46,7 @@ final class Plugin
         add_action('admin_post_' . StockPage::THING_NODES, static fn () => (new StockPage())->thingNodes());
         add_action('admin_post_' . StockPage::THING_BRANCH, static fn () => (new StockPage())->thingBranch());
         add_action('admin_post_' . InboundPage::ACTION, static fn () => (new InboundPage())->handle());
+        add_action('admin_post_' . PurchasePage::ACTION, static fn () => (new PurchasePage())->handle());
     }
 
     /** The branches without material, settable over REST (/wp/v2/settings) as well as on the configuration tab. */
@@ -66,5 +68,7 @@ final class Plugin
         // The first entry under a menu repeats its slug; named «Wareneingang» it opens the cockpit (D-1001).
         add_submenu_page(self::MENU, __('Wareneingang', 'taxmod-stock'), __('Wareneingang', 'taxmod-stock'), 'manage_options', self::MENU, $inbound);
         add_submenu_page(self::MENU, __('Lager', 'taxmod-stock'), __('Lager', 'taxmod-stock'), 'manage_options', StockPage::PAGE, static fn () => print (new StockPage())->render());
+        // D-1027: demand, source, order per supplier — he orders at the shop himself.
+        add_submenu_page(self::MENU, __('Einkauf', 'taxmod-stock'), __('Einkauf', 'taxmod-stock'), 'manage_options', PurchasePage::PAGE, static fn () => print (new PurchasePage())->render());
     }
 }

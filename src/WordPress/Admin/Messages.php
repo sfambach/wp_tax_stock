@@ -52,6 +52,12 @@ final class Messages
             /* translators: %s: role of the order field, e.g. received_at */
             'no_import_targets'         => sprintf(__('Das Feld «%s» der Bestellungen fehlt in den Ziel-Ids des Eingangs (Taxonomy Modeller › Configuration › Import).', 'taxmod-stock'), $error->detail),
             'test_without_reason'       => __('«Teilweise OK» und «Wartung nötig» brauchen eine Begründung: was geht nicht, was ist zu tun.', 'taxmod-stock'),
+            /* translators: %s: record id of the order */
+            'not_a_demand'              => sprintf(__('#%s ist kein offener Bedarf (Bestellung «Entwurf» ohne Händler).', 'taxmod-stock'), $error->detail),
+            'demand_without_name'       => __('Ein neuer Bedarf braucht einen Namen, z. B. das Projekt.', 'taxmod-stock'),
+            'no_merchant'               => __('Bitte einen Händler wählen oder eintragen.', 'taxmod-stock'),
+            /* translators: %s: record id of the order */
+            'not_a_draft'               => sprintf(__('Bestellung #%s steht nicht im passenden Status für diesen Schritt.', 'taxmod-stock'), $error->detail),
             /* translators: %s: the modeller's message */
             'model_refused'             => sprintf(__('Der Taxonomy Modeller hat die Buchung abgelehnt, nichts wurde geschrieben: %s', 'taxmod-stock'), $error->detail),
             default                     => $error->getMessage(),

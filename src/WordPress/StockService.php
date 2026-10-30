@@ -11,6 +11,7 @@ use TaxmodStock\Core\Ledger;
 use TaxmodStock\Core\LocationRules;
 use TaxmodStock\Core\LocationSettings;
 use TaxmodStock\Core\NewThing;
+use TaxmodStock\Core\Purchasing;
 use TaxmodStock\Core\ReceiptChoice;
 use TaxmodStock\Core\ReceiptPlan;
 use TaxmodStock\Core\SourceRow;
@@ -711,6 +712,92 @@ final class StockService
         }
 
         return $this->model->write([['op' => 'set_values', 'record' => $lot, 'values' => [(string) $s->field('lot_location') => (string) $location]]]);
+    }
+
+    /** D-1027: purchasing — demand, source, order per supplier. */
+    public function purchasing(): Purchasing
+    {
+        return new Purchasing($this->structure(), current_time('Y-m-d'));
+    }
+
+    /**
+     * «Nachbestellen»: the things into an open demand or a new one; each thing must be a material in the tree.
+     *
+     * @param array<int, string> $quantities thing → quantity
+     * @return array<string, mixed>
+     */
+    public function reorder(array $quantities, ?int $demand, string $newName): array
+    {
+        $this->checkThings(array_keys($quantities));
+        $labels = $this->recordLabels(array_keys($quantities));
+        $rows   = [];
+
+        foreach ($quantities as $thing => $quantity) {
+            $rows[$thing] = ['label' => $labels[$thing] ?? '', 'quantity' => $quantity];
+        }
+
+        return $this->model->write($this->purchasing()->reorder($rows, $demand, $newName, $this->table('order'), $this->table('purchase')));
+    }
+
+    /**
+     * «Bezugsquelle wählen»: a firm of the register or a merchant typed in; the firm's name becomes the order's «Händler».
+     *
+     * @return array<string, mixed>
+     */
+    public function sourcePosition(int $demand, int $purchase, ?int $firm, string $merchant, string $number, ?string $unitPrice): array
+    {
+        if ($firm !== null) {
+            $names    = array_replace(...array_values($this->firms() ?: [[]]));
+            $merchant = $names[$firm] ?? throw StockError::notAFirm($firm);
+        }
+
+        return $this->model->write($this->purchasing()->source($demand, $purchase, $merchant, $number, $unitPrice, $this->table('order'), $this->table('purchase')));
+    }
+
+    /** @return array<string, mixed> */
+    public function unsourcePosition(int $draft, int $purchase): array
+    {
+        return $this->model->write($this->purchasing()->unsource($draft, $purchase, $this->table('order'), $this->table('purchase')));
+    }
+
+    /** @return array<string, mixed> */
+    public function setPositionQuantity(int $order, int $purchase, string $quantity): array
+    {
+        return $this->model->write($this->purchasing()->setQuantity($order, $purchase, $quantity, $this->table('order')));
+    }
+
+    /** @return array<string, mixed> */
+    public function removePosition(int $order, int $purchase): array
+    {
+        return $this->model->write($this->purchasing()->removeLine($order, $purchase, $this->table('order')));
+    }
+
+    /** @return array<string, mixed> */
+    public function markOrdered(int $draft, string $number): array
+    {
+        return $this->model->write($this->purchasing()->markOrdered($draft, $number, $this->table('order')));
+    }
+
+    /**
+     * Back from «bestellt»: refused once the order has arrived (its «Eingegangen am», as the cockpit reads it).
+     *
+     * @return array<string, mixed>
+     */
+    public function orderBackToDraft(int $order, string $receivedOn): array
+    {
+        return $this->model->write($this->purchasing()->backToDraft($order, $this->table('order'), $receivedOn));
+    }
+
+    /** @return array<string, mixed> */
+    public function discardOrder(int $order): array
+    {
+        return $this->model->write($this->purchasing()->discard($order, $this->table('order')));
+    }
+
+    /** @return array<string, mixed> */
+    public function restoreOrder(int $order): array
+    {
+        return $this->model->write($this->purchasing()->restore($order, $this->table('order')));
     }
 
     /** @param list<int> $things each must be a record under the things' root */

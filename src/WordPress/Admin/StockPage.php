@@ -429,16 +429,43 @@ final class StockPage
             return '<p>' . esc_html__('Noch kein Kauf zeigt auf dieses Material.', 'taxmod-stock') . '</p>';
         }
 
-        $money = $this->stock->table('money');
-        $html  = '<table class="widefat striped"><thead><tr><th>' . esc_html__('Kauf', 'taxmod-stock') . '</th><th>' . esc_html__('Menge', 'taxmod-stock') . '</th><th>'
-            . esc_html__('Preis je Stück', 'taxmod-stock') . '</th></tr></thead><tbody>';
+        $money   = $this->stock->table('money');
+        $orders  = $this->stock->table('order');
+        $orderOf = [];
+
+        foreach ($orders->ids() as $order) {
+            foreach ($orders->all($order, $s->field('order_lines')) as $line) {
+                $orderOf[(int) $line] = $order;
+            }
+        }
+
+        $orderValue = static fn (?int $order, string $key): string => $order === null || ! $s->hasField($key) ? '' : trim((string) $orders->first($order, $s->field($key)));
+        $amountOf   = static function (?string $part) use ($money, $s): string {
+            $amount = $part === null ? null : $money->first((int) $part, $s->field('money_amount'));
+
+            return $amount === null ? '—' : number_format_i18n((float) $amount, 2);
+        };
+
+        $html = '<table class="widefat striped"><thead><tr><th>' . esc_html__('Kauf', 'taxmod-stock') . '</th><th>' . esc_html__('Lieferant', 'taxmod-stock') . '</th><th>'
+            . esc_html__('Datum', 'taxmod-stock') . '</th><th>' . esc_html__('Menge', 'taxmod-stock') . '</th><th>' . esc_html__('Preis je Stück', 'taxmod-stock') . '</th><th>'
+            . esc_html__('Gesamtpreis', 'taxmod-stock') . '</th></tr></thead><tbody>';
 
         foreach ($about as $id) {
-            $part   = $purchases->first($id, $s->field('purchase_landed_price')) ?? $purchases->first($id, $s->field('purchase_unit_price'));
-            $amount = $part === null ? null : $money->first((int) $part, $s->field('money_amount'));
-            $html  .= '<tr><td>' . esc_html((string) $purchases->first($id, $s->field('label'))) . ' <span class="description">#' . esc_html((string) $id) . '</span></td>'
+            $order    = $orderOf[$id] ?? null;
+            $merchant = $orderValue($order, 'order_merchant');
+            $merchant = $merchant !== '' ? $merchant : $orderValue($order, 'order_platform');
+            $total    = $s->hasField('purchase_total_price') ? $purchases->first($id, $s->field('purchase_total_price')) : null;
+            $unit     = $purchases->first($id, $s->field('purchase_landed_price')) ?? $purchases->first($id, $s->field('purchase_unit_price'));
+            $count    = (float) ($purchases->first($id, $s->field('purchase_quantity')) ?? 0);
+            $each     = $unit === null ? null : $money->first((int) $unit, $s->field('money_amount'));
+            // Without a total of its own, the price per piece times the quantity.
+            $sum      = $total !== null ? $amountOf($total) : ($each === null || $count <= 0.0 ? '—' : number_format_i18n((float) $each * $count, 2));
+            $html    .= '<tr><td>' . esc_html((string) $purchases->first($id, $s->field('label'))) . ' <span class="description">#' . esc_html((string) $id) . '</span></td>'
+                . '<td>' . esc_html($merchant === '' ? '—' : $merchant) . '</td>'
+                . '<td>' . esc_html(($date = substr($orderValue($order, 'order_date'), 0, 10)) === '' ? '—' : $date) . '</td>'
                 . '<td>' . esc_html((string) ($purchases->first($id, $s->field('purchase_quantity')) ?? '—')) . '</td>'
-                . '<td>' . esc_html($amount ?? '—') . '</td></tr>';
+                . '<td>' . esc_html($amountOf($unit)) . '</td>'
+                . '<td>' . esc_html($sum) . '</td></tr>';
         }
 
         return $html . '</tbody></table>';

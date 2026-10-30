@@ -40,6 +40,8 @@ final class Structure
         'lager_unit', 'lager_prefix', 'source_content',
         // D-1022: shipping and fees of a purchase, from which the model calculates the landed price.
         'purchase_shipping_share', 'purchase_fees_share',
+        // The purchase tab of a material: who sold it, when, and what it cost in all.
+        'order_merchant', 'order_platform', 'order_date', 'purchase_total_price',
     ];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];

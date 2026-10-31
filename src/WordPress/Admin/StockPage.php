@@ -2,6 +2,7 @@
 
 namespace TaxmodStock\WordPress\Admin;
 
+use Taxmod\Core\Listing\ListColumn;
 use Taxmod\WordPress\Admin\ListPage;
 use TaxmodStock\Core\InventoryRow;
 use TaxmodStock\Core\LagerInput;
@@ -56,9 +57,9 @@ final class StockPage
         $tab  = sanitize_key((string) ($_GET['tab'] ?? self::TABS[0]));
         $tab  = in_array($tab, self::TABS, true) ? $tab : self::TABS[0];
         $list = $this->listRequest();
-        if (! class_exists(ListPage::class) || ! method_exists(ListPage::class, 'tabs')) {
+        if (! class_exists(ListPage::class) || ! method_exists(ListPage::class, 'view')) {
             return '<div class="wrap"><h1>' . esc_html__('Lager', 'taxmod-stock') . '</h1><div class="notice notice-error"><p>'
-                . esc_html__('Die Lagerseite braucht den Taxonomy Modeller ab Version 0.1.65 (gemeinsame Listenseite).', 'taxmod-stock') . '</p></div></div>';
+                . esc_html__('Die Lagerseite braucht den Taxonomy Modeller ab Version 0.1.100 (Spaltenwahl und Filterzeile).', 'taxmod-stock') . '</p></div></div>';
         }
 
         $html = '<div class="wrap">' . ListPage::heading(__('Lager', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . $this->notice();
@@ -174,9 +175,23 @@ final class StockPage
             return '<p>' . esc_html__('Noch kein Material. Eine Inventur oder ein Wareneingang bringt das erste.', 'taxmod-stock') . '</p>';
         }
 
-        $groups = [];
-        $rows   = [];
-        $mins   = [];
+        $technical = $group > 0 ? $this->technicalColumns($group) : [];
+        $data      = $group > 0 ? $this->stock->tableOf($group) : null;
+        $columns   = [new ListColumn('nr', __('Nr.', 'taxmod-stock'), fixed: true, width: '6em'), new ListColumn('name', __('Material', 'taxmod-stock'), fixed: true),
+            new ListColumn('group', __('Gruppe', 'taxmod-stock'))];
+        $position  = 0;
+
+        foreach ($technical as $relation => $name) {
+            // D-1054: every plain field of the group can be a column; the first four are the starting set.
+            $columns[] = new ListColumn('f' . $relation, $name, $position++ < 4);
+        }
+
+        $columns[] = new ListColumn('stock', __('Bestand', 'taxmod-stock'), width: '7em');
+        $columns[] = new ListColumn('min', __('Mindestbestand', 'taxmod-stock'), width: '9em');
+        $listId    = 'stock-material' . ($group > 0 ? '-' . $group : '');
+        $view      = ListPage::view($listId, $columns, 'name');
+        $groups    = [];
+        $rows      = [];
 
         foreach (array_keys($all) as $id) {
             $node = $things->nodeOf($id);
@@ -189,59 +204,64 @@ final class StockPage
                 continue;
             }
 
-            $record    = $things->lagerOf($id);
-            $min       = $record === null ? null : $lager->first($record, $s->field('lager_min'));
-            $stock     = $ledger->stockOf($id);
-            $mins[$id] = $min;
-            $rows[]    = ['id' => $id, 'name' => $things->word($id), 'stock' => $stock, 'low' => $min !== null && $stock < (float) $min,
-                'words' => [$node === null ? '' : $groups[$node]]];
+            $record = $things->lagerOf($id);
+            $min    = $record === null ? null : $lager->first($record, $s->field('lager_min'));
+            $stock  = $ledger->stockOf($id);
+            $name   = $things->word($id);
+            $cells  = ['nr' => (string) $id, 'name' => $name, 'group' => $node === null ? '' : $groups[$node]];
+
+            foreach (array_keys($technical) as $relation) {
+                $cells['f' . $relation] = implode(', ', (array) $data?->all($id, $relation));
+            }
+
+            $rows[] = ['id' => $id, 'name' => $name, 'stock' => $stock, 'low' => $min !== null && $stock < (float) $min, 'words' => [],
+                'cells' => $cells + ['stock' => $this->number($stock), 'min' => $min === null ? '' : (string) $min],
+                'sort'  => ['nr' => $id, 'stock' => $stock, 'min' => $min === null ? -1.0 : (float) $min,
+                    'name' => mb_strtolower((string) preg_replace('/^#\d+( · )?/u', '', $name))]];
         }
 
         asort($groups, SORT_NATURAL | SORT_FLAG_CASE);
 
-        $shown   = $list->apply($rows);
-        $columns = $group > 0 ? $this->technicalColumns($group) : [];
-        $data    = $group > 0 ? $this->stock->tableOf($group) : null;
+        // The preset filter (with stock, below minimum) stays the page's own; search, column filters and order are the list's.
+        $shown   = $view->apply((new StockList('', $list->filter))->apply($rows));
+        $visible = $view->visible();
         $open    = $this->stock->viewSettings()->expanded('material');
+        $url     = fn (array $change): string => $this->listUrl('material', $list, $change + ['f' => $view->filters(), 'orderby' => $view->orderBy === 'name' ? '' : $view->orderBy, 'order' => $view->descending ? 'desc' : '']);
         $html    = $this->tools('material', $list, [
             ['filter', $this->materialFilters(), $list->filter, __('Filter', 'taxmod-stock')],
             ['group', ['' => __('Alle Gruppen', 'taxmod-stock')] + $groups, $group > 0 ? (string) $group : '', __('Gruppe', 'taxmod-stock')],
-        ], ['group' => $group > 0 ? (string) $group : ''], __('Material, Nummer, Gruppe …', 'taxmod-stock'), sprintf(
+        ], ['group' => $group > 0 ? (string) $group : '', 'orderby' => $view->orderBy === 'name' ? '' : $view->orderBy, 'order' => $view->descending ? 'desc' : ''],
+            __('Material, Nummer, Gruppe …', 'taxmod-stock'), sprintf(
             /* translators: %d: number of materials */
             _n('%d Material', '%d Materialien', count($shown), 'taxmod-stock'),
             count($shown)
-        ));
-        $body    = $shown === [] ? $this->noItems(5 + count($columns)) : '';
+        ), ListPage::filterToggle() . ListPage::columnMenu($listId, $view, $url([])));
+        $body    = $shown === [] ? $this->noItems(count($visible)) : '';
 
         foreach ($shown as $row) {
             $id    = $row['id'];
-            $cells = [
-                '<a href="' . esc_url($this->thingUrl($id, 'daten')) . '">' . esc_html((string) $id) . '</a>',
-                '<strong><a href="' . esc_url($this->thingUrl($id, 'daten')) . '">' . esc_html($row['name'] === '' ? '—' : $row['name']) . '</a></strong>',
-                esc_html($row['words'][0] === '' ? '—' : $row['words'][0]),
-            ];
+            $link  = esc_url($this->thingUrl($id, 'daten'));
+            $cells = [];
 
-            foreach (array_keys($columns) as $relation) {
-                $cells[] = esc_html(implode(', ', (array) $data?->all($id, $relation)));
+            foreach ($visible as $column) {
+                $text    = $row['cells'][$column->key] ?? '';
+                $cells[] = match ($column->key) {
+                    'nr'    => '<a href="' . $link . '">' . esc_html($text) . '</a>',
+                    'name'  => '<strong><a href="' . $link . '">' . esc_html($text === '' ? '—' : $text) . '</a></strong>',
+                    'stock' => '<span' . ($row['low'] ? ' style="color:#b32d2e;font-weight:600"' : '') . '>' . esc_html($text) . '</span>',
+                    default => esc_html($text === '' ? '—' : $text),
+                };
             }
 
-            $cells[] = '<span' . ($row['low'] ? ' style="color:#b32d2e;font-weight:600"' : '') . '>' . esc_html($this->number($row['stock'])) . '</span>';
-            $cells[] = esc_html((string) ($mins[$id] ?? '—'));
-            $body   .= ListPage::row(self::BULK_FORM, (string) $id, $cells, '<a class="button button-small" href="' . esc_url($this->thingUrl($id, 'daten')) . '">'
+            $body .= ListPage::row(self::BULK_FORM, (string) $id, $cells, '<a class="button button-small" href="' . $link . '">'
                 . esc_html__('Öffnen', 'taxmod-stock') . '</a>', $this->lotList($id, $ledger), $open);
         }
 
-        $head = [[__('Nr.', 'taxmod-stock'), '6em'], $this->sortColumn('material', $list, 'name', __('Material', 'taxmod-stock'), ''), [__('Gruppe', 'taxmod-stock'), '']];
-
-        foreach ($columns as $name) {
-            $head[] = [$name, ''];
-        }
-
-        return $html . ListPage::table([...$head, $this->sortColumn('material', $list, 'stock', __('Bestand', 'taxmod-stock'), '7em'), [__('Mindestbestand', 'taxmod-stock'), '9em']], $body);
+        return $html . ListPage::table(ListPage::heads($view, $url), $body, ListPage::filterRow(self::FILTER_FORM, $view));
     }
 
     /**
-     * The fields of a group that make sense as list columns: plain values, not the head's, at most four.
+     * The fields of a group that make sense as list columns: plain values, not the head's.
      *
      * @return array<int, string> relation id → name
      */
@@ -255,7 +275,7 @@ final class StockPage
             }
         }
 
-        return array_slice($out, 0, 4, true);
+        return $out;
     }
 
     /**
@@ -1309,17 +1329,17 @@ final class StockPage
      * @param list<array{0: string, 1: array<string, string>, 2: string, 3: string}> $filters
      * @param array<string, string>                                                $keep    query values the search keeps
      */
-    private function tools(string $tab, StockList $list, array $filters, array $keep, string $placeholder, string $count): string
+    private function tools(string $tab, StockList $list, array $filters, array $keep, string $placeholder, string $count, string $more = ''): string
     {
-        $hidden = array_filter([
+        $hidden = array_filter(array_merge([
             'page'    => self::PAGE,
             'tab'     => $tab,
             'orderby' => $list->orderBy === 'name' ? '' : $list->orderBy,
             'order'   => $list->descending ? 'desc' : '',
-        ] + $keep);
+        ], $keep));
 
         return ListPage::searchBox(self::FILTER_FORM, $list->search, $placeholder, $hidden, __('Suchen', 'taxmod-stock'))
-            . ListPage::bulkBar(self::BULK_FORM, self::ACTION, [], $count, ListPage::filters(self::FILTER_FORM, $filters));
+            . ListPage::bulkBar(self::BULK_FORM, self::ACTION, [], $count, ListPage::filters(self::FILTER_FORM, $filters) . $more);
     }
 
     /** @return array<string, string> */

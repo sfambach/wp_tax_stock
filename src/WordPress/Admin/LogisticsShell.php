@@ -114,7 +114,7 @@ final class LogisticsShell
             . '.taxmod-shell-area:not(.is-open) ul{display:none}'
             . '.taxmod-shell-nav a.is-current{font-weight:600;border-left-color:#2271b1;background:#f0f6fc}'
             . '.taxmod-shell-nav a:focus{box-shadow:0 0 0 2px #2271b1;outline:none}'
-            . '.taxmod-shell-main>.wrap{margin-top:0}'
+            . '.taxmod-shell-main{overflow-x:auto}.taxmod-shell-main>.wrap{margin-top:0}'
             // The narrower column leaves fixed layout too little room for a header without a width.
             . '.taxmod-shell-main .wp-list-table{table-layout:auto}'
             . '@media (max-width:782px){.taxmod-shell{grid-template-columns:1fr}.taxmod-shell-nav{position:static}}'

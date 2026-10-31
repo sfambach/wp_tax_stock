@@ -31,6 +31,12 @@ final class PurchasePage
     private const TABS      = ['nachbestellen', 'bedarf', 'bestellen', 'bestellt', 'verworfen'];
     private const BULK_FORM = 'taxmod-stock-purchase-bulk';
 
+    /**
+     * D-1027 E6: supplier modules answer a search with offers — `['list' => [offer, …], 'errors' => [merchant => text]]`,
+     * an offer being merchant, number, maker, maker_number, description, stock, price, currency, min, mult, url.
+     */
+    public const OFFERS = 'taxmod_supplier_offers';
+
     private readonly InboundService $inbound;
 
     public function __construct(private readonly StockService $stock = new StockService())
@@ -163,7 +169,11 @@ final class PurchasePage
             ['bestellt', __('Bestellt', 'taxmod-stock'), count($groups['bestellt'])],
             ['verworfen', __('Verworfen', 'taxmod-stock'), count($groups['verworfen'])],
         ];
-        $bar     = ListPage::tabs($tabs, $tab === 'neu' ? 'nachbestellen' : $tab, static fn (string $slug): string => self::url(['tab' => $slug]));
+        $bar     = ListPage::tabs($tabs, match ($tab) { 'neu' => 'nachbestellen', 'angebote' => 'bedarf', default => $tab }, static fn (string $slug): string => self::url(['tab' => $slug]));
+
+        if ($tab === 'angebote') {
+            return $bar . $this->offersView(absint($_GET['order'] ?? 0), absint($_GET['purchase'] ?? 0), $orders, $purchases);
+        }
 
         if ($tab === 'neu') {
             return $bar . $this->reorderDialog($groups['bedarf'], $orders, $purchases);
@@ -336,6 +346,7 @@ final class PurchasePage
                 . ' <span class="description">#' . esc_html((string) $line) . '</span></td><td>' . esc_html($number === '' ? '—' : $number) . '</td>'
                 . '<td>' . ($edit ? $this->quantityForm($order, $line, (string) ($purchases->first($line, $s->field('purchase_quantity')) ?? '1'), $tab) : esc_html((string) ($purchases->first($line, $s->field('purchase_quantity')) ?? '—'))) . '</td>'
                 . '<td>' . ($tab === 'bedarf' ? $this->sourceForm($order, $line, $thing) : '') . '</td><td style="text-align:right;white-space:nowrap">'
+                . ($tab === 'bedarf' && has_filter(self::OFFERS) ? '<a class="button" href="' . esc_url(self::url(['tab' => 'angebote', 'order' => $order, 'purchase' => $line])) . '">' . esc_html__('Angebote', 'taxmod-stock') . '</a> ' : '')
                 . ($tab === 'bestellen' && (int) $purchases->first($line, $s->field('purchase_demand')) > 0 ? $this->button('unsource', $order, $line, __('Zurück in Bedarf', 'taxmod-stock'), $tab, false) : '')
                 . ($edit ? $this->button('remove', $order, $line, __('Entfernen', 'taxmod-stock'), $tab, false, __('Position entfernen? «Nachbestellen» legt sie wieder an.', 'taxmod-stock')) : '') . '</td></tr>';
         }
@@ -369,6 +380,59 @@ final class PurchasePage
             . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '"><input type="hidden" name="purchase" value="' . esc_attr((string) $purchase) . '">'
             . '<input type="number" min="1" step="1" name="quantity" style="width:6em" value="' . esc_attr($quantity) . '"> '
             . get_submit_button('✓', 'small', '', false, ['title' => __('Menge speichern', 'taxmod-stock')]) . '</form>';
+    }
+
+    /**
+     * The suppliers' offers for one open position of a demand, searched by the material's name (or what he types);
+     * «Übernehmen» chooses the offer as the position's source, with its number and the price for the quantity.
+     */
+    private function offersView(int $demand, int $purchase, Table $orders, Table $purchases): string
+    {
+        $s        = $this->stock->structure();
+        $quantity = max(1, (int) ($purchases->first($purchase, $s->field('purchase_quantity')) ?? 1));
+        $label    = (string) $purchases->first($purchase, $s->field('label'));
+        $query    = isset($_GET['q']) ? sanitize_text_field(wp_unslash((string) $_GET['q'])) : $label;
+        $back     = self::url(['tab' => 'bedarf', 'order' => $demand]);
+
+        if (! $orders->has($demand) || ! in_array((string) $purchase, $orders->all($demand, $s->field('order_lines')), true)) {
+            throw StockError::notInOrder($purchase);
+        }
+
+        $answer = apply_filters(self::OFFERS, ['list' => [], 'errors' => []], $query, $quantity);
+        $offers = is_array($answer['list'] ?? null) ? $answer['list'] : [];
+        $html   = '<p><a href="' . esc_url($back) . '">← ' . esc_html__('Zurück zum Bedarf', 'taxmod-stock') . '</a></p>'
+            . '<h2>' . esc_html(sprintf(/* translators: 1: position, 2: quantity */ __('Angebote für %1$s (%2$d Stück)', 'taxmod-stock'), $label, $quantity)) . '</h2>'
+            . '<form method="get" action="' . esc_url(admin_url('admin.php')) . '"><input type="hidden" name="page" value="' . esc_attr(self::PAGE) . '"><input type="hidden" name="tab" value="angebote">'
+            . '<input type="hidden" name="order" value="' . esc_attr((string) $demand) . '"><input type="hidden" name="purchase" value="' . esc_attr((string) $purchase) . '">'
+            . '<input type="search" name="q" class="regular-text" value="' . esc_attr($query) . '"> ' . get_submit_button(__('Suchen', 'taxmod-stock'), '', '', false) . '</form>';
+
+        foreach ((array) ($answer['errors'] ?? []) as $merchant => $error) {
+            $html .= '<div class="notice notice-warning inline"><p>' . esc_html($merchant . ': ' . $error) . '</p></div>';
+        }
+
+        $rows = '';
+
+        foreach ($offers as $offer) {
+            if (! is_array($offer)) {
+                continue;
+            }
+
+            $text  = static fn (string $key): string => trim((string) ($offer[$key] ?? ''));
+            $price = $text('price');
+            $rows .= '<tr><td>' . esc_html($text('merchant')) . '</td><td>' . ($text('url') === '' ? esc_html($text('number')) : '<a href="' . esc_url($text('url')) . '" target="_blank" rel="noopener">' . esc_html($text('number')) . '</a>') . '</td>'
+                . '<td>' . esc_html(trim($text('maker') . ' ' . $text('maker_number'))) . '</td><td>' . esc_html($text('description')) . '</td>'
+                . '<td>' . esc_html((string) (int) ($offer['stock'] ?? 0)) . '</td><td>' . esc_html($price === '' ? '—' : $price . ' ' . $text('currency')) . '</td>'
+                . '<td>' . esc_html((string) max(1, (int) ($offer['min'] ?? 1))) . ((int) ($offer['mult'] ?? 1) > 1 ? ' / ×' . esc_html((string) (int) $offer['mult']) : '') . '</td>'
+                . '<td style="text-align:right"><form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">' . $this->hidden('source', 'bedarf')
+                . '<input type="hidden" name="order" value="' . esc_attr((string) $demand) . '"><input type="hidden" name="purchase" value="' . esc_attr((string) $purchase) . '">'
+                . '<input type="hidden" name="merchant" value="' . esc_attr($text('merchant')) . '"><input type="hidden" name="number" value="' . esc_attr($text('number')) . '">'
+                . '<input type="hidden" name="price" value="' . esc_attr($price) . '">' . get_submit_button(__('Übernehmen', 'taxmod-stock'), 'small primary', '', false) . '</form></td></tr>';
+        }
+
+        return $html . '<table class="widefat striped" style="margin-top:12px"><thead><tr><th>' . esc_html__('Händler', 'taxmod-stock') . '</th><th>' . esc_html__('Art.-Nr.', 'taxmod-stock') . '</th><th>'
+            . esc_html__('Hersteller', 'taxmod-stock') . '</th><th>' . esc_html__('Beschreibung', 'taxmod-stock') . '</th><th>' . esc_html__('Lager', 'taxmod-stock') . '</th><th>'
+            . esc_html__('Preis/Stück', 'taxmod-stock') . '</th><th>' . esc_html__('Mindestmenge', 'taxmod-stock') . '</th><th></th></tr></thead><tbody>'
+            . ($rows === '' ? '<tr><td colspan="8">' . esc_html__('Kein Angebot gefunden.', 'taxmod-stock') . '</td></tr>' : $rows) . '</tbody></table>';
     }
 
     /** A firm of the register (proposed: the material's first source) or a merchant typed in, its number and a price. */

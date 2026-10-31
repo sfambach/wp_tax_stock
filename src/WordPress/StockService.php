@@ -746,9 +746,19 @@ final class StockService
      */
     public function sourcePosition(int $demand, int $purchase, ?int $firm, string $merchant, string $number, ?string $unitPrice): array
     {
+        $names = array_replace(...array_values($this->firms() ?: [[]]));
+
         if ($firm !== null) {
-            $names    = array_replace(...array_values($this->firms() ?: [[]]));
             $merchant = $names[$firm] ?? throw StockError::notAFirm($firm);
+        } else {
+            // A merchant typed in or named by an offer («Mouser») takes the register's name when one starts with it
+            // («Mouser Electronics»), so both land in the same draft.
+            foreach ($names as $name) {
+                if (trim($merchant) !== '' && stripos($name, trim($merchant)) === 0) {
+                    $merchant = $name;
+                    break;
+                }
+            }
         }
 
         return $this->model->write($this->purchasing()->source($demand, $purchase, $merchant, $number, $unitPrice, $this->table('order'), $this->table('purchase')));

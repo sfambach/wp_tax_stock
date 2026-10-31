@@ -49,6 +49,7 @@ final class Plugin
         add_action('admin_post_' . StockPage::THING_BRANCH, static fn () => (new StockPage())->thingBranch());
         add_action('admin_post_' . InboundPage::ACTION, static fn () => (new InboundPage())->handle());
         add_action('admin_post_' . PurchasePage::ACTION, static fn () => (new PurchasePage())->handle());
+        add_action('admin_post_' . LogisticsShell::FULLSCREEN_ACTION, [LogisticsShell::class, 'switchFullscreen']);
     }
 
     /** The branches without material, settable over REST (/wp/v2/settings) as well as on the configuration tab. */
@@ -70,11 +71,21 @@ final class Plugin
     {
         $page = static fn (string $slug, callable $render): \Closure => static fn () => print LogisticsShell::wrap($slug, $render());
 
-        add_submenu_page(self::PARENT, __('Logistik', 'taxmod-stock'), __('Logistik', 'taxmod-stock'), 'manage_options', CockpitPage::PAGE, $page(CockpitPage::PAGE, static fn (): string => (new CockpitPage())->render()));
-        add_submenu_page(self::PARENT, __('Wareneingang', 'taxmod-stock'), __('Wareneingang', 'taxmod-stock'), 'manage_options', self::MENU, $page(self::MENU, static fn (): string => (new InboundPage())->render()));
-        add_submenu_page(self::PARENT, __('Lager', 'taxmod-stock'), __('Lager', 'taxmod-stock'), 'manage_options', StockPage::PAGE, $page(StockPage::PAGE, static fn (): string => (new StockPage())->render()));
-        // D-1027: demand, source, order per supplier — he orders at the shop himself.
-        add_submenu_page(self::PARENT, __('Einkauf', 'taxmod-stock'), __('Einkauf', 'taxmod-stock'), 'manage_options', PurchasePage::PAGE, $page(PurchasePage::PAGE, static fn (): string => (new PurchasePage())->render()));
+        $hooks = [
+            add_submenu_page(self::PARENT, __('Logistik', 'taxmod-stock'), __('Logistik', 'taxmod-stock'), 'manage_options', CockpitPage::PAGE, $page(CockpitPage::PAGE, static fn (): string => (new CockpitPage())->render())),
+            add_submenu_page(self::PARENT, __('Wareneingang', 'taxmod-stock'), __('Wareneingang', 'taxmod-stock'), 'manage_options', self::MENU, $page(self::MENU, static fn (): string => (new InboundPage())->render())),
+            add_submenu_page(self::PARENT, __('Lager', 'taxmod-stock'), __('Lager', 'taxmod-stock'), 'manage_options', StockPage::PAGE, $page(StockPage::PAGE, static fn (): string => (new StockPage())->render())),
+            // D-1027: demand, source, order per supplier — he orders at the shop himself.
+            add_submenu_page(self::PARENT, __('Einkauf', 'taxmod-stock'), __('Einkauf', 'taxmod-stock'), 'manage_options', PurchasePage::PAGE, $page(PurchasePage::PAGE, static fn (): string => (new PurchasePage())->render())),
+        ];
+
+        // Notices of other plugins do not show inside the stock interface (design 7.3); its own stand inside the page.
+        foreach (array_filter($hooks) as $hook) {
+            add_action('load-' . $hook, static function (): void {
+                remove_all_actions('admin_notices');
+                remove_all_actions('all_admin_notices');
+            });
+        }
 
         // Removed only when the menu is drawn: WordPress checks access to a page against the submenu, so removing them here
         // would lock the pages.

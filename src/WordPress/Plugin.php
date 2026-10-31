@@ -2,7 +2,9 @@
 
 namespace TaxmodStock\WordPress;
 
+use TaxmodStock\WordPress\Admin\CockpitPage;
 use TaxmodStock\WordPress\Admin\InboundPage;
+use TaxmodStock\WordPress\Admin\LogisticsShell;
 use TaxmodStock\WordPress\Admin\PurchasePage;
 use TaxmodStock\WordPress\Admin\SettingsTab;
 use TaxmodStock\WordPress\Admin\StockPage;
@@ -60,13 +62,29 @@ final class Plugin
         ]);
     }
 
+    /**
+     * D-1053: «Logistik» is the one entry in the Taxmod menu; the pages behind it keep their addresses (bookmarks, links of
+     * other modules) but leave the menu, since the stock interface's own navigation reaches them.
+     */
     public function registerMenu(): void
     {
-        $inbound = static fn () => print (new InboundPage())->render();
+        $page = static fn (string $slug, callable $render): \Closure => static fn () => print LogisticsShell::wrap($slug, $render());
 
-        add_submenu_page(self::PARENT, __('Wareneingang', 'taxmod-stock'), __('Wareneingang', 'taxmod-stock'), 'manage_options', self::MENU, $inbound);
-        add_submenu_page(self::PARENT, __('Lager', 'taxmod-stock'), __('Lager', 'taxmod-stock'), 'manage_options', StockPage::PAGE, static fn () => print (new StockPage())->render());
+        add_submenu_page(self::PARENT, __('Logistik', 'taxmod-stock'), __('Logistik', 'taxmod-stock'), 'manage_options', CockpitPage::PAGE, $page(CockpitPage::PAGE, static fn (): string => (new CockpitPage())->render()));
+        add_submenu_page(self::PARENT, __('Wareneingang', 'taxmod-stock'), __('Wareneingang', 'taxmod-stock'), 'manage_options', self::MENU, $page(self::MENU, static fn (): string => (new InboundPage())->render()));
+        add_submenu_page(self::PARENT, __('Lager', 'taxmod-stock'), __('Lager', 'taxmod-stock'), 'manage_options', StockPage::PAGE, $page(StockPage::PAGE, static fn (): string => (new StockPage())->render()));
         // D-1027: demand, source, order per supplier — he orders at the shop himself.
-        add_submenu_page(self::PARENT, __('Einkauf', 'taxmod-stock'), __('Einkauf', 'taxmod-stock'), 'manage_options', PurchasePage::PAGE, static fn () => print (new PurchasePage())->render());
+        add_submenu_page(self::PARENT, __('Einkauf', 'taxmod-stock'), __('Einkauf', 'taxmod-stock'), 'manage_options', PurchasePage::PAGE, $page(PurchasePage::PAGE, static fn (): string => (new PurchasePage())->render()));
+
+        // Removed only when the menu is drawn: WordPress checks access to a page against the submenu, so removing them here
+        // would lock the pages.
+        add_action('admin_head', static function (): void {
+            foreach ([self::MENU, StockPage::PAGE, PurchasePage::PAGE] as $hidden) {
+                remove_submenu_page(self::PARENT, $hidden);
+            }
+        });
+
+        // On a page behind «Logistik» the menu still marks «Logistik».
+        add_filter('submenu_file', static fn (?string $file): ?string => in_array(sanitize_key((string) ($_GET['page'] ?? '')), [self::MENU, StockPage::PAGE, PurchasePage::PAGE], true) ? CockpitPage::PAGE : $file);
     }
 }

@@ -3,6 +3,7 @@
 namespace TaxmodStock\WordPress\Admin;
 
 use Taxmod\Core\Listing\ListColumn;
+use Taxmod\Core\Listing\ListView;
 use Taxmod\WordPress\Admin\ListPage;
 use TaxmodStock\Core\InventoryRow;
 use TaxmodStock\Core\LagerInput;
@@ -34,6 +35,9 @@ final class StockPage
     public const POSITIONS  = 'taxmod_stock_positions';
     /** The notice after a booking; the goods receipt cockpit shows it too, when the booking came from there. */
     public const NOTICE     = 'taxmod_stock_notice';
+    private const LAST_LIST = 'taxmod_stock_last_list_';
+    /** Rows per page of the material list (design 20: a list of thousands draws only what is seen). */
+    private const PER_PAGE  = 50;
     private const ROWS      = 6;
     private const TABS      = ['wareneingang', 'material', 'inventur', 'verbrauch'];
     private const VIEWS     = ['daten', 'bearbeiten', 'einkauf', 'lager', 'bestand', 'verkauf'];
@@ -57,9 +61,9 @@ final class StockPage
         $tab  = sanitize_key((string) ($_GET['tab'] ?? self::TABS[0]));
         $tab  = in_array($tab, self::TABS, true) ? $tab : self::TABS[0];
         $list = $this->listRequest();
-        if (! class_exists(ListPage::class) || ! method_exists(ListPage::class, 'view')) {
+        if (! class_exists(ListPage::class) || ! method_exists(ListPage::class, 'pagination')) {
             return '<div class="wrap"><h1>' . esc_html__('Lager', 'taxmod-stock') . '</h1><div class="notice notice-error"><p>'
-                . esc_html__('Die Lagerseite braucht den Taxonomy Modeller ab Version 0.1.100 (Spaltenwahl und Filterzeile).', 'taxmod-stock') . '</p></div></div>';
+                . esc_html__('Die Lagerseite braucht den Taxonomy Modeller ab Version 0.1.101 (Spaltenwahl, Filterzeile, Seiten).', 'taxmod-stock') . '</p></div></div>';
         }
 
         $html = '<div class="wrap">' . ListPage::heading(__('Lager', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . $this->notice();
@@ -238,7 +242,12 @@ final class StockPage
         ), ListPage::filterToggle() . ListPage::columnMenu($listId, $view, $url([])));
         $body    = $shown === [] ? $this->noItems(count($visible)) : '';
 
-        foreach ($shown as $row) {
+        // «← Zur Liste» in the material view comes back to exactly this list (design 7.3).
+        set_transient(self::LAST_LIST . get_current_user_id(), $url(['paged' => absint($_GET['paged'] ?? 0) > 1 ? (string) absint($_GET['paged']) : '']), DAY_IN_SECONDS);
+
+        $paged = absint($_GET['paged'] ?? 1);
+
+        foreach (ListView::page($shown, $paged, self::PER_PAGE) as $row) {
             $id    = $row['id'];
             $link  = esc_url($this->thingUrl($id, 'daten'));
             $cells = [];
@@ -257,7 +266,8 @@ final class StockPage
                 . esc_html__('Öffnen', 'taxmod-stock') . '</a>', $this->lotList($id, $ledger), $open);
         }
 
-        return $html . ListPage::table(ListPage::heads($view, $url), $body, ListPage::filterRow(self::FILTER_FORM, $view));
+        return $html . ListPage::table(ListPage::heads($view, $url), $body, ListPage::filterRow(self::FILTER_FORM, $view))
+            . ListPage::pagination(count($shown), $paged, self::PER_PAGE, $url);
     }
 
     /**
@@ -345,7 +355,8 @@ final class StockPage
         $about  = $s->hasField('description') ? (string) $table->first($thing, $s->field('description')) : '';
         $image  = $s->hasField('title_image') ? (string) $table->first($thing, $s->field('title_image')) : '';
         $media  = str_starts_with($image, 'media:') ? absint(substr($image, 6)) : 0;
-        $back   = add_query_arg(['page' => self::PAGE, 'tab' => 'material'], admin_url('admin.php'));
+        $back   = $this->lastList();
+        $chips  = $this->chips($thing);
         $titles = [
             'daten'   => __('Technische Daten', 'taxmod-stock'),
             'einkauf' => __('Einkauf', 'taxmod-stock'),
@@ -354,12 +365,11 @@ final class StockPage
             'verkauf' => __('Verkauf', 'taxmod-stock'),
         ];
 
-        $html = '<p><a href="' . esc_url($back) . '">← ' . esc_html__('Zur Liste', 'taxmod-stock') . '</a></p>'
-            . '<div class="taxmod-stock-head" style="display:flex;gap:16px;align-items:flex-start;background:#fff;border:1px solid #c3c4c7;padding:16px;margin:8px 0 0">'
+        $html = '<div class="taxmod-stock-head" style="display:flex;gap:16px;align-items:flex-start;background:#fff;border:1px solid #c3c4c7;padding:16px;margin:8px 0 0">'
             . ($media > 0 ? (string) wp_get_attachment_image($media, [96, 96], false, ['style' => 'width:96px;height:96px;object-fit:cover;border-radius:4px']) : '<div style="width:96px;height:96px;background:#f0f0f1;border-radius:4px"></div>')
             . '<div><p style="margin:0;color:#50575e">' . esc_html(sprintf(/* translators: %d: record id of the thing */ __('Nr. %d', 'taxmod-stock'), $thing)) . ' · ' . esc_html($this->stock->path($node)) . '</p>'
             . '<h2 style="margin:4px 0;font-size:1.6em">' . esc_html($label === '' ? '—' : $label) . '</h2>'
-            . ($about === '' ? '' : '<p style="margin:0">' . esc_html($about) . '</p>') . '</div>'
+            . ($about === '' ? '' : '<p style="margin:0">' . esc_html($about) . '</p>') . $chips . '</div>'
             . '<span style="margin-left:auto;white-space:nowrap"><a class="button button-primary" href="' . esc_url(PurchasePage::reorderUrl($thing)) . '">'
             . esc_html__('Nachbestellen', 'taxmod-stock') . '</a> <a class="button" href="' . esc_url($this->thingUrl($thing, 'bearbeiten')) . '">'
             . esc_html__('Material bearbeiten', 'taxmod-stock') . '</a></span></div>'
@@ -377,7 +387,42 @@ final class StockPage
             'bestand' => $this->stockView($thing),
             'verkauf' => '<p>' . esc_html__('Die Verkaufs-Sicht (VK-Preis, Angebote) kommt später.', 'taxmod-stock') . '</p>',
             default   => $this->dataView($thing, $node),
-        } . '</div>';
+        } . '</div>'
+            // The foot stays at the bottom of the window: back to the list with its search and filters (design 7.3).
+            . '<div class="taxmod-stock-foot" style="position:sticky;bottom:0;z-index:5;display:flex;gap:16px;align-items:center;background:#fff;border:1px solid #c3c4c7;border-top:2px solid #2271b1;padding:8px 16px;margin-top:12px">'
+            . '<a href="' . esc_url($back) . '">← ' . esc_html__('Zur Liste', 'taxmod-stock') . '</a></div>';
+    }
+
+    /** The list the material was opened from, if it was this user's last one today; else the plain material list. */
+    private function lastList(): string
+    {
+        $plain = add_query_arg(['page' => self::PAGE, 'tab' => 'material'], admin_url('admin.php'));
+        $last  = get_transient(self::LAST_LIST . get_current_user_id());
+
+        return is_string($last) && str_starts_with($last, $plain) ? $last : $plain;
+    }
+
+    /**
+     * The links of the head (design 7.3): how many purchases and lots the material has, each opening its tab; a chip with
+     * nothing behind it is left out.
+     */
+    private function chips(int $thing): string
+    {
+        $s         = $this->stock->structure();
+        $purchases = $this->stock->table('purchase');
+        $bought    = count(array_filter($purchases->ids(), static fn (int $id): bool => (int) $purchases->first($id, $s->field('purchase_model')) === $thing));
+        $lots      = count($this->stock->ledger()->lotsOf($thing));
+        $chips     = [];
+
+        if ($bought > 0) {
+            $chips[] = '<a href="' . esc_url($this->thingUrl($thing, 'einkauf')) . '">' . esc_html(sprintf(/* translators: %d: purchases */ _n('%d Kauf', '%d Käufe', $bought, 'taxmod-stock'), $bought)) . '</a>';
+        }
+
+        if ($lots > 0) {
+            $chips[] = '<a href="' . esc_url($this->thingUrl($thing, 'bestand')) . '">' . esc_html(sprintf(/* translators: %d: lots */ _n('%d Charge', '%d Chargen', $lots, 'taxmod-stock'), $lots)) . '</a>';
+        }
+
+        return $chips === [] ? '' : '<p class="taxmod-stock-chips" style="margin:6px 0 0">' . implode(' · ', $chips) . '</p>';
     }
 
     /**

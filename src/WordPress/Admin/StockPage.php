@@ -1295,10 +1295,11 @@ final class StockPage
      */
     private function newThings(): array
     {
-        $out = [];
+        $out    = [];
+        $places = $this->assignedPlaces();
 
         foreach ($this->assignedGroups() as $purchase => $node) {
-            $out[$purchase] = $this->stock->newThingFor($purchase, $node);
+            $out[$purchase] = $this->stock->newThingFor($purchase, $node, absint($_POST['order'] ?? 0), ($places[$purchase] ?? 0) ?: null);
         }
 
         return $out;

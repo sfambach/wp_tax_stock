@@ -7,7 +7,8 @@ namespace TaxmodStock\Core;
  */
 final class NewThing
 {
-    public function __construct(public readonly int $node, public readonly string $name)
+    /** @param LagerInput|null $lager D-1071: what the purchase already tells about its Lager view, filled in at once */
+    public function __construct(public readonly int $node, public readonly string $name, public readonly ?LagerInput $lager = null)
     {
         if (trim($name) === '') {
             throw StockError::thingWithoutName();

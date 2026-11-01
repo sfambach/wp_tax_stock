@@ -149,12 +149,50 @@ final class StockService
      * D-1062, D-1069: the new material a purchase gets in `$node`, named like the purchase — a placeholder he fills in the
      * material view («das material nicht nur als dummy anlegen und dann einfach über die material sicht füllen»).
      */
-    public function newThingFor(int $purchase, int $node): NewThing
+    public function newThingFor(int $purchase, int $node, int $order = 0, ?int $place = null): NewThing
     {
-        $thing = new NewThing($node, (string) ($this->table('purchase')->first($purchase, $this->structure()->field('label')) ?? '#' . $purchase));
+        $thing = new NewThing($node, (string) ($this->table('purchase')->first($purchase, $this->structure()->field('label')) ?? '#' . $purchase), $this->lagerFromPurchase($purchase, $order, $place));
         $this->checkGroups([$thing]);
 
         return $thing;
+    }
+
+    /**
+     * D-1071, his wish «wäre irgendwie nett wenn die felder die gefüllt werden können schon gefüllt wären»: the Lager view of a
+     * new material, as far as the purchase knows it — the place chosen in its row, and the shop as a source with its number.
+     */
+    private function lagerFromPurchase(int $purchase, int $order, ?int $place): ?LagerInput
+    {
+        $s        = $this->structure();
+        $orders   = $this->table('order');
+        $value    = static fn (string $key): string => $order > 0 && $s->hasField($key) ? trim((string) $orders->first($order, $s->field($key))) : '';
+        $merchant = $value('order_merchant');
+        $firm     = null;
+
+        // The firm is found by its name only: the order carries the shop as text.
+        foreach (array_replace([], ...array_values($this->firms())) as $id => $name) {
+            foreach ([$value('order_platform'), $merchant] as $shop) {
+                if ($shop !== '' && mb_strtolower(trim($name)) === mb_strtolower($shop)) {
+                    $firm ??= $id;
+                }
+            }
+        }
+
+        $number = $s->hasField('purchase_number') ? trim((string) $this->table('purchase')->first($purchase, $s->field('purchase_number'))) : '';
+
+        // His convention for a shop without article numbers (2026-10-30): «Bestellung <nr> (Verkäufer)».
+        if ($number === '' && ($nr = $value('order_number')) !== '') {
+            $number = 'Bestellung ' . $nr . ($merchant !== '' && $firm !== null && mb_strtolower($merchant) !== mb_strtolower($this->firmName($firm)) ? ' (' . $merchant . ')' : '');
+        }
+
+        $sources = $firm === null && $number === '' ? null : [new SourceRow(null, $firm, $number)];
+
+        return $place === null && $sources === null ? null : new LagerInput(false, null, $place, null, $sources);
+    }
+
+    private function firmName(int $firm): string
+    {
+        return (string) (array_replace([], ...array_values($this->firms()))[$firm] ?? '');
     }
 
     /**

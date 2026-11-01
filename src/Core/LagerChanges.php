@@ -14,11 +14,12 @@ final class LagerChanges
     }
 
     /**
-     * An empty value clears the field: that is how the modeller's set_values forgets a value.
+     * $thing is a record id, or «@ref» of a thing created in the same change list (D-1071: a new material comes with its Lager
+     * record). An empty value clears the field: that is how the modeller's set_values forgets a value.
      *
      * @return list<array<string, mixed>>
      */
-    public function save(int $thing, ?int $lagerRecord, LagerInput $input): array
+    public function save(int|string $thing, ?int $lagerRecord, LagerInput $input, string $ref = 'lager'): array
     {
         $s      = $this->structure;
         $values = [
@@ -47,8 +48,8 @@ final class LagerChanges
         $values = array_filter($values, static fn (string $v): bool => $v !== '');
 
         return [
-            ['op' => 'create_record', 'ref' => 'lager', 'node' => $s->node('lager')],
-            ['op' => 'set_values', 'record' => '@lager', 'values' => $values + ($parts === [] ? [] : [(string) $s->field('lager_sources') => $parts])],
+            ['op' => 'create_record', 'ref' => $ref, 'node' => $s->node('lager')],
+            ['op' => 'set_values', 'record' => '@' . $ref, 'values' => $values + ($parts === [] ? [] : [(string) $s->field('lager_sources') => $parts])],
         ];
     }
 

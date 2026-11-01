@@ -324,13 +324,17 @@ final class Bookings
         return $thing;
     }
 
-    /** D-995: a material that is not yet in the tree becomes a thing there, named and nothing more. */
+    /** D-995: a material that is not yet in the tree becomes a thing there, named; D-1071: with what its purchase tells about its Lager view. */
     private function newThing(NewThing $new): string
     {
         $ref = $this->ref('d');
 
         $this->changes[] = ['op' => 'create_record', 'ref' => $ref, 'node' => $new->node];
         $this->changes[] = ['op' => 'set_values', 'record' => '@' . $ref, 'values' => [(string) $this->structure->field('label') => trim($new->name)]];
+
+        if ($new->lager !== null) {
+            array_push($this->changes, ...(new LagerChanges($this->structure))->save('@' . $ref, null, $new->lager, $this->ref('l')));
+        }
 
         return $ref;
     }

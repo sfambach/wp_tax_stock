@@ -6,8 +6,10 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use TaxmodStock\Core\Bookings;
 use TaxmodStock\Core\InventoryRow;
+use TaxmodStock\Core\LagerInput;
 use TaxmodStock\Core\NewThing;
 use TaxmodStock\Core\ReceiptChoice;
+use TaxmodStock\Core\SourceRow;
 use TaxmodStock\Core\SplitRow;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\Table;
@@ -246,6 +248,21 @@ final class BookingsTest extends TestCase
         self::assertSame(900, $changes[0]['node']);
         self::assertSame([(string) $s->field('label') => 'Lötpaste'], $changes[1]['values']);
         self::assertSame('@' . $changes[0]['ref'], $changes[2]['values'][(string) $s->field('purchase_model')], 'D-1062: the purchase points at the new material');
+    }
+
+    #[Test]
+    public function a_new_material_comes_with_what_the_purchase_tells_about_its_lager_view(): void
+    {
+        $s                    = Fixture::structure();
+        [$orders, $purchases] = $this->order(['0', '0']);
+        $lager                = new LagerInput(false, null, 5, null, [new SourceRow(null, 46727, 'Bestellung 123')]);
+
+        $changes = (new Bookings($s, '2026-11-01'))->assign(70, [71 => new NewThing(900, 'Lötpaste', $lager)], $orders, $purchases);
+
+        self::assertSame($s->node('lager'), $changes[2]['node'], 'D-1071: the Lager record is created with the material');
+        self::assertSame('@' . $changes[0]['ref'], $changes[3]['values'][(string) $s->field('lager_thing')]);
+        self::assertSame('5', $changes[3]['values'][(string) $s->field('lager_location')]);
+        self::assertSame('@' . $changes[0]['ref'], $changes[4]['values'][(string) $s->field('purchase_model')]);
     }
 
     /** @return array{0: Table, 1: Table} */

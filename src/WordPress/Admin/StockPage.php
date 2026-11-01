@@ -1075,7 +1075,7 @@ final class StockPage
             // ⚠️ *Enter in a reason field must book, not close the first row: the browser presses the first submit button.*
             . '<button type="submit" name="booking" value="wareneingang" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px"></button>'
             . ($closing ? '<datalist id="taxmod-stock-reasons">' . implode('', array_map(static fn (string $r): string => '<option value="' . esc_attr($r) . '">', self::notStockedReasons())) . '</datalist>' : '')
-            . '<p>' . esc_html__('Je Kauf das Material: vorgeschlagen ist das «Modell» des Kaufs; «Zurücksetzen» (Pfeil) gibt die Suche frei; eine Gruppe in der Suche legt ein neues Material darin an. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seiner Gruppe.', 'taxmod-stock') . '</p>'
+            . '<p>' . esc_html__('Je Kauf das Material: vorgeschlagen ist das «Modell» des Kaufs; «Zurücksetzen» (Pfeil) gibt die Suche frei; «Neues Material» (oder eine Gruppe in der Suche) legt ein neues Material in der Gruppe an. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seiner Gruppe.', 'taxmod-stock') . '</p>'
             . '<div class="tablenav top"><div class="tablenav-pages one-page"><span class="displaying-num">' . esc_html(sprintf(
                 /* translators: %d: number of purchases */
                 _n('%d Kauf', '%d Käufe', count($plan), 'taxmod-stock'),
@@ -1088,6 +1088,7 @@ final class StockPage
             . '<th scope="col" class="manage-column" style="width:10em;text-align:right">' . esc_html__('Aktionen', 'taxmod-stock') . '</th></tr>';
         $html .= '<table class="wp-list-table widefat fixed striped table-view-list"><thead>' . $head . '</thead><tbody>' . ($plan === [] ? $this->noItems(4) : '');
         $actions = static fn (string $buttons): string => '<td style="text-align:right">' . $buttons . '</td>';
+        $groups  = null;
 
         foreach ($plan as $purchase => $row) {
             $lock     = $row['lock'];
@@ -1120,7 +1121,7 @@ final class StockPage
             $html .= '<td><input type="hidden" name="model[' . esc_attr((string) $purchase) . ']" value="' . esc_attr((string) ($model ?? '')) . '">'
                 . $this->recordPicker('thing[' . $purchase . ']', $model, $model === null ? '' : ($models[$model] ?? '#' . $model)) . '</td>'
                 . '<td><select name="location[' . esc_attr((string) $purchase) . ']">' . $this->options($places, '—', $where[$purchase] ?? 0) . '</select></td>'
-                . $actions(($model === null ? '' : $this->materialDialog($purchase, $model)) . ($closing ? $this->closeControls($purchase) : '')) . '</tr>';
+                . $actions(($model === null ? $this->newThingDialog($purchase, $groups ??= $this->groupOptions()) : $this->materialDialog($purchase, $model)) . ($closing ? $this->closeControls($purchase) : '')) . '</tr>';
         }
 
         // His word 2026-10-28: «zwischenstände speichern … ohne we» — the second button keeps the chosen material, books nothing.
@@ -1282,6 +1283,13 @@ final class StockPage
         foreach ((array) ($_POST['thing'] ?? []) as $purchase => $thing) {
             if (absint($purchase) > 0 && preg_match('/^new-(\d+)$/', (string) $thing, $m) === 1) {
                 $out[absint($purchase)] = (int) $m[1];
+            }
+        }
+
+        // The button «Neues Material» asks the group in a dialog of its own.
+        foreach ((array) ($_POST['newgroup'] ?? []) as $purchase => $node) {
+            if (absint($purchase) > 0 && absint($node) > 0) {
+                $out[absint($purchase)] = absint($node);
             }
         }
 
@@ -1521,6 +1529,22 @@ final class StockPage
             'button taxmod-dialog-open taxmod-stock-material-open',
             __('Schließen', 'taxmod-stock')
         ) . ' ';
+    }
+
+    /**
+     * D-1072, his word 2026-11-01: «wir brauc hen einen button für neues material erst suchen ist doof» — the group asked in a dialog,
+     * the material created at once (D-1062, D-1071) and then filled through «Material».
+     */
+    private function newThingDialog(int $purchase, string $groups): string
+    {
+        if (! method_exists(ListPage::class, 'dialogAction')) {
+            return '';
+        }
+
+        $field = '<label style="display:block">' . esc_html__('Gruppe', 'taxmod-stock') . '<br><select name="newgroup[' . esc_attr((string) $purchase) . ']" style="width:100%">' . $groups . '</select></label>'
+            . '<p class="description">' . esc_html__('Das Material heißt wie der Kauf; Lagerort und Bezugsquelle kommen aus der Bestellung.', 'taxmod-stock') . '</p>';
+
+        return ListPage::dialogAction('taxmod-stock-new-' . $purchase, __('Neues Material', 'taxmod-stock'), __('Neues Material anlegen', 'taxmod-stock'), $field, 'booking', 'zuordnen', __('Anlegen', 'taxmod-stock')) . ' ';
     }
 
     private function closeControls(int $purchase): string

@@ -146,6 +146,18 @@ final class StockService
     }
 
     /**
+     * D-1062, D-1069: the new material a purchase gets in `$node`, named like the purchase — a placeholder he fills in the
+     * material view («das material nicht nur als dummy anlegen und dann einfach über die material sicht füllen»).
+     */
+    public function newThingFor(int $purchase, int $node): NewThing
+    {
+        $thing = new NewThing($node, (string) ($this->table('purchase')->first($purchase, $this->structure()->field('label')) ?? '#' . $purchase));
+        $this->checkGroups([$thing]);
+
+        return $thing;
+    }
+
+    /**
      * The fields of a node with their names, for the tab «Technische Daten».
      *
      * @return array<int, array{name: string, target: int, type: string|null}>
@@ -669,17 +681,13 @@ final class StockService
      *
      * @param array<int, int> $things purchase id → thing
      * @param array<int, int> $places purchase id → the place chosen for it, kept until it is booked
-     * @param array<int, int> $groups purchase id → a group: a new material there, named like the purchase (D-1062)
+     * @param array<int, NewThing> $new purchase id → a new material in a group, from its dialog (D-1062, D-1069)
      * @return array<string, mixed> the modeller's answer; nothing written when nothing changed
      */
-    public function assignPurchases(int $order, array $things, array $places = [], array $groups = []): array
+    public function assignPurchases(int $order, array $things, array $places = [], array $new = []): array
     {
         $this->checkThings(array_values($things));
-        $label = $this->structure()->field('label');
-
-        foreach ($groups as $purchase => $node) {
-            $things[$purchase] = new NewThing($node, (string) ($this->table('purchase')->first($purchase, $label) ?? ''));
-        }
+        $things = $new + $things;
 
         $this->checkGroups(array_values(array_filter($things, static fn (int|NewThing $t): bool => $t instanceof NewThing)));
         $changes = (new Bookings($this->structure(), current_time('Y-m-d')))->assign($order, $things, $this->table('order'), $this->table('purchase'));

@@ -40,7 +40,7 @@ final class ModelGateway
     /**
      * The fields of a node as the modeller lists them, inherited ones included — from the same read as its records.
      *
-     * @return array<int, array{name: string, target: int, type: string|null}> relation id → field
+     * @return array<int, array{name: string, target: int, type: string|null, kind: string, multiplicity: string}> relation id → field
      */
     public function fields(int $node): array
     {
@@ -51,6 +51,8 @@ final class ModelGateway
                 'name'   => (string) ($field['name'] ?? ''),
                 'target' => (int) ($field['target'] ?? 0),
                 'type'   => isset($field['type']) ? (string) $field['type'] : null,
+                'kind'   => (string) ($field['kind'] ?? ''),
+                'multiplicity' => (string) ($field['multiplicity'] ?? ''),
             ];
         }
 

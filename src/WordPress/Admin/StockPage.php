@@ -71,7 +71,7 @@ final class StockPage
 
         try {
             $thing = absint($_GET['thing'] ?? 0);
-            $html .= $this->tabBar($tab, $list) . match ($tab) {
+            $html .= '<div class="taxmod-stock-pagetabs">' . $this->tabBar($tab, $list) . '</div>' . match ($tab) {
                 'material'  => $thing > 0 ? $this->thingView($thing) : $this->materialList($list),
                 'inventur'  => $this->inventoryForm(),
                 'verbrauch' => $this->consumptionForm($thing, absint($_GET['lot'] ?? 0)),
@@ -134,7 +134,7 @@ final class StockPage
                     ! empty($_POST['movable']),
                     absint($_POST['project'] ?? 0)
                 ),
-                'zuordnen'     => $this->stock->assignPurchases(absint($_POST['order'] ?? 0), $this->assignedThings(), $this->assignedPlaces(), $this->assignedGroups()),
+                'zuordnen'     => $this->stock->assignPurchases(absint($_POST['order'] ?? 0), $this->assignedThings(), $this->assignedPlaces(), $this->newThings()),
                 'verbrauch'    => $this->stock->bookConsumption(
                     $thing,
                     absint($_POST['lot'] ?? 0) ?: null,
@@ -1112,7 +1112,7 @@ final class StockPage
                 };
                 $html .= '<td>' . esc_html($model === null ? '—' : '#' . $model . ' · ' . ($models[$model] ?? '')) . '</td>'
                     . '<td>' . ($lock === 'not_stocked' ? esc_html($this->stock->notStockedReason($purchase)) : '') . '</td>'
-                    . $actions($split . ' ' . $again) . '</tr>';
+                    . $actions(($model === null ? '' : $this->materialDialog($purchase, $model)) . $split . ' ' . $again) . '</tr>';
                 continue;
             }
 
@@ -1120,7 +1120,7 @@ final class StockPage
             $html .= '<td><input type="hidden" name="model[' . esc_attr((string) $purchase) . ']" value="' . esc_attr((string) ($model ?? '')) . '">'
                 . $this->recordPicker('thing[' . $purchase . ']', $model, $model === null ? '' : ($models[$model] ?? '#' . $model)) . '</td>'
                 . '<td><select name="location[' . esc_attr((string) $purchase) . ']">' . $this->options($places, '—', $where[$purchase] ?? 0) . '</select></td>'
-                . $actions($closing ? $this->closeControls($purchase) : '') . '</tr>';
+                . $actions(($model === null ? '' : $this->materialDialog($purchase, $model)) . ($closing ? $this->closeControls($purchase) : '')) . '</tr>';
         }
 
         // His word 2026-10-28: «zwischenstände speichern … ohne we» — the second button keeps the chosen material, books nothing.
@@ -1232,11 +1232,10 @@ final class StockPage
         $ticked = array_filter(array_map('absint', (array) ($_POST['purchases'] ?? [])));
 
         // A purchase whose thing was changed by hand is meant to go in, ticked or not (his report 2026-10-28: «nix passiert»).
-        $groups = $this->assignedGroups();
-        $names  = $groups === [] ? [] : $this->stock->labels('purchase');
+        $new = $this->newThings();
 
         foreach ($things as $purchase => $thing) {
-            if ((absint($thing) > 0 && absint($thing) !== absint($models[$purchase] ?? 0)) || isset($groups[absint($purchase)])) {
+            if ((absint($thing) > 0 && absint($thing) !== absint($models[$purchase] ?? 0)) || isset($new[absint($purchase)])) {
                 $ticked[] = absint($purchase);
             }
         }
@@ -1247,7 +1246,7 @@ final class StockPage
 
             $out[$purchase] = (match (true) {
                 // D-1062: a group chosen in the search — a new material there, named like the purchase.
-                isset($groups[$purchase])           => ReceiptChoice::create(new NewThing($groups[$purchase], $names[$purchase] ?? '#' . $purchase)),
+                isset($new[$purchase])              => ReceiptChoice::create($new[$purchase]),
                 $thing === 0                        => throw StockError::purchaseWithoutThing($purchase),
                 $model !== 0 && $thing === $model   => ReceiptChoice::keep(),
                 default                             => ReceiptChoice::existing($thing),
@@ -1284,6 +1283,22 @@ final class StockPage
             if (absint($purchase) > 0 && preg_match('/^new-(\d+)$/', (string) $thing, $m) === 1) {
                 $out[absint($purchase)] = (int) $m[1];
             }
+        }
+
+        return $out;
+    }
+
+    /**
+     * D-1062, D-1069: the new materials chosen in the rows — named like their purchase, filled later in the material view.
+     *
+     * @return array<int, NewThing> purchase id → new material
+     */
+    private function newThings(): array
+    {
+        $out = [];
+
+        foreach ($this->assignedGroups() as $purchase => $node) {
+            $out[$purchase] = $this->stock->newThingFor($purchase, $node);
         }
 
         return $out;
@@ -1430,6 +1445,9 @@ final class StockPage
             // An order's purchases load once its details row shows: opened by hand, by «Expand all», or open from the start.
             . 'var seen="IntersectionObserver" in window?new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){seen.unobserve(e.target);load(e.target);}});},{rootMargin:"200px"}):null;'
             . 'document.querySelectorAll(".taxmod-stock-positions:not([data-loaded])").forEach(function(box){if(seen){seen.observe(box);}else{load(box);}});'
+            // D-1069: the material's frame loads only when its dialog opens.
+            . 'document.addEventListener("change",function(e){var sw=e.target;if(!sw.classList||!sw.classList.contains("taxmod-dialog-switch")||!sw.checked){return;}'
+            . 'var f=sw.parentNode.querySelector("iframe[data-src]");if(f&&!f.src){f.src=f.getAttribute("data-src");}});'
             . '})();</script>';
     }
 
@@ -1476,6 +1494,34 @@ final class StockPage
     }
 
     /** D-1058: the reason field and the «Nicht einlagern» button of one purchase. */
+    /**
+     * D-1069: the material of a purchase in a dialog — its own page with every view, so a placeholder from the goods receipt is
+     * filled where materials are filled (his word 2026-11-01: «im grunde müssten wir doch im dialog einfach nur die material
+     * ansicht zeigen»). The frame loads when the dialog opens.
+     */
+    private function materialDialog(int $purchase, int $thing): string
+    {
+        if (! class_exists(\Taxmod\Core\Renderer\DialogMarkup::class)) {
+            return '<a class="button button-small" href="' . esc_url(self::thingUrl($thing, 'daten')) . '" target="_blank">' . esc_html__('Material', 'taxmod-stock') . '</a> ';
+        }
+
+        // The panel grows to the frame; the shared dialog is drawn for short forms.
+        // His word 2026-11-01: «sie soll die gleiche ansicht zeigen wie material im tax» — the modeller's own record view.
+        $record = add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $thing], admin_url('admin.php')) . '#taxmod-preview-edit';
+        $frame  = '<style>#taxmod-stock-material-' . $purchase . ' ~ .taxmod-dialog .taxmod-dialog-panel{width:min(94vw,1150px);max-width:none}</style><iframe data-src="' . esc_url($record) . '" title="' . esc_attr__('Material', 'taxmod-stock') . '"'
+            . ' style="display:block;width:100%;height:75vh;border:0"></iframe>';
+
+        return \Taxmod\Core\Renderer\DialogMarkup::of(
+            'taxmod-stock-material-' . $purchase,
+            esc_html__('Material', 'taxmod-stock'),
+            esc_html__('Material', 'taxmod-stock'),
+            $frame,
+            '',
+            'button taxmod-dialog-open taxmod-stock-material-open',
+            __('Schließen', 'taxmod-stock')
+        ) . ' ';
+    }
+
     private function closeControls(int $purchase): string
     {
         $id     = (string) $purchase;

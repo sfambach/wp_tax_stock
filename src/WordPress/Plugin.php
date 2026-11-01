@@ -95,6 +95,21 @@ final class Plugin
             }
         });
 
+        // D-1069: the material page inside a goods receipt dialog shows only itself — no admin menu, bar or logistics navigation.
+        add_action('admin_enqueue_scripts', static function (): void {
+            if (! in_array(sanitize_key((string) ($_GET['page'] ?? '')), [StockPage::PAGE, 'taxmod'], true)) {
+                return;
+            }
+
+            wp_register_script('taxmod-stock-frame', false, [], (string) TAXMOD_STOCK_VERSION, false);
+            wp_enqueue_script('taxmod-stock-frame');
+            wp_add_inline_script('taxmod-stock-frame', 'if(window.self!==window.top){document.documentElement.classList.add("taxmod-in-frame");}');
+            wp_register_style('taxmod-stock-frame', false, [], (string) TAXMOD_STOCK_VERSION);
+            wp_enqueue_style('taxmod-stock-frame');
+            wp_add_inline_style('taxmod-stock-frame', 'html.taxmod-in-frame #adminmenumain,html.taxmod-in-frame #wpadminbar,html.taxmod-in-frame #wpfooter,html.taxmod-in-frame .taxmod-shell-nav,html.taxmod-in-frame .taxmod-stock-pagetabs,html.taxmod-in-frame h1.wp-heading-inline,html.taxmod-in-frame .taxmod-version{display:none!important}html.taxmod-in-frame .taxmod-shell{display:block}'
+                . 'html.taxmod-in-frame.wp-toolbar{padding-top:0}html.taxmod-in-frame #wpcontent{margin-left:0}');
+        });
+
         // On a page behind «Logistik» the menu still marks «Logistik».
         add_filter('submenu_file', static fn (?string $file): ?string => in_array(sanitize_key((string) ($_GET['page'] ?? '')), [self::MENU, StockPage::PAGE, PurchasePage::PAGE], true) ? CockpitPage::PAGE : $file);
     }

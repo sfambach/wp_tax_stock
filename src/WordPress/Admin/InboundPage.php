@@ -341,11 +341,32 @@ final class InboundPage
                 __('Der Wareneingang dieser Bestellung wird wieder ausgebucht: Bestandsposten und Buchung werden gelöscht, die Bestellung steht wieder unter «Angekommen». Fortfahren?', 'taxmod-stock'));
         }
 
+        // His wish 2026-11-01: «sendungsnummer hinzufügen mit in den kopf auf nehmen … als button der dialog öffnet» (D-1063).
+        if (! in_array($stage, [InboundStage::Booked, InboundStage::Archived], true)) {
+            $html .= $this->trackingButton($order->id, $tab);
+        }
+
         if ($order->tracking !== [] && $this->inbound->hasDhl() && ! in_array($stage, [InboundStage::Booked, InboundStage::Archived], true)) {
             $html .= $this->button($order->id, 'dhl', __('DHL ↻', 'taxmod-stock'), $tab, false);
         }
 
         return $html;
+    }
+
+    private function trackingButton(int $order, string $tab): string
+    {
+        $field = '<label style="display:block">' . esc_html__('Sendungsnummer', 'taxmod-stock') . '<br><input type="text" name="number" style="width:100%"></label>';
+        $form  = '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'
+            . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
+            . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '"><input type="hidden" name="tab" value="' . esc_attr($tab) . '">'
+            . wp_nonce_field(self::ACTION, '_wpnonce', true, false);
+
+        if (! method_exists(ListPage::class, 'dialogAction')) {
+            return $form . '<input type="hidden" name="op" value="tracking"><input type="text" name="number" placeholder="' . esc_attr__('Sendungsnummer', 'taxmod-stock') . '" style="width:12em"> '
+                . get_submit_button(__('Hinzufügen', 'taxmod-stock'), 'secondary', '', false) . '</form> ';
+        }
+
+        return $form . ListPage::dialogAction('taxmod-stock-track-' . $order, __('Sendungsnummer', 'taxmod-stock'), __('Sendungsnummer hinzufügen', 'taxmod-stock'), $field, 'op', 'tracking', __('Hinzufügen', 'taxmod-stock')) . '</form> ';
     }
 
     private function button(int $order, string $op, string $label, string $tab, bool $primary, string $confirm = ''): string
@@ -419,12 +440,6 @@ final class InboundPage
                     . '<code>' . esc_html($number) . '</code> ' . get_submit_button(__('Entfernen', 'taxmod-stock'), 'small', '', false) . '</form>';
             }
 
-            $html .= '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">'
-                . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"><input type="hidden" name="op" value="tracking">'
-                . '<input type="hidden" name="order" value="' . esc_attr((string) $order->id) . '"><input type="hidden" name="tab" value="' . esc_attr($tab) . '">'
-                . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
-                . '<label>' . esc_html__('Sendungsnummer', 'taxmod-stock') . ' <input type="text" name="number" style="width:16em"></label> '
-                . get_submit_button(__('Hinzufügen', 'taxmod-stock'), 'secondary', '', false) . '</form>';
         }
 
         return $html;

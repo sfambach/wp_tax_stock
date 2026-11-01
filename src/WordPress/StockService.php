@@ -33,6 +33,8 @@ final class StockService
 {
     public const OPTION = 'taxmod_stock_structure';
 
+    public const PLANNED_PLACES = 'taxmod_stock_planned_places';
+
     /** D-972: which branch of `Model` goes to which place. */
     public const LOCATIONS = 'taxmod_stock_locations';
 
@@ -468,16 +470,47 @@ final class StockService
         $models   = array_values(array_unique(array_filter(array_column($plan, 'model'))));
         $nodes    = $this->model->nodesOf($models);
         $out      = [];
+        $planned  = $this->plannedPlaces();
 
         foreach ($plan as $purchase => $row) {
             $thing  = $row['model'];
             $record = $thing === null ? null : $things->lagerOf($thing);
             $own    = $record !== null && $s->hasField('lager_location') ? (int) $lager->first($record, $s->field('lager_location')) : 0;
 
-            $out[$purchase] = $rules->propose($own > 0 ? $own : null, $thing === null ? null : ($nodes[$thing] ?? 0));
+            $out[$purchase] = $planned[$purchase] ?? $rules->propose($own > 0 ? $own : null, $thing === null ? null : ($nodes[$thing] ?? 0));
         }
 
         return $out;
+    }
+
+    /**
+     * The places chosen with «Zuordnung speichern» before anything is booked (his report 2026-11-01: «er speichert nicht den
+     * lagerort»). Working state of the receipt form, not a fact of the model: it goes once the purchase is booked.
+     *
+     * @return array<int, int> purchase id → place id
+     */
+    public function plannedPlaces(): array
+    {
+        $raw = get_option(self::PLANNED_PLACES, []);
+
+        return is_array($raw) ? array_filter(array_map('intval', $raw), static fn (int $place): bool => $place > 0) : [];
+    }
+
+    /** @param array<int, int> $places purchase id → place id; 0 forgets the purchase's place */
+    public function planPlaces(array $places): void
+    {
+        $known = $this->table('location');
+        $all   = $this->plannedPlaces();
+
+        foreach ($places as $purchase => $place) {
+            if ($place > 0 && $known->has($place)) {
+                $all[$purchase] = $place;
+            } else {
+                unset($all[$purchase]);
+            }
+        }
+
+        update_option(self::PLANNED_PLACES, $all, false);
     }
 
     /**
@@ -539,7 +572,11 @@ final class StockService
             $title
         );
 
-        return $this->model->write($changes);
+        $result = $this->model->write($changes);
+        // Booked: the lot holds the place now, the plan has done its work.
+        $this->planPlaces(array_fill_keys(array_keys($choices), 0));
+
+        return $result;
     }
 
     /**
@@ -619,12 +656,14 @@ final class StockService
      * The material of some purchases kept without a receipt (the interim state of a goods receipt).
      *
      * @param array<int, int> $things purchase id → thing
+     * @param array<int, int> $places purchase id → the place chosen for it, kept until it is booked
      * @return array<string, mixed> the modeller's answer; nothing written when nothing changed
      */
-    public function assignPurchases(int $order, array $things): array
+    public function assignPurchases(int $order, array $things, array $places = []): array
     {
         $this->checkThings(array_values($things));
         $changes = (new Bookings($this->structure(), current_time('Y-m-d')))->assign($order, $things, $this->table('order'), $this->table('purchase'));
+        $this->planPlaces($places);
 
         return $changes === [] ? ['applied' => []] : $this->model->write($changes);
     }

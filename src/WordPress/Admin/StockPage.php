@@ -134,7 +134,7 @@ final class StockPage
                     ! empty($_POST['movable']),
                     absint($_POST['project'] ?? 0)
                 ),
-                'zuordnen'     => $this->stock->assignPurchases(absint($_POST['order'] ?? 0), $this->assignedThings()),
+                'zuordnen'     => $this->stock->assignPurchases(absint($_POST['order'] ?? 0), $this->assignedThings(), $this->assignedPlaces()),
                 'verbrauch'    => $this->stock->bookConsumption(
                     $thing,
                     absint($_POST['lot'] ?? 0) ?: null,
@@ -151,11 +151,7 @@ final class StockPage
                 'nichteinlagern' => __('Abgeschlossen ohne Lager: kein Bestand, der Grund steht am Kauf.', 'taxmod-stock'),
                 'einlagern'      => __('Zurückgenommen: der Kauf kann wieder eingebucht werden.', 'taxmod-stock'),
                 'aufteilen' => __('Aufgeteilt: jede Zeile ist jetzt ein Kauf mit seinem Material und kann eingebucht werden.', 'taxmod-stock'),
-                'zuordnen'  => sprintf(
-                    /* translators: %d: number of purchases whose material was kept */
-                    _n('Zuordnung gespeichert: %d Kauf, noch nichts eingebucht.', 'Zuordnung gespeichert: %d Käufe, noch nichts eingebucht.', count((array) ($result['applied'] ?? [])), 'taxmod-stock'),
-                    count((array) ($result['applied'] ?? []))
-                ),
+                'zuordnen'  => __('Zuordnung gespeichert: Material und Lagerort bleiben stehen, noch nichts eingebucht.', 'taxmod-stock'),
                 /* translators: %d: number of changes the modeller applied */
                 default     => sprintf(__('Gebucht: %d Änderungen in einem Schritt.', 'taxmod-stock'), count((array) ($result['applied'] ?? []))),
             });
@@ -1264,6 +1260,20 @@ final class StockPage
         foreach ((array) ($_POST['thing'] ?? []) as $purchase => $thing) {
             if (absint($purchase) > 0 && absint($thing) > 0) {
                 $out[absint($purchase)] = absint($thing);
+            }
+        }
+
+        return $out;
+    }
+
+    /** @return array<int, int> purchase id → the place chosen in its row */
+    private function assignedPlaces(): array
+    {
+        $out = [];
+
+        foreach ((array) ($_POST['location'] ?? []) as $purchase => $place) {
+            if (absint($purchase) > 0) {
+                $out[absint($purchase)] = absint($place);
             }
         }
 

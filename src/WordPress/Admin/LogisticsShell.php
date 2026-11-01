@@ -55,9 +55,10 @@ final class LogisticsShell
                 $item('dropped', __('Verworfen', 'taxmod-stock'), PurchasePage::PAGE, 'verworfen'),
             ]],
             ['key' => 'inbound', 'label' => __('Wareneingang', 'taxmod-stock'), 'items' => [
-                $item('arrived', __('Angekommen', 'taxmod-stock'), InboundPage::PAGE, 'arrived'),
-                $item('on-the-way', __('Unterwegs', 'taxmod-stock'), InboundPage::PAGE, 'shipped'),
+                // In the order of the process, like the tabs of the page (his question 2026-11-01: «die reihenfolge im menü stimmt nicht mit dem ablauf in den tabs überein»).
                 $item('awaited', __('Bestellt', 'taxmod-stock'), InboundPage::PAGE, 'ordered'),
+                $item('on-the-way', __('Versendet', 'taxmod-stock'), InboundPage::PAGE, 'shipped'),
+                $item('arrived', __('Angekommen', 'taxmod-stock'), InboundPage::PAGE, 'arrived'),
                 $item('book', __('Einbuchen', 'taxmod-stock'), StockPage::PAGE, 'wareneingang'),
                 $item('booked', __('Eingebucht', 'taxmod-stock'), InboundPage::PAGE, 'booked'),
                 $item('test', __('Zu testen', 'taxmod-stock'), InboundPage::PAGE, 'test'),

@@ -410,7 +410,21 @@ final class InboundPage
         $labels    = $this->inbound->stock()->labels('purchase');
         $s         = $this->inbound->stock()->structure();
         $purchases = $this->inbound->stock()->table('order')->all($order->id, $s->field('order_lines'));
-        $html      = '<h4 style="margin-bottom:.3em">' . esc_html__('Käufe', 'taxmod-stock') . '</h4><ul style="margin-top:0">';
+        // His wish 2026-11-01: «wissen wir doch schon anzahl und preis und sowas können wir das nicht schöner anzeigen».
+        $html      = '<h4 style="margin-bottom:.3em">' . esc_html__('Käufe', 'taxmod-stock') . '</h4>'
+            . '<table class="widefat striped" style="margin-bottom:.8em"><thead><tr><th>' . esc_html__('Kauf', 'taxmod-stock') . '</th>'
+            . '<th style="width:5em;text-align:right">' . esc_html__('Menge', 'taxmod-stock') . '</th>'
+            . '<th style="width:8em;text-align:right">' . esc_html__('Preis je Stück', 'taxmod-stock') . '</th>'
+            . '<th style="width:8em;text-align:right">' . esc_html__('Gesamt', 'taxmod-stock') . '</th>'
+            . '<th style="width:16em"></th></tr></thead><tbody>';
+        $table     = $this->inbound->stock()->table('purchase');
+        $money     = $this->inbound->stock()->table('money');
+        $amountOf  = static function (?string $part) use ($money, $s): ?float {
+            $amount = $part === null || $part === '' ? null : $money->first((int) $part, $s->field('money_amount'));
+
+            return $amount === null || $amount === '' ? null : (float) $amount;
+        };
+        $shown     = static fn (?float $amount): string => $amount === null ? '—' : number_format_i18n($amount, 2);
 
         $stock   = $this->inbound->stock();
         $closing = $stock->canCloseWithoutStock();
@@ -425,10 +439,18 @@ final class InboundPage
                 $reason !== ''                          => ' <em>(' . esc_html($reason) . ')</em> ' . $this->purchaseButton($order->id, $purchase, 'unprivate', __('Zurücknehmen', 'taxmod-stock'), $tab),
                 default                                 => ' ' . $this->purchaseButton($order->id, $purchase, 'private', __('Privat', 'taxmod-stock'), $tab),
             };
-            $html .= '<li>' . esc_html($labels[$purchase] ?? '#' . $purchase) . $this->whereItWent($purchase) . $button . '</li>';
+            $count = (float) ($table->first($purchase, $s->field('purchase_quantity')) ?? 0);
+            $each  = $amountOf($table->first($purchase, $s->field('purchase_unit_price')));
+            $total = $s->hasField('purchase_total_price') ? $amountOf($table->first($purchase, $s->field('purchase_total_price'))) : null;
+            $total ??= $each === null || $count <= 0.0 ? null : $each * $count;
+            $html .= '<tr><td style="white-space:normal">' . esc_html($labels[$purchase] ?? '#' . $purchase) . $this->whereItWent($purchase) . '</td>'
+                . '<td style="text-align:right">' . esc_html($count > 0.0 ? (string) (0 + $count) : '—') . '</td>'
+                . '<td style="text-align:right">' . esc_html($shown($each)) . '</td>'
+                . '<td style="text-align:right">' . esc_html($shown($total)) . '</td>'
+                . '<td>' . $button . '</td></tr>';
         }
 
-        $html .= '</ul>' . $this->events($order);
+        $html .= '</tbody></table>' . $this->events($order);
 
         if (! in_array($stage, [InboundStage::Booked, InboundStage::Archived], true)) {
             // D-1009: every step can be taken back — a number added by mistake comes off here.

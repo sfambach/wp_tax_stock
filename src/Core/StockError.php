@@ -30,6 +30,17 @@ final class StockError extends \RuntimeException
         return new self('purchase_without_thing', (string) $purchaseId);
     }
 
+    /** D-1058: closing a purchase without stock needs its reason. */
+    public static function notStockedWithoutReason(int $purchaseId): self
+    {
+        return new self('not_stocked_without_reason', (string) $purchaseId);
+    }
+
+    public static function notClosedWithoutStock(int $purchaseId): self
+    {
+        return new self('not_closed_without_stock', (string) $purchaseId);
+    }
+
     public static function alreadyReceived(int $purchaseId): self
     {
         return new self('already_received', (string) $purchaseId);

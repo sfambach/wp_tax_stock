@@ -44,6 +44,8 @@ final class Structure
         'order_merchant', 'order_platform', 'order_date', 'purchase_total_price',
         // D-1027, purchasing: the supplier's order number, the article number of a purchase, and the demand it came from.
         'order_number', 'purchase_number', 'purchase_demand',
+        // D-1058: why a purchase was closed without going into stock.
+        'purchase_not_stocked',
     ];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];

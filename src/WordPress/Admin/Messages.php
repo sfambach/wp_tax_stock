@@ -24,6 +24,10 @@ final class Messages
             /* translators: %s: record id of the purchase */
             'purchase_without_thing'    => sprintf(__('Kauf #%s hat kein Material — eines wählen, suchen oder «neu anlegen».', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id of the purchase */
+            /* translators: %s: record id of the purchase */
+            'not_stocked_without_reason' => sprintf(__('Kauf #%s: Bitte einen Grund angeben, warum er nicht eingelagert wird.', 'taxmod-stock'), $error->detail),
+            /* translators: %s: record id of the purchase */
+            'not_closed_without_stock'  => sprintf(__('Kauf #%s ist nicht als «nicht eingelagert» abgeschlossen.', 'taxmod-stock'), $error->detail),
             'already_received'          => sprintf(__('Kauf #%s ist schon eingegangen.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id */
             'not_a_thing'               => sprintf(__('#%s ist kein Material im Baum.', 'taxmod-stock'), $error->detail),
@@ -68,6 +72,7 @@ final class Messages
     {
         return match ($reason) {
             'received'                  => __('schon eingegangen', 'taxmod-stock'),
+            'not_stocked'               => __('nicht eingelagert', 'taxmod-stock'),
             'purchase_undetermined'     => __('noch nicht näher bestimmt', 'taxmod-stock'),
             'purchase_without_thing'    => __('kein Material', 'taxmod-stock'),
             default                     => $reason,

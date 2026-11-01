@@ -95,12 +95,15 @@ final class StockPage
         check_admin_referer(self::ACTION);
 
         $kind  = sanitize_key((string) ($_POST['booking'] ?? ''));
+        // D-1058: the row buttons carry their purchase in the value, «nichteinlagern-<id>» and «einlagern-<id>».
+        $rowPurchase = preg_match('/^(nichteinlagern|einlagern)-(\d+)$/', $kind, $m) === 1 ? (int) $m[2] : 0;
+        $kind        = $rowPurchase > 0 ? $m[1] : $kind;
         $today = current_time('Y-m-d');
         // The goods receipt sends «thing» as a list (one per purchase); only the other forms send one thing.
         $thing = is_array($_POST['thing'] ?? null) ? 0 : absint($_POST['thing'] ?? 0);
         $back  = ['material', []];
         // D-1001: a receipt booked from the goods receipt cockpit goes back there.
-        $fromCockpit = in_array($kind, ['wareneingang', 'aufteilen', 'zuordnen'], true) && sanitize_key((string) ($_POST['back'] ?? '')) === InboundPage::BACK;
+        $fromCockpit = in_array($kind, ['wareneingang', 'aufteilen', 'zuordnen', 'nichteinlagern', 'einlagern'], true) && sanitize_key((string) ($_POST['back'] ?? '')) === InboundPage::BACK;
 
         try {
             $result = match ($kind) {
@@ -114,6 +117,12 @@ final class StockPage
                     $this->title(__('Wareneingang', 'taxmod-stock'), $today)
                 ),
                 'aufteilen'    => $this->stock->splitPurchase(absint($_POST['order'] ?? 0), absint($_POST['purchase'] ?? 0), $this->splitRows()),
+                'nichteinlagern' => $this->stock->closeWithoutStock(
+                    absint($_POST['order'] ?? 0),
+                    $rowPurchase,
+                    sanitize_text_field(wp_unslash((string) ((array) ($_POST['reason'] ?? []))[$rowPurchase] ?? ''))
+                ),
+                'einlagern'    => $this->stock->reopenForStock(absint($_POST['order'] ?? 0), $rowPurchase),
                 'zuordnen'     => $this->stock->assignPurchases(absint($_POST['order'] ?? 0), $this->assignedThings()),
                 'verbrauch'    => $this->stock->bookConsumption(
                     $thing,
@@ -126,6 +135,8 @@ final class StockPage
                 default        => throw StockError::nothingToBook(),
             };
             $this->remember('success', match ($kind) {
+                'nichteinlagern' => __('Abgeschlossen ohne Lager: kein Bestand, der Grund steht am Kauf.', 'taxmod-stock'),
+                'einlagern'      => __('Zurückgenommen: der Kauf kann wieder eingebucht werden.', 'taxmod-stock'),
                 'aufteilen' => __('Aufgeteilt: jede Zeile ist jetzt ein Kauf mit seinem Material und kann eingebucht werden.', 'taxmod-stock'),
                 'zuordnen'  => sprintf(
                     /* translators: %d: number of purchases whose material was kept */
@@ -139,13 +150,13 @@ final class StockPage
             $back = match ($kind) {
                 'lager'        => ['material', ['thing' => $thing, 'view' => 'lager']],
                 'umbuchen'     => ['material', ['thing' => $thing, 'view' => 'bestand']],
-                'wareneingang', 'aufteilen', 'zuordnen' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
+                'wareneingang', 'aufteilen', 'zuordnen', 'nichteinlagern', 'einlagern' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
                 default        => ['material', $thing > 0 ? ['thing' => $thing, 'view' => 'bestand'] : []],
             };
         } catch (StockError $e) {
             $this->remember('error', Messages::of($e));
             $back = match ($kind) {
-                'wareneingang', 'zuordnen' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
+                'wareneingang', 'zuordnen', 'nichteinlagern', 'einlagern' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
                 'aufteilen'         => ['wareneingang', ['order' => absint($_POST['order'] ?? 0), 'split' => absint($_POST['purchase'] ?? 0)]],
                 'lager', 'umbuchen' => ['material', ['thing' => $thing, 'view' => $kind === 'lager' ? 'lager' : 'bestand']],
                 'verbrauch'         => ['verbrauch', ['thing' => $thing]],
@@ -1026,8 +1037,12 @@ final class StockPage
         $models = $this->stock->recordLabels(array_values(array_filter(array_column($plan, 'model'))));
         $places = $this->stock->labels('location');
         $where  = $this->stock->receiptLocations($plan);
+        $closing = $this->stock->canCloseWithoutStock();
         $html  = $this->formStart('wareneingang') . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
             . ($back === '' ? '' : '<input type="hidden" name="back" value="' . esc_attr($back) . '">')
+            // ⚠️ *Enter in a reason field must book, not close the first row: the browser presses the first submit button.*
+            . '<button type="submit" name="booking" value="wareneingang" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px"></button>'
+            . ($closing ? '<datalist id="taxmod-stock-reasons">' . implode('', array_map(static fn (string $r): string => '<option value="' . esc_attr($r) . '">', self::notStockedReasons())) . '</datalist>' : '')
             . '<p>' . esc_html__('Je Kauf das Material: vorgeschlagen ist das «Modell» des Kaufs; der Mülleimer gibt die Suche frei. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seiner Gruppe.', 'taxmod-stock') . '</p>'
             . '<div class="tablenav top"><div class="tablenav-pages one-page"><span class="displaying-num">' . esc_html(sprintf(
                 /* translators: %d: number of purchases */
@@ -1053,14 +1068,23 @@ final class StockPage
                 $split = $lock === 'purchase_undetermined'
                     ? '<a class="button button-small" href="' . esc_url(add_query_arg(array_filter(['page' => self::PAGE, 'tab' => 'wareneingang', 'order' => $order, 'split' => $purchase, 'back' => $back]), admin_url('admin.php'))) . '">' . esc_html__('Aufteilen', 'taxmod-stock') . '</a>'
                     : '';
-                $html .= '<td>' . esc_html($model === null ? '—' : '#' . $model . ' · ' . ($models[$model] ?? '')) . ' ' . $split . '</td><td></td></tr>';
+                // D-1058: a purchase closed without stock shows its reason and can be taken back.
+                $again = match (true) {
+                    $lock === 'not_stocked' => esc_html($this->stock->notStockedReason($purchase)) . ' <button type="submit" class="button button-small" name="booking" value="einlagern-' . esc_attr((string) $purchase) . '">' . esc_html__('Zurücknehmen', 'taxmod-stock') . '</button>',
+                    // A lot purchase that never goes into stock needs no splitting first.
+                    $lock === 'purchase_undetermined' && $closing => $this->closeControls($purchase),
+                    default => '',
+                };
+                $html .= '<td>' . esc_html($model === null ? '—' : '#' . $model . ' · ' . ($models[$model] ?? '')) . ' ' . $split . '</td><td>' . $again . '</td></tr>';
                 continue;
             }
 
             // The modeller's own record chooser on the purchase's «Modell» (his word 2026-10-28: «eigentlich haben wir doch den tax chooser»).
             $html .= '<td><input type="hidden" name="model[' . esc_attr((string) $purchase) . ']" value="' . esc_attr((string) ($model ?? '')) . '">'
                 . $this->recordPicker('thing[' . $purchase . ']', $model, $model === null ? '' : ($models[$model] ?? '#' . $model)) . '</td>'
-                . '<td><select name="location[' . esc_attr((string) $purchase) . ']">' . $this->options($places, '—', $where[$purchase] ?? 0) . '</select></td></tr>';
+                . '<td><select name="location[' . esc_attr((string) $purchase) . ']">' . $this->options($places, '—', $where[$purchase] ?? 0) . '</select>'
+                . ($closing ? '<br>' . $this->closeControls($purchase) : '')
+                . '</td></tr>';
         }
 
         // His word 2026-10-28: «zwischenstände speichern … ohne we» — the second button keeps the chosen material, books nothing.
@@ -1301,6 +1325,25 @@ final class StockPage
         }
 
         return $rows;
+    }
+
+    /**
+     * D-1058: the reasons offered for «Nicht einlagern»; any other text is accepted too.
+     *
+     * ⚠️ *INFERRED from the card's context; he has not named his list yet.*
+     *
+     * @return list<string>
+     */
+    private static function notStockedReasons(): array
+    {
+        return [__('privat', 'taxmod-stock'), __('sofort verbaut', 'taxmod-stock'), __('verschenkt', 'taxmod-stock'), __('zurückgeschickt', 'taxmod-stock'), __('defekt entsorgt', 'taxmod-stock')];
+    }
+
+    /** D-1058: the reason field and the «Nicht einlagern» button of one purchase. */
+    private function closeControls(int $purchase): string
+    {
+        return '<input type="text" list="taxmod-stock-reasons" name="reason[' . esc_attr((string) $purchase) . ']" placeholder="' . esc_attr__('Grund', 'taxmod-stock') . '" style="width:9em"> '
+            . '<button type="submit" class="button button-small" name="booking" value="nichteinlagern-' . esc_attr((string) $purchase) . '">' . esc_html__('Nicht einlagern', 'taxmod-stock') . '</button>';
     }
 
     private function formStart(string $booking): string

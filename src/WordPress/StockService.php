@@ -12,6 +12,7 @@ use TaxmodStock\Core\LocationRules;
 use TaxmodStock\Core\LocationSettings;
 use TaxmodStock\Core\NewThing;
 use TaxmodStock\Core\Purchasing;
+use TaxmodStock\Core\NotStocked;
 use TaxmodStock\Core\ReceiptChoice;
 use TaxmodStock\Core\ReceiptPlan;
 use TaxmodStock\Core\SourceRow;
@@ -371,7 +372,7 @@ final class StockService
     {
         $s = $this->structure();
 
-        return (new ReceiptPlan($s))->of($order, $this->table('order'), $this->table('purchase'), Ledger::receivedPurchases($s, $this->table('lot')));
+        return (new ReceiptPlan($s))->of($order, $this->table('order'), $this->table('purchase'), Ledger::receivedPurchases($s, $this->table('lot')), NotStocked::purchases($s, $this->table('purchase')));
     }
 
     /** @return array<int, true> purchases some lot already names (D-956) */
@@ -529,11 +530,48 @@ final class StockService
             $this->table('order'),
             $this->table('purchase'),
             $this->table('money'),
-            Ledger::receivedPurchases($s, $this->table('lot')),
+            // D-1058: a purchase closed without stock counts as done for the order's status.
+            Ledger::receivedPurchases($s, $this->table('lot')) + NotStocked::purchases($s, $this->table('purchase')),
             $title
         );
 
         return $this->model->write($changes);
+    }
+
+    /**
+     * D-1058: closes one purchase of an order without stock, with its reason — or opens it again.
+     *
+     * @return array<string, mixed> the modeller's answer
+     */
+    public function closeWithoutStock(int $order, int $purchase, string $reason): array
+    {
+        $s = $this->structure();
+
+        if (! $s->hasField('purchase_not_stocked')) {
+            throw StockError::notConfigured('fields.purchase_not_stocked');
+        }
+
+        return $this->model->write((new NotStocked($s))->close($order, $purchase, $reason, $this->table('order'), $this->table('purchase'), Ledger::receivedPurchases($s, $this->table('lot'))));
+    }
+
+    /** @return array<string, mixed> the modeller's answer */
+    public function reopenForStock(int $order, int $purchase): array
+    {
+        $s = $this->structure();
+
+        return $this->model->write((new NotStocked($s))->reopen($order, $purchase, $this->table('order'), $this->table('purchase'), Ledger::receivedPurchases($s, $this->table('lot'))));
+    }
+
+    public function notStockedReason(int $purchase): string
+    {
+        $s = $this->structure();
+
+        return $s->hasField('purchase_not_stocked') ? (string) $this->table('purchase')->first($purchase, $s->field('purchase_not_stocked')) : '';
+    }
+
+    public function canCloseWithoutStock(): bool
+    {
+        return $this->structure()->hasField('purchase_not_stocked');
     }
 
     /**

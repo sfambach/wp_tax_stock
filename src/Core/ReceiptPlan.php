@@ -22,9 +22,10 @@ final class ReceiptPlan
 
     /**
      * @param array<int, true> $received purchases some lot already names
+     * @param array<int, true> $closed   purchases closed without stock (D-1058)
      * @return array<int, array{lock: string|null, model: int|null, proposal: ReceiptChoice|null}>
      */
-    public function of(int $order, Table $orders, Table $purchases, array $received): array
+    public function of(int $order, Table $orders, Table $purchases, array $received, array $closed = []): array
     {
         $s   = $this->structure;
         $out = [];
@@ -35,6 +36,7 @@ final class ReceiptPlan
             $model = $model > 0 ? $model : null;
 
             $lock = match (true) {
+                isset($closed[$id])                                                => 'not_stocked',
                 isset($received[$id])                                              => 'received',
                 $purchases->first($id, $s->field('purchase_undetermined')) === '1' => 'purchase_undetermined',
                 default                                                            => null,

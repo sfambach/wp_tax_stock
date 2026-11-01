@@ -1506,8 +1506,8 @@ final class StockPage
         }
 
         // The panel grows to the frame; the shared dialog is drawn for short forms.
-        // His word 2026-11-01: «sie soll die gleiche ansicht zeigen wie material im tax» — the modeller's own record view.
-        $record = add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $thing], admin_url('admin.php')) . '#taxmod-preview-edit';
+        // His answer 2026-11-01 (screenshot of the stock material page): the stock's own material view, not the modeller's.
+        $record = self::thingUrl($thing, 'daten');
         $frame  = '<style>#taxmod-stock-material-' . $purchase . ' ~ .taxmod-dialog .taxmod-dialog-panel{width:min(94vw,1150px);max-width:none}</style><iframe data-src="' . esc_url($record) . '" title="' . esc_attr__('Material', 'taxmod-stock') . '"'
             . ' style="display:block;width:100%;height:75vh;border:0"></iframe>';
 
@@ -1516,7 +1516,7 @@ final class StockPage
             esc_html__('Material', 'taxmod-stock'),
             esc_html__('Material', 'taxmod-stock'),
             $frame,
-            '',
+            '<a class="button" href="' . esc_url($record) . '" target="_blank">' . esc_html__('In Logistik öffnen', 'taxmod-stock') . '</a>',
             'button taxmod-dialog-open taxmod-stock-material-open',
             __('Schließen', 'taxmod-stock')
         ) . ' ';

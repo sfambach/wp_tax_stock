@@ -85,7 +85,7 @@ final class StockPage
             $html .= '<div class="notice notice-error"><p>' . esc_html(Messages::of($e)) . '</p></div>';
         }
 
-        return $html . $this->script() . '</div>';
+        return $html . $this->script($tab === 'wareneingang') . '</div>';
     }
 
     /** admin-post handler: capability → nonce → validate → sanitize → act → back to the page with a notice. */
@@ -134,7 +134,7 @@ final class StockPage
                     ! empty($_POST['movable']),
                     absint($_POST['project'] ?? 0)
                 ),
-                'zuordnen'     => $this->stock->assignPurchases(absint($_POST['order'] ?? 0), $this->assignedThings(), $this->assignedPlaces()),
+                'zuordnen'     => $this->stock->assignPurchases(absint($_POST['order'] ?? 0), $this->assignedThings(), $this->assignedPlaces(), $this->assignedGroups()),
                 'verbrauch'    => $this->stock->bookConsumption(
                     $thing,
                     absint($_POST['lot'] ?? 0) ?: null,
@@ -973,7 +973,7 @@ final class StockPage
         check_ajax_referer(self::THING_SEARCH);
 
         try {
-            wp_send_json_success($this->stock->searchThings(sanitize_text_field(wp_unslash((string) ($_GET['term'] ?? '')))));
+            wp_send_json_success($this->stock->searchThings(sanitize_text_field(wp_unslash((string) ($_GET['term'] ?? ''))), 30, ! empty($_GET['groups'])));
         } catch (StockError $e) {
             wp_send_json_error(['message' => Messages::of($e)]);
         }
@@ -1075,7 +1075,7 @@ final class StockPage
             // ⚠️ *Enter in a reason field must book, not close the first row: the browser presses the first submit button.*
             . '<button type="submit" name="booking" value="wareneingang" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px"></button>'
             . ($closing ? '<datalist id="taxmod-stock-reasons">' . implode('', array_map(static fn (string $r): string => '<option value="' . esc_attr($r) . '">', self::notStockedReasons())) . '</datalist>' : '')
-            . '<p>' . esc_html__('Je Kauf das Material: vorgeschlagen ist das «Modell» des Kaufs; der Mülleimer gibt die Suche frei. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seiner Gruppe.', 'taxmod-stock') . '</p>'
+            . '<p>' . esc_html__('Je Kauf das Material: vorgeschlagen ist das «Modell» des Kaufs; «Zurücksetzen» (Pfeil) gibt die Suche frei; eine Gruppe in der Suche legt ein neues Material darin an. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seiner Gruppe.', 'taxmod-stock') . '</p>'
             . '<div class="tablenav top"><div class="tablenav-pages one-page"><span class="displaying-num">' . esc_html(sprintf(
                 /* translators: %d: number of purchases */
                 _n('%d Kauf', '%d Käufe', count($plan), 'taxmod-stock'),
@@ -1266,6 +1266,20 @@ final class StockPage
         return $out;
     }
 
+    /** @return array<int, int> purchase id → the group of a new material chosen in its row («new-<node>», D-1062) */
+    private function assignedGroups(): array
+    {
+        $out = [];
+
+        foreach ((array) ($_POST['thing'] ?? []) as $purchase => $thing) {
+            if (absint($purchase) > 0 && preg_match('/^new-(\d+)$/', (string) $thing, $m) === 1) {
+                $out[absint($purchase)] = (int) $m[1];
+            }
+        }
+
+        return $out;
+    }
+
     /** @return array<int, int> purchase id → the place chosen in its row */
     private function assignedPlaces(): array
     {
@@ -1326,7 +1340,7 @@ final class StockPage
         $radio = static fn (string $choice, bool $on): string => '<label class="taxmod-record-choice"><input type="radio" name="' . esc_attr($name) . '" value="' . esc_attr($choice) . '"'
             . ($on ? ' checked' : '') . '></label>';
         $none  = $value === null;
-        $clear = __('Entfernen', 'taxmod-stock');
+        $clear = __('Zurücksetzen', 'taxmod-stock');
         $tree  = __('Im Baum wählen', 'taxmod-stock');
 
         return '<span class="taxmod-record-pick taxmod-record-remote' . ($none ? '' : ' taxmod-record-taken') . '">'
@@ -1335,8 +1349,8 @@ final class StockPage
             . '<button type="button" class="button taxmod-icon-button taxmod-record-browse"' . ($none ? '' : ' hidden') . ' title="' . esc_attr($tree) . '">'
                 . '<span class="dashicons dashicons-networking" aria-hidden="true"></span><span class="screen-reader-text">' . esc_html($tree) . '</span></button>'
             . '<span class="taxmod-record-dialog-open taxmod-record-word"' . ($none ? ' hidden' : '') . '>' . esc_html($word) . '</span>'
-            . '<button type="button" class="button taxmod-icon-button taxmod-record-clear"' . ($none ? ' hidden' : '') . ' style="color:#b32d2e" title="' . esc_attr($clear) . '">'
-                . '<span class="dashicons dashicons-trash" aria-hidden="true"></span><span class="screen-reader-text">' . esc_html($clear) . '</span></button>'
+            . '<button type="button" class="button taxmod-icon-button taxmod-record-clear"' . ($none ? ' hidden' : '') . ' title="' . esc_attr($clear) . '">'
+                . '<span class="dashicons dashicons-undo" aria-hidden="true"></span><span class="screen-reader-text">' . esc_html($clear) . '</span></button>'
             . '<span class="taxmod-record-hits" hidden></span>'
             . '</span>';
     }
@@ -1345,7 +1359,7 @@ final class StockPage
      * The modeller's stylesheet and script for {@see self::recordPicker()}, and the one element its script reads the material
      * endpoints from: search, the tree's groups and a group's things.
      */
-    private function modellerAssets(): string
+    private function modellerAssets(bool $groups): string
     {
         if (class_exists(\Taxmod\WordPress\Plugin::class)) {
             $root = dirname((string) (new \ReflectionClass(\Taxmod\WordPress\Plugin::class))->getFileName(), 3);
@@ -1356,7 +1370,9 @@ final class StockPage
 
         $address = static fn (string $action): string => esc_url(add_query_arg(['action' => $action, '_ajax_nonce' => wp_create_nonce($action)], admin_url('admin-post.php')));
 
-        return '<span hidden id="taxmod-words" data-record-search="' . $address(self::THING_SEARCH) . '"'
+        $search  = $address(self::THING_SEARCH) . ($groups ? '&amp;groups=1' : '');
+
+        return '<span hidden id="taxmod-words" data-record-search="' . $search . '"'
             . ' data-record-nodes="' . $address(self::THING_NODES) . '" data-record-branch="' . $address(self::THING_BRANCH) . '"'
             . ' data-browse-title="' . esc_attr__('Material im Baum wählen', 'taxmod-stock') . '"'
             . ' data-no-hits="' . esc_attr__('Nichts gefunden.', 'taxmod-stock') . '"></span>';
@@ -1384,12 +1400,12 @@ final class StockPage
      * Filters a choice list as one types, and asks the material search for a thing; loads an order's purchases
      * once its details show. Public because the goods receipt cockpit shows the same booking form (D-1001).
      */
-    public function script(): string
+    public function script(bool $receipt = false): string
     {
         $search    = add_query_arg(['action' => self::THING_SEARCH, '_ajax_nonce' => wp_create_nonce(self::THING_SEARCH)], admin_url('admin-post.php'));
         $positions = add_query_arg(['action' => self::POSITIONS, '_ajax_nonce' => wp_create_nonce(self::POSITIONS)], admin_url('admin-post.php'));
 
-        return $this->modellerAssets() . '<script>(function(){'
+        return $this->modellerAssets($receipt) . '<script>(function(){'
             . 'var url=' . wp_json_encode($search) . ',pos=' . wp_json_encode($positions) . ';'
             . 'function bind(root){'
             . 'root.querySelectorAll(".taxmod-stock-filter").forEach(function(f){var s=document.getElementById(f.dataset.for);if(!s){return;}var o=Array.prototype.slice.call(s.options);'
@@ -1453,8 +1469,17 @@ final class StockPage
     /** D-1058: the reason field and the «Nicht einlagern» button of one purchase. */
     private function closeControls(int $purchase): string
     {
-        return '<input type="text" list="taxmod-stock-reasons" name="reason[' . esc_attr((string) $purchase) . ']" placeholder="' . esc_attr__('Grund', 'taxmod-stock') . '" style="width:9em"> '
-            . '<button type="submit" class="button button-small" name="booking" value="nichteinlagern-' . esc_attr((string) $purchase) . '">' . esc_html__('Nicht einlagern', 'taxmod-stock') . '</button>';
+        $id     = (string) $purchase;
+        $field  = '<label style="display:block">' . esc_html__('Grund', 'taxmod-stock') . '<br><input type="text" list="taxmod-stock-reasons" name="reason[' . esc_attr($id) . ']" style="width:100%"></label>';
+        $action = 'nichteinlagern-' . $id;
+
+        // D-1063: the reason is asked in the one dialog every list uses; an older modeller keeps the field in the row.
+        if (method_exists(ListPage::class, 'dialogAction')) {
+            return ListPage::dialogAction('taxmod-stock-close-' . $id, __('Nicht einlagern', 'taxmod-stock'), __('Ohne Lager abschließen', 'taxmod-stock'), $field, 'booking', $action, __('Nicht einlagern', 'taxmod-stock'));
+        }
+
+        return '<input type="text" list="taxmod-stock-reasons" name="reason[' . esc_attr($id) . ']" placeholder="' . esc_attr__('Grund', 'taxmod-stock') . '" style="width:9em"> '
+            . '<button type="submit" class="button button-small" name="booking" value="' . esc_attr($action) . '">' . esc_html__('Nicht einlagern', 'taxmod-stock') . '</button>';
     }
 
     private function formStart(string $booking): string

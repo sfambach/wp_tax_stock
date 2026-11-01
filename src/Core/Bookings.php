@@ -178,7 +178,7 @@ final class Bookings
      * speichern also wenn ich was zugeordnet habe will ich das auch speichern können ohne we». Only the purchase's «Modell»
      * changes; nothing is booked.
      *
-     * @param array<int, int> $things purchase id → the thing it is
+     * @param array<int, int|NewThing> $things purchase id → the thing it is, or a new one in a group (D-1062)
      * @return list<array<string, mixed>>
      */
     public function assign(int $order, array $things, Table $orders, Table $purchases): array
@@ -190,6 +190,11 @@ final class Bookings
         foreach ($things as $purchase => $thing) {
             if (! in_array($purchase, $inOrder, true)) {
                 throw StockError::notInOrder($purchase);
+            }
+
+            if ($thing instanceof NewThing) {
+                $this->changes[] = ['op' => 'set_values', 'record' => $purchase, 'values' => [(string) $s->field('purchase_model') => '@' . $this->newThing($thing)]];
+                continue;
             }
 
             if ((int) $purchases->first($purchase, $s->field('purchase_model')) !== $thing) {

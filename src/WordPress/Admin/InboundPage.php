@@ -195,7 +195,7 @@ final class InboundPage
 
         $rows = $rows !== '' ? $rows : '<tr class="no-items"><td class="colspanchange" colspan="' . esc_attr((string) (count($columns) + 2)) . '">' . esc_html__('Nichts gefunden.', 'taxmod-stock') . '</td></tr>';
 
-        return $html . ListPage::table($columns, $rows) . (new StockPage($this->inbound->stock()))->script();
+        return $html . ListPage::table($columns, $rows) . (new StockPage($this->inbound->stock()))->script(true);
     }
 
     /** @return list<string> */

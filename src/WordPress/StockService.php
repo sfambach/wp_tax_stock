@@ -202,7 +202,7 @@ final class StockService
      *
      * @return list<array{id: int, word: string, node: string}>
      */
-    public function searchThings(string $term, int $limit = 30): array
+    public function searchThings(string $term, int $limit = 30, bool $groups = false): array
     {
         $words = array_slice(array_values(array_filter(
             preg_split('/\s+/u', mb_strtolower(trim($term))) ?: [],
@@ -227,6 +227,18 @@ final class StockService
 
         foreach ($ids as $id) {
             $out[] = ['id' => $id, 'word' => ($labels[$id] ?? '') === '' ? '#' . $id : $labels[$id], 'node' => $tree[$nodes[$id] ?? 0]['name'] ?? ''];
+        }
+
+        // D-1062: in the goods receipt a group is a hit too — a new material there, named like the purchase.
+        if ($groups) {
+            foreach ($tree as $node => $row) {
+                $name = mb_strtolower($row['name']);
+
+                if (array_filter($words, static fn (string $word): bool => ! str_contains($name, $word)) === []) {
+                    /* translators: %s: name of a group in the material tree */
+                    $out[] = ['id' => 'new-' . $node, 'word' => sprintf(__('Neues Material in «%s»', 'taxmod-stock'), $row['name']), 'node' => ''];
+                }
+            }
         }
 
         return $out;
@@ -657,11 +669,19 @@ final class StockService
      *
      * @param array<int, int> $things purchase id → thing
      * @param array<int, int> $places purchase id → the place chosen for it, kept until it is booked
+     * @param array<int, int> $groups purchase id → a group: a new material there, named like the purchase (D-1062)
      * @return array<string, mixed> the modeller's answer; nothing written when nothing changed
      */
-    public function assignPurchases(int $order, array $things, array $places = []): array
+    public function assignPurchases(int $order, array $things, array $places = [], array $groups = []): array
     {
         $this->checkThings(array_values($things));
+        $label = $this->structure()->field('label');
+
+        foreach ($groups as $purchase => $node) {
+            $things[$purchase] = new NewThing($node, (string) ($this->table('purchase')->first($purchase, $label) ?? ''));
+        }
+
+        $this->checkGroups(array_values(array_filter($things, static fn (int|NewThing $t): bool => $t instanceof NewThing)));
         $changes = (new Bookings($this->structure(), current_time('Y-m-d')))->assign($order, $things, $this->table('order'), $this->table('purchase'));
         $this->planPlaces($places);
 

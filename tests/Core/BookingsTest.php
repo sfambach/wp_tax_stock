@@ -234,6 +234,20 @@ final class BookingsTest extends TestCase
         (new Bookings($s, '2026-10-28'))->assign(70, [99 => 55], $orders, $purchases);
     }
 
+    #[Test]
+    public function an_assignment_to_a_group_creates_the_material_there(): void
+    {
+        $s                    = Fixture::structure();
+        [$orders, $purchases] = $this->order(['0', '0']);
+
+        $changes = (new Bookings($s, '2026-11-01'))->assign(70, [71 => new NewThing(900, 'Lötpaste')], $orders, $purchases);
+
+        self::assertSame('create_record', $changes[0]['op']);
+        self::assertSame(900, $changes[0]['node']);
+        self::assertSame([(string) $s->field('label') => 'Lötpaste'], $changes[1]['values']);
+        self::assertSame('@' . $changes[0]['ref'], $changes[2]['values'][(string) $s->field('purchase_model')], 'D-1062: the purchase points at the new material');
+    }
+
     /** @return array{0: Table, 1: Table} */
     private function order(array $undetermined): array
     {

@@ -3,6 +3,7 @@
 namespace TaxmodStock\WordPress\Admin;
 
 use TaxmodStock\Core\Navigation;
+use TaxmodStock\WordPress\Plugin;
 
 /**
  * The frame of the stock interface (D-1029, D-1053): its own navigation on the left, along the flow of goods, with each page's
@@ -72,9 +73,42 @@ final class LogisticsShell
             ]],
             ['key' => 'warehouse', 'label' => __('Lager', 'taxmod-stock'), 'items' => [
                 $item('places', __('Lagerorte', 'taxmod-stock'), StockPage::PAGE, 'lagerorte'),
-                ['key' => 'settings', 'label' => __('Einstellungen', 'taxmod-stock'), 'page' => 'taxmod-settings', 'tab' => SettingsTab::SLUG, 'url' => $settings],
+            ]],
+            // His word 2026-11-01: «einen Punkt Einstellung … die API-Konfiguration, die Grundeinstellung und ja, die Lagerstruktur».
+            ['key' => 'settings', 'label' => __('Einstellungen', 'taxmod-stock'), 'items' => [
+                ['key' => 'basics', 'label' => __('Grundeinstellungen', 'taxmod-stock'), 'page' => 'taxmod-settings', 'tab' => SettingsTab::SLUG, 'url' => $settings],
+                $item('structure', __('Lagerstruktur', 'taxmod-stock'), StockPage::PAGE, 'lagerstruktur'),
+                ...self::connections(),
             ]],
         ]);
+    }
+
+    /**
+     * The other modules under the Taxonomy Modeller menu — the API connections (eBay, DHL, JLCPCB …) — as links.
+     *
+     * ⚠️ *INFERRED: a module is whatever hangs under the modeller's menu and is neither the modeller's own page nor ours;
+     * the modules announce nothing, so their menu entries are the only list there is.*
+     *
+     * @return list<array{key: string, label: string, page: string, tab: string, url: string}>
+     */
+    private static function connections(): array
+    {
+        global $submenu;
+
+        $own = [Plugin::PARENT, 'taxmod-inbox', 'taxmod-cleanup', 'taxmod-backup', 'taxmod-settings', CockpitPage::PAGE, InboundPage::PAGE, StockPage::PAGE, PurchasePage::PAGE];
+        $out = [];
+
+        foreach ((array) ($submenu[Plugin::PARENT] ?? []) as $entry) {
+            $slug = (string) ($entry[2] ?? '');
+
+            if ($slug === '' || in_array($slug, $own, true) || str_contains($slug, 'cleanup') || str_contains($slug, 'backup') || str_contains($slug, 'inbox')) {
+                continue;
+            }
+
+            $out[] = ['key' => 'module-' . sanitize_key($slug), 'label' => wp_strip_all_tags((string) ($entry[0] ?? $slug)), 'page' => $slug, 'tab' => '', 'url' => (string) menu_page_url($slug, false)];
+        }
+
+        return $out;
     }
 
     /** Puts a page of the stock interface into the frame; a page outside it comes back unchanged. */

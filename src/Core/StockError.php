@@ -30,6 +30,18 @@ final class StockError extends \RuntimeException
         return new self('purchase_without_thing', (string) $purchaseId);
     }
 
+    /** D-1030: a new place needs a name. */
+    public static function placeWithoutName(): self
+    {
+        return new self('place_without_name', '');
+    }
+
+    /** D-1030: a place cannot sit inside itself or inside something it holds. */
+    public static function placeIntoItself(int $place): self
+    {
+        return new self('place_into_itself', (string) $place);
+    }
+
     /** D-1058: closing a purchase without stock needs its reason. */
     public static function notStockedWithoutReason(int $purchaseId): self
     {

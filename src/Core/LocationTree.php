@@ -1,0 +1,168 @@
+<?php declare(strict_types=1);
+
+namespace TaxmodStock\Core;
+
+/**
+ * The storage places as a tree of any depth: each place may name the place it sits in (D-1030).
+ *
+ * A box or carton is a movable place; moving it means changing its parent, its content goes with it. A place may belong
+ * to a project — the box of a project — and so does everything inside it.
+ *
+ * ```mermaid
+ * flowchart TD
+ *   K["Keller"] --> B["Bauteile"]
+ *   B --> R["Regal 2"]
+ *   O["Obergeschoss"] --> X["Box BT2PS2 (beweglich, Projekt)"]
+ * ```
+ */
+final class LocationTree
+{
+    /**
+     * @param array<int, string> $names    place id → its own name
+     * @param array<int, int>    $parents  place id → the place it sits in, 0 at the top
+     * @param array<int, string> $projects place id → the name of its project, only where one is set
+     * @param array<int, true>   $movable  places that are boxes, cartons, pallets
+     */
+    public function __construct(
+        private readonly array $names,
+        private readonly array $parents,
+        private readonly array $projects = [],
+        private readonly array $movable = [],
+    ) {
+    }
+
+    /** @param array<int, string> $projectNames project record id → name */
+    public static function from(Structure $s, Table $places, array $projectNames): self
+    {
+        $names = $parents = $projects = $movable = [];
+
+        foreach ($places->ids() as $id) {
+            $names[$id]   = (string) ($places->first($id, $s->field('label')) ?? '#' . $id);
+            $parents[$id] = $s->hasField('location_parent') ? (int) $places->first($id, $s->field('location_parent')) : 0;
+
+            if ($s->hasField('location_project') && (int) $places->first($id, $s->field('location_project')) > 0) {
+                $project       = (int) $places->first($id, $s->field('location_project'));
+                $projects[$id] = $projectNames[$project] ?? '#' . $project;
+            }
+
+            if ($s->hasField('location_movable') && $places->first($id, $s->field('location_movable')) === '1') {
+                $movable[$id] = true;
+            }
+        }
+
+        return new self($names, $parents, $projects, $movable);
+    }
+
+    /** @return list<int> the record ids of the projects some place names */
+    public static function projectIds(Structure $s, Table $places): array
+    {
+        if (! $s->hasField('location_project')) {
+            return [];
+        }
+
+        return array_values(array_unique(array_filter(array_map(static fn (int $id): int => (int) $places->first($id, $s->field('location_project')), $places->ids()))));
+    }
+
+    /** The place it sits in; 0 at the top, and also where a parent is unknown or would close a loop. */
+    public function parentOf(int $id): int
+    {
+        $parent = $this->parents[$id] ?? 0;
+
+        return isset($this->names[$parent]) && ! in_array($id, $this->ancestorsOf($parent), true) && $parent !== $id ? $parent : 0;
+    }
+
+    /** @return list<int> from the top down to the place itself */
+    public function lineOf(int $id): array
+    {
+        return [...array_reverse($this->ancestorsOf($id)), $id];
+    }
+
+    /** «Keller › Bauteile › Regal 2» */
+    public function pathOf(int $id): string
+    {
+        return implode(' › ', array_map(fn (int $place): string => $this->names[$place] ?? '#' . $place, $this->lineOf($id)));
+    }
+
+    /** The project of the place or of the nearest place it sits in. */
+    public function projectOf(int $id): ?string
+    {
+        foreach (array_reverse($this->lineOf($id)) as $place) {
+            if (isset($this->projects[$place])) {
+                return $this->projects[$place];
+            }
+        }
+
+        return null;
+    }
+
+    public function isMovable(int $id): bool
+    {
+        return isset($this->movable[$id]);
+    }
+
+    /** @return array<int, string> every place by its path, with its project, in tree order — for choosers and lists */
+    public function labels(): array
+    {
+        $out = [];
+
+        foreach ($this->ordered() as [$id]) {
+            $project  = $this->projectOf($id);
+            $out[$id] = $this->pathOf($id) . ($project === null ? '' : ' · ' . $project);
+        }
+
+        return $out;
+    }
+
+    /** @return list<array{0: int, 1: int}> place id and depth, parents before children, siblings by name */
+    public function ordered(): array
+    {
+        $children = [];
+
+        foreach (array_keys($this->names) as $id) {
+            $children[$this->parentOf($id)][] = $id;
+        }
+
+        $byName = fn (int $a, int $b): int => strnatcasecmp($this->names[$a], $this->names[$b]);
+        $out    = [];
+        $stack  = [];
+        $top    = $children[0] ?? [];
+        usort($top, $byName);
+
+        foreach (array_reverse($top) as $id) {
+            $stack[] = [$id, 0];
+        }
+
+        while ($stack !== []) {
+            [$id, $depth] = array_pop($stack);
+            $out[]        = [$id, $depth];
+            $below        = $children[$id] ?? [];
+            usort($below, $byName);
+
+            foreach (array_reverse($below) as $child) {
+                $stack[] = [$child, $depth + 1];
+            }
+        }
+
+        return $out;
+    }
+
+    /** @return list<int> the place and everything inside it */
+    public function withAllBelow(int $id): array
+    {
+        return array_values(array_filter(array_keys($this->names), fn (int $place): bool => in_array($id, $this->lineOf($place), true)));
+    }
+
+    /** @return list<int> the places it sits in, nearest first; stops at a loop */
+    private function ancestorsOf(int $id): array
+    {
+        $seen = [];
+        $at   = $this->parents[$id] ?? 0;
+
+        while ($at !== 0 && isset($this->names[$at]) && $at !== $id && ! in_array($at, $seen, true)) {
+            $seen[] = $at;
+            $at     = $this->parents[$at] ?? 0;
+        }
+
+        return $seen;
+    }
+}

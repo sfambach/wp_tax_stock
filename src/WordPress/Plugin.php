@@ -19,7 +19,7 @@ final class Plugin
     public const MENU = 'taxmod-logistik';
 
     /** The modeller's menu, which every Taxmod module hangs its pages under (D-1028). */
-    private const PARENT = 'taxmod';
+    public const PARENT = 'taxmod';
 
     public function boot(): void
     {

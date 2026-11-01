@@ -12,6 +12,8 @@ use TaxmodStock\Core\LocationRules;
 use TaxmodStock\Core\LocationSettings;
 use TaxmodStock\Core\NewThing;
 use TaxmodStock\Core\Purchasing;
+use TaxmodStock\Core\LocationChanges;
+use TaxmodStock\Core\LocationTree;
 use TaxmodStock\Core\NotStocked;
 use TaxmodStock\Core\ReceiptChoice;
 use TaxmodStock\Core\ReceiptPlan;
@@ -66,6 +68,8 @@ final class StockService
     private ?array $tree = null;
 
     private ?Things $things = null;
+
+    private ?LocationTree $locationTree = null;
 
     public function __construct(private readonly ModelGateway $model = new ModelGateway())
     {
@@ -560,6 +564,43 @@ final class StockService
         $s = $this->structure();
 
         return $this->model->write((new NotStocked($s))->reopen($order, $purchase, $this->table('order'), $this->table('purchase'), Ledger::receivedPurchases($s, $this->table('lot'))));
+    }
+
+    /** D-1030: the storage places as a tree, read once per request. */
+    public function locationTree(): LocationTree
+    {
+        if ($this->locationTree !== null) {
+            return $this->locationTree;
+        }
+
+        $s      = $this->structure();
+        $places = $this->table('location');
+
+        return $this->locationTree = LocationTree::from($s, $places, $this->recordLabels(LocationTree::projectIds($s, $places)));
+    }
+
+    /** @return array<int, string> every place by its path and project, in tree order — what a place chooser offers */
+    public function places(): array
+    {
+        return $this->locationTree()->labels();
+    }
+
+    /** @return array<int, string> the projects a box can belong to; empty while the structure names no project node */
+    public function projects(): array
+    {
+        return $this->structure()->hasNode('project') ? $this->labels('project') : [];
+    }
+
+    /** @return array<string, mixed> the modeller's answer */
+    public function createPlace(string $name, int $parent, bool $movable, int $project): array
+    {
+        return $this->model->write((new LocationChanges($this->structure()))->create($name, $parent, $movable, $project, $this->locationTree(), $this->table('location')));
+    }
+
+    /** @return array<string, mixed> the modeller's answer */
+    public function movePlace(int $place, int $parent): array
+    {
+        return $this->model->write((new LocationChanges($this->structure()))->move($place, $parent, $this->locationTree(), $this->table('location')));
     }
 
     public function notStockedReason(int $purchase): string

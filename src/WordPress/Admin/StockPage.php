@@ -40,7 +40,7 @@ final class StockPage
     /** Rows per page of the material list (design 20: a list of thousands draws only what is seen). */
     private const PER_PAGE  = 50;
     private const ROWS      = 6;
-    private const TABS      = ['wareneingang', 'material', 'inventur', 'verbrauch', 'lagerorte'];
+    private const TABS      = ['wareneingang', 'material', 'inventur', 'verbrauch', 'lagerorte', 'lagerstruktur'];
     private const VIEWS     = ['daten', 'bearbeiten', 'einkauf', 'lager', 'bestand', 'verkauf'];
     private const FILTER_FORM = 'taxmod-stock-filter';
     private const BULK_FORM   = 'taxmod-stock-bulk';
@@ -75,7 +75,8 @@ final class StockPage
                 'material'  => $thing > 0 ? $this->thingView($thing) : $this->materialList($list),
                 'inventur'  => $this->inventoryForm(),
                 'verbrauch' => $this->consumptionForm($thing, absint($_GET['lot'] ?? 0)),
-                'lagerorte' => $this->locationList(),
+                'lagerorte' => $this->locationList(false),
+                'lagerstruktur' => $this->locationList(true),
                 default     => absint($_GET['split'] ?? 0) > 0
                     ? $this->splitForm(absint($_GET['order'] ?? 0), absint($_GET['split']), sanitize_key((string) ($_GET['back'] ?? '')))
                     : $this->receiptTab($list, absint($_GET['order'] ?? 0)),
@@ -98,7 +99,7 @@ final class StockPage
 
         $kind  = sanitize_key((string) ($_POST['booking'] ?? ''));
         // D-1058: the row buttons carry their purchase in the value, «nichteinlagern-<id>» and «einlagern-<id>».
-        $rowPurchase = preg_match('/^(nichteinlagern|einlagern)-(\d+)$/', $kind, $m) === 1 ? (int) $m[2] : 0;
+        $rowPurchase = preg_match('/^(nichteinlagern|einlagern|umhaengen)-(\d+)$/', $kind, $m) === 1 ? (int) $m[2] : 0;
         $kind        = $rowPurchase > 0 ? $m[1] : $kind;
         $today = current_time('Y-m-d');
         // The goods receipt sends «thing» as a list (one per purchase); only the other forms send one thing.
@@ -125,6 +126,14 @@ final class StockPage
                     sanitize_text_field(wp_unslash((string) ((array) ($_POST['reason'] ?? []))[$rowPurchase] ?? ''))
                 ),
                 'einlagern'    => $this->stock->reopenForStock(absint($_POST['order'] ?? 0), $rowPurchase),
+                // D-1030: the row buttons of the structure page carry their place the same way.
+                'umhaengen'    => $this->stock->movePlace($rowPurchase, absint(((array) ($_POST['parent'] ?? []))[$rowPurchase] ?? 0)),
+                'ort'          => $this->stock->createPlace(
+                    sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? ''))),
+                    absint($_POST['new_parent'] ?? 0),
+                    ! empty($_POST['movable']),
+                    absint($_POST['project'] ?? 0)
+                ),
                 'zuordnen'     => $this->stock->assignPurchases(absint($_POST['order'] ?? 0), $this->assignedThings()),
                 'verbrauch'    => $this->stock->bookConsumption(
                     $thing,
@@ -137,6 +146,8 @@ final class StockPage
                 default        => throw StockError::nothingToBook(),
             };
             $this->remember('success', match ($kind) {
+                'umhaengen'      => __('Umgehängt: der Ort liegt jetzt dort, mit allem, was in ihm liegt.', 'taxmod-stock'),
+                'ort'            => __('Lagerort angelegt.', 'taxmod-stock'),
                 'nichteinlagern' => __('Abgeschlossen ohne Lager: kein Bestand, der Grund steht am Kauf.', 'taxmod-stock'),
                 'einlagern'      => __('Zurückgenommen: der Kauf kann wieder eingebucht werden.', 'taxmod-stock'),
                 'aufteilen' => __('Aufgeteilt: jede Zeile ist jetzt ein Kauf mit seinem Material und kann eingebucht werden.', 'taxmod-stock'),
@@ -153,12 +164,14 @@ final class StockPage
                 'lager'        => ['material', ['thing' => $thing, 'view' => 'lager']],
                 'umbuchen'     => ['material', ['thing' => $thing, 'view' => 'bestand']],
                 'wareneingang', 'aufteilen', 'zuordnen', 'nichteinlagern', 'einlagern' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
+                'umhaengen', 'ort' => ['lagerstruktur', []],
                 default        => ['material', $thing > 0 ? ['thing' => $thing, 'view' => 'bestand'] : []],
             };
         } catch (StockError $e) {
             $this->remember('error', Messages::of($e));
             $back = match ($kind) {
                 'wareneingang', 'zuordnen', 'nichteinlagern', 'einlagern' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
+                'umhaengen', 'ort'  => ['lagerstruktur', []],
                 'aufteilen'         => ['wareneingang', ['order' => absint($_POST['order'] ?? 0), 'split' => absint($_POST['purchase'] ?? 0)]],
                 'lager', 'umbuchen' => ['material', ['thing' => $thing, 'view' => $kind === 'lager' ? 'lager' : 'bestand']],
                 'verbrauch'         => ['verbrauch', ['thing' => $thing]],
@@ -196,6 +209,8 @@ final class StockPage
         $data      = $group > 0 ? $this->stock->tableOf($group) : null;
         $columns   = [new ListColumn('nr', __('Nr.', 'taxmod-stock'), fixed: true, width: '6em'), new ListColumn('name', __('Material', 'taxmod-stock'), fixed: true),
             new ListColumn('group', __('Gruppe', 'taxmod-stock'))];
+        // D-1030: where it lies, by path and project — so a search for a project finds the parts in its box.
+        $columns[] = new ListColumn('places', __('Lagerort', 'taxmod-stock'));
         $position  = 0;
 
         foreach ($technical as $relation => $name) {
@@ -225,7 +240,7 @@ final class StockPage
             $min    = $record === null ? null : $lager->first($record, $s->field('lager_min'));
             $stock  = $ledger->stockOf($id);
             $name   = $things->word($id);
-            $cells  = ['nr' => (string) $id, 'name' => $name, 'group' => $node === null ? '' : $groups[$node]];
+            $cells  = ['nr' => (string) $id, 'name' => $name, 'group' => $node === null ? '' : $groups[$node], 'places' => $this->placesOf($id, $ledger)];
 
             foreach (array_keys($technical) as $relation) {
                 $cells['f' . $relation] = implode(', ', (array) $data?->all($id, $relation));
@@ -324,13 +339,32 @@ final class StockPage
         );
     }
 
+    /** The places where a thing has a rest, by path and project. */
+    private function placesOf(int $thing, \TaxmodStock\Core\Ledger $ledger): string
+    {
+        $s      = $this->stock->structure();
+        $lots   = $this->stock->table('lot');
+        $places = $this->stock->places();
+        $out    = [];
+
+        foreach ($ledger->lotsOf($thing) as $lot) {
+            $place = (int) $lots->first($lot, $s->field('lot_location'));
+
+            if ($place > 0 && $ledger->restOf($lot) > 0.0) {
+                $out[$place] = $places[$place] ?? '#' . $place;
+            }
+        }
+
+        return implode('; ', $out);
+    }
+
     /** The lots of a thing, one line each: date, rest, price, origin, place. */
     private function lotList(int $thing, \TaxmodStock\Core\Ledger $ledger): string
     {
         $s      = $this->stock->structure();
         $lots   = $this->stock->table('lot');
         $money  = $this->stock->table('money');
-        $places = $this->stock->labels('location');
+        $places = $this->stock->places();
         $html   = '';
 
         foreach ($ledger->lotsOf($thing) as $lot) {
@@ -561,7 +595,7 @@ final class StockPage
             . '<table class="form-table" role="presentation"><tbody>';
 
         if ($s->hasField('lager_location')) {
-            $html .= '<tr><th>' . esc_html__('Standard-Lagerort', 'taxmod-stock') . '</th><td><select name="location">' . $this->options($this->stock->labels('location'), '—', (int) $value('lager_location')) . '</select></td></tr>';
+            $html .= '<tr><th>' . esc_html__('Standard-Lagerort', 'taxmod-stock') . '</th><td><select name="location">' . $this->options($this->stock->places(), '—', (int) $value('lager_location')) . '</select></td></tr>';
         }
 
         $html .= '<tr><th>' . esc_html__('Mindestbestand', 'taxmod-stock') . '</th><td><input type="number" min="0" name="minimum" style="width:8em" value="' . esc_attr($value('lager_min')) . '"></td></tr>'
@@ -631,7 +665,7 @@ final class StockPage
         $ledger  = $this->stock->ledger();
         $lots    = $this->stock->table('lot');
         $money   = $this->stock->table('money');
-        $places  = $this->stock->labels('location');
+        $places  = $this->stock->places();
         $record  = $this->stock->things()->lagerOf($thing);
         $min     = $record === null ? null : $this->stock->table('lager')->first($record, $s->field('lager_min'));
         $stock   = $ledger->stockOf($thing);
@@ -1037,7 +1071,7 @@ final class StockPage
         $labels = $this->stock->labels('purchase');
         $about  = $this->purchaseAbout(array_keys($plan));
         $models = $this->stock->recordLabels(array_values(array_filter(array_column($plan, 'model'))));
-        $places = $this->stock->labels('location');
+        $places = $this->stock->places();
         $where  = $this->stock->receiptLocations($plan);
         $closing = $this->stock->canCloseWithoutStock();
         $html  = $this->formStart('wareneingang') . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
@@ -1095,29 +1129,68 @@ final class StockPage
     }
 
     /**
-     * Design 2, «Lager (Stammdaten)»: every storage place with what lies there; the material opens its view.
-     *
-     * ⚠️ *A flat list until the location tree is built (design 3); the places are still edited in the settings.*
+     * Design 2 and D-1030: every place in its tree with what lies there; with `$edit` the structure page, where places
+     * are created and hung elsewhere — a box moves with its content.
      */
-    private function locationList(): string
+    private function locationList(bool $edit): string
     {
         $s      = $this->stock->structure();
+        $tree   = $this->stock->locationTree();
         $things = $this->stock->things()->all();
-        $rows   = LocationStock::of($s, $this->stock->table('lot'), $this->stock->ledger(), $this->stock->labels('location'));
+        $rows   = LocationStock::of($s, $this->stock->table('lot'), $this->stock->ledger(), $this->stock->places());
+        $places = $this->stock->places();
         $body   = '';
 
-        foreach ($rows as $place => $row) {
-            $links = array_map(fn (int $thing): string => '<a href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'material', 'thing' => $thing], admin_url('admin.php'))) . '">'
-                . esc_html($things[$thing] ?? '#' . $thing) . '</a>', $row['things']);
-            $body .= '<tr><th scope="row" class="check-column"></th><td><strong>' . esc_html($place === 0 ? __('ohne Lagerort', 'taxmod-stock') : $row['name']) . '</strong></td>'
-                . '<td>' . esc_html((string) $row['lots']) . '</td><td>' . esc_html((string) count($row['things'])) . '</td><td>' . implode(', ', $links) . '</td><td></td></tr>';
+        foreach ($tree->ordered() as [$place, $depth]) {
+            $row   = $rows[$place] ?? ['lots' => 0, 'things' => []];
+            $all   = array_sum(array_map(static fn (int $p): int => $rows[$p]['lots'] ?? 0, $tree->withAllBelow($place)));
+            $links = array_map(fn (int $thing): string => '<a href="' . esc_url($this->thingUrl($thing, 'bestand')) . '">' . esc_html($things[$thing] ?? '#' . $thing) . '</a>', $row['things']);
+            $name  = str_repeat('— ', $depth) . '<strong>' . esc_html((string) (array_reverse(explode(' › ', $tree->pathOf($place)))[0])) . '</strong>'
+                . ($tree->isMovable($place) ? ' <span class="description">(' . esc_html__('beweglich', 'taxmod-stock') . ')</span>' : '');
+            $project = $tree->projectOf($place);
+            $extra   = $edit
+                ? '<select name="parent[' . esc_attr((string) $place) . ']">' . $this->options(array_diff_key($places, array_flip($tree->withAllBelow($place))), __('— oberste Ebene —', 'taxmod-stock'), $tree->parentOf($place)) . '</select> '
+                    . '<button type="submit" class="button button-small" name="booking" value="umhaengen-' . esc_attr((string) $place) . '">' . esc_html__('Umhängen', 'taxmod-stock') . '</button> '
+                    . '<a class="button button-small" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $place], admin_url('admin.php')) . '#taxmod-preview-edit') . '">' . esc_html__('Bearbeiten', 'taxmod-stock') . '</a>'
+                : implode(', ', $links);
+            $body .= '<tr><th scope="row" class="check-column"></th><td>' . $name . '</td><td>' . esc_html($project ?? '') . '</td>'
+                . '<td>' . esc_html((string) $row['lots']) . ($all > $row['lots'] ? ' <span class="description">(' . esc_html(sprintf(
+                    /* translators: %d: lots in this place and everything inside it */
+                    __('mit Inhalt %d', 'taxmod-stock'),
+                    $all
+                )) . ')</span>' : '') . '</td><td>' . $extra . '</td><td></td></tr>';
         }
 
-        $settings = add_query_arg(['page' => 'taxmod-settings', 'tab' => SettingsTab::SLUG], admin_url('admin.php'));
+        if (isset($rows[0])) {
+            $body .= '<tr><th scope="row" class="check-column"></th><td><em>' . esc_html__('ohne Lagerort', 'taxmod-stock') . '</em></td><td></td><td>' . esc_html((string) $rows[0]['lots']) . '</td><td>'
+                . implode(', ', array_map(fn (int $thing): string => '<a href="' . esc_url($this->thingUrl($thing, 'bestand')) . '">' . esc_html($things[$thing] ?? '#' . $thing) . '</a>', $rows[0]['things'])) . '</td><td></td></tr>';
+        }
 
-        return '<p>' . esc_html__('Jeder Lagerort mit den Posten, die dort Bestand haben. Lagerorte anlegen und Vorschlagsorte festlegen:', 'taxmod-stock')
-            . ' <a href="' . esc_url($settings) . '">' . esc_html__('Lager-Einstellungen', 'taxmod-stock') . '</a></p>'
-            . ListPage::table([[__('Lagerort', 'taxmod-stock'), '16em'], [__('Posten', 'taxmod-stock'), '6em'], [__('Materialien', 'taxmod-stock'), '7em'], [__('Was dort liegt', 'taxmod-stock'), '']], $body === '' ? $this->noItems(5) : $body);
+        $table = ListPage::table([[__('Lagerort', 'taxmod-stock'), '22em'], [__('Projekt', 'taxmod-stock'), '9em'], [__('Posten', 'taxmod-stock'), '8em'],
+            [$edit ? __('Liegt in', 'taxmod-stock') : __('Was dort liegt', 'taxmod-stock'), '']], $body === '' ? $this->noItems(5) : $body);
+
+        if (! $edit) {
+            $structure = add_query_arg(['page' => self::PAGE, 'tab' => 'lagerstruktur'], admin_url('admin.php'));
+
+            return '<p>' . esc_html__('Jeder Lagerort mit den Posten, die dort Bestand haben; eine Kiste gehört mit allem darin zu ihrem Projekt.', 'taxmod-stock')
+                . ' <a href="' . esc_url($structure) . '">' . esc_html__('Lagerstruktur bearbeiten', 'taxmod-stock') . '</a></p>' . $table;
+        }
+
+        if (! $s->hasField('location_parent')) {
+            return '<div class="notice notice-warning inline"><p>' . esc_html__('Der Ortsbaum braucht das Feld «Übergeordneter Ort» an den Lagerorten (fields.location_parent in der Lager-Struktur).', 'taxmod-stock') . '</p></div>' . $table;
+        }
+
+        $projects = $this->stock->projects();
+
+        return $this->formStart('lagerstruktur')
+            . '<p>' . esc_html__('Orte sind ein Baum: Lager → Bereich → Platz. Kisten und Kartons sind bewegliche Orte; «Umhängen» stellt sie samt Inhalt um.', 'taxmod-stock') . '</p>'
+            . $table
+            . '<h2>' . esc_html__('Neuer Lagerort', 'taxmod-stock') . '</h2><p>'
+            . '<label>' . esc_html__('Name', 'taxmod-stock') . ' <input type="text" name="name" style="width:14em"></label> '
+            . '<label>' . esc_html__('liegt in', 'taxmod-stock') . ' <select name="new_parent">' . $this->options($places, __('— oberste Ebene —', 'taxmod-stock')) . '</select></label> '
+            . '<label><input type="checkbox" name="movable" value="1"> ' . esc_html__('beweglich (Kiste, Karton)', 'taxmod-stock') . '</label> '
+            . ($projects === [] ? '' : '<label>' . esc_html__('Projekt', 'taxmod-stock') . ' <select name="project">' . $this->options($projects, '—') . '</select></label> ')
+            . '<button type="submit" class="button button-primary" name="booking" value="ort">' . esc_html__('Anlegen', 'taxmod-stock') . '</button></p></form>';
     }
 
     private function consumptionForm(int $preset, int $presetLot): string
@@ -1405,6 +1478,7 @@ final class StockPage
             ['inventur', __('Inventur', 'taxmod-stock')],
             ['verbrauch', __('Verbrauch', 'taxmod-stock')],
             ['lagerorte', __('Lagerorte', 'taxmod-stock')],
+            ['lagerstruktur', __('Lagerstruktur', 'taxmod-stock')],
         ], $active, fn (string $slug): string => $this->listUrl($slug, $slug === $active ? $list : new StockList(), []));
     }
 

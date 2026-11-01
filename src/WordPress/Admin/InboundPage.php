@@ -215,7 +215,7 @@ final class InboundPage
         $things    = $stock->things();
         $orderOf   = $this->inbound->orderOfPurchase();
         $orders    = $stock->labels('order');
-        $places    = $stock->labels('location');
+        $places    = $stock->places();
         $rows      = '';
 
         foreach ($lots as $lot) {
@@ -364,7 +364,7 @@ final class InboundPage
         $lots   = $stock->table('lot');
         $ledger = $stock->ledger();
         $things = $stock->things();
-        $places = $stock->labels('location');
+        $places = $stock->places();
         $out    = [];
 
         foreach ($this->inbound->lotsOf($purchase) as $lot) {

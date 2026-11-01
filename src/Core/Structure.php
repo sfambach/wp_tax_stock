@@ -27,7 +27,7 @@ final class Structure
     ];
 
     /** Nodes the module uses when they are there: the choices of «Verwendung». */
-    private const OPTIONAL_NODES = ['lager_use', 'source', 'firm', 'base_units', 'prefixes'];
+    private const OPTIONAL_NODES = ['lager_use', 'source', 'firm', 'base_units', 'prefixes', 'project'];
 
     /** Fields the module uses when they are there and leaves out when they are not. */
     private const OPTIONAL_FIELDS = [
@@ -46,6 +46,8 @@ final class Structure
         'order_number', 'purchase_number', 'purchase_demand',
         // D-1058: why a purchase was closed without going into stock.
         'purchase_not_stocked',
+        // D-1030: the place a place sits in, whether it is a box, and the project a box belongs to.
+        'location_parent', 'location_movable', 'location_project',
     ];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];

@@ -28,6 +28,9 @@ final class Messages
             'not_stocked_without_reason' => sprintf(__('Kauf #%s: Bitte einen Grund angeben, warum er nicht eingelagert wird.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id of the purchase */
             'not_closed_without_stock'  => sprintf(__('Kauf #%s ist nicht als «nicht eingelagert» abgeschlossen.', 'taxmod-stock'), $error->detail),
+            'place_without_name'        => __('Ein neuer Lagerort braucht einen Namen.', 'taxmod-stock'),
+            /* translators: %s: record id of the place */
+            'place_into_itself'         => sprintf(__('Lagerort #%s kann nicht in sich selbst oder in etwas liegen, das in ihm liegt.', 'taxmod-stock'), $error->detail),
             'already_received'          => sprintf(__('Kauf #%s ist schon eingegangen.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id */
             'not_a_thing'               => sprintf(__('#%s ist kein Material im Baum.', 'taxmod-stock'), $error->detail),

@@ -96,7 +96,7 @@ final class SettingsTab
     {
         try {
             $stock    = new StockService();
-            $places   = $stock->labels('location');
+            $places   = $stock->places();
             $branches = $stock->branches();
         } catch (StockError $e) {
             return '<h2>' . esc_html__('Einlagerung nach Typ', 'taxmod-stock') . '</h2><p>' . esc_html(Messages::of($e)) . '</p>';

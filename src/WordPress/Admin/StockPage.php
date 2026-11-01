@@ -108,6 +108,9 @@ final class StockPage
         // D-1001: a receipt booked from the goods receipt cockpit goes back there.
         $fromCockpit = in_array($kind, ['wareneingang', 'aufteilen', 'zuordnen', 'nichteinlagern', 'einlagern'], true) && sanitize_key((string) ($_POST['back'] ?? '')) === InboundPage::BACK;
 
+        // D-1072: the material just created with «Neues Material» opens in its dialog once the page is back.
+        $open = 0;
+
         try {
             $result = match ($kind) {
                 'inventur'     => $this->stock->bookInventory($this->inventoryRows(), $today, $this->title(__('Inventur', 'taxmod-stock'), $today)),
@@ -156,6 +159,7 @@ final class StockPage
                 default     => sprintf(__('Gebucht: %d Änderungen in einem Schritt.', 'taxmod-stock'), count((array) ($result['applied'] ?? []))),
             });
 
+            $open = $kind === 'zuordnen' ? (int) array_key_first(array_filter(array_map('absint', (array) ($_POST['newgroup'] ?? [])))) : 0;
             $back = match ($kind) {
                 'lager'        => ['material', ['thing' => $thing, 'view' => 'lager']],
                 'umbuchen'     => ['material', ['thing' => $thing, 'view' => 'bestand']],
@@ -176,11 +180,11 @@ final class StockPage
         }
 
         if ($fromCockpit) {
-            wp_safe_redirect(InboundPage::url(['tab' => 'arrived', 'order' => absint($_POST['order'] ?? 0)]));
+            wp_safe_redirect(InboundPage::url(['tab' => 'arrived', 'order' => absint($_POST['order'] ?? 0)] + ($open > 0 ? ['material' => $open] : [])));
             exit;
         }
 
-        wp_safe_redirect(add_query_arg(['page' => self::PAGE, 'tab' => $back[0]] + $back[1], admin_url('admin.php')));
+        wp_safe_redirect(add_query_arg(['page' => self::PAGE, 'tab' => $back[0]] + $back[1] + ($open > 0 ? ['material' => $open] : []), admin_url('admin.php')));
         exit;
     }
 
@@ -1457,6 +1461,9 @@ final class StockPage
             // D-1069: the material's frame loads only when its dialog opens.
             . 'document.addEventListener("change",function(e){var sw=e.target;if(!sw.classList||!sw.classList.contains("taxmod-dialog-switch")||!sw.checked){return;}'
             . 'var f=sw.parentNode.querySelector("iframe[data-src]");if(f&&!f.src){f.src=f.getAttribute("data-src");}});'
+            . '(function(){var mo=(new URLSearchParams(location.search).get("material")||"").replace(/\\D/g,""),n=0;if(!mo){return;}'
+            // The rows of an order arrive after the page (lazy details), so the switch is looked for until it is there.
+            . 'var t=setInterval(function(){var ms=document.getElementById("taxmod-stock-material-"+mo);if(ms){clearInterval(t);ms.checked=true;ms.dispatchEvent(new Event("change",{bubbles:true}));}else if(++n>40){clearInterval(t);}},250);})();'
             . '})();</script>';
     }
 

@@ -196,6 +196,32 @@ final class StockService
     }
 
     /**
+     * D-1073, his word 2026-11-01: «wo es abgelegt ist im tax baum das müsste ich ja auch ändern können daraufhin müssen sich die
+     * felder ändern» — the material goes into another group in one step; the group's further fields come empty, and values on
+     * fields the group lacks fall only when he has seen them named ($drop).
+     *
+     * @return array<string, mixed> the modeller's answer
+     */
+    public function moveThing(int $thing, int $group, bool $drop): array
+    {
+        $this->checkThings([$thing]);
+
+        if (! isset($this->tree()[$group])) {
+            throw StockError::notAGroup($group);
+        }
+
+        try {
+            return $this->model->write([['op' => 'move_record', 'record' => $thing, 'node' => $group, 'anywhere' => true, 'drop' => $drop]]);
+        } catch (StockError $e) {
+            if ($e->reason === 'model_refused' && preg_match('/would drop values of: (.+?)\.?$/', $e->detail, $m) === 1) {
+                throw StockError::wouldDrop($m[1]);
+            }
+
+            throw $e;
+        }
+    }
+
+    /**
      * The fields of a node with their names, for the tab «Technische Daten».
      *
      * @return array<int, array{name: string, target: int, type: string|null}>

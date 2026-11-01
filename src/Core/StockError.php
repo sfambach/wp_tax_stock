@@ -185,6 +185,12 @@ final class StockError extends \RuntimeException
         return new self('not_a_draft', (string) $orderId);
     }
 
+    /** D-1073: moving the material to that group would drop the values of these fields; asked before it happens. */
+    public static function wouldDrop(string $fields): self
+    {
+        return new self('would_drop', $fields);
+    }
+
     public static function modelRefused(string $message): self
     {
         return new self('model_refused', $message);

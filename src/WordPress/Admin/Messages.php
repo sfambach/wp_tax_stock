@@ -66,6 +66,7 @@ final class Messages
             /* translators: %s: record id of the order */
             'not_a_draft'               => sprintf(__('Bestellung #%s steht nicht im passenden Status für diesen Schritt.', 'taxmod-stock'), $error->detail),
             /* translators: %s: the modeller's message */
+            'would_drop'                => sprintf(__('Nicht verschoben: in der neuen Gruppe fehlen Felder, deren Werte dabei verloren gingen: %s.', 'taxmod-stock'), $error->detail),
             'model_refused'             => sprintf(__('Der Taxonomy Modeller hat die Buchung abgelehnt, nichts wurde geschrieben: %s', 'taxmod-stock'), $error->detail),
             default                     => $error->getMessage(),
         };

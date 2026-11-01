@@ -115,6 +115,7 @@ final class StockPage
             $result = match ($kind) {
                 'inventur'     => $this->stock->bookInventory($this->inventoryRows(), $today, $this->title(__('Inventur', 'taxmod-stock'), $today)),
                 'lager'        => $this->stock->saveLager($thing, $this->lagerInput()),
+                'verschieben'  => $this->stock->moveThing($thing, absint($_POST['group'] ?? 0), ! empty($_POST['drop'])),
                 'umbuchen'     => $this->stock->moveLot(absint($_POST['lot'] ?? 0), absint($_POST['location'] ?? 0)),
                 'wareneingang' => $this->stock->bookReceipt(
                     absint($_POST['order'] ?? 0),
@@ -151,6 +152,7 @@ final class StockPage
             $this->remember('success', match ($kind) {
                 'umhaengen'      => __('Umgehängt: der Ort liegt jetzt dort, mit allem, was in ihm liegt.', 'taxmod-stock'),
                 'ort'            => __('Lagerort angelegt.', 'taxmod-stock'),
+                'verschieben'    => __('Verschoben: das Material steht jetzt in der neuen Gruppe, ihre weiteren Felder sind leer.', 'taxmod-stock'),
                 'nichteinlagern' => __('Abgeschlossen ohne Lager: kein Bestand, der Grund steht am Kauf.', 'taxmod-stock'),
                 'einlagern'      => __('Zurückgenommen: der Kauf kann wieder eingebucht werden.', 'taxmod-stock'),
                 'aufteilen' => __('Aufgeteilt: jede Zeile ist jetzt ein Kauf mit seinem Material und kann eingebucht werden.', 'taxmod-stock'),
@@ -161,6 +163,7 @@ final class StockPage
 
             $open = $kind === 'zuordnen' ? (int) array_key_first(array_filter(array_map('absint', (array) ($_POST['newgroup'] ?? [])))) : 0;
             $back = match ($kind) {
+                'verschieben'  => ['material', ['thing' => $thing, 'view' => 'daten']],
                 'lager'        => ['material', ['thing' => $thing, 'view' => 'lager']],
                 'umbuchen'     => ['material', ['thing' => $thing, 'view' => 'bestand']],
                 'wareneingang', 'aufteilen', 'zuordnen', 'nichteinlagern', 'einlagern' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
@@ -174,6 +177,8 @@ final class StockPage
                 'umhaengen', 'ort'  => ['lagerstruktur', []],
                 'aufteilen'         => ['wareneingang', ['order' => absint($_POST['order'] ?? 0), 'split' => absint($_POST['purchase'] ?? 0)]],
                 'lager', 'umbuchen' => ['material', ['thing' => $thing, 'view' => $kind === 'lager' ? 'lager' : 'bestand']],
+                // D-1073: refused because values would fall — the page asks again, naming them, with the group kept.
+                'verschieben'       => ['material', ['thing' => $thing, 'view' => 'daten'] + ($e->reason === 'would_drop' ? ['moveto' => absint($_POST['group'] ?? 0)] : [])],
                 'verbrauch'         => ['verbrauch', ['thing' => $thing]],
                 default             => [$kind, []],
             };
@@ -419,7 +424,8 @@ final class StockPage
             . ($about === '' ? '' : '<p style="margin:0">' . esc_html($about) . '</p>') . $chips . '</div>'
             . '<span style="margin-left:auto;white-space:nowrap"><a class="button button-primary" href="' . esc_url(PurchasePage::reorderUrl($thing)) . '">'
             . esc_html__('Nachbestellen', 'taxmod-stock') . '</a> <a class="button" href="' . esc_url($this->thingUrl($thing, 'bearbeiten')) . '">'
-            . esc_html__('Material bearbeiten', 'taxmod-stock') . '</a></span></div>'
+            . esc_html__('Material bearbeiten', 'taxmod-stock') . '</a> ' . $this->moveDialog($thing, $node) . '</span></div>'
+            . $this->moveConfirm($thing)
             . '<nav class="nav-tab-wrapper" style="margin-top:0">';
 
         foreach ($titles as $slug => $title) {
@@ -839,8 +845,46 @@ final class StockPage
         return $html . '</tbody></table>' . get_submit_button(__('Inventur buchen', 'taxmod-stock')) . '</form>';
     }
 
+    /** D-1073: «Verschieben» — the material into another group of the tree, asked in the shared dialog. */
+    private function moveDialog(int $thing, int $node): string
+    {
+        if (! method_exists(ListPage::class, 'dialogAction')) {
+            return '';
+        }
+
+        $field = '<label style="display:block">' . esc_html__('Neue Gruppe', 'taxmod-stock') . '<br><select name="group" style="width:100%">' . $this->groupOptions($node) . '</select></label>'
+            . '<p class="description">' . esc_html__('Felder, die die neue Gruppe zusätzlich hat, kommen leer dazu. Gingen Werte verloren, wirst du vorher gefragt.', 'taxmod-stock') . '</p>';
+
+        return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'
+            . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
+            . '<input type="hidden" name="thing" value="' . esc_attr((string) $thing) . '">'
+            . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
+            . ListPage::dialogAction('taxmod-stock-move-' . $thing, __('Verschieben', 'taxmod-stock'), __('Material verschieben', 'taxmod-stock'), $field, 'booking', 'verschieben', __('Verschieben', 'taxmod-stock'))
+            . '</form>';
+    }
+
+    /** D-1073, after a refusal: the same move again, now letting the named values fall. */
+    private function moveConfirm(int $thing): string
+    {
+        $group = absint($_GET['moveto'] ?? 0);
+
+        if ($group === 0 || ! isset($this->stock->tree()[$group])) {
+            return '';
+        }
+
+        return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" class="notice notice-warning" style="margin:8px 0 0;padding:8px 12px;display:flex;gap:12px;align-items:center">'
+            . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
+            . '<input type="hidden" name="thing" value="' . esc_attr((string) $thing) . '">'
+            . '<input type="hidden" name="group" value="' . esc_attr((string) $group) . '">'
+            . '<input type="hidden" name="drop" value="1">'
+            . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
+            . '<span>' . esc_html(sprintf(/* translators: %s: path of the group in the tree */ __('Trotzdem nach «%s» verschieben? Die oben genannten Werte gehen verloren.', 'taxmod-stock'), $this->stock->path($group))) . '</span>'
+            . '<span style="margin-left:auto"><button type="submit" class="button button-primary" name="booking" value="verschieben">' . esc_html__('Trotzdem verschieben', 'taxmod-stock') . '</button> '
+            . '<a class="button" href="' . esc_url($this->thingUrl($thing, 'daten')) . '">' . esc_html__('Abbrechen', 'taxmod-stock') . '</a></span></form>';
+    }
+
     /** The groups a new thing can go into, by their path in the tree; the empty choice first. */
-    private function groupOptions(): string
+    private function groupOptions(int $selected = 0): string
     {
         $paths = [];
 
@@ -852,7 +896,7 @@ final class StockPage
 
         asort($paths, SORT_NATURAL | SORT_FLAG_CASE);
 
-        return $this->options(array_filter($paths), '—');
+        return $this->options(array_filter($paths), '—', $selected);
     }
 
     /**

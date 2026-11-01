@@ -71,7 +71,8 @@ final class LogisticsShell
                 ['key' => 'shipping', 'label' => __('eBay-Versand', 'taxmod-stock'), 'page' => 'taxebay-shipping', 'tab' => '', 'url' => $shipping],
             ]],
             ['key' => 'warehouse', 'label' => __('Lager', 'taxmod-stock'), 'items' => [
-                ['key' => 'settings', 'label' => __('Lagerorte und Einstellungen', 'taxmod-stock'), 'page' => 'taxmod-settings', 'tab' => SettingsTab::SLUG, 'url' => $settings],
+                $item('places', __('Lagerorte', 'taxmod-stock'), StockPage::PAGE, 'lagerorte'),
+                ['key' => 'settings', 'label' => __('Einstellungen', 'taxmod-stock'), 'page' => 'taxmod-settings', 'tab' => SettingsTab::SLUG, 'url' => $settings],
             ]],
         ]);
     }

@@ -9,6 +9,7 @@ use TaxmodStock\Core\InventoryRow;
 use TaxmodStock\Core\LagerInput;
 use TaxmodStock\Core\SourceRow;
 use TaxmodStock\Core\NewThing;
+use TaxmodStock\Core\LocationStock;
 use TaxmodStock\Core\ReceiptChoice;
 use TaxmodStock\Core\SplitRow;
 use TaxmodStock\Core\StockError;
@@ -39,7 +40,7 @@ final class StockPage
     /** Rows per page of the material list (design 20: a list of thousands draws only what is seen). */
     private const PER_PAGE  = 50;
     private const ROWS      = 6;
-    private const TABS      = ['wareneingang', 'material', 'inventur', 'verbrauch'];
+    private const TABS      = ['wareneingang', 'material', 'inventur', 'verbrauch', 'lagerorte'];
     private const VIEWS     = ['daten', 'bearbeiten', 'einkauf', 'lager', 'bestand', 'verkauf'];
     private const FILTER_FORM = 'taxmod-stock-filter';
     private const BULK_FORM   = 'taxmod-stock-bulk';
@@ -74,6 +75,7 @@ final class StockPage
                 'material'  => $thing > 0 ? $this->thingView($thing) : $this->materialList($list),
                 'inventur'  => $this->inventoryForm(),
                 'verbrauch' => $this->consumptionForm($thing, absint($_GET['lot'] ?? 0)),
+                'lagerorte' => $this->locationList(),
                 default     => absint($_GET['split'] ?? 0) > 0
                     ? $this->splitForm(absint($_GET['order'] ?? 0), absint($_GET['split']), sanitize_key((string) ($_GET['back'] ?? '')))
                     : $this->receiptTab($list, absint($_GET['order'] ?? 0)),
@@ -1092,6 +1094,32 @@ final class StockPage
             . ' <button type="submit" class="button" name="booking" value="zuordnen">' . esc_html__('Zuordnung speichern', 'taxmod-stock') . '</button></p></form>';
     }
 
+    /**
+     * Design 2, «Lager (Stammdaten)»: every storage place with what lies there; the material opens its view.
+     *
+     * ⚠️ *A flat list until the location tree is built (design 3); the places are still edited in the settings.*
+     */
+    private function locationList(): string
+    {
+        $s      = $this->stock->structure();
+        $things = $this->stock->things()->all();
+        $rows   = LocationStock::of($s, $this->stock->table('lot'), $this->stock->ledger(), $this->stock->labels('location'));
+        $body   = '';
+
+        foreach ($rows as $place => $row) {
+            $links = array_map(fn (int $thing): string => '<a href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'material', 'thing' => $thing], admin_url('admin.php'))) . '">'
+                . esc_html($things[$thing] ?? '#' . $thing) . '</a>', $row['things']);
+            $body .= '<tr><th scope="row" class="check-column"></th><td><strong>' . esc_html($place === 0 ? __('ohne Lagerort', 'taxmod-stock') : $row['name']) . '</strong></td>'
+                . '<td>' . esc_html((string) $row['lots']) . '</td><td>' . esc_html((string) count($row['things'])) . '</td><td>' . implode(', ', $links) . '</td><td></td></tr>';
+        }
+
+        $settings = add_query_arg(['page' => 'taxmod-settings', 'tab' => SettingsTab::SLUG], admin_url('admin.php'));
+
+        return '<p>' . esc_html__('Jeder Lagerort mit den Posten, die dort Bestand haben. Lagerorte anlegen und Vorschlagsorte festlegen:', 'taxmod-stock')
+            . ' <a href="' . esc_url($settings) . '">' . esc_html__('Lager-Einstellungen', 'taxmod-stock') . '</a></p>'
+            . ListPage::table([[__('Lagerort', 'taxmod-stock'), '16em'], [__('Posten', 'taxmod-stock'), '6em'], [__('Materialien', 'taxmod-stock'), '7em'], [__('Was dort liegt', 'taxmod-stock'), '']], $body === '' ? $this->noItems(5) : $body);
+    }
+
     private function consumptionForm(int $preset, int $presetLot): string
     {
         $ledger = $this->stock->ledger();
@@ -1376,6 +1404,7 @@ final class StockPage
             ['material', __('Material', 'taxmod-stock'), count($this->stock->things()->all())],
             ['inventur', __('Inventur', 'taxmod-stock')],
             ['verbrauch', __('Verbrauch', 'taxmod-stock')],
+            ['lagerorte', __('Lagerorte', 'taxmod-stock')],
         ], $active, fn (string $slug): string => $this->listUrl($slug, $slug === $active ? $list : new StockList(), []));
     }
 

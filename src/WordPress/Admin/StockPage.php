@@ -780,7 +780,7 @@ final class StockPage
             ? InboundPage::url(['order' => $order])
             : add_query_arg(['page' => self::PAGE, 'tab' => 'wareneingang', 'order' => $order], admin_url('admin.php'));
 
-        return $html . '</tbody></table><p class="submit">' . get_submit_button(__('Aufteilen', 'taxmod-stock'), 'primary', 'submit', false)
+        return $html . '</tbody></table><p class="submit" style="text-align:right">' . get_submit_button(__('Aufteilen', 'taxmod-stock'), 'primary', 'submit', false)
             . ' <a class="button" href="' . esc_url($cancel) . '">' . esc_html__('Abbrechen', 'taxmod-stock') . '</a></p></form>';
     }
 
@@ -1082,9 +1082,12 @@ final class StockPage
                 count($plan)
             )) . '</span></div><br class="clear"></div>';
         $head  = '<tr><td class="manage-column column-cb check-column"><input type="checkbox" aria-label="' . esc_attr__('Alle wählen', 'taxmod-stock') . '"></td>'
-            . '<th scope="col" class="manage-column">' . esc_html__('Kauf', 'taxmod-stock') . '</th><th scope="col" class="manage-column" style="width:40%">' . esc_html__('Material', 'taxmod-stock')
-            . '</th><th scope="col" class="manage-column">' . esc_html__('Lagerort', 'taxmod-stock') . '</th></tr>';
-        $html .= '<table class="wp-list-table widefat fixed striped table-view-list"><thead>' . $head . '</thead><tbody>' . ($plan === [] ? $this->noItems(3) : '');
+            . '<th scope="col" class="manage-column" style="width:28%">' . esc_html__('Kauf', 'taxmod-stock') . '</th><th scope="col" class="manage-column" style="width:28%">' . esc_html__('Material', 'taxmod-stock')
+            . '</th><th scope="col" class="manage-column">' . esc_html__('Lagerort', 'taxmod-stock') . '</th>'
+            // His word 2026-11-01: «buttons immer nach rechts».
+            . '<th scope="col" class="manage-column" style="width:10em;text-align:right">' . esc_html__('Aktionen', 'taxmod-stock') . '</th></tr>';
+        $html .= '<table class="wp-list-table widefat fixed striped table-view-list"><thead>' . $head . '</thead><tbody>' . ($plan === [] ? $this->noItems(4) : '');
+        $actions = static fn (string $buttons): string => '<td style="text-align:right">' . $buttons . '</td>';
 
         foreach ($plan as $purchase => $row) {
             $lock     = $row['lock'];
@@ -1102,25 +1105,26 @@ final class StockPage
                     : '';
                 // D-1058: a purchase closed without stock shows its reason and can be taken back.
                 $again = match (true) {
-                    $lock === 'not_stocked' => esc_html($this->stock->notStockedReason($purchase)) . ' <button type="submit" class="button button-small" name="booking" value="einlagern-' . esc_attr((string) $purchase) . '">' . esc_html__('Zurücknehmen', 'taxmod-stock') . '</button>',
+                    $lock === 'not_stocked' => '<button type="submit" class="button button-small" name="booking" value="einlagern-' . esc_attr((string) $purchase) . '">' . esc_html__('Zurücknehmen', 'taxmod-stock') . '</button>',
                     // A lot purchase that never goes into stock needs no splitting first.
                     $lock === 'purchase_undetermined' && $closing => $this->closeControls($purchase),
                     default => '',
                 };
-                $html .= '<td>' . esc_html($model === null ? '—' : '#' . $model . ' · ' . ($models[$model] ?? '')) . ' ' . $split . '</td><td>' . $again . '</td></tr>';
+                $html .= '<td>' . esc_html($model === null ? '—' : '#' . $model . ' · ' . ($models[$model] ?? '')) . '</td>'
+                    . '<td>' . ($lock === 'not_stocked' ? esc_html($this->stock->notStockedReason($purchase)) : '') . '</td>'
+                    . $actions($split . ' ' . $again) . '</tr>';
                 continue;
             }
 
             // The modeller's own record chooser on the purchase's «Modell» (his word 2026-10-28: «eigentlich haben wir doch den tax chooser»).
             $html .= '<td><input type="hidden" name="model[' . esc_attr((string) $purchase) . ']" value="' . esc_attr((string) ($model ?? '')) . '">'
                 . $this->recordPicker('thing[' . $purchase . ']', $model, $model === null ? '' : ($models[$model] ?? '#' . $model)) . '</td>'
-                . '<td><select name="location[' . esc_attr((string) $purchase) . ']">' . $this->options($places, '—', $where[$purchase] ?? 0) . '</select>'
-                . ($closing ? '<br>' . $this->closeControls($purchase) : '')
-                . '</td></tr>';
+                . '<td><select name="location[' . esc_attr((string) $purchase) . ']">' . $this->options($places, '—', $where[$purchase] ?? 0) . '</select></td>'
+                . $actions($closing ? $this->closeControls($purchase) : '') . '</tr>';
         }
 
         // His word 2026-10-28: «zwischenstände speichern … ohne we» — the second button keeps the chosen material, books nothing.
-        return $html . '</tbody></table><p class="submit">' . get_submit_button(__('Wareneingang buchen', 'taxmod-stock'), 'primary', 'submit', false)
+        return $html . '</tbody></table><p class="submit" style="text-align:right">' . get_submit_button(__('Wareneingang buchen', 'taxmod-stock'), 'primary', 'submit', false)
             . ' <button type="submit" class="button" name="booking" value="zuordnen">' . esc_html__('Zuordnung speichern', 'taxmod-stock') . '</button></p></form>';
     }
 
@@ -1228,8 +1232,11 @@ final class StockPage
         $ticked = array_filter(array_map('absint', (array) ($_POST['purchases'] ?? [])));
 
         // A purchase whose thing was changed by hand is meant to go in, ticked or not (his report 2026-10-28: «nix passiert»).
+        $groups = $this->assignedGroups();
+        $names  = $groups === [] ? [] : $this->stock->labels('purchase');
+
         foreach ($things as $purchase => $thing) {
-            if (absint($thing) > 0 && absint($thing) !== absint($models[$purchase] ?? 0)) {
+            if ((absint($thing) > 0 && absint($thing) !== absint($models[$purchase] ?? 0)) || isset($groups[absint($purchase)])) {
                 $ticked[] = absint($purchase);
             }
         }
@@ -1239,6 +1246,8 @@ final class StockPage
             $model = absint($models[$purchase] ?? 0);
 
             $out[$purchase] = (match (true) {
+                // D-1062: a group chosen in the search — a new material there, named like the purchase.
+                isset($groups[$purchase])           => ReceiptChoice::create(new NewThing($groups[$purchase], $names[$purchase] ?? '#' . $purchase)),
                 $thing === 0                        => throw StockError::purchaseWithoutThing($purchase),
                 $model !== 0 && $thing === $model   => ReceiptChoice::keep(),
                 default                             => ReceiptChoice::existing($thing),

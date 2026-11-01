@@ -416,7 +416,7 @@ final class InboundPage
             . '<th style="width:5em;text-align:right">' . esc_html__('Menge', 'taxmod-stock') . '</th>'
             . '<th style="width:8em;text-align:right">' . esc_html__('Preis je Stück', 'taxmod-stock') . '</th>'
             . '<th style="width:8em;text-align:right">' . esc_html__('Gesamt', 'taxmod-stock') . '</th>'
-            . '<th style="width:16em"></th></tr></thead><tbody>';
+            . '<th style="width:16em;text-align:right"></th></tr></thead><tbody>';
         $table     = $this->inbound->stock()->table('purchase');
         $money     = $this->inbound->stock()->table('money');
         $amountOf  = static function (?string $part) use ($money, $s): ?float {
@@ -447,7 +447,7 @@ final class InboundPage
                 . '<td style="text-align:right">' . esc_html($count > 0.0 ? (string) (0 + $count) : '—') . '</td>'
                 . '<td style="text-align:right">' . esc_html($shown($each)) . '</td>'
                 . '<td style="text-align:right">' . esc_html($shown($total)) . '</td>'
-                . '<td>' . $button . '</td></tr>';
+                . '<td style="text-align:right;white-space:nowrap">' . $button . '</td></tr>';
         }
 
         $html .= '</tbody></table>' . $this->events($order);

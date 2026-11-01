@@ -851,7 +851,9 @@ final class StockPage
             return '';
         }
 
-        $field = '<label style="display:block">' . esc_html__('Neue Gruppe', 'taxmod-stock') . '<br><select name="group" style="width:100%">' . $this->groupOptions($node) . '</select></label>'
+        $chooser = $this->stock->groupChooser('group', $node);
+        $field   = ($chooser !== '' ? '<span style="display:block">' . esc_html__('Neue Gruppe', 'taxmod-stock') . '<br>' . $chooser . '</span>'
+            : '<label style="display:block">' . esc_html__('Neue Gruppe', 'taxmod-stock') . '<br><select name="group" style="width:100%">' . $this->groupOptions($node) . '</select></label>')
             . '<p class="description">' . esc_html__('Felder, die die neue Gruppe zusätzlich hat, kommen leer dazu. Gingen dabei Werte verloren, wird nicht verschoben.', 'taxmod-stock') . '</p>';
 
         return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'
@@ -1486,7 +1488,7 @@ final class StockPage
             . 'document.addEventListener("change",function(e){var sw=e.target;if(!sw.classList||!sw.classList.contains("taxmod-dialog-switch")||!sw.checked){return;}'
             . 'var f=sw.parentNode.querySelector("iframe[data-src]");if(f&&!f.src){f.src=f.getAttribute("data-src");}'
             // A group already chosen in the row's search is the group «Neues Material» proposes (his report 2026-11-01).
-            . 'var nm=/^taxmod-stock-new-(\\d+)$/.exec(sw.id||"");if(nm){var r=document.querySelector("input[name=\\"thing["+nm[1]+"]\\"]:checked"),g=r&&/^new-(\\d+)$/.exec(r.value),sel=document.querySelector("select[name=\\"newgroup["+nm[1]+"]\\"]");if(g&&sel){sel.value=g[1];}}});'
+            . 'var nm=/^taxmod-stock-new-(\\d+)$/.exec(sw.id||"");if(nm){var r=document.querySelector("input[name=\\"thing["+nm[1]+"]\\"]:checked"),g=r&&/^new-(\\d+)$/.exec(r.value),sel=document.querySelector("select[name=\\"newgroup["+nm[1]+"]\\"]");if(g&&sel){sel.value=g[1];}var rb=g&&document.querySelector("input[name=\\"newgroup["+nm[1]+"]\\"][value=\\""+g[1]+"\\"]");if(rb){rb.checked=true;var ch=rb.closest(".taxmod-chooser"),tx=rb.parentNode.textContent.trim();if(ch){ch.querySelectorAll(":scope > .taxmod-dialog-open, .taxmod-chooser-current").forEach(function(e){e.textContent=tx;});}}}});'
             . '(function(){var mo=(new URLSearchParams(location.search).get("material")||"").replace(/\\D/g,""),n=0;if(!mo){return;}'
             // The rows of an order arrive after the page (lazy details), so the switch is looked for until it is there.
             . 'var t=setInterval(function(){var ms=document.getElementById("taxmod-stock-material-"+mo);if(ms){clearInterval(t);ms.checked=true;ms.dispatchEvent(new Event("change",{bubbles:true}));}else if(++n>40){clearInterval(t);}},250);})();'
@@ -1574,7 +1576,10 @@ final class StockPage
             return '';
         }
 
-        $field = '<label style="display:block">' . esc_html__('Gruppe', 'taxmod-stock') . '<br><select name="newgroup[' . esc_attr((string) $purchase) . ']" style="width:100%">' . $groups . '</select></label>'
+        // D-1075: the modeller's node chooser — search and tree, the one view he set for choosing in the tree; a plain list without it.
+        $chooser = $this->stock->groupChooser('newgroup[' . $purchase . ']');
+        $field   = ($chooser !== '' ? '<span style="display:block">' . esc_html__('Gruppe', 'taxmod-stock') . '<br>' . $chooser . '</span>'
+            : '<label style="display:block">' . esc_html__('Gruppe', 'taxmod-stock') . '<br><select name="newgroup[' . esc_attr((string) $purchase) . ']" style="width:100%">' . $groups . '</select></label>')
             . '<p class="description">' . esc_html__('Das Material heißt wie der Kauf; Lagerort und Bezugsquelle kommen aus der Bestellung.', 'taxmod-stock') . '</p>';
 
         return ListPage::dialogAction('taxmod-stock-new-' . $purchase, __('Neues Material', 'taxmod-stock'), __('Neues Material anlegen', 'taxmod-stock'), $field, 'booking', 'zuordnen', __('Anlegen', 'taxmod-stock')) . ' ';

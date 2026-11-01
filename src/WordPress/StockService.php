@@ -273,6 +273,36 @@ final class StockService
     }
 
     /**
+     * D-1075: the modeller's node chooser over the groups of things — its root, and the branches that hold no material
+     * (the Lager's own branch, and those he names) left out with everything under them.
+     */
+    public function groupChooser(string $name, int $preselected = 0, string $form = ''): string
+    {
+        $s    = $this->structure();
+        $root = $this->model->fields($s->node('lager'))[$s->field('lager_thing')]['target'] ?? 0;
+
+        if ($root === 0) {
+            return '';
+        }
+
+        $all     = $this->model->tree($root);
+        $own     = $all[$s->node('lager')]['parent'] ?? 0;
+        $exclude = array_values(array_unique(array_filter(
+            array_merge($own !== $root ? [$own] : [], $this->notMaterial()),
+            static fn (int $branch): bool => $branch !== $root && isset($all[$branch])
+        )));
+
+        return (string) apply_filters('taxmod_node_chooser', '', array_filter([
+            'name'        => $name,
+            'root'        => $root,
+            'exclude'     => $exclude,
+            'unpickable'  => [$root],
+            'preselected' => $preselected,
+            'form'        => $form,
+        ], static fn (mixed $v): bool => $v !== '' && $v !== 0 && $v !== []) + ['name' => $name, 'root' => $root]);
+    }
+
+    /**
      * Things whose text or group name holds every word of the search — only in the groups of things, never in the Lager's own
      * branch, so a purchase or a lot is no hit.
      *

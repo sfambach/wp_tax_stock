@@ -91,6 +91,9 @@ final class InboundPage
                 'arrived' => $this->applied($this->inbound->markArrived(array_values($ids), $today)),
                 'back'    => $this->applied($this->inbound->markNotArrived((int) ($ids[0] ?? 0))),
                 'unbook'  => $this->applied($this->inbound->unbook((int) ($ids[0] ?? 0))),
+                // D-1060: a purchase marked private already in the order view, and taken back.
+                'private'   => $this->applied($this->inbound->stock()->closeWithoutStock((int) ($ids[0] ?? 0), absint($_POST['purchase'] ?? 0), __('privat', 'taxmod-stock'))),
+                'unprivate' => $this->applied($this->inbound->stock()->reopenForStock((int) ($ids[0] ?? 0), absint($_POST['purchase'] ?? 0))),
                 'tracking' => $this->applied($this->inbound->addTracking((int) ($ids[0] ?? 0), sanitize_text_field(wp_unslash((string) ($_POST['number'] ?? ''))))),
                 'untrack' => $this->applied($this->inbound->removeTracking((int) ($ids[0] ?? 0), sanitize_text_field(wp_unslash((string) ($_POST['number'] ?? ''))))),
                 'test'    => $this->applied($this->inbound->recordTest(
@@ -388,8 +391,20 @@ final class InboundPage
         $purchases = $this->inbound->stock()->table('order')->all($order->id, $s->field('order_lines'));
         $html      = '<h4 style="margin-bottom:.3em">' . esc_html__('Käufe', 'taxmod-stock') . '</h4><ul style="margin-top:0">';
 
+        $stock   = $this->inbound->stock();
+        $closing = $stock->canCloseWithoutStock();
+        $booked  = $stock->receivedPurchases();
+
         foreach ($purchases as $purchase) {
-            $html .= '<li>' . esc_html($labels[(int) $purchase] ?? '#' . $purchase) . $this->whereItWent((int) $purchase) . '</li>';
+            $purchase = (int) $purchase;
+            $reason   = $closing ? $stock->notStockedReason($purchase) : '';
+            // D-1060: private purchases are marked here, before anything arrives; a marked one can always be taken back.
+            $button   = match (true) {
+                ! $closing || isset($booked[$purchase]) => '',
+                $reason !== ''                          => ' <em>(' . esc_html($reason) . ')</em> ' . $this->purchaseButton($order->id, $purchase, 'unprivate', __('Zurücknehmen', 'taxmod-stock'), $tab),
+                default                                 => ' ' . $this->purchaseButton($order->id, $purchase, 'private', __('Privat', 'taxmod-stock'), $tab),
+            };
+            $html .= '<li>' . esc_html($labels[$purchase] ?? '#' . $purchase) . $this->whereItWent($purchase) . $button . '</li>';
         }
 
         $html .= '</ul>' . $this->events($order);
@@ -413,6 +428,15 @@ final class InboundPage
         }
 
         return $html;
+    }
+
+    private function purchaseButton(int $order, int $purchase, string $op, string $label, string $tab): string
+    {
+        return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'
+            . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"><input type="hidden" name="op" value="' . esc_attr($op) . '">'
+            . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '"><input type="hidden" name="purchase" value="' . esc_attr((string) $purchase) . '">'
+            . '<input type="hidden" name="tab" value="' . esc_attr($tab) . '">' . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
+            . '<button type="submit" class="button button-small">' . esc_html($label) . '</button></form>';
     }
 
     /** The DHL module's last events per tracking number, newest first. */

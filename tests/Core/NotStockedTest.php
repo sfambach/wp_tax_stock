@@ -4,6 +4,8 @@ namespace TaxmodStock\Tests\Core;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use TaxmodStock\Core\InboundOrder;
+use TaxmodStock\Core\InboundStage;
 use TaxmodStock\Core\NotStocked;
 use TaxmodStock\Core\ReceiptPlan;
 use TaxmodStock\Core\StockError;
@@ -24,12 +26,31 @@ final class NotStockedTest extends TestCase
     }
 
     #[Test]
-    public function one_closed_of_two_open_makes_the_order_partial(): void
+    public function one_closed_before_anything_arrived_leaves_the_status(): void
     {
-        $s       = Fixture::structure();
-        $changes = (new NotStocked($s))->close(70, 72, 'verschenkt', $this->orders(), new Table([]), []);
+        $changes = (new NotStocked(Fixture::structure()))->close(70, 72, 'privat', $this->orders(), new Table([]), []);
+
+        self::assertCount(1, $changes);
+    }
+
+    #[Test]
+    public function one_closed_beside_one_booked_and_one_open_makes_the_order_partial(): void
+    {
+        $s      = Fixture::structure();
+        $orders = new Table([70 => [$s->field('order_lines') => ['71', '72', '73']]]);
+        $changes = (new NotStocked($s))->close(70, 72, 'privat', $orders, new Table([]), [71 => true]);
 
         self::assertSame((string) $s->value('status_partial'), $changes[1]['values'][(string) $s->field('order_status')]);
+    }
+
+    #[Test]
+    public function an_order_closed_in_every_purchase_goes_to_the_archive(): void
+    {
+        $s = Fixture::structure();
+
+        self::assertTrue(NotStocked::wholeOrder($s, $this->orders(), 70, [], [71 => true, 72 => true]));
+        self::assertFalse(NotStocked::wholeOrder($s, $this->orders(), 70, [71 => true], [72 => true]));
+        self::assertSame(InboundStage::Archived, (new InboundOrder(70, (int) $s->value('status_received'), '2026-11-01', null, [], [], true))->stage($s));
     }
 
     #[Test]

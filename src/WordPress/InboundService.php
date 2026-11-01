@@ -4,6 +4,7 @@ namespace TaxmodStock\WordPress;
 
 use TaxmodStock\Core\InboundChanges;
 use TaxmodStock\Core\InboundOrder;
+use TaxmodStock\Core\NotStocked;
 use TaxmodStock\Core\ReceiptReversal;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\TestQueue;
@@ -55,6 +56,8 @@ final class InboundService
         $table  = $this->stock->table('order');
         $fields = $this->fields();
         $out    = [];
+        $booked = $this->stock->receivedPurchases();
+        $closed = NotStocked::purchases($s, $this->stock->table('purchase'));
 
         foreach ($table->ids() as $id) {
             $tracking = array_values(array_filter(array_map('trim', $table->all($id, $fields['tracking'])), static fn (string $n): bool => $n !== ''));
@@ -75,7 +78,8 @@ final class InboundService
                 $table->first($id, $fields['ordered_at']),
                 $table->first($id, $fields['received_at']),
                 $tracking,
-                $stages
+                $stages,
+                NotStocked::wholeOrder($s, $table, $id, $booked, $closed)
             );
         }
 

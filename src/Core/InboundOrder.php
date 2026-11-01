@@ -43,6 +43,7 @@ final class InboundOrder
         public readonly ?string $receivedOn,
         public readonly array $tracking,
         public readonly array $dhl = [],
+        public readonly bool $closedWithoutStock = false,
     ) {
     }
 
@@ -52,6 +53,8 @@ final class InboundOrder
 
         return match (true) {
             $is('status_draft', $this->status), $is('status_cancelled', $this->status) => InboundStage::None,
+            // D-1060: every purchase private or otherwise closed without stock — nothing to receive, straight to the archive.
+            $this->closedWithoutStock                                                  => InboundStage::Archived,
             $is('status_received', $this->status)                                      => $archive?->isDone($this->receivedOn ?? $this->orderedOn) ? InboundStage::Archived : InboundStage::Booked,
             (bool) $archive?->isHistory($this->orderedOn)                              => InboundStage::Archived,
             $is('status_partial', $this->status), $this->hasArrived()                   => InboundStage::Arrived,

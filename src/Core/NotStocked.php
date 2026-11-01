@@ -60,7 +60,7 @@ final class NotStocked
 
         return [
             ['op' => 'set_values', 'record' => (string) $purchase, 'values' => [(string) $s->field('purchase_not_stocked') => trim($reason)]],
-            $this->status($order, $orders, $received + $closed),
+            ...$this->status($order, $orders, $received, $closed),
         ];
     }
 
@@ -82,7 +82,7 @@ final class NotStocked
 
         return [
             ['op' => 'set_values', 'record' => (string) $purchase, 'values' => [(string) $s->field('purchase_not_stocked') => '']],
-            $this->status($order, $orders, $received + $closed),
+            ...$this->status($order, $orders, $received, $closed, true),
         ];
     }
 
@@ -94,22 +94,35 @@ final class NotStocked
     }
 
     /**
-     * Received when every purchase is booked or closed, partly when some are, none when nothing is.
+     * Received when every purchase is booked or closed; partly received only when something was booked — a purchase closed
+     * before the parcel came does not make the order arrived (his word 2026-11-01: private positions are marked «schon in
+     * der bestellungs ansicht»). Otherwise the status stays, and taking back a close returns it to «bestellt».
      *
-     * @param array<int, true> $done
-     * @return array<string, mixed>
+     * @param array<int, true> $booked
+     * @param array<int, true> $closed
+     * @return list<array<string, mixed>>
      */
-    private function status(int $order, Table $orders, array $done): array
+    private function status(int $order, Table $orders, array $booked, array $closed, bool $reopening = false): array
     {
         $s      = $this->structure;
         $lines  = array_map('intval', $orders->all($order, $s->field('order_lines')));
-        $left   = array_diff($lines, array_keys($done));
+        $left   = array_diff($lines, array_keys($booked + $closed));
+        $anyIn  = array_intersect($lines, array_keys($booked)) !== [];
         $status = match (true) {
-            $lines !== [] && $left === []    => (string) $s->value('status_received'),
-            count($left) < count($lines)     => (string) $s->value('status_partial'),
-            default                          => '',
+            $lines !== [] && $left === [] => (string) $s->value('status_received'),
+            $anyIn                        => (string) $s->value('status_partial'),
+            $reopening                    => $s->hasValue('status_ordered') ? (string) $s->value('status_ordered') : '',
+            default                       => null,
         };
 
-        return ['op' => 'set_values', 'record' => (string) $order, 'values' => [(string) $s->field('order_status') => $status]];
+        return $status === null ? [] : [['op' => 'set_values', 'record' => (string) $order, 'values' => [(string) $s->field('order_status') => $status]]];
+    }
+
+    /** An order whose every purchase was closed without stock and none booked: private, straight to the archive. */
+    public static function wholeOrder(Structure $s, Table $orders, int $order, array $booked, array $closed): bool
+    {
+        $lines = array_map('intval', $orders->all($order, $s->field('order_lines')));
+
+        return $lines !== [] && array_diff($lines, array_keys($closed)) === [] && array_intersect($lines, array_keys($booked)) === [];
     }
 }

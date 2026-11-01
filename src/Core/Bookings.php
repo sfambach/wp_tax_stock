@@ -178,7 +178,7 @@ final class Bookings
      * speichern also wenn ich was zugeordnet habe will ich das auch speichern können ohne we». Only the purchase's «Modell»
      * changes; nothing is booked.
      *
-     * @param array<int, int|NewThing> $things purchase id → the thing it is, or a new one in a group (D-1062)
+     * @param array<int, int|NewThing> $things purchase id → the thing it is (0: none any more), or a new one in a group (D-1062)
      * @return list<array<string, mixed>>
      */
     public function assign(int $order, array $things, Table $orders, Table $purchases): array
@@ -197,8 +197,9 @@ final class Bookings
                 continue;
             }
 
+            // 0 is a material taken away with «Zurücksetzen»: the purchase forgets its «Modell» (his report 2026-11-01).
             if ((int) $purchases->first($purchase, $s->field('purchase_model')) !== $thing) {
-                $this->changes[] = ['op' => 'set_values', 'record' => $purchase, 'values' => [(string) $s->field('purchase_model') => (string) $thing]];
+                $this->changes[] = ['op' => 'set_values', 'record' => $purchase, 'values' => [(string) $s->field('purchase_model') => $thing === 0 ? '' : (string) $thing]];
             }
         }
 

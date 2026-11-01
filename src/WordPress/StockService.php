@@ -717,14 +717,14 @@ final class StockService
     /**
      * The material of some purchases kept without a receipt (the interim state of a goods receipt).
      *
-     * @param array<int, int> $things purchase id → thing
+     * @param array<int, int> $things purchase id → thing, 0 to take it away
      * @param array<int, int> $places purchase id → the place chosen for it, kept until it is booked
      * @param array<int, NewThing> $new purchase id → a new material in a group, from its dialog (D-1062, D-1069)
      * @return array<string, mixed> the modeller's answer; nothing written when nothing changed
      */
     public function assignPurchases(int $order, array $things, array $places = [], array $new = []): array
     {
-        $this->checkThings(array_values($things));
+        $this->checkThings(array_values(array_filter($things)));
         $things = $new + $things;
 
         $this->checkGroups(array_values(array_filter($things, static fn (int|NewThing $t): bool => $t instanceof NewThing)));

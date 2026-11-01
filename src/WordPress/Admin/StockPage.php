@@ -1271,7 +1271,8 @@ final class StockPage
         $out = [];
 
         foreach ((array) ($_POST['thing'] ?? []) as $purchase => $thing) {
-            if (absint($purchase) > 0 && absint($thing) > 0) {
+            // An empty choice is a material taken away; 0 tells the booking to clear the purchase's «Modell».
+            if (absint($purchase) > 0 && (absint($thing) > 0 || (string) $thing === '')) {
                 $out[absint($purchase)] = absint($thing);
             }
         }

@@ -251,6 +251,18 @@ final class BookingsTest extends TestCase
     }
 
     #[Test]
+    public function a_material_taken_away_clears_the_purchases_model(): void
+    {
+        $s                    = Fixture::structure();
+        [$orders, $purchases] = $this->order(['0', '0']);
+
+        $changes = (new Bookings($s, '2026-11-01'))->assign(70, [72 => 0, 71 => 0], $orders, $purchases);
+
+        self::assertCount(1, $changes, 'a purchase without a material stays as it is');
+        self::assertSame(['op' => 'set_values', 'record' => 72, 'values' => [(string) $s->field('purchase_model') => '']], $changes[0]);
+    }
+
+    #[Test]
     public function a_new_material_comes_with_what_the_purchase_tells_about_its_lager_view(): void
     {
         $s                    = Fixture::structure();

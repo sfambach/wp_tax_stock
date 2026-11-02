@@ -9,6 +9,10 @@ namespace TaxmodStock\Core;
  * order, their lines and the lots go, and the order loses its status; «Eingegangen am» stays, so it stands under
  * «Angekommen» again. Materials created during the receipt stay: they are the tree's, not the receipt's.
  *
+ * D-1097, D-1099: when «Positionen» of the Vorgänge is a composition, the lines are parts of their Vorgang and go with it —
+ * they are not removed one by one after it (the second removal would find nothing). Should another record still point at one
+ * of them, the modeller refuses the whole list and names who ({@see StockError::fromModel()}).
+ *
  * ```mermaid
  * flowchart LR
  *   O["order"] -->|lines| P["purchases"] -->|lot_purchase| L["lots"]
@@ -64,7 +68,7 @@ final class ReceiptReversal
         $remove  = static fn (int $id): array => ['op' => 'remove_record', 'record' => (string) $id];
         $changes = [
             ...array_map($remove, $receipts),
-            ...array_map($remove, array_keys($ofReceipt)),
+            ...($s->composes('transaction_lines') ? [] : array_map($remove, array_keys($ofReceipt))),
             ...array_map($remove, $mine),
         ];
         $changes[] = ['op' => 'set_values', 'record' => (string) $order, 'values' => [(string) $s->field('order_status') => '']];

@@ -89,8 +89,25 @@ final class Messages
             /* translators: %s: what was typed */
             'not_a_date'                => sprintf(__('«%s» ist kein gültiges Datum.', 'taxmod-stock'), $error->detail),
             'model_refused'             => sprintf(__('Der Taxonomy Modeller hat die Buchung abgelehnt, nichts wurde geschrieben: %s', 'taxmod-stock'), $error->detail),
+            'parts_referenced'          => self::partsReferenced($error->detail),
             default                     => $error->getMessage(),
         };
+    }
+
+    /** D-1099: who still points at a position of the head, one «Position #… ← #… («Feld»)» each. */
+    private static function partsReferenced(string $detail): string
+    {
+        [$head, $list] = explode('|', $detail, 2) + [1 => ''];
+        $who           = [];
+
+        foreach (array_filter(explode(';', $list)) as $entry) {
+            [$part, $record, $field] = explode(':', $entry, 3) + [1 => '', 2 => ''];
+            /* translators: 1: record id of the position, 2: record id that points at it, 3: name of its field */
+            $who[] = sprintf(__('Position #%1$s ← #%2$s («%3$s»)', 'taxmod-stock'), $part, $record, $field);
+        }
+
+        /* translators: 1: record id of the head (order, Vorgang), 2: list of who points at its positions */
+        return sprintf(__('#%1$s lässt sich nicht löschen: auf seine Positionen verweisen noch andere Sätze — %2$s. Erst diese Verweise entfernen; nichts wurde geschrieben.', 'taxmod-stock'), $head, implode('; ', $who));
     }
 
     public static function lockReason(string $reason): string

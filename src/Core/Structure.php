@@ -85,14 +85,23 @@ final class Structure
     ];
 
     /**
-     * @param array<string, int> $nodes
-     * @param array<string, int> $fields
-     * @param array<string, int> $values
+     * D-1097: the lists of positions that may be compositions — then the positions are parts of their head. Which kind a
+     * list has is read from the model ({@see withComposed()}), never stored here, so the module works before and after the
+     * switch. Field key → the key of the head node that declares it.
+     */
+    private const POSITION_LISTS = ['transaction_lines' => 'transaction', 'order_lines' => 'order'];
+
+    /**
+     * @param array<string, int>  $nodes
+     * @param array<string, int>  $fields
+     * @param array<string, int>  $values
+     * @param array<string, true> $composed field keys of position lists that are compositions in the model
      */
     private function __construct(
         private readonly array $nodes,
         private readonly array $fields,
         private readonly array $values,
+        private readonly array $composed = [],
     ) {
     }
 
@@ -170,6 +179,29 @@ final class Structure
     public function hasValue(string $key): bool
     {
         return isset($this->values[$key]);
+    }
+
+    /**
+     * The same ids, told which position lists the model holds as compositions (D-1097): their positions are written as
+     * parts of the head, moved with `move_part` (D-1098) and go with the head (D-1099).
+     *
+     * @param list<string> $keys field keys, e.g. «order_lines»
+     */
+    public function withComposed(array $keys): self
+    {
+        return new self($this->nodes, $this->fields, $this->values, array_fill_keys(array_values(array_intersect(array_keys(self::POSITION_LISTS), $keys)), true));
+    }
+
+    /** Whether the positions of this list are parts of their head (D-1097), as the model said when it was read. */
+    public function composes(string $key): bool
+    {
+        return isset($this->composed[$key]);
+    }
+
+    /** @return array<string, string> the position lists that may be compositions: field key → key of its head node */
+    public static function positionLists(): array
+    {
+        return self::POSITION_LISTS;
     }
 
     /** @return array{nodes: array<string, int>, fields: array<string, int>, values: array<string, int>} */

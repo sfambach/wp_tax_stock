@@ -9,10 +9,14 @@ namespace TaxmodStock\Core;
  * name (D-956). A lot belongs to a thing of the tree, which is the material (D-995); a new thing is created in the
  * same list. The list is written in one call, all or nothing — the module never writes half a booking.
  *
+ * D-1097: when «Positionen» is a composition in the model, the lines are parts of their Vorgang — written inside its
+ * `set_values` under part keys, not created on their own; while it is an aggregation they stay records of their own whose
+ * ids the Vorgang lists. The kind is the model's ({@see Structure::composes()}), so both hold until the switch.
+ *
  * ```mermaid
  * flowchart LR
  *   F["form"] --> B["Bookings: change list"] --> W["taxmod/write-data, one call"]
- *   B -.- V["(neues Ding) · Vorgang · Bestandsposten · Pos"]
+ *   B -.- V["(neues Ding) · Bestandsposten · Vorgang mit Pos"]
  * ```
  *
  * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/lager/konzept.md §3.5, §3.5a, §4
@@ -22,8 +26,11 @@ final class Bookings
     /** @var list<array<string, mixed>> */
     private array $changes = [];
 
-    /** @var list<string> refs of the Pos lines of the booking being built */
+    /** @var list<string> refs of the Pos lines of the booking being built, while «Positionen» is an aggregation */
     private array $lineRefs = [];
+
+    /** @var array<string, array<string, string>> D-1097: the Pos lines as parts of the Vorgang, part key → values, while «Positionen» is a composition */
+    private array $lineParts = [];
 
     private int $counter = 0;
 
@@ -160,14 +167,21 @@ final class Bookings
                 continue;
             }
 
-            $ref             = $this->ref('k');
+            $ref = $this->ref('k');
+
+            // D-1097: a part of the order when «Positionen» is a composition, else a purchase of its own the order lists.
+            if ($s->composes('order_lines')) {
+                $added[$ref] = $values;
+                continue;
+            }
+
             $added[]         = '@' . $ref;
             $this->changes[] = ['op' => 'create_record', 'ref' => $ref, 'node' => $s->node('purchase')];
             $this->changes[] = ['op' => 'set_values', 'record' => '@' . $ref, 'values' => $values];
         }
 
         if ($added !== []) {
-            $this->changes[] = ['op' => 'set_values', 'record' => $order, 'values' => [(string) $s->field('order_lines') => ['values' => [...$inOrder, ...$added]]]];
+            $this->changes[] = ['op' => 'set_values', 'record' => $order, 'values' => [(string) $s->field('order_lines') => $s->composes('order_lines') ? $added : ['values' => [...$inOrder, ...$added]]]];
         }
 
         return $this->changes;
@@ -447,8 +461,11 @@ final class Bookings
             return $this->finish($title, 'kind_reservation', [(string) $s->field('transaction_reference') => (string) $subject] + $deadline);
         }
 
+        // D-1097: new parts join the parts the reservation holds; an aggregation is written whole, the old ids first.
         $this->changes[] = ['op' => 'set_values', 'record' => (string) $open, 'values' => [
-            (string) $s->field('transaction_lines') => ['values' => [...$transactions->all($open, $s->field('transaction_lines')), ...$this->lineRefs]],
+            (string) $s->field('transaction_lines') => $s->composes('transaction_lines')
+                ? $this->lineParts
+                : ['values' => [...$transactions->all($open, $s->field('transaction_lines')), ...$this->lineRefs]],
         ] + $deadline];
 
         return $this->changes;
@@ -499,8 +516,9 @@ final class Bookings
 
     private function start(): void
     {
-        $this->changes  = [];
-        $this->lineRefs = [];
+        $this->changes   = [];
+        $this->lineRefs  = [];
+        $this->lineParts = [];
     }
 
     /** The thing a purchase goes in as; a new one is created here, and the purchase is told its «Modell». */
@@ -601,13 +619,20 @@ final class Bookings
             $values[(string) $s->field('line_reverses')] = (string) $reverses;
         }
 
+        // D-1097: a part has no ref of its own — nothing later in the list names a line, so none is needed.
+        if ($s->composes('transaction_lines')) {
+            $this->lineParts[$ref] = $values;
+
+            return;
+        }
+
         $this->changes[] = ['op' => 'create_record', 'ref' => $ref, 'node' => $s->node('line')];
         $this->changes[] = ['op' => 'set_values', 'record' => '@' . $ref, 'values' => $values];
         $this->lineRefs[] = '@' . $ref;
     }
 
     /**
-     * The Vorgang itself, last: its «Positionen» name the lines created above.
+     * The Vorgang itself, last: its «Positionen» name the lines created above — or, as a composition, hold them as parts.
      *
      * @param array<string, string> $extra
      * @return list<array<string, mixed>>
@@ -623,7 +648,7 @@ final class Bookings
             (string) $s->field('transaction_kind')   => (string) $s->value($kind),
             (string) $s->field('transaction_date')   => $this->today,
             (string) $s->field('transaction_source') => (string) $s->value('source_manual'),
-            (string) $s->field('transaction_lines')  => ['values' => $this->lineRefs],
+            (string) $s->field('transaction_lines')  => $s->composes('transaction_lines') ? $this->lineParts : ['values' => $this->lineRefs],
         ] + $extra];
 
         return $this->changes;

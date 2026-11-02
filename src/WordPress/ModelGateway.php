@@ -253,7 +253,7 @@ final class ModelGateway
         $result = $ability->execute($input);
 
         if (is_wp_error($result)) {
-            throw StockError::modelRefused($result->get_error_message());
+            throw StockError::fromModel($result->get_error_message());
         }
 
         return is_array($result) ? $result : [];

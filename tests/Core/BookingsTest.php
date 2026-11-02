@@ -38,6 +38,38 @@ final class BookingsTest extends TestCase
     }
 
     #[Test]
+    public function as_a_composition_the_lines_are_parts_of_the_vorgang_naming_their_lots_by_ref(): void
+    {
+        $s       = Fixture::composed();
+        $changes = (new Bookings($s, '2026-10-21'))->inventory([
+            new InventoryRow(3912, null, 'BC547C', '40', null, ''),
+            new InventoryRow(3913, null, 'BC557C', '10', null, ''),
+        ], 'Inventur');
+        $values  = $this->valuesByNode($changes);
+
+        self::assertArrayNotHasKey($s->node('line'), $values, 'D-1097: no line is created on its own');
+        self::assertSame(['p2', 'p4'], array_keys($values[3][(string) $s->field('transaction_lines')]), 'one part key per line, never «0»');
+        self::assertSame(['@l1', '40', '40'], array_values(array_intersect_key(
+            $values[3][(string) $s->field('transaction_lines')]['p2'],
+            array_flip([(string) $s->field('line_lot'), (string) $s->field('line_quantity'), (string) $s->field('line_counted')])
+        )), 'a part names the lot created before it in the same list');
+        self::assertSame('@l3', $values[3][(string) $s->field('transaction_lines')]['p4'][(string) $s->field('line_lot')]);
+    }
+
+    #[Test]
+    public function as_a_composition_a_receipt_puts_its_lines_into_its_vorgang(): void
+    {
+        $s                    = Fixture::composed();
+        [$orders, $purchases] = $this->order(['0', '0']);
+        $changes              = (new Bookings($s, '2026-10-21'))->receipt(70, [72 => ReceiptChoice::keep()], $orders, $purchases, new Table([]), [], 'WE');
+        $deal                 = end($changes)['values'];
+
+        self::assertSame([], array_filter($changes, static fn (array $c): bool => $c['op'] === 'create_record' && $c['node'] === $s->node('line')));
+        self::assertSame('@l1', $deal[(string) $s->field('transaction_lines')]['p2'][(string) $s->field('line_lot')]);
+        self::assertSame('70', $deal[(string) $s->field('transaction_order')]);
+    }
+
+    #[Test]
     public function a_count_of_a_new_thing_creates_it_in_its_group_and_one_without_a_name_is_refused(): void
     {
         $s      = Fixture::structure();
@@ -177,6 +209,26 @@ final class BookingsTest extends TestCase
         self::assertSame(['neu' => [(string) $s->field('money_amount') => '4.50', (string) $s->field('money_unit') => '208']], $added[(string) $s->field('purchase_unit_price')]);
         self::assertSame(['values' => ['71', '72', '@k2']], $order[(string) $s->field('order_lines')], 'the new purchase joins the order');
         self::assertArrayNotHasKey($s->node('transaction'), $values, 'no booking: nothing is in stock before the receipt');
+    }
+
+    #[Test]
+    public function as_a_composition_a_split_writes_the_further_purchases_as_parts_of_the_order(): void
+    {
+        $s                    = Fixture::composed();
+        [$orders, $purchases] = $this->order(['1', '0']);
+
+        $changes = (new Bookings($s, '2026-10-28'))->split(70, 71, [
+            new SplitRow(55, null, 'Mainboard', '1', null),
+            new SplitRow(null, new NewThing(3640, 'Netzteil AT'), 'Netzteil AT', '2', '4,50'),
+        ], $orders, $purchases, new Table([]));
+        $order   = end($changes);
+        $part    = $order['values'][(string) $s->field('order_lines')]['k2'] ?? [];
+
+        self::assertSame([], array_filter($changes, static fn (array $c): bool => $c['op'] === 'create_record' && $c['node'] === $s->node('purchase')), 'D-1097: no purchase of its own');
+        self::assertSame(70, $order['record']);
+        self::assertSame(['k2'], array_keys($order['values'][(string) $s->field('order_lines')]), 'only the new part; 71 and 72 stay where they are');
+        self::assertSame('@d1', $part[(string) $s->field('purchase_model')], 'the part names the material created before it');
+        self::assertSame(['neu' => [(string) $s->field('money_amount') => '4.50', (string) $s->field('money_unit') => '208']], $part[(string) $s->field('purchase_unit_price')], 'its price a part of the part');
     }
 
     #[Test]

@@ -100,6 +100,59 @@ final class PurchasingTest extends TestCase
     }
 
     #[Test]
+    public function as_a_composition_a_reorder_writes_the_purchase_as_a_part_of_the_demand(): void
+    {
+        $s       = self::structure(true);
+        $changes = (new Purchasing($s, '2026-10-30'))->reorder([3912 => ['label' => 'BC547C', 'quantity' => '5'], 4300 => ['label' => 'LM317', 'quantity' => '1']], null, 'Kiselev-Backplane', $this->orders(), $this->purchases());
+
+        self::assertSame([], array_filter($changes, static fn (array $c): bool => $c['op'] === 'create_record' && $c['node'] === $s->node('purchase')), 'D-1097: no purchase of its own');
+        self::assertSame('@b1', end($changes)['record']);
+        self::assertSame(['k2', 'k3'], array_keys(end($changes)['values'][(string) $s->field('order_lines')]), 'one part key per new purchase, never «0»');
+        self::assertSame('5', end($changes)['values'][(string) $s->field('order_lines')]['k2'][(string) $s->field('purchase_quantity')]);
+        self::assertSame('4300', end($changes)['values'][(string) $s->field('order_lines')]['k3'][(string) $s->field('purchase_model')]);
+    }
+
+    #[Test]
+    public function as_a_composition_a_source_rehangs_the_part_and_keeps_its_id(): void
+    {
+        $s       = self::structure(true);
+        $changes = (new Purchasing($s, '2026-10-30'))->source(self::DEMAND, 70, 'lcsc', 'C8550', null, $this->orders(), $this->purchases());
+
+        self::assertCount(2, $changes, 'no list of the demand or the draft is rewritten');
+        self::assertSame('70', $changes[0]['record']);
+        self::assertSame(['op' => 'move_part', 'part' => '70', 'to' => (string) self::DRAFT, 'field' => (string) $s->field('order_lines')], $changes[1], 'D-1098: re-hung onto the open draft');
+
+        $new = (new Purchasing($s, '2026-10-30'))->source(self::DEMAND, 71, 'Reichelt', '', null, $this->orders(), $this->purchases());
+        self::assertSame(['op' => 'move_part', 'part' => '71', 'to' => '@e1', 'field' => (string) $s->field('order_lines')], end($new), 'onto a draft created in the same list');
+    }
+
+    #[Test]
+    public function as_a_composition_unsource_rehangs_the_part_and_cancels_the_emptied_draft(): void
+    {
+        $s       = self::structure(true);
+        $changes = (new Purchasing($s, '2026-10-30'))->unsource(self::DRAFT, 72, $this->orders(), $this->purchases());
+
+        self::assertSame([
+            ['op' => 'move_part', 'part' => '72', 'to' => (string) self::DEMAND, 'field' => (string) $s->field('order_lines')],
+            ['op' => 'set_values', 'record' => (string) self::DRAFT, 'values' => [(string) $s->field('order_status') => '211']],
+        ], $changes);
+    }
+
+    #[Test]
+    public function a_removed_line_leaves_the_list_and_as_a_composition_only_the_part_is_removed(): void
+    {
+        $s = self::structure();
+
+        self::assertSame([
+            ['op' => 'set_values', 'record' => (string) self::DEMAND, 'values' => [(string) $s->field('order_lines') => ['values' => ['71']]]],
+            ['op' => 'remove_record', 'record' => '70'],
+        ], (new Purchasing($s, '2026-10-30'))->removeLine(self::DEMAND, 70, $this->orders()));
+
+        // D-1097: removing a part takes its holder's row with it; rewriting the list as well would write it twice.
+        self::assertSame([['op' => 'remove_record', 'record' => '70']], (new Purchasing(self::structure(true), '2026-10-30'))->removeLine(self::DEMAND, 70, $this->orders()));
+    }
+
+    #[Test]
     public function marking_ordered_sets_status_number_and_date_and_back_to_draft_undoes_it(): void
     {
         $s = self::structure();
@@ -155,12 +208,12 @@ final class PurchasingTest extends TestCase
         ]);
     }
 
-    /** The fixture with the order statuses purchasing needs. */
-    private static function structure(): Structure
+    /** The fixture with the order statuses purchasing needs; with `$composed` after the switch of D-1097. */
+    private static function structure(bool $composed = false): Structure
     {
         $raw = Fixture::structure()->toArray();
         $raw['values'] += ['status_draft' => 209, 'status_ordered' => 210, 'status_cancelled' => 211];
 
-        return Structure::fromArray($raw);
+        return Structure::fromArray($raw)->withComposed($composed ? ['order_lines'] : []);
     }
 }

@@ -27,6 +27,21 @@ final class ReceiptReversalTest extends TestCase
     }
 
     #[Test]
+    public function as_a_composition_the_lines_go_with_their_receipt_and_are_not_removed_after_it(): void
+    {
+        $s = Fixture::composed();
+        [$orders, $lots, $transactions] = $this->booked();
+        $lines = new Table([80 => [$s->field('line_lot') => ['60'], $s->field('line_quantity') => ['1']]]);
+
+        // D-1097/D-1099: the cascade takes line 80 with Vorgang 90; a second removal of it would find nothing and refuse the list.
+        self::assertSame([
+            ['op' => 'remove_record', 'record' => '90'],
+            ['op' => 'remove_record', 'record' => '60'],
+            ['op' => 'set_values', 'record' => '70', 'values' => [(string) $s->field('order_status') => '']],
+        ], (new ReceiptReversal($s))->reverse(70, $orders, $lots, $lines, $transactions));
+    }
+
+    #[Test]
     public function a_lot_with_a_consumption_keeps_the_receipt(): void
     {
         $s = Fixture::structure();

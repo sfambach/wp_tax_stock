@@ -9,6 +9,10 @@ namespace TaxmodStock\Core;
  * moves the purchase from the demand into its supplier's draft and lets it point back at the demand, so the demand stays
  * the bracket — all parts of a project, bought from several suppliers. Every step has its way back.
  *
+ * D-1097, D-1098: when the order's «Positionen» is a composition in the model, a purchase is a part of its order — a new one
+ * is written as a part of it, and choosing a source re-hangs it with `move_part`, keeping its id. While it is an aggregation,
+ * the order's list of ids is rewritten as before ({@see Structure::composes()}).
+ *
  * ```mermaid
  * flowchart LR
  *   M["Material «Nachbestellen»"] --> B["Bedarf (Entwurf, kein Händler)"]
@@ -155,19 +159,27 @@ final class Purchasing
                 continue;
             }
 
-            $ref             = $this->ref('k');
-            $added[]         = '@' . $ref;
-            $this->changes[] = ['op' => 'create_record', 'ref' => $ref, 'node' => $s->node('purchase')];
-            $this->changes[] = ['op' => 'set_values', 'record' => '@' . $ref, 'values' => [
+            $ref    = $this->ref('k');
+            $values = [
                 (string) $s->field('label')                 => trim($row['label']) !== '' ? trim($row['label']) : '#' . $thing,
                 (string) $s->field('purchase_model')        => (string) $thing,
                 (string) $s->field('purchase_quantity')     => (string) $quantity,
                 (string) $s->field('purchase_undetermined') => '0',
-            ]];
+            ];
+
+            // D-1097: a part of the demand when «Positionen» is a composition, else a purchase of its own the demand lists.
+            if ($s->composes('order_lines')) {
+                $added[$ref] = $values;
+                continue;
+            }
+
+            $added[]         = '@' . $ref;
+            $this->changes[] = ['op' => 'create_record', 'ref' => $ref, 'node' => $s->node('purchase')];
+            $this->changes[] = ['op' => 'set_values', 'record' => '@' . $ref, 'values' => $values];
         }
 
         if ($added !== []) {
-            $this->changes[] = ['op' => 'set_values', 'record' => $record, 'values' => [(string) $s->field('order_lines') => ['values' => [...$lines, ...$added]]]];
+            $this->changes[] = ['op' => 'set_values', 'record' => $record, 'values' => [(string) $s->field('order_lines') => $s->composes('order_lines') ? $added : ['values' => [...$lines, ...$added]]]];
         }
 
         return $this->changes;
@@ -223,6 +235,14 @@ final class Purchasing
         }
 
         $this->changes[] = ['op' => 'set_values', 'record' => (string) $purchase, 'values' => $values];
+
+        // D-1098, his word «f2 wecheln erlauben»: the part is re-hung, its id stays — no list is rewritten.
+        if ($s->composes('order_lines')) {
+            $this->changes[] = $this->movePart($purchase, $target);
+
+            return $this->changes;
+        }
+
         $this->changes[] = ['op' => 'set_values', 'record' => (string) $demand, 'values' => [(string) $s->field('order_lines') => ['values' => array_values(array_diff($lines, [(string) $purchase]))]]];
         $this->changes[] = ['op' => 'set_values', 'record' => $target, 'values' => [(string) $s->field('order_lines') => ['values' => [...$draftLines, (string) $purchase]]]];
 
@@ -253,11 +273,23 @@ final class Purchasing
             throw StockError::notADemand($demand);
         }
 
-        $left = array_values(array_diff($lines, [(string) $purchase]));
+        $left      = array_values(array_diff($lines, [(string) $purchase]));
+        $cancelled = $left === [] && $s->hasValue('status_cancelled') ? [(string) $s->field('order_status') => (string) $s->value('status_cancelled')] : [];
         $this->start();
+
+        // D-1098: back into the demand by re-hanging the part; only a draft left empty still needs its status.
+        if ($s->composes('order_lines')) {
+            $this->changes[] = $this->movePart($purchase, (string) $demand);
+
+            if ($cancelled !== []) {
+                $this->changes[] = ['op' => 'set_values', 'record' => (string) $draft, 'values' => $cancelled];
+            }
+
+            return $this->changes;
+        }
+
         $this->changes[] = ['op' => 'set_values', 'record' => (string) $demand, 'values' => [(string) $s->field('order_lines') => ['values' => [...$orders->all($demand, $s->field('order_lines')), (string) $purchase]]]];
-        $this->changes[] = ['op' => 'set_values', 'record' => (string) $draft, 'values' => [(string) $s->field('order_lines') => ['values' => $left]]
-            + ($left === [] && $s->hasValue('status_cancelled') ? [(string) $s->field('order_status') => (string) $s->value('status_cancelled')] : [])];
+        $this->changes[] = ['op' => 'set_values', 'record' => (string) $draft, 'values' => [(string) $s->field('order_lines') => ['values' => $left]] + $cancelled];
 
         return $this->changes;
     }
@@ -284,6 +316,11 @@ final class Purchasing
     {
         $s     = $this->structure;
         $lines = $this->requireDraftLine($order, $purchase, $orders);
+
+        // D-1097: removing a part takes it off its order's list as well.
+        if ($s->composes('order_lines')) {
+            return [['op' => 'remove_record', 'record' => (string) $purchase]];
+        }
 
         return [
             ['op' => 'set_values', 'record' => (string) $order, 'values' => [(string) $s->field('order_lines') => ['values' => array_values(array_diff($lines, [(string) $purchase]))]]],
@@ -458,6 +495,16 @@ final class Purchasing
 
         // A non-numeric key adds a new part, «0» fills the one the record holds (taxmod/apply, set_values).
         return [$held ? '0' : 'neu' => $part];
+    }
+
+    /**
+     * D-1098: the purchase re-hung onto another order's «Positionen» — appended there, its id unchanged.
+     *
+     * @return array<string, mixed>
+     */
+    private function movePart(int $purchase, string $order): array
+    {
+        return ['op' => 'move_part', 'part' => (string) $purchase, 'to' => $order, 'field' => (string) $this->structure->field('order_lines')];
     }
 
     private function start(): void

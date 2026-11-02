@@ -41,4 +41,10 @@ final class Fixture
             ],
         ]);
     }
+
+    /** D-1097: the same structure after the switch — «Positionen» of Vorgänge and Bestellungen are compositions. */
+    public static function composed(string ...$without): Structure
+    {
+        return self::structure(...$without)->withComposed(['transaction_lines', 'order_lines']);
+    }
 }

@@ -8,7 +8,30 @@
  * Builds a small Stock structure through `taxmod/apply`, points the module's option at it, books through the
  * module's service layer and checks the stock list. Uses the modeller's no-write bracket: nothing survives the run.
  * Needs the Taxonomy Modeller active (WP_ROOT, TAXMOD_ROOT override the paths).
+ *
+ * D-1097: runs twice, with «Positionen» of Vorgänge and Bestellungen as aggregation (as live until the switch) and as
+ * composition (switched with `set_kind` after the records are written, as the live migration will) — the module books
+ * alike before and after. TAXMOD_STOCK_KIND=aggregation|composition runs one of them.
  */
+
+$kind = getenv('TAXMOD_STOCK_KIND') ?: '';
+
+if ($kind === '') {
+    $rot = 0;
+
+    foreach (['aggregation', 'composition'] as $each) {
+        echo "«Positionen» as {$each}:\n";
+        passthru('TAXMOD_STOCK_KIND=' . $each . ' ' . escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(__FILE__) . ' ' . implode(' ', array_map('escapeshellarg', array_slice($argv, 1))), $code);
+        $rot += $code === 0 ? 0 : 1;
+    }
+
+    exit($rot === 0 ? 0 : 1);
+}
+
+if (! in_array($kind, ['aggregation', 'composition'], true)) {
+    echo "TAXMOD_STOCK_KIND is aggregation or composition\n";
+    exit(1);
+}
 
 $wordpress = $argv[1] ?? (getenv('WP_ROOT') ?: '/home/user/wordpress');
 $modeller  = getenv('TAXMOD_ROOT') ?: '/home/user/wp-taxonomy-modeler';
@@ -63,6 +86,11 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'create_node', 'ref' => 'stat', 'name' => '__Bestellstatus', 'parent' => 410, 'class' => 'Choice'],
     ['op' => 'create_node', 'ref' => 's_teil', 'name' => 'teilweise eingegangen', 'parent' => '@stat'],
     ['op' => 'create_node', 'ref' => 's_ganz', 'name' => 'eingegangen', 'parent' => '@stat'],
+    // D-1027: purchasing's statuses; D-1083: the reservation's kind.
+    ['op' => 'create_node', 'ref' => 's_entw', 'name' => 'Entwurf', 'parent' => '@stat'],
+    ['op' => 'create_node', 'ref' => 's_best', 'name' => 'bestellt', 'parent' => '@stat'],
+    ['op' => 'create_node', 'ref' => 's_storn', 'name' => 'storniert', 'parent' => '@stat'],
+    ['op' => 'create_node', 'ref' => 'k_res', 'name' => 'Reservierung', 'parent' => '@arten'],
     ['op' => 'create_node', 'ref' => 'quel', 'name' => '__Quellen', 'parent' => 410, 'class' => 'Choice'],
     ['op' => 'create_node', 'ref' => 'q_hand', 'name' => 'von Hand', 'parent' => '@quel'],
     ['op' => 'create_node', 'ref' => 'verw', 'name' => '__Verwendungen', 'parent' => 410, 'class' => 'Choice'],
@@ -97,6 +125,10 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     $field('k_offen', '@pur', 'Noch nicht näher bestimmt', $bool, 'composition', '1..1'),
     $field('k_ein', '@pur', 'Einstandspreis je Stück', $money, 'composition', '0..1'),
     $field('k_preis', '@pur', 'Preis je Stück', $money, 'composition', '0..1'),
+    $field('o_hand', '@ord', 'Händler', $text, 'composition', '0..1'),
+    $field('k_bedarf', '@pur', 'Bedarf', '@ord', 'aggregation', '0..1'),
+    $field('v_bezug', '@vg', 'Bezug', 402, 'aggregation', '0..1'),
+    $field('p_ding', '@vp', 'Material', 402, 'aggregation', '0..1'),
     ['op' => 'create_record', 'ref' => 'lager', 'node' => '@lo'],
     ['op' => 'set_values', 'record' => '@lager', 'values' => ['@label' => 'Lager']],
     ['op' => 'create_record', 'ref' => 'platz', 'node' => '@lo'],
@@ -133,11 +165,25 @@ if (is_wp_error($aufbau)) {
 
 $r = $aufbau['refs'];
 
+// D-1097: the switch as it will be made live — the records stand, only the kind of the two lists changes (D-587).
+if ($kind === 'composition') {
+    $wechsel = wp_get_ability('taxmod/apply')->execute(['changes' => [
+        ['op' => 'set_kind', 'node' => $r['vg'], 'field' => $r['v_pos'], 'kind' => 'composition'],
+        ['op' => 'set_kind', 'node' => $r['ord'], 'field' => $r['o_pos'], 'kind' => 'composition'],
+    ]]);
+
+    if (is_wp_error($wechsel)) {
+        echo 'set_kind: ', $wechsel->get_error_message(), "\n";
+        exit(1);
+    }
+}
+
 $struktur = [
     'nodes'  => ['lager' => $r['mat'], 'lot' => $r['lot'], 'transaction' => $r['vg'], 'line' => $r['vp'], 'location' => $r['lo'], 'order' => $r['ord'], 'purchase' => $r['pur'], 'money' => $money,
         'lager_use' => $r['verw']],
     'fields' => [
         'lager_use' => $r['m_use'], 'lager_location' => $r['m_ort'], 'purchase_model' => $r['k_mod'],
+        'order_merchant' => $r['o_hand'], 'purchase_demand' => $r['k_bedarf'], 'transaction_reference' => $r['v_bezug'], 'line_thing' => $r['p_ding'],
         'label' => $r['label'], 'lager_thing' => $r['m_ding'], 'lager_single' => $r['m_einz'], 'lager_min' => $r['m_min'],
         'lot_thing' => $r['l_mat'], 'lot_purchase' => $r['l_kauf'], 'lot_location' => $r['l_lo'], 'lot_value' => $r['l_wert'], 'lot_date' => $r['l_dat'],
         'transaction_kind' => $r['v_art'], 'transaction_date' => $r['v_dat'], 'transaction_order' => $r['v_best'], 'transaction_source' => $r['v_quel'], 'transaction_lines' => $r['v_pos'],
@@ -150,9 +196,13 @@ $struktur = [
     'values' => [
         'kind_receipt' => $r['k_we'], 'kind_consumption' => $r['k_vb'], 'kind_count' => $r['k_in'], 'kind_transfer' => $r['k_um'], 'kind_relocation' => $r['k_ul'], 'source_manual' => $r['q_hand'],
         'status_partial' => $r['s_teil'], 'status_received' => $r['s_ganz'], 'location_default' => $r['lager'],
+        'status_draft' => $r['s_entw'], 'status_ordered' => $r['s_best'], 'status_cancelled' => $r['s_storn'], 'kind_reservation' => $r['k_res'],
     ],
 ];
 update_option(StockService::OPTION, $struktur);
+
+$arten = (new StockService())->structureWithKinds();
+$pruefe($arten->composes('transaction_lines') === ($kind === 'composition') && $arten->composes('order_lines') === ($kind === 'composition'), "the module reads «Positionen» as {$kind} from the model");
 
 // Stock count: a new thing in a group from a count line, with a value (D-995).
 $antwort = (new StockService())->bookInventory([new InventoryRow(null, new NewThing($r['teile'], 'BC547C'), 'BC547C', '40', '0,05', 'Fach 3')], '2026-10-21', 'Inventur Kasten');
@@ -387,6 +437,54 @@ $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'data-taxmod-stock-lot="' . $posten . ':' . $kiste . ':' . rtrim(rtrim(number_format($menge, 3, '.', ''), '0'), '.') . ':' . $bc . '"') && str_contains($html, '__Schublade 2 › __Kiste') && str_contains($html, 'BC547C'), 'Lagerorte: what lies at the place and below it, each row draggable onto a place');
 $pruefe(str_contains($html, 'taxmod-stock-drop-lot') && ! str_contains($html, 'taxmod-stock-move-place-'), 'Lagerorte: a lot dropped on a place asks for the Umbuchung; no structure actions here');
 
+// D-1027 with D-1097/D-1098: a demand, a source and back, a position removed — the same before and after the switch.
+$offen = static function (StockService $s): array {
+    $orders = $s->table('order');
+
+    return array_values(array_filter($orders->ids(), static fn (int $o): bool => $s->purchasing()->isDemand($o, $orders)));
+};
+(new StockService())->reorder([$r['t1'] => '2', $r['t2'] => '1'], null, '__Bedarf');
+$s      = new StockService();
+$bedarf = $offen($s)[0] ?? 0;
+$pos    = array_map('intval', $s->table('order')->all($bedarf, $r['o_pos']));
+$nachT1 = array_values(array_filter($pos, static fn (int $k): bool => $s->table('purchase')->first($k, $r['k_mod']) === (string) $r['t1']))[0] ?? 0;
+$pruefe(count($pos) === 2 && $nachT1 > 0 && $s->table('purchase')->first($nachT1, $r['k_anz']) === '2', '«Nachbestellen» makes a demand with one purchase per thing');
+(new StockService())->reorder([$r['t1'] => '3'], $bedarf, '');
+$pruefe((new StockService())->table('purchase')->first($nachT1, $r['k_anz']) === '5' && count((new StockService())->table('order')->all($bedarf, $r['o_pos'])) === 2, 'the same thing again raises the quantity, no second position');
+(new StockService())->sourcePosition($bedarf, $nachT1, null, 'Reichelt', '', null);
+$s       = new StockService();
+$entwurf = $s->purchasing()->draftOf('Reichelt', $s->table('order')) ?? 0;
+$pruefe($entwurf > 0 && $s->table('order')->all($entwurf, $r['o_pos']) === [(string) $nachT1] && ! in_array((string) $nachT1, $s->table('order')->all($bedarf, $r['o_pos']), true), 'a source moves the position into the supplier\'s new draft, keeping its id (D-1098)');
+$pruefe($s->table('purchase')->first($nachT1, $r['k_bedarf']) === (string) $bedarf && $s->table('purchase')->first($nachT1, $r['k_anz']) === '5', 'the position points back at its demand and keeps its values');
+(new StockService())->unsourcePosition($entwurf, $nachT1);
+$s = new StockService();
+$pruefe(in_array((string) $nachT1, $s->table('order')->all($bedarf, $r['o_pos']), true) && $s->table('order')->all($entwurf, $r['o_pos']) === [] && $s->table('order')->first($entwurf, $r['o_stat']) === (string) $r['s_storn'], 'back into the demand; the emptied draft is cancelled');
+(new StockService())->removePosition($bedarf, $nachT1);
+$s = new StockService();
+$pruefe(count($s->table('order')->all($bedarf, $r['o_pos'])) === 1 && ! $s->table('purchase')->has($nachT1), 'a position removed leaves its demand and is gone');
+
+// D-1083 with D-1097: a second position joins the subject's open reservation.
+(new StockService())->reserve($r['t2'], '', $bc, '1', null, '2026-11-02', 'Reservierung');
+(new StockService())->reserve($r['t2'], '', $bc, '2', null, '2026-11-02', 'Reservierung');
+$s     = new StockService();
+$offenR = $s->reservations()->forSubject($r['t2']);
+$pruefe($offenR !== null && count($s->table('transaction')->all($offenR, $r['v_pos'])) === 2 && ($s->reservations()->reservedByThing()[$bc] ?? 0.0) === 3.0, 'one reservation per subject, holding both positions');
+
+// D-1097, his word «eine Position gehört zu genau einem Kopf»: after every booking above, each line and each purchase has one head.
+$s = new StockService();
+foreach ([['line', 'transaction', $r['v_pos']], ['purchase', 'order', $r['o_pos']]] as [$teil, $kopf, $liste]) {
+    $koepfe = [];
+
+    foreach ($s->table($kopf)->ids() as $k) {
+        foreach ($s->table($kopf)->all($k, $liste) as $p) {
+            $koepfe[(int) $p][] = $k;
+        }
+    }
+
+    $ohne = array_filter($s->table($teil)->ids(), static fn (int $p): bool => count($koepfe[$p] ?? []) !== 1);
+    $pruefe($ohne === [] && array_diff(array_keys($koepfe), $s->table($teil)->ids()) === [], "every {$teil} stands in exactly one {$kopf}, and no {$kopf} lists a {$teil} that is gone");
+}
+
 // A structure pasted before 0.2.0 still reads: the old keys name the same ids.
 $alt = $struktur;
 $alt['nodes']['material'] = $alt['nodes']['lager'];
@@ -411,5 +509,5 @@ $pruefe((new StockService())->structure()->node('lager') === 149000110147, 'an i
 $orte = (new StockService())->locationSettings();
 $pruefe($orte->branches === [500 => 7] && $orte->unreferenced === 9, 'Grundeinstellungen store branch → place rows, half-filled rows are dropped (D-972, D-1085)');
 
-echo $fehler === 0 ? "all green\n" : "{$fehler} red\n";
+echo $fehler === 0 ? "all green ({$kind})\n" : "{$fehler} red ({$kind})\n";
 exit($fehler === 0 ? 0 : 1);

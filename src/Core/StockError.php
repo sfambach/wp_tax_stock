@@ -261,4 +261,20 @@ final class StockError extends \RuntimeException
     {
         return new self('model_refused', $message);
     }
+
+    /**
+     * The modeller's refusal, read for what the module can word: D-1099, his word «f3 verweigern» — a head whose positions
+     * another record still points at is not deleted, and the modeller names who. Detail: «head|part:record:field;…».
+     * Anything else stays {@see modelRefused()} with the modeller's own words.
+     */
+    public static function fromModel(string $message): self
+    {
+        if (preg_match('/Record (\d+) cannot be deleted: its parts are still referenced — (.+?)\. Remove those references first/u', $message, $m) !== 1) {
+            return self::modelRefused($message);
+        }
+
+        preg_match_all('/part #(\d+) ← record #(\d+) \(«(.*?)»\)/u', $m[2], $who, PREG_SET_ORDER);
+
+        return new self('parts_referenced', $m[1] . '|' . implode(';', array_map(static fn (array $w): string => $w[1] . ':' . $w[2] . ':' . $w[3], $who)));
+    }
 }

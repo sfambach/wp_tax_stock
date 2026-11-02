@@ -7,7 +7,30 @@
  *
  * Builds orders with the fields the modeller's import targets name, points both options at them, fakes the DHL module's
  * filter, renders the page and presses its buttons through the service. The modeller's no-write bracket undoes it all.
+ *
+ * D-1097: runs twice, with «Positionen» of Vorgänge and Bestellungen as aggregation and, switched with `set_kind` after the
+ * records are written, as composition — then «Zurück» from «Eingebucht» lets the cascade take the lines (D-1099) and is
+ * refused while another record points at one. TAXMOD_STOCK_KIND=aggregation|composition runs one of them.
  */
+
+$kind = getenv('TAXMOD_STOCK_KIND') ?: '';
+
+if ($kind === '') {
+    $rot = 0;
+
+    foreach (['aggregation', 'composition'] as $each) {
+        echo "«Positionen» as {$each}:\n";
+        passthru('TAXMOD_STOCK_KIND=' . $each . ' ' . escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(__FILE__) . ' ' . implode(' ', array_map('escapeshellarg', array_slice($argv, 1))), $code);
+        $rot += $code === 0 ? 0 : 1;
+    }
+
+    exit($rot === 0 ? 0 : 1);
+}
+
+if (! in_array($kind, ['aggregation', 'composition'], true)) {
+    echo "TAXMOD_STOCK_KIND is aggregation or composition\n";
+    exit(1);
+}
 
 $wordpress = $argv[1] ?? (getenv('WP_ROOT') ?: '/home/user/wordpress');
 $modeller  = getenv('TAXMOD_ROOT') ?: '/home/user/wp-taxonomy-modeler';
@@ -22,6 +45,7 @@ require __DIR__ . '/../../vendor/autoload.php';
 use TaxmodStock\Core\InboundStage;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\WordPress\Admin\InboundPage;
+use TaxmodStock\WordPress\Admin\Messages;
 use TaxmodStock\WordPress\InboundService;
 use TaxmodStock\WordPress\StockService;
 
@@ -87,6 +111,8 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     $field('l_dat', '@lot', 'Eingegangen am', $date, 'composition', '0..1'),
     $field('p_lot', '@vp', 'Bestandsposten', '@lot', 'aggregation', '1..1'),
     $field('p_menge', '@vp', 'Menge', 1173, 'composition', '1..1'),
+    // D-1099: a record outside the receipt that points at one of its lines.
+    $field('p_storno', '@vp', 'Storno von', '@vp', 'aggregation', '0..1'),
     ['op' => 'create_record', 'ref' => 'et4000', 'node' => '@gk'],
     ['op' => 'set_values', 'record' => '@et4000', 'values' => ['@label' => 'ET4000']],
     ['op' => 'create_record', 'ref' => 'lotA', 'node' => '@lot'],
@@ -125,6 +151,19 @@ if (is_wp_error($aufbau)) {
 }
 
 $r = $aufbau['refs'];
+
+// D-1097: the switch as it will be made live — the records stand, only the kind of the two lists changes (D-587).
+if ($kind === 'composition') {
+    $wechsel = wp_get_ability('taxmod/apply')->execute(['changes' => [
+        ['op' => 'set_kind', 'node' => $r['vg'], 'field' => $r['v_pos'], 'kind' => 'composition'],
+        ['op' => 'set_kind', 'node' => $r['ord'], 'field' => $r['o_pos'], 'kind' => 'composition'],
+    ]]);
+
+    if (is_wp_error($wechsel)) {
+        echo 'set_kind: ', $wechsel->get_error_message(), "\n";
+        exit(1);
+    }
+}
 
 // Only what the cockpit reads; the rest of the structure is required by the reader and points at unused fields.
 update_option(StockService::OPTION, [
@@ -240,7 +279,28 @@ $pruefe((new InboundService())->lotsToTest() === [], 'a tested lot waits no more
 $pruefe((new InboundService())->orders()[$r['o8']]->stage((new StockService())->structure()) === InboundStage::Booked, 'a booked order stands under «Eingebucht»');
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'booked'];
 $pruefe(str_contains((new InboundPage())->render(), 'wieder ausgebucht'), 'its «Zurück» warns that the stock goes out again');
+$pruefe((new InboundService())->stock()->structureWithKinds()->composes('transaction_lines') === ($kind === 'composition'), "the module reads «Positionen» as {$kind} from the model");
+
+if ($kind === 'composition') {
+    // D-1099, his word «f3 verweigern»: while another record points at a line of the receipt, the receipt is not deleted.
+    $fremd = wp_get_ability('taxmod/write-data')->execute(['changes' => [
+        ['op' => 'create_record', 'ref' => 'storno', 'node' => $r['vp']],
+        ['op' => 'set_values', 'record' => '@storno', 'values' => [(string) $r['p_storno'] => (string) $r['pos8'], (string) $r['p_menge'] => '0']],
+    ]]);
+
+    try {
+        (new InboundService())->unbook($r['o8']);
+        $pruefe(false, 'a receipt whose line another record points at is refused (D-1099)');
+    } catch (StockError $e) {
+        $pruefe($e->reason === 'parts_referenced' && str_contains(Messages::of($e), 'Position #' . $r['pos8'] . ' ← #' . (int) ($fremd['refs']['storno'] ?? 0)), 'a receipt whose line another record points at is refused, naming who, in the notice\'s words (D-1099)');
+    }
+
+    $pruefe((new StockService())->table('line')->has($r['pos8']) && (new StockService())->table('transaction')->has($r['vg8']), 'the refusal wrote nothing');
+    wp_get_ability('taxmod/write-data')->execute(['changes' => [['op' => 'remove_record', 'record' => (int) ($fremd['refs']['storno'] ?? 0)]]]);
+}
+
 (new InboundService())->unbook($r['o8']);
+$pruefe(! (new StockService())->table('line')->has($r['pos8']) && ! (new StockService())->table('transaction')->has($r['vg8']), 'the receipt goes with its line — as parts by the cascade, as records one by one');
 $after = new InboundService();
 $pruefe($after->orders()[$r['o8']]->stage($after->stock()->structure()) === InboundStage::Arrived && $after->lotsOf($r['kauf8']) === [], '«Zurück» takes the lot out and the order stands under «Angekommen» again');
 
@@ -261,5 +321,5 @@ try {
     $pruefe($e->reason === 'no_import_targets' && $e->detail === 'received_at', 'a missing order field is named');
 }
 
-echo $fehler === 0 ? "inbound-check: all green\n" : "inbound-check: {$fehler} FAILED\n";
+echo $fehler === 0 ? "inbound-check: all green ({$kind})\n" : "inbound-check: {$fehler} FAILED ({$kind})\n";
 exit($fehler === 0 ? 0 : 1);

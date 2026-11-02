@@ -91,6 +91,19 @@ final class ReservationsTest extends TestCase
     }
 
     #[Test]
+    public function as_a_composition_a_further_position_is_a_new_part_beside_those_the_reservation_holds(): void
+    {
+        $s       = Fixture::composed();
+        $changes = (new Bookings($s, '2026-11-02'))->reserve(500, '', [new ReservationRow(30, '1', 60)], 90, $this->deals(), 'Reservierung');
+
+        self::assertCount(1, $changes, 'D-1097: no line of its own');
+        self::assertSame('90', $changes[0]['record']);
+        self::assertSame(['p1'], array_keys($changes[0]['values'][(string) $s->field('transaction_lines')]), 'only the new part: the held ones stay as they are');
+        self::assertSame('60', $changes[0]['values'][(string) $s->field('transaction_lines')]['p1'][(string) $s->field('line_lot')]);
+        self::assertSame('30', $changes[0]['values'][(string) $s->field('transaction_lines')]['p1'][(string) $s->field('line_thing')]);
+    }
+
+    #[Test]
     public function a_reservation_without_subject_is_refused(): void
     {
         $this->expectException(StockError::class);

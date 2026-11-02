@@ -169,7 +169,7 @@ final class InboundService
         $stock = $this->stock;
         $this->pick([$id]);
 
-        return $stock->write((new ReceiptReversal($stock->structure()))->reverse($id, $stock->table('order'), $stock->table('lot'), $stock->table('line'), $stock->table('transaction')));
+        return $stock->write((new ReceiptReversal($stock->structureWithKinds()))->reverse($id, $stock->table('order'), $stock->table('lot'), $stock->table('line'), $stock->table('transaction')));
     }
 
     /** @return array<string, mixed> */

@@ -42,6 +42,19 @@ final class TransferTest extends TestCase
     }
 
     #[Test]
+    public function as_a_composition_the_two_lines_are_parts_of_the_umbuchung(): void
+    {
+        $s       = Fixture::composed();
+        $changes = (new Bookings($s, '2026-11-02'))->transfer([new TransferRow(60, 3, 4, '2', 81, 82)], 'Umbuchung', $this->ledger([80 => [60, '5', 0]]));
+        $parts   = end($changes)['values'][(string) $s->field('transaction_lines')];
+
+        self::assertCount(2, $changes, 'D-1097: the Vorgang alone, its lines inside it');
+        self::assertSame(['p1', 'p2'], array_keys($parts));
+        self::assertSame(['-2', '3', '81'], [$parts['p1'][(string) $s->field('line_quantity')], $parts['p1'][(string) $s->field('line_location')], $parts['p1'][(string) $s->field('line_reverses')]]);
+        self::assertSame(['2', '4', '82'], [$parts['p2'][(string) $s->field('line_quantity')], $parts['p2'][(string) $s->field('line_location')], $parts['p2'][(string) $s->field('line_reverses')]]);
+    }
+
+    #[Test]
     public function an_umbuchung_moves_no_more_than_lies_there_and_not_to_the_same_place(): void
     {
         $ledger = $this->ledger([80 => [60, '5', 0], 81 => [60, '-4', 3], 82 => [60, '4', 4]]);

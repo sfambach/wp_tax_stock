@@ -79,6 +79,9 @@ final class StockService
 
     private ?LocationTree $locationTree = null;
 
+    /** @var list<string>|null D-1097: the position lists the model holds as compositions, read once */
+    private ?array $composed = null;
+
     public function __construct(private readonly ModelGateway $model = new ModelGateway())
     {
     }
@@ -90,6 +93,35 @@ final class StockService
         $bundled = is_readable($file) ? json_decode((string) file_get_contents($file), true) : null;
 
         return Structure::fromArray(Structure::completed(is_array($raw) ? $raw : [], is_array($bundled) ? $bundled : []));
+    }
+
+    /**
+     * The structure, told which position lists the model holds as compositions (D-1097) — read from the fields of their
+     * nodes, once per request, so the module writes positions right before and after the switch. Anything that writes
+     * positions builds on this one.
+     *
+     * ⚠️ *A model that cannot be read (the modeller inactive, ids of another site) counts as aggregation: that is how every
+     * list stood before D-1097, and the write itself then says what is wrong.*
+     */
+    public function structureWithKinds(): Structure
+    {
+        $s = $this->structure();
+
+        if ($this->composed === null) {
+            $this->composed = [];
+
+            foreach (Structure::positionLists() as $key => $head) {
+                try {
+                    if (($this->model->fields($s->node($head))[$s->field($key)]['kind'] ?? '') === 'composition') {
+                        $this->composed[] = $key;
+                    }
+                } catch (StockError) {
+                    continue;
+                }
+            }
+        }
+
+        return $s->withComposed($this->composed);
     }
 
     public function table(string $node): Table
@@ -675,7 +707,7 @@ final class StockService
             $rows
         );
 
-        return $this->model->write((new Bookings($this->structure(), $today))->inventory($named, $title));
+        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->inventory($named, $title));
     }
 
     /**
@@ -696,7 +728,7 @@ final class StockService
         $this->checkThings(array_values(array_filter(array_map(static fn (ReceiptChoice $c): ?int => $c->thing, $choices))));
         $this->checkGroups(array_values(array_filter(array_map(static fn (ReceiptChoice $c): ?NewThing => $c->new, $choices))));
 
-        $changes = (new Bookings($s, $today))->receipt(
+        $changes = (new Bookings($this->structureWithKinds(), $today))->receipt(
             $order,
             $choices,
             $this->table('order'),
@@ -782,7 +814,7 @@ final class StockService
 
         // D-1091: a box that moves is a Vorgang «Umlagerung» in the same step; a fixed place is a change of the structure only.
         if ($this->relocates() && $tree->isMovable($place) && $tree->parentOf($place) !== $parent) {
-            $changes = [...$changes, ...(new Bookings($this->structure(), $today === '' ? current_time('Y-m-d') : $today))->relocate($place, $tree->parentOf($place), $parent, $title === '' ? 'Umlagerung' : $title)];
+            $changes = [...$changes, ...(new Bookings($this->structureWithKinds(), $today === '' ? current_time('Y-m-d') : $today))->relocate($place, $tree->parentOf($place), $parent, $title === '' ? 'Umlagerung' : $title)];
         }
 
         return $this->model->write($changes);
@@ -944,7 +976,7 @@ final class StockService
         $reservations = $this->reservations();
         $reservations->check($rows, $this->ledger(), $this->reservedPlaces());
 
-        return $this->model->write((new Bookings($s, $today))->reserve($subject, $deadline, $rows, $reservations->forSubject($subject), $this->table('transaction'), $title));
+        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->reserve($subject, $deadline, $rows, $reservations->forSubject($subject), $this->table('transaction'), $title));
     }
 
     /**
@@ -959,7 +991,7 @@ final class StockService
         /* translators: %s: the name of the reservation taken back */
         $title        = sprintf(__('Storno: %s', 'taxmod-stock'), (string) ($this->table('transaction')->first($deal, $this->structure()->field('label')) ?? '#' . $deal));
 
-        return $this->model->write((new Bookings($this->structure(), $now))->cancelReservation($reservations->subjectOf($deal), $positions, $title, $who . ', ' . $now));
+        return $this->model->write((new Bookings($this->structureWithKinds(), $now))->cancelReservation($reservations->subjectOf($deal), $positions, $title, $who . ', ' . $now));
     }
 
     public function notStockedReason(int $purchase): string
@@ -988,7 +1020,7 @@ final class StockService
         $things = $new + $things;
 
         $this->checkGroups(array_values(array_filter($things, static fn (int|NewThing $t): bool => $t instanceof NewThing)));
-        $changes = (new Bookings($this->structure(), current_time('Y-m-d')))->assign($order, $things, $this->table('order'), $this->table('purchase'));
+        $changes = (new Bookings($this->structureWithKinds(), current_time('Y-m-d')))->assign($order, $things, $this->table('order'), $this->table('purchase'));
         $this->planPlaces($places);
 
         return $changes === [] ? ['applied' => []] : $this->model->write($changes);
@@ -1005,7 +1037,7 @@ final class StockService
         $this->checkThings(array_values(array_filter(array_map(static fn (SplitRow $r): ?int => $r->thing, $rows))));
         $this->checkGroups(array_values(array_filter(array_map(static fn (SplitRow $r): ?NewThing => $r->new, $rows))));
 
-        return $this->model->write((new Bookings($this->structure(), current_time('Y-m-d')))->split($order, $purchase, $rows, $this->table('order'), $this->table('purchase'), $this->table('money')));
+        return $this->model->write((new Bookings($this->structureWithKinds(), current_time('Y-m-d')))->split($order, $purchase, $rows, $this->table('order'), $this->table('purchase'), $this->table('money')));
     }
 
     /**
@@ -1151,7 +1183,7 @@ final class StockService
         $reserved->checkConsumption($place ?? $ledger->homeOf($lot), $purpose);
         $this->reservations()->checkConsumption($lot, $quantity, $place ?? $ledger->homeOf($lot), $purpose, $ledger, $reserved);
 
-        return $this->model->write((new Bookings($this->structure(), $today))->consumption($lot, $quantity, $purpose, $title, $place, $reason));
+        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->consumption($lot, $quantity, $purpose, $title, $place, $reason));
     }
 
     /**
@@ -1184,7 +1216,7 @@ final class StockService
         /* translators: %s: the name of the Vorgang taken back */
         $title = sprintf(__('Storno: %s', 'taxmod-stock'), (string) ($deals->first($deal, $s->field('label')) ?? '#' . $deal));
 
-        return $this->model->write((new Bookings($s, $now))->cancelConsumption($rows, $title, $who . ', ' . $now));
+        return $this->model->write((new Bookings($this->structureWithKinds(), $now))->cancelConsumption($rows, $title, $who . ', ' . $now));
     }
 
     /**
@@ -1230,7 +1262,7 @@ final class StockService
             throw StockError::notALocation($location);
         }
 
-        return $this->model->write((new Bookings($this->structure(), $today))->transfer([new TransferRow($lot, $from, $location, $quantity)], $title, $this->ledger(), '', $this->reservedPlaces(), $this->boundLots()));
+        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer([new TransferRow($lot, $from, $location, $quantity)], $title, $this->ledger(), '', $this->reservedPlaces(), $this->boundLots()));
     }
 
     /**
@@ -1248,13 +1280,13 @@ final class StockService
         $title = sprintf(__('Storno: %s', 'taxmod-stock'), (string) ($deals->first($deal, $s->field('label')) ?? '#' . $deal));
 
         // The way back is an Umbuchung too: it may not carry reserved goods into a reserved area (D-1082).
-        return $this->model->write((new Bookings($s, $now))->transfer($rows, $title, $this->ledger(), $who . ', ' . $now, $this->reservedPlaces(), $this->boundLots()));
+        return $this->model->write((new Bookings($this->structureWithKinds(), $now))->transfer($rows, $title, $this->ledger(), $who . ', ' . $now, $this->reservedPlaces(), $this->boundLots()));
     }
 
     /** D-1027: purchasing — demand, source, order per supplier. */
     public function purchasing(): Purchasing
     {
-        return new Purchasing($this->structure(), current_time('Y-m-d'));
+        return new Purchasing($this->structureWithKinds(), current_time('Y-m-d'));
     }
 
     /**

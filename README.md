@@ -82,11 +82,18 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
   it reads with `taxmod/read-node` and `taxmod/read-tree` and writes with `taxmod/write-data`, one call per booking,
   all or nothing.
 - Stock is never stored: it is the sum of the movement lines per lot and per thing.
+- **Positions belong to their head** (D-1097, D-1098, D-1099, from 0.17.0). Whether «Positionen» of Vorgänge and of
+  Bestellungen is an aggregation or a composition is read from the model's fields, so the module works before and after
+  the switch. As a composition, new Pos lines and purchases are written as parts inside the head's `set_values`, a position
+  that changes its order (Bedarf ↔ Händler-Entwurf) is re-hung with `move_part` and keeps its id, a removed position is one
+  `remove_record`, and «Zurück» from «Eingebucht» removes the receipt Vorgang and lets the modeller take its lines with it.
+  A head whose position another record still points at is not deleted; the notice names who. Needs the modeller from
+  0.1.125 once a list is a composition.
 
 ## Development
 
 - `composer install`, then `vendor/bin/phpunit` (core, no WordPress).
-- `php scripts/dev/stock-check.php`, `php scripts/dev/inbound-check.php` and `php scripts/dev/navigation-check.php` against a local WordPress with the modeller active; nothing it writes survives.
+- `php scripts/dev/stock-check.php`, `php scripts/dev/inbound-check.php` and `php scripts/dev/navigation-check.php` against a local WordPress with the modeller active; nothing it writes survives. The first two run twice, with «Positionen» as aggregation and as composition (D-1097); `TAXMOD_STOCK_KIND=aggregation|composition` runs one.
 
 ## Authors
 

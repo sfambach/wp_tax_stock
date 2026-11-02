@@ -296,7 +296,8 @@ $tabs = (new StockPage())->render();
 $pruefe(str_contains($tabs, 'tab=lagerorte') && str_contains($tabs, 'tab=reservierungen') && ! str_contains($tabs, 'tab=lagerstruktur') && ! str_contains($tabs, 'tab=wareneingang'), 'the tabs are Material, Inventur, Verbrauch, Reservierungen, Lagerorte');
 $_GET = ['page' => StockPage::PAGE];
 $pruefe(str_contains($html, 'Bestellung 1') && str_contains($html, 'tr class="taxmod-list-details"><td') && ! str_contains($html, 'tr class="taxmod-list-details" hidden') && ! str_contains($html, 'name="purchases[]"'), 'by default the orders stand open (shared list page, D-989), their purchases load as they scroll into view');
-(new TaxmodStock\WordPress\Admin\SettingsTab())->save(['taxmod_stock_views_sent' => '1', 'taxmod_stock_views' => ['material' => '1']]);
+// D-1085: the view of the tabs is set on Logistik › Einstellungen › Grundeinstellungen, no longer on the Configuration tab.
+(new TaxmodStock\WordPress\Admin\SettingsPage())->save(['taxmod_stock_views_sent' => '1', 'taxmod_stock_views' => ['material' => '1']]);
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'tr class="taxmod-list-details" hidden') && ! str_contains($html, 'tr class="taxmod-list-details"><td') && ! str_contains($html, 'name="purchases[]"'), 'with «Gleich aufgeklappt» off the purchases stay folded and unloaded');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'material'];
@@ -400,9 +401,10 @@ $pruefe(array_key_exists('version', TaxmodStock\WordPress\Admin\SettingsTab::reg
 $pruefe((new StockService())->structure()->node('lager') === 149000110147 && (new StockService())->structure()->field('lot_thing') === 149000110118, 'pasting structure-live.json stores the live ids');
 ($reiter['stock']['save'])(['taxmod_stock_structure' => '{"nodes": {}}']);
 $pruefe((new StockService())->structure()->node('lager') === 149000110147, 'an incomplete structure is refused and the old one stays');
-($reiter['stock']['save'])(['taxmod_stock_branch' => [['node' => '500', 'location' => '7'], ['node' => '', 'location' => '3'], ['node' => '501', 'location' => '']], 'taxmod_stock_unreferenced' => '9']);
+// D-1085: branch → place moved from the Configuration tab to Logistik › Einstellungen › Grundeinstellungen.
+(new TaxmodStock\WordPress\Admin\SettingsPage())->save(['taxmod_stock_branch' => [['node' => '500', 'location' => '7'], ['node' => '', 'location' => '3'], ['node' => '501', 'location' => '']], 'taxmod_stock_unreferenced' => '9']);
 $orte = (new StockService())->locationSettings();
-$pruefe($orte->branches === [500 => 7] && $orte->unreferenced === 9, 'the tab stores branch → place rows, half-filled rows are dropped (D-972)');
+$pruefe($orte->branches === [500 => 7] && $orte->unreferenced === 9, 'Grundeinstellungen store branch → place rows, half-filled rows are dropped (D-972, D-1085)');
 
 echo $fehler === 0 ? "all green\n" : "{$fehler} red\n";
 exit($fehler === 0 ? 0 : 1);

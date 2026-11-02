@@ -18,7 +18,11 @@ final class NavigationTest extends TestCase
             ]],
             ['key' => 'stock', 'label' => 'Bestand', 'items' => [
                 ['key' => 'material', 'label' => 'Material', 'page' => 'stock', 'tab' => 'material'],
-                ['key' => 'ship', 'label' => 'Versand', 'page' => 'other', 'tab' => '', 'url' => 'https://x/other'],
+            ]],
+            ['key' => 'settings', 'label' => 'Einstellungen', 'items' => [
+                ['key' => 'basics', 'label' => 'Grundeinstellungen', 'page' => 'basics', 'tab' => ''],
+                ['key' => 'module-ebay', 'label' => 'eBay', 'page' => 'module', 'tab' => '', 'module' => 'ebay'],
+                ['key' => 'module-dhl', 'label' => 'DHL', 'page' => 'module', 'tab' => '', 'module' => 'dhl'],
             ]],
             ['key' => 'later', 'label' => 'Auswertungen', 'items' => []],
         ]);
@@ -32,15 +36,26 @@ final class NavigationTest extends TestCase
         self::assertSame(['area' => 'stock', 'item' => 'material'], $nav->active('stock', 'material'));
         self::assertSame(['area' => 'inbound', 'item' => 'book'], $nav->active('stock', ''));
         self::assertSame(['area' => 'inbound', 'item' => 'arrived'], $nav->active('in', 'shipped'));
-        self::assertNull($nav->active('other', ''));
     }
 
     #[Test]
-    public function empty_areas_and_pages_of_other_modules_are_left_out(): void
+    public function empty_areas_are_left_out_and_every_item_is_a_page_of_the_stock_interface(): void
     {
         $nav = $this->navigation();
 
-        self::assertSame(['cockpit', 'inbound', 'stock'], array_column($nav->areas(), 'key'));
-        self::assertSame(['c', 'in', 'stock'], $nav->pages());
+        self::assertSame(['cockpit', 'inbound', 'stock', 'settings'], array_column($nav->areas(), 'key'));
+        self::assertSame(['c', 'in', 'stock', 'basics', 'module'], $nav->pages());
+    }
+
+    #[Test]
+    public function a_module_page_opens_its_own_item_inside_the_frame(): void
+    {
+        $nav = $this->navigation();
+
+        // D-1085: the modules share one page of the stock interface and are told apart by the module.
+        self::assertSame(['area' => 'settings', 'item' => 'module-dhl'], $nav->active('module', '', 'dhl'));
+        self::assertSame(['area' => 'settings', 'item' => 'module-dhl'], $nav->active('module', 'some-tab-of-dhl', 'dhl'));
+        self::assertSame(['area' => 'settings', 'item' => 'module-ebay'], $nav->active('module', '', 'gone'));
+        self::assertNull($nav->active('other', ''));
     }
 }

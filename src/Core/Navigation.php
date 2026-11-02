@@ -10,52 +10,63 @@ namespace TaxmodStock\Core;
  * flowchart LR
  *   A["area"] -->|first item| I1["item = page + tab"]
  *   A --> I2["item"]
- *   R["request: page, tab"] -->|exact, else first item of the page| I2
+ *   R["request: page, tab, module"] -->|exact, else first item of the page and module, else of the page| I2
  * ```
  *
- * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/NewConcept/90-decision-log.md D-1029, D-1053
+ * Every item is a page of the stock interface: a module's page is an item too, opened inside the frame by its `module`
+ * (D-1085: nothing under Logistik leaves the logistics navigation).
+ *
+ * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/NewConcept/90-decision-log.md D-1029, D-1053, D-1085
  */
 final class Navigation
 {
     /**
-     * @param list<array{key: string, label: string, items: list<array{key: string, label: string, page: string, tab: string, url?: string}>}> $areas
-     *        an item with `url` leaves the stock interface (a page of another module or of the modeller)
+     * @param list<array{key: string, label: string, items: list<array{key: string, label: string, page: string, tab: string, module?: string}>}> $areas
+     *        an item with `module` shows that module's page inside the frame
      */
     public function __construct(private readonly array $areas)
     {
     }
 
-    /** @return list<array{key: string, label: string, items: list<array{key: string, label: string, page: string, tab: string, url?: string}>}> areas without items are left out */
+    /** @return list<array{key: string, label: string, items: list<array{key: string, label: string, page: string, tab: string, module?: string}>}> areas without items are left out */
     public function areas(): array
     {
         return array_values(array_filter($this->areas, static fn (array $area): bool => $area['items'] !== []));
     }
 
     /**
-     * The item the request opens: the one with this page and tab, else — a page opened without a tab, or on a tab that has no
-     * item of its own — the first item of that page.
+     * The item the request opens: the one with this page, tab and module, else — a page opened without a tab, or on a tab that
+     * has no item of its own — the first item of that page and module, else the first item of that page.
      *
      * @return array{area: string, item: string}|null null when the page is not part of the stock interface
      */
-    public function active(string $page, string $tab): ?array
+    public function active(string $page, string $tab, string $module = ''): ?array
     {
         $first = null;
+        $any   = null;
 
         foreach ($this->areas() as $area) {
             foreach ($area['items'] as $item) {
-                if (isset($item['url']) || $item['page'] !== $page) {
+                if ($item['page'] !== $page) {
+                    continue;
+                }
+
+                $found = ['area' => $area['key'], 'item' => $item['key']];
+                $any ??= $found;
+
+                if (($item['module'] ?? '') !== $module) {
                     continue;
                 }
 
                 if ($item['tab'] === $tab) {
-                    return ['area' => $area['key'], 'item' => $item['key']];
+                    return $found;
                 }
 
-                $first ??= ['area' => $area['key'], 'item' => $item['key']];
+                $first ??= $found;
             }
         }
 
-        return $first;
+        return $first ?? $any;
     }
 
     /** @return list<string> every page of the stock interface, once */
@@ -65,9 +76,7 @@ final class Navigation
 
         foreach ($this->areas() as $area) {
             foreach ($area['items'] as $item) {
-                if (! isset($item['url'])) {
-                    $pages[$item['page']] = true;
-                }
+                $pages[$item['page']] = true;
             }
         }
 

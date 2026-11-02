@@ -10,7 +10,7 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
 
 - **The thing is the material (D-995).** A record in the tree under `Model` is the material; its record id is the
   material number. Lager, lots, purchases and sales are own records pointing to it.
-- **No menu of its own** (D-1028): Wareneingang, Lager and Einkauf hang under the Taxonomy Modeller menu, like every Taxmod module.
+- **No menu of its own** (D-1028, D-1085): the Taxmod menu shows Modeller, Logistik, maintenance and Configuration; everything of the stock and of the connection modules opens behind «Logistik».
 - **Page «Wareneingang»** (D-1001), the goods receipt cockpit: every order in one stage, a tab per stage —
   Bestellt → Versendet → Angekommen → Eingebucht. The stage is computed from what the inbox already wrote to the order
   (status, «Eingegangen am», tracking numbers) and the DHL module's last answer (filter `taxmod_dhl_tracking`); nothing
@@ -65,11 +65,16 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
   first [Taxmod Mouser](https://github.com/sfambach/wp_tax_api_mouser)) for offers — number, stock, price for the quantity —
   and «Übernehmen» makes one the position's source. Concept:
   [`docs/pakete/lager/einkauf.md`](https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/lager/einkauf.md).
-- **Tab «Lager» on Configuration** — the ids of the Stock nodes and fields, pasted as JSON; and «Kein Material»: branches
-  under Model that hold no material (e.g. the source register), left out of search, tree and groups (also settable over
-  REST as `taxmod_stock_not_material`).
-  `structure-live.json` holds those of fambach.net; a structure pasted before 0.2.0 still reads. Below it,
-  «Einlagerung nach Typ»: rows «branch node id → place».
+- **Tab «Lager» on Configuration** — only the technical part: the ids of the Stock nodes and fields, pasted as JSON.
+  `structure-live.json` holds those of fambach.net; a structure pasted before 0.2.0 still reads.
+- **Logistik → Einstellungen → Grundeinstellungen** (D-1085) — the business settings, inside the logistics navigation:
+  «Kein Material» (branches under Model that hold no material, left out of search, tree and groups; also settable over
+  REST as `taxmod_stock_not_material`), «Einlagerung nach Typ» (rows «branch node id → place», D-972), the test after the
+  goods receipt and the view of the tabs. Same option names as before on the Configuration tab.
+- **Module pages inside the navigation** (D-1085): the connection modules' pages under the Taxmod menu open at
+  `admin.php?page=taxmod-lager-modul&module=<slug>` inside the logistics frame and leave the WP menu. A module may hand over
+  its page with the filter `taxmod_logistics_pages` (`slug`, `label`, `area` settings|outbound, `capability`, `render`
+  returning a string); otherwise its own page callback is drawn and its output captured.
 
 ## How it works
 
@@ -81,7 +86,7 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
 ## Development
 
 - `composer install`, then `vendor/bin/phpunit` (core, no WordPress).
-- `php scripts/dev/stock-check.php` and `php scripts/dev/inbound-check.php` against a local WordPress with the modeller active; nothing it writes survives.
+- `php scripts/dev/stock-check.php`, `php scripts/dev/inbound-check.php` and `php scripts/dev/navigation-check.php` against a local WordPress with the modeller active; nothing it writes survives.
 
 ## Authors
 

@@ -3,10 +3,9 @@
 namespace TaxmodStock\WordPress\Admin;
 
 use TaxmodStock\Core\Navigation;
-use TaxmodStock\WordPress\Plugin;
 
 /**
- * The frame of the stock interface (D-1029, D-1053): its own navigation on the left, along the flow of goods, with each page's
+ * The frame of the stock interface (D-1029, D-1053, D-1085): its own navigation on the left, along the flow of goods, with each page's
  * tabs as sub-items, and the page on the right. Integrated into wp-admin for now; full screen comes later.
  *
  * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/NewConcept/90-decision-log.md D-1053
@@ -39,9 +38,7 @@ final class LogisticsShell
     }
     public static function navigation(): Navigation
     {
-        $settings = add_query_arg(['page' => 'taxmod-settings', 'tab' => SettingsTab::SLUG], admin_url('admin.php'));
-        $shipping = function_exists('menu_page_url') ? (string) menu_page_url('taxebay-shipping', false) : '';
-        $item     = static fn (string $key, string $label, string $page, string $tab = ''): array => ['key' => $key, 'label' => $label, 'page' => $page, 'tab' => $tab];
+        $item = static fn (string $key, string $label, string $page, string $tab = ''): array => ['key' => $key, 'label' => $label, 'page' => $page, 'tab' => $tab];
 
         return new Navigation([
             ['key' => 'cockpit', 'label' => __('Cockpit', 'taxmod-stock'), 'items' => [
@@ -71,44 +68,33 @@ final class LogisticsShell
                 $item('reservations', __('Reservierungen', 'taxmod-stock'), StockPage::PAGE, 'reservierungen'),
                 $item('places', __('Lagerorte', 'taxmod-stock'), StockPage::PAGE, 'lagerorte'),
             ]],
-            ['key' => 'outbound', 'label' => __('Warenausgang', 'taxmod-stock'), 'items' => $shipping === '' ? [] : [
-                ['key' => 'shipping', 'label' => __('eBay-Versand', 'taxmod-stock'), 'page' => 'taxebay-shipping', 'tab' => '', 'url' => $shipping],
-            ]],
+            ['key' => 'outbound', 'label' => __('Warenausgang', 'taxmod-stock'), 'items' => self::modules('outbound')],
             // His word 2026-11-01: «einen Punkt Einstellung … die API-Konfiguration, die Grundeinstellung und ja, die Lagerstruktur».
             ['key' => 'settings', 'label' => __('Einstellungen', 'taxmod-stock'), 'items' => [
-                ['key' => 'basics', 'label' => __('Grundeinstellungen', 'taxmod-stock'), 'page' => 'taxmod-settings', 'tab' => SettingsTab::SLUG, 'url' => $settings],
+                // D-1085: the business settings inside the navigation; the technical structure stays on the modeller's Configuration.
+                $item('basics', __('Grundeinstellungen', 'taxmod-stock'), SettingsPage::PAGE),
                 $item('structure', __('Lagerstruktur', 'taxmod-stock'), StockPage::PAGE, 'lagerstruktur'),
-                ...self::connections(),
+                ...self::modules('settings'),
             ]],
         ]);
     }
 
     /**
-     * The other modules under the Taxonomy Modeller menu — the API connections (eBay, DHL, JLCPCB …) — as links.
+     * The connection modules' pages of one area, each opened inside the frame (D-1085).
      *
-     * ⚠️ *INFERRED: a module is whatever hangs under the modeller's menu and is neither the modeller's own page nor ours;
-     * the modules announce nothing, so their menu entries are the only list there is.*
-     *
-     * @return list<array{key: string, label: string, page: string, tab: string, url: string}>
+     * @return list<array{key: string, label: string, page: string, tab: string, module: string}>
      */
-    private static function connections(): array
+    private static function modules(string $area): array
     {
-        global $submenu;
+        $items = [];
 
-        $own = [Plugin::PARENT, 'taxmod-inbox', 'taxmod-cleanup', 'taxmod-backup', 'taxmod-settings', CockpitPage::PAGE, InboundPage::PAGE, StockPage::PAGE, PurchasePage::PAGE];
-        $out = [];
-
-        foreach ((array) ($submenu[Plugin::PARENT] ?? []) as $entry) {
-            $slug = (string) ($entry[2] ?? '');
-
-            if ($slug === '' || in_array($slug, $own, true) || str_contains($slug, 'cleanup') || str_contains($slug, 'backup') || str_contains($slug, 'inbox')) {
-                continue;
+        foreach (ModulePage::all() as $module) {
+            if ($module['area'] === $area) {
+                $items[] = ['key' => 'module-' . sanitize_key($module['slug']), 'label' => $module['label'], 'page' => ModulePage::PAGE, 'tab' => '', 'module' => $module['slug']];
             }
-
-            $out[] = ['key' => 'module-' . sanitize_key($slug), 'label' => wp_strip_all_tags((string) ($entry[0] ?? $slug)), 'page' => $slug, 'tab' => '', 'url' => (string) menu_page_url($slug, false)];
         }
 
-        return $out;
+        return $items;
     }
 
     /** Puts a page of the stock interface into the frame; a page outside it comes back unchanged. */
@@ -116,7 +102,7 @@ final class LogisticsShell
     {
         $navigation = self::navigation();
         $tab        = sanitize_key((string) ($_GET['tab'] ?? ''));
-        $active     = $navigation->active($page, $tab);
+        $active     = $navigation->active($page, $tab, $page === ModulePage::PAGE ? ModulePage::requested() : '');
 
         if ($active === null) {
             return $html;
@@ -142,8 +128,7 @@ final class LogisticsShell
 
                 foreach ($area['items'] as $item) {
                     $current = $here && $item['key'] === $active['item'];
-                    $html   .= '<li><a href="' . esc_url(self::url($item)) . '"' . ($current ? ' class="is-current" aria-current="page"' : '') . '>' . esc_html($item['label'])
-                        . (isset($item['url']) ? ' <span class="dashicons dashicons-external" aria-hidden="true"></span>' : '') . '</a></li>';
+                    $html   .= '<li><a href="' . esc_url(self::url($item)) . '"' . ($current ? ' class="is-current" aria-current="page"' : '') . '>' . esc_html($item['label']) . '</a></li>';
                 }
 
                 $html .= '</ul>';
@@ -166,10 +151,14 @@ final class LogisticsShell
             . '#wpcontent{padding-left:20px}.taxmod-shell-nav{top:10px}</style>';
     }
 
-    /** @param array{page: string, tab: string, url?: string} $item */
-    private static function url(array $item): string
+    /**
+     * The address of a navigation item: always a page of the stock interface (D-1085).
+     *
+     * @param array{page: string, tab: string, module?: string} $item
+     */
+    public static function url(array $item): string
     {
-        return $item['url'] ?? add_query_arg(array_filter(['page' => $item['page'], 'tab' => $item['tab']]), admin_url('admin.php'));
+        return add_query_arg(array_filter(['page' => $item['page'], 'tab' => $item['tab'], 'module' => $item['module'] ?? '']), admin_url('admin.php'));
     }
 
     private static function style(): string

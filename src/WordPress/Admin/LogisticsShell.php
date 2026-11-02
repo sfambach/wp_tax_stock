@@ -68,12 +68,11 @@ final class LogisticsShell
                 $item('material', __('Material', 'taxmod-stock'), StockPage::PAGE, 'material'),
                 $item('count', __('Inventur', 'taxmod-stock'), StockPage::PAGE, 'inventur'),
                 $item('use', __('Verbrauch', 'taxmod-stock'), StockPage::PAGE, 'verbrauch'),
+                $item('reservations', __('Reservierungen', 'taxmod-stock'), StockPage::PAGE, 'reservierungen'),
+                $item('places', __('Lagerorte', 'taxmod-stock'), StockPage::PAGE, 'lagerorte'),
             ]],
             ['key' => 'outbound', 'label' => __('Warenausgang', 'taxmod-stock'), 'items' => $shipping === '' ? [] : [
                 ['key' => 'shipping', 'label' => __('eBay-Versand', 'taxmod-stock'), 'page' => 'taxebay-shipping', 'tab' => '', 'url' => $shipping],
-            ]],
-            ['key' => 'warehouse', 'label' => __('Lager', 'taxmod-stock'), 'items' => [
-                $item('places', __('Lagerorte', 'taxmod-stock'), StockPage::PAGE, 'lagerorte'),
             ]],
             // His word 2026-11-01: «einen Punkt Einstellung … die API-Konfiguration, die Grundeinstellung und ja, die Lagerstruktur».
             ['key' => 'settings', 'label' => __('Einstellungen', 'taxmod-stock'), 'items' => [

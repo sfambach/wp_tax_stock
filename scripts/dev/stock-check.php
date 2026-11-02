@@ -283,7 +283,13 @@ $pruefe(str_contains($html, 'value="' . $r['teile'] . '" selected') && str_conta
 // Laid out as the eBay shipping page (2026-10-25): «Wareneingang» first and default, list tables with search, filter and sorting.
 $_GET = ['page' => StockPage::PAGE];
 $html = (new StockPage())->render();
-$pruefe(strpos($html, 'nav-tab-active') !== false && strpos($html, 'Wareneingang') < strpos($html, 'Material') && str_contains($html, 'taxmod-list-details'), 'without a tab the page opens «Wareneingang», the first tab');
+// His word 2026-11-02: «Lagerort mit in den Bestand verschieben und den Menüpunkt Lager entfernen» — the tabs are the menu group
+// «Bestand»; «Wareneingang» is Eingang → Einbuchen and the structure a setting, both without the stock's tabs.
+$pruefe(strpos($html, 'nav-tab-active') === false && str_contains($html, 'taxmod-list-details'), 'without a tab the page opens «Wareneingang», without the tabs of «Bestand»');
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'material'];
+$tabs = (new StockPage())->render();
+$pruefe(str_contains($tabs, 'tab=lagerorte') && str_contains($tabs, 'tab=reservierungen') && ! str_contains($tabs, 'tab=lagerstruktur') && ! str_contains($tabs, 'tab=wareneingang'), 'the tabs are Material, Inventur, Verbrauch, Reservierungen, Lagerorte');
+$_GET = ['page' => StockPage::PAGE];
 $pruefe(str_contains($html, 'Bestellung 1') && str_contains($html, 'tr class="taxmod-list-details"><td') && ! str_contains($html, 'tr class="taxmod-list-details" hidden') && ! str_contains($html, 'name="purchases[]"'), 'by default the orders stand open (shared list page, D-989), their purchases load as they scroll into view');
 (new TaxmodStock\WordPress\Admin\SettingsTab())->save(['taxmod_stock_views_sent' => '1', 'taxmod_stock_views' => ['material' => '1']]);
 $html = (new StockPage())->render();

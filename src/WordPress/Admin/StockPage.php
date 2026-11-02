@@ -74,7 +74,8 @@ final class StockPage
 
         try {
             $thing = absint($_GET['thing'] ?? 0);
-            $html .= '<div class="taxmod-stock-pagetabs">' . $this->tabBar($tab, $list) . '</div>' . match ($tab) {
+            // The tabs are the menu group «Bestand»; Einbuchen (Eingang) and the structure (Einstellungen, D-1085) stand alone.
+            $html .= (in_array($tab, ['wareneingang', 'lagerstruktur'], true) ? '' : '<div class="taxmod-stock-pagetabs">' . $this->tabBar($tab, $list) . '</div>') . match ($tab) {
                 'material'  => $thing > 0 ? $this->thingView($thing) : $this->materialList($list),
                 'inventur'  => $this->inventoryForm(),
                 'verbrauch' => $this->consumptionForm($thing, absint($_GET['lot'] ?? 0), absint($_GET['place'] ?? 0)),
@@ -2013,17 +2014,12 @@ final class StockPage
 
     private function tabBar(string $active, StockList $list): string
     {
-        $s         = $this->stock->structure();
-        $orderRows = $this->stock->table('order');
-
         return ListPage::tabs([
-            ['wareneingang', __('Wareneingang', 'taxmod-stock'), count(array_filter(array_keys($this->stock->labels('order')), fn (int $id): bool => $this->orderState($orderRows->first($id, $s->field('order_status'))) !== 'received'))],
             ['material', __('Material', 'taxmod-stock'), count($this->stock->things()->all())],
             ['inventur', __('Inventur', 'taxmod-stock')],
             ['verbrauch', __('Verbrauch', 'taxmod-stock')],
             ['reservierungen', __('Reservierungen', 'taxmod-stock')],
             ['lagerorte', __('Lagerorte', 'taxmod-stock')],
-            ['lagerstruktur', __('Lagerstruktur', 'taxmod-stock')],
         ], $active, fn (string $slug): string => $this->listUrl($slug, $slug === $active ? $list : new StockList(), []));
     }
 

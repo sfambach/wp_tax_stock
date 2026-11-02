@@ -57,6 +57,7 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'create_node', 'ref' => 'k_we', 'name' => 'Wareneingang', 'parent' => '@arten'],
     ['op' => 'create_node', 'ref' => 'k_vb', 'name' => 'Verbrauch', 'parent' => '@arten'],
     ['op' => 'create_node', 'ref' => 'k_in', 'name' => 'Inventur', 'parent' => '@arten'],
+    ['op' => 'create_node', 'ref' => 'k_um', 'name' => 'Umbuchung', 'parent' => '@arten'],
     ['op' => 'create_node', 'ref' => 'stat', 'name' => '__Bestellstatus', 'parent' => 410, 'class' => 'Choice'],
     ['op' => 'create_node', 'ref' => 's_teil', 'name' => 'teilweise eingegangen', 'parent' => '@stat'],
     ['op' => 'create_node', 'ref' => 's_ganz', 'name' => 'eingegangen', 'parent' => '@stat'],
@@ -83,6 +84,7 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     $field('p_lot', '@vp', 'Bestandsposten', '@lot', 'aggregation', '1..1'),
     $field('p_menge', '@vp', 'Menge', $decimal, 'composition', '1..1'),
     $field('p_gez', '@vp', 'Gezählt', $decimal, 'composition', '0..1'),
+    $field('p_lo', '@vp', 'Lagerort', '@lo', 'aggregation', '0..1'),
     $field('o_stat', '@ord', 'Status', '@stat', 'aggregation', '0..1'),
     $field('o_pos', '@ord', 'Positionen', '@pur', 'aggregation', '0..*'),
     $field('k_anz', '@pur', 'Anzahl', $int, 'composition', '0..1'),
@@ -134,13 +136,13 @@ $struktur = [
         'label' => $r['label'], 'lager_thing' => $r['m_ding'], 'lager_single' => $r['m_einz'], 'lager_min' => $r['m_min'],
         'lot_thing' => $r['l_mat'], 'lot_purchase' => $r['l_kauf'], 'lot_location' => $r['l_lo'], 'lot_value' => $r['l_wert'], 'lot_date' => $r['l_dat'],
         'transaction_kind' => $r['v_art'], 'transaction_date' => $r['v_dat'], 'transaction_order' => $r['v_best'], 'transaction_source' => $r['v_quel'], 'transaction_lines' => $r['v_pos'],
-        'line_lot' => $r['p_lot'], 'line_quantity' => $r['p_menge'], 'line_counted' => $r['p_gez'],
+        'line_lot' => $r['p_lot'], 'line_quantity' => $r['p_menge'], 'line_counted' => $r['p_gez'], 'line_location' => $r['p_lo'],
         'order_status' => $r['o_stat'], 'order_lines' => $r['o_pos'],
         'purchase_quantity' => $r['k_anz'], 'purchase_undetermined' => $r['k_offen'],
         'purchase_landed_price' => $r['k_ein'], 'purchase_unit_price' => $r['k_preis'], 'money_amount' => 4234, 'money_unit' => 4236,
     ],
     'values' => [
-        'kind_receipt' => $r['k_we'], 'kind_consumption' => $r['k_vb'], 'kind_count' => $r['k_in'], 'source_manual' => $r['q_hand'],
+        'kind_receipt' => $r['k_we'], 'kind_consumption' => $r['k_vb'], 'kind_count' => $r['k_in'], 'kind_transfer' => $r['k_um'], 'source_manual' => $r['q_hand'],
         'status_partial' => $r['s_teil'], 'status_received' => $r['s_ganz'], 'location_default' => $r['lager'],
     ],
 ];
@@ -254,12 +256,14 @@ $pruefe($record !== null && $lager->first($record, $r['m_use']) === (string) $r[
 $s = new StockService();
 $pruefe($s->things()->lagerOf($r['t1']) === $record && $s->table('lager')->first($record, $r['m_use']) === null && $s->table('lager')->first($record, $r['m_einz']) === '1', 'saving again updates the same record and clears what was left empty');
 
-// D-997 · «Umbuchen» moves a lot.
-(new StockService())->moveLot($lot, $r['platz']);
-$pruefe((new StockService())->table('lot')->first($lot, $r['l_lo']) === (string) $r['platz'], '«Umbuchen» moves the lot to the chosen place');
+// D-1039 · «Umbuchen» books − old place / + new place; the lot keeps the place it came in at (0.11.0).
+$von = (new StockService())->ledger()->homeOf($lot);
+(new StockService())->moveLot($lot, $von, $r['platz'], '1', '2026-11-02', 'Umbuchung');
+$ledger = (new StockService())->ledger();
+$pruefe($ledger->restAt($lot, $r['platz']) === 1.0 && (new StockService())->table('lot')->first($lot, $r['l_lo']) !== (string) $r['platz'], '«Umbuchen» moves one piece to the chosen place as a Vorgang, the lot keeps its own place');
 
 // The page renders its tabs from the same data.
-foreach (['material' => '<td>' . $r['lm'] . '</td>', 'inventur' => 'Material suchen', 'wareneingang' => 'Bestellung 1', 'verbrauch' => 'Rest 25'] as $tab => $erwartet) {
+foreach (['material' => '>' . $r['lm'] . '</a></td>', 'inventur' => 'Material suchen', 'wareneingang' => 'Bestellung 1', 'verbrauch' => 'Rest 25'] as $tab => $erwartet) {
     $_GET = ['page' => StockPage::PAGE, 'tab' => $tab, 'order' => $r['best']];
     $html = (new StockPage())->render();
     $pruefe(str_contains($html, $erwartet) && ! str_contains($html, 'notice-error'), "tab «{$tab}» shows «{$erwartet}»");

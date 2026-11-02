@@ -1778,6 +1778,7 @@ final class StockPage
         return '<span hidden id="taxmod-words" data-record-search="' . $search . '"'
             . ' data-record-nodes="' . $address(self::THING_NODES) . '" data-record-branch="' . $address(self::THING_BRANCH) . '"'
             . ' data-browse-title="' . esc_attr__('Material im Baum wählen', 'taxmod-stock') . '"'
+            . ' data-browse-filter="' . esc_attr__('Gruppe suchen …', 'taxmod-stock') . '"'
             . ' data-no-hits="' . esc_attr__('Nichts gefunden.', 'taxmod-stock') . '"></span>';
     }
 
@@ -1824,11 +1825,13 @@ final class StockPage
             // An order's purchases load once its details row shows: opened by hand, by «Expand all», or open from the start.
             . 'var seen="IntersectionObserver" in window?new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){seen.unobserve(e.target);load(e.target);}});},{rootMargin:"200px"}):null;'
             . 'document.querySelectorAll(".taxmod-stock-positions:not([data-loaded])").forEach(function(box){if(seen){seen.observe(box);}else{load(box);}});'
+            // D-1087: the branch he opened in the tree beside the material search is the group «Neues Material» proposes.
+            . 'var browsed={};document.addEventListener("taxmod-browse-node",function(e){var pick=e.target.closest?e.target.closest("tr"):null,f=pick&&pick.querySelector("[name^=\\"thing[\\"]"),m=f&&/^thing\\[(\\d+)\\]/.exec(f.name);if(m){browsed[m[1]]=String(e.detail.node);}});'
             // D-1069: the material's frame loads only when its dialog opens.
             . 'document.addEventListener("change",function(e){var sw=e.target;if(!sw.classList||!sw.classList.contains("taxmod-dialog-switch")||!sw.checked){return;}'
             . 'var f=sw.parentNode.querySelector("iframe[data-src]");if(f&&!f.src){f.src=f.getAttribute("data-src");}'
             // A group already chosen in the row's search is the group «Neues Material» proposes (his report 2026-11-01).
-            . 'var nm=/^taxmod-stock-new-(\\d+)$/.exec(sw.id||"");if(nm){var r=document.querySelector("input[name=\\"thing["+nm[1]+"]\\"]:checked"),g=r&&/^new-(\\d+)$/.exec(r.value),sel=document.querySelector("select[name=\\"newgroup["+nm[1]+"]\\"]");if(g&&sel){sel.value=g[1];}var rb=g&&document.querySelector("input[name=\\"newgroup["+nm[1]+"]\\"][value=\\""+g[1]+"\\"]");if(rb){rb.checked=true;var ch=rb.closest(".taxmod-chooser"),tx=rb.parentNode.textContent.trim();if(ch){ch.querySelectorAll(":scope > .taxmod-dialog-open, .taxmod-chooser-current").forEach(function(e){e.textContent=tx;});}}}});'
+            . 'var nm=/^taxmod-stock-new-(\\d+)$/.exec(sw.id||"");if(nm){var r=document.querySelector("input[name=\\"thing["+nm[1]+"]\\"]:checked"),g=r&&/^new-(\\d+)$/.exec(r.value),gid=g?g[1]:(browsed[nm[1]]||""),sel=document.querySelector("select[name=\\"newgroup["+nm[1]+"]\\"]");if(gid&&sel&&sel.querySelector("option[value=\\""+gid+"\\"]")){sel.value=gid;}var rb=gid&&document.querySelector("input[name=\\"newgroup["+nm[1]+"]\\"][value=\\""+gid+"\\"]");if(rb){rb.checked=true;var ch=rb.closest(".taxmod-chooser"),tx=rb.parentNode.textContent.trim();if(ch){ch.querySelectorAll(":scope > .taxmod-dialog-open, .taxmod-chooser-current").forEach(function(e){e.textContent=tx;});}}}});'
             . '(function(){var mo=(new URLSearchParams(location.search).get("material")||"").replace(/\\D/g,""),n=0;if(!mo){return;}'
             // The rows of an order arrive after the page (lazy details), so the switch is looked for until it is there.
             . 'var t=setInterval(function(){var ms=document.getElementById("taxmod-stock-material-"+mo);if(ms){clearInterval(t);ms.checked=true;ms.dispatchEvent(new Event("change",{bubbles:true}));}else if(++n>40){clearInterval(t);}},250);})();'

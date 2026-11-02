@@ -14,7 +14,7 @@ final class LocationChanges
     }
 
     /** @return list<array<string, mixed>> */
-    public function create(string $name, int $parent, bool $movable, int $project, LocationTree $tree, Table $places): array
+    public function create(string $name, int $parent, bool $movable, int $project, LocationTree $tree, Table $places, bool $reserved = false): array
     {
         $s    = $this->structure;
         $name = trim($name);
@@ -28,6 +28,10 @@ final class LocationChanges
         }
 
         $values = [(string) $s->field('label') => $name] + $this->treeValues($parent, $movable, $project);
+
+        if ($reserved) {
+            $values[(string) $this->reservedField()] = '1';
+        }
 
         return [
             ['op' => 'create_record', 'ref' => 'ort', 'node' => (string) $s->node('location')],
@@ -49,6 +53,26 @@ final class LocationChanges
         $this->needTree();
 
         return [['op' => 'set_values', 'record' => (string) $place, 'values' => [(string) $this->structure->field('location_parent') => $parent > 0 ? (string) $parent : '']]];
+    }
+
+    /**
+     * D-1082: the flag «reserviert für Produktion» set or taken off. Checks on what lies there are the caller's
+     * ({@see ReservedPlaces::checkFlag()}); taking it off frees the area — the boundary asks first.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function reserve(int $place, bool $reserved, Table $places): array
+    {
+        if (! $places->has($place)) {
+            throw StockError::notALocation($place);
+        }
+
+        return [['op' => 'set_values', 'record' => (string) $place, 'values' => [(string) $this->reservedField() => $reserved ? '1' : '0']]];
+    }
+
+    private function reservedField(): int
+    {
+        return $this->structure->field('location_reserved');
     }
 
     /** @return array<string, string> */

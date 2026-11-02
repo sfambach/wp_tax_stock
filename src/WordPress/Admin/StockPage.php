@@ -101,7 +101,7 @@ final class StockPage
 
         $kind  = sanitize_key((string) ($_POST['booking'] ?? ''));
         // D-1058: the row buttons carry their purchase in the value, «nichteinlagern-<id>» and «einlagern-<id>».
-        $rowPurchase = preg_match('/^(nichteinlagern|einlagern|umhaengen)-(\d+)$/', $kind, $m) === 1 ? (int) $m[2] : 0;
+        $rowPurchase = preg_match('/^(nichteinlagern|einlagern|umhaengen|reservieren|freigeben)-(\d+)$/', $kind, $m) === 1 ? (int) $m[2] : 0;
         $kind        = $rowPurchase > 0 ? $m[1] : $kind;
         $today = current_time('Y-m-d');
         // The goods receipt sends «thing» as a list (one per purchase); only the other forms send one thing.
@@ -142,11 +142,14 @@ final class StockPage
                 'einlagern'    => $this->stock->reopenForStock(absint($_POST['order'] ?? 0), $rowPurchase),
                 // D-1030: the row buttons of the structure page carry their place the same way.
                 'umhaengen'    => $this->stock->movePlace($rowPurchase, absint(((array) ($_POST['parent'] ?? []))[$rowPurchase] ?? 0)),
+                // D-1082: the flag «reserviert für Produktion», set and taken off from the row's dialog.
+                'reservieren', 'freigeben' => $this->stock->reservePlace($rowPurchase, $kind === 'reservieren'),
                 'ort'          => $this->stock->createPlace(
                     sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? ''))),
                     absint($_POST['new_parent'] ?? 0),
                     ! empty($_POST['movable']),
-                    absint($_POST['project'] ?? 0)
+                    absint($_POST['project'] ?? 0),
+                    ! empty($_POST['reserved'])
                 ),
                 'zuordnen'     => $this->stock->assignPurchases(absint($_POST['order'] ?? 0), $this->assignedThings(), $this->assignedPlaces(), $this->newThings()),
                 'verbrauch'    => $this->stock->bookConsumption(
@@ -165,6 +168,8 @@ final class StockPage
                 'umbuchen'       => __('Umgebucht: ein Vorgang «Umbuchung» mit Abgang am alten und Zugang am neuen Ort.', 'taxmod-stock'),
                 'storno'         => __('Storniert: die Gegenbuchung hebt den Vorgang auf, beide bleiben im Protokoll.', 'taxmod-stock'),
                 'ort'            => __('Lagerort angelegt.', 'taxmod-stock'),
+                'reservieren'    => __('Reserviert für Produktion: alles, was dort und darunter liegt, ist reserviert.', 'taxmod-stock'),
+                'freigeben'      => __('Kennzeichen entfernt: was dort liegt, ist nicht mehr reserviert.', 'taxmod-stock'),
                 'verschieben'    => __('Verschoben: das Material steht jetzt in der neuen Gruppe, ihre weiteren Felder sind leer.', 'taxmod-stock'),
                 'nichteinlagern' => __('Abgeschlossen ohne Lager: kein Bestand, der Grund steht am Kauf.', 'taxmod-stock'),
                 'einlagern'      => __('Zurückgenommen: der Kauf kann wieder eingebucht werden.', 'taxmod-stock'),
@@ -180,14 +185,14 @@ final class StockPage
                 'lager'        => ['material', ['thing' => $thing, 'view' => 'lager']],
                 'umbuchen', 'storno' => ['material', ['thing' => $thing, 'view' => 'bestand']],
                 'wareneingang', 'aufteilen', 'zuordnen', 'nichteinlagern', 'einlagern' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
-                'umhaengen', 'ort' => ['lagerstruktur', []],
+                'umhaengen', 'ort', 'reservieren', 'freigeben' => ['lagerstruktur', []],
                 default        => ['material', $thing > 0 ? ['thing' => $thing, 'view' => 'bestand'] : []],
             };
         } catch (StockError $e) {
             $this->remember('error', Messages::of($e));
             $back = match ($kind) {
                 'wareneingang', 'zuordnen', 'nichteinlagern', 'einlagern' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
-                'umhaengen', 'ort'  => ['lagerstruktur', []],
+                'umhaengen', 'ort', 'reservieren', 'freigeben' => ['lagerstruktur', []],
                 'aufteilen'         => ['wareneingang', ['order' => absint($_POST['order'] ?? 0), 'split' => absint($_POST['purchase'] ?? 0)]],
                 'lager', 'umbuchen', 'storno' => ['material', ['thing' => $thing, 'view' => $kind === 'lager' ? 'lager' : 'bestand']],
                 // D-1073: refused because values would fall — named, nothing moved (his doubt 2026-11-01: «das verschieben ist problematisch»).
@@ -687,6 +692,8 @@ final class StockPage
         $min     = $record === null ? null : $this->stock->table('lager')->first($record, $s->field('lager_min'));
         $stock   = $ledger->stockOf($thing);
         $moves   = $this->movements($ledger->lotsOf($thing), $thing);
+        $flags   = $this->stock->reservedPlaces();
+        $held    = $flags->reservedByThing($ledger)[$thing] ?? 0.0;
         $worth   = 0.0;
         $rows    = '';
 
@@ -699,7 +706,7 @@ final class StockPage
             $first    = true;
 
             foreach ($where as $place => $quantity) {
-                $rows .= '<tr><th scope="row" class="check-column"></th><td>' . ($first ? '#' . esc_html((string) $lot) : '') . '</td><td>' . esc_html($places[$place] ?? '—') . '</td><td>' . esc_html($this->number($quantity)) . '</td>'
+                $rows .= '<tr><th scope="row" class="check-column"></th><td>' . ($first ? '#' . esc_html((string) $lot) : '') . '</td><td>' . esc_html($places[$place] ?? '—') . $this->reservedMark($place, $flags) . '</td><td>' . esc_html($this->number($quantity)) . '</td>'
                     . '<td>' . ($first ? esc_html($amount ?? '—') : '') . '</td>'
                     . '<td>' . ($first ? esc_html($purchase === null ? __('Inventur', 'taxmod-stock') : '#' . $purchase) : '') . '</td>'
                     . '<td>' . ($first ? esc_html(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10)) : '') . '</td>'
@@ -715,6 +722,8 @@ final class StockPage
 
         return '<div style="display:flex;gap:12px;margin-bottom:16px">'
             . $tile(__('Menge', 'taxmod-stock'), $this->number($stock), '#edfaef')
+            . $tile(__('Reserviert', 'taxmod-stock'), $this->number($held), $held > 0.0 ? '#fcf0e3' : '#f6f7f7')
+            . $tile(__('Verfügbar', 'taxmod-stock'), $this->number($stock - $held), '#edfaef')
             . $tile(__('Wert', 'taxmod-stock'), $this->number($worth), '#edfaef')
             . $tile(__('Mindestbestand', 'taxmod-stock'), $min === null ? '—' : $min . ' ' . ($stock < (float) $min ? '✗' : '✓'), '#f6f7f7')
             . '</div>'
@@ -1241,6 +1250,7 @@ final class StockPage
         $things = $this->stock->things()->all();
         $rows   = LocationStock::of($s, $this->stock->table('lot'), $this->stock->ledger(), $this->stock->places());
         $places = $this->stock->places();
+        $flags  = $this->stock->reservedPlaces();
         $body   = '';
 
         foreach ($tree->ordered() as [$place, $depth]) {
@@ -1248,12 +1258,14 @@ final class StockPage
             $all   = array_sum(array_map(static fn (int $p): int => $rows[$p]['lots'] ?? 0, $tree->withAllBelow($place)));
             $links = array_map(fn (int $thing): string => '<a href="' . esc_url($this->thingUrl($thing, 'bestand')) . '">' . esc_html($things[$thing] ?? '#' . $thing) . '</a>', $row['things']);
             $name  = str_repeat('— ', $depth) . '<strong>' . esc_html((string) (array_reverse(explode(' › ', $tree->pathOf($place)))[0])) . '</strong>'
-                . ($tree->isMovable($place) ? ' <span class="description">(' . esc_html__('beweglich', 'taxmod-stock') . ')</span>' : '');
+                . ($tree->isMovable($place) ? ' <span class="description">(' . esc_html__('beweglich', 'taxmod-stock') . ')</span>' : '')
+                . $this->reservedMark($place, $flags);
             $project = $tree->projectOf($place);
             $extra   = $edit
                 ? '<select name="parent[' . esc_attr((string) $place) . ']">' . $this->options(array_diff_key($places, array_flip($tree->withAllBelow($place))), __('— oberste Ebene —', 'taxmod-stock'), $tree->parentOf($place)) . '</select> '
                     . '<button type="submit" class="button button-small" name="booking" value="umhaengen-' . esc_attr((string) $place) . '">' . esc_html__('Umhängen', 'taxmod-stock') . '</button> '
-                    . '<a class="button button-small" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $place], admin_url('admin.php')) . '#taxmod-preview-edit') . '">' . esc_html__('Bearbeiten', 'taxmod-stock') . '</a>'
+                    . '<a class="button button-small" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $place], admin_url('admin.php')) . '#taxmod-preview-edit') . '">' . esc_html__('Bearbeiten', 'taxmod-stock') . '</a> '
+                    . $this->reserveDialog($place, $flags->isFlagged($place), $all)
                 : implode(', ', $links);
             $body .= '<tr><th scope="row" class="check-column"></th><td>' . $name . '</td><td>' . esc_html($project ?? '') . '</td>'
                 . '<td>' . esc_html((string) $row['lots']) . ($all > $row['lots'] ? ' <span class="description">(' . esc_html(sprintf(
@@ -1285,14 +1297,60 @@ final class StockPage
         $projects = $this->stock->projects();
 
         return $this->formStart('lagerstruktur')
+            // Enter in the name field creates the place: the first submit button of a form is its default, and the rows'
+            // buttons (Umhängen, the flag's dialog) come before the one of «Neuer Lagerort».
+            . '<button type="submit" name="booking" value="ort" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px"></button>'
             . '<p>' . esc_html__('Orte sind ein Baum: Lager → Bereich → Platz. Kisten und Kartons sind bewegliche Orte; «Umhängen» stellt sie samt Inhalt um.', 'taxmod-stock') . '</p>'
             . $table
             . '<h2>' . esc_html__('Neuer Lagerort', 'taxmod-stock') . '</h2><p>'
             . '<label>' . esc_html__('Name', 'taxmod-stock') . ' <input type="text" name="name" style="width:14em"></label> '
             . '<label>' . esc_html__('liegt in', 'taxmod-stock') . ' <select name="new_parent">' . $this->options($places, __('— oberste Ebene —', 'taxmod-stock')) . '</select></label> '
             . '<label><input type="checkbox" name="movable" value="1"> ' . esc_html__('beweglich (Kiste, Karton)', 'taxmod-stock') . '</label> '
+            . ($s->hasField('location_reserved') ? '<label><input type="checkbox" name="reserved" value="1"> ' . esc_html__('reserviert für Produktion', 'taxmod-stock') . '</label> ' : '')
             . ($projects === [] ? '' : '<label>' . esc_html__('Projekt', 'taxmod-stock') . ' <select name="project">' . $this->options($projects, '—') . '</select></label> ')
             . '<button type="submit" class="button button-primary" name="booking" value="ort">' . esc_html__('Anlegen', 'taxmod-stock') . '</button></p></form>';
+    }
+
+    /** D-1082: «reserviert für Produktion» at the place that carries the flag, «reserviert» at what lies below it. */
+    private function reservedMark(int $place, \TaxmodStock\Core\ReservedPlaces $flags): string
+    {
+        $holder = $flags->reservingPlaceOf($place);
+
+        if ($holder === null) {
+            return '';
+        }
+
+        return ' <span class="taxmod-stock-reserved" style="background:#fcf0e3;color:#8a4b00;border-radius:3px;padding:0 6px">'
+            . esc_html($holder === $place ? __('reserviert für Produktion', 'taxmod-stock') : __('reserviert', 'taxmod-stock')) . '</span>';
+    }
+
+    /**
+     * D-1082: setting or taking off the flag, asked in the shared dialog — taking it off frees what lies there, so the
+     * dialog says how many lots that are.
+     */
+    private function reserveDialog(int $place, bool $flagged, int $lots): string
+    {
+        if (! method_exists(ListPage::class, 'dialogAction') || ! $this->stock->structure()->hasField('location_reserved')) {
+            return '';
+        }
+
+        $text = $flagged
+            ? sprintf(
+                /* translators: %d: lots in the place and below it */
+                __('Das Kennzeichen kommt weg; die %d Posten dort und darunter sind dann nicht mehr reserviert.', 'taxmod-stock'),
+                $lots
+            )
+            : __('Alles, was hier und an den Orten darunter liegt, ist dann reserviert: verbraucht wird erst nach dem Umbuchen hinaus, und schon reservierte Ware kommt nicht hinein.', 'taxmod-stock');
+
+        return ListPage::dialogAction(
+            'taxmod-stock-reserve-' . $place,
+            $flagged ? __('Kennzeichen entfernen', 'taxmod-stock') : __('Für Produktion reservieren', 'taxmod-stock'),
+            $flagged ? __('Reservierung des Ortes aufheben', 'taxmod-stock') : __('Reserviert für Produktion', 'taxmod-stock'),
+            '<p style="margin:0">' . esc_html($text) . '</p>',
+            'booking',
+            ($flagged ? 'freigeben-' : 'reservieren-') . $place,
+            $flagged ? __('Entfernen', 'taxmod-stock') : __('Reservieren', 'taxmod-stock')
+        );
     }
 
     private function consumptionForm(int $preset, int $presetLot, int $presetPlace = 0): string

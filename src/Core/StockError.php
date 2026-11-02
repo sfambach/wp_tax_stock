@@ -215,6 +215,18 @@ final class StockError extends \RuntimeException
         return new self('not_cancellable', (string) $transaction);
     }
 
+    /** D-1082: goods reserved already may not go into a reserved area. */
+    public static function alreadyReserved(int $lot): self
+    {
+        return new self('already_reserved', (string) $lot);
+    }
+
+    /** D-1082: nothing is consumed inside a reserved area before it is moved out. */
+    public static function reservedForProduction(int $place): self
+    {
+        return new self('reserved_for_production', (string) $place);
+    }
+
     public static function modelRefused(string $message): self
     {
         return new self('model_refused', $message);

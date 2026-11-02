@@ -17,6 +17,7 @@ use TaxmodStock\Core\LocationTree;
 use TaxmodStock\Core\NotStocked;
 use TaxmodStock\Core\ReceiptChoice;
 use TaxmodStock\Core\ReceiptPlan;
+use TaxmodStock\Core\ReservedPlaces;
 use TaxmodStock\Core\SourceRow;
 use TaxmodStock\Core\SplitRow;
 use TaxmodStock\Core\StockError;
@@ -749,15 +750,56 @@ final class StockService
     }
 
     /** @return array<string, mixed> the modeller's answer */
-    public function createPlace(string $name, int $parent, bool $movable, int $project): array
+    public function createPlace(string $name, int $parent, bool $movable, int $project, bool $reserved = false): array
     {
-        return $this->model->write((new LocationChanges($this->structure()))->create($name, $parent, $movable, $project, $this->locationTree(), $this->table('location')));
+        return $this->model->write((new LocationChanges($this->structure()))->create($name, $parent, $movable, $project, $this->locationTree(), $this->table('location'), $reserved));
     }
 
-    /** @return array<string, mixed> the modeller's answer */
+    /**
+     * «Umhängen»: the place with all it holds; into a reserved area only what is not reserved yet (D-1082).
+     *
+     * @return array<string, mixed> the modeller's answer
+     */
     public function movePlace(int $place, int $parent): array
     {
-        return $this->model->write((new LocationChanges($this->structure()))->move($place, $parent, $this->locationTree(), $this->table('location')));
+        $changes = (new LocationChanges($this->structure()))->move($place, $parent, $this->locationTree(), $this->table('location'));
+        $this->reservedPlaces()->checkHang($place, $parent, $this->ledger(), $this->boundLots());
+
+        return $this->model->write($changes);
+    }
+
+    /** D-1082: the places reserved for production, computed from the tree read once. */
+    public function reservedPlaces(): ReservedPlaces
+    {
+        return ReservedPlaces::from($this->structure(), $this->table('location'), $this->locationTree());
+    }
+
+    /**
+     * D-1082: sets or takes off «reserviert für Produktion». Setting it over goods a reservation names is refused.
+     *
+     * @return array<string, mixed> the modeller's answer
+     */
+    public function reservePlace(int $place, bool $reserved): array
+    {
+        if (! $this->structure()->hasField('location_reserved')) {
+            throw StockError::notConfigured('fields.location_reserved');
+        }
+
+        if ($reserved) {
+            $this->reservedPlaces()->checkFlag($place, $this->ledger(), $this->boundLots());
+        }
+
+        return $this->model->write((new LocationChanges($this->structure()))->reserve($place, $reserved, $this->table('location')));
+    }
+
+    /**
+     * The lots a reservation names (D-1083); they go into no reserved area.
+     *
+     * @return array<int, true>
+     */
+    public function boundLots(): array
+    {
+        return [];
     }
 
     public function notStockedReason(int $purchase): string
@@ -937,16 +979,28 @@ final class StockService
         }
 
         // A place where this lot does not lie (another lot picked in the form) falls back to where it does.
-        $place = $place !== null && $ledger->restAt($lot, $place) > 0.0 ? $place : null;
-        $place ??= $this->structure()->hasField('line_location') ? $this->takenFrom($lot, $ledger) : null;
+        $reserved = $this->reservedPlaces();
+        $place    = $place !== null && $ledger->restAt($lot, $place) > 0.0 ? $place : null;
+        $place  ??= $this->takenFrom($lot, $ledger, $reserved);
+        // D-1082: nothing is consumed inside a reserved area.
+        $reserved->checkConsumption($place ?? $ledger->homeOf($lot));
 
         return $this->model->write((new Bookings($this->structure(), $today))->consumption($lot, $quantity, $project, $title, $place));
     }
 
-    /** Where a consumption takes from when no place is named: where the lot came in if something lies there, else where most lies. */
-    private function takenFrom(int $lot, Ledger $ledger): ?int
+    /**
+     * Where a consumption takes from when no place is named: where the lot came in if something lies there, else where
+     * most lies — a reserved place only when nothing lies elsewhere, so the refusal names it.
+     */
+    private function takenFrom(int $lot, Ledger $ledger, ReservedPlaces $reserved): ?int
     {
+        if (! $this->structure()->hasField('line_location')) {
+            return null;
+        }
+
         $places = array_filter($ledger->placesOf($lot), static fn (float $q, int $place): bool => $q > 0.0 && $place > 0, ARRAY_FILTER_USE_BOTH);
+        $free   = array_filter($places, static fn (int $place): bool => $reserved->reservingPlaceOf($place) === null, ARRAY_FILTER_USE_KEY);
+        $places = $free === [] ? $places : $free;
 
         if ($places === []) {
             return null;
@@ -977,7 +1031,7 @@ final class StockService
             throw StockError::notALocation($location);
         }
 
-        return $this->model->write((new Bookings($this->structure(), $today))->transfer([new TransferRow($lot, $from, $location, $quantity)], $title, $this->ledger()));
+        return $this->model->write((new Bookings($this->structure(), $today))->transfer([new TransferRow($lot, $from, $location, $quantity)], $title, $this->ledger(), '', $this->reservedPlaces(), $this->boundLots()));
     }
 
     /**
@@ -994,7 +1048,8 @@ final class StockService
         /* translators: %s: the name of the Vorgang taken back */
         $title = sprintf(__('Storno: %s', 'taxmod-stock'), (string) ($deals->first($deal, $s->field('label')) ?? '#' . $deal));
 
-        return $this->model->write((new Bookings($s, $now))->transfer($rows, $title, $this->ledger(), $who . ', ' . $now));
+        // The way back is an Umbuchung too: it may not carry reserved goods into a reserved area (D-1082).
+        return $this->model->write((new Bookings($s, $now))->transfer($rows, $title, $this->ledger(), $who . ', ' . $now, $this->reservedPlaces(), $this->boundLots()));
     }
 
     /** D-1027: purchasing — demand, source, order per supplier. */

@@ -31,6 +31,9 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
     «Umbuchen» (D-1039, from 0.11.0) books a Vorgang «Umbuchung» with the lines «− old place, + new place», for a whole
     lot or part of it; a lot then lies at several places, its quantity per place is the sum of its lines there (a line
     without a place lies where its lot came in). «Stornieren» takes an Umbuchung back with a counter-booking (D-1036).
+    A place can be «reserviert für Produktion» (D-1082, from 0.12.0, set on «Lagerstruktur»): what lies on it or below
+    it is reserved, computed from where it lies. Strict: freed only by moving it out, consumed only after that, and goods
+    already reserved are not moved or hung into such an area. The Bestand tab shows «Reserviert» and «Verfügbar».
     A purchase «noch nicht näher bestimmt» (a lot, Konvolut) is first told apart with «Aufteilen» (concept R3): the
     purchase becomes its first part, every further part a purchase of the same order, each with its material.
   - **Inventur** — counted stock without a purchase, on an existing thing or a new one in a group.

@@ -303,10 +303,13 @@ final class Bookings
      * when a whole lot moves. The lot keeps its «Lagerort» (where it came in); where it lies now is the sum of its lines.
      * A Storno (D-1036) is the same with the places swapped and each line naming the line it cancels.
      *
+     * D-1082: with `$reserved`, nothing reserved goes into a reserved area; `$bound` are the lots a reservation names.
+     *
      * @param list<TransferRow> $rows
+     * @param array<int, true>  $bound
      * @return list<array<string, mixed>>
      */
-    public function transfer(array $rows, string $title, Ledger $ledger, string $note = ''): array
+    public function transfer(array $rows, string $title, Ledger $ledger, string $note = '', ?ReservedPlaces $reserved = null, array $bound = []): array
     {
         $s = $this->structure;
 
@@ -330,6 +333,8 @@ final class Bookings
             if ((float) $quantity > $ledger->restAt($row->lot, $row->from) + 0.0000001) {
                 throw StockError::notEnoughAt($row->lot, $row->from);
             }
+
+            $reserved?->checkTransfer($row->lot, $row->from, $row->to, isset($bound[$row->lot]));
 
             $this->line($title, (string) $row->lot, '-' . $quantity, null, $row->from, $row->reversesOut);
             $this->line($title, (string) $row->lot, $quantity, null, $row->to, $row->reversesIn);

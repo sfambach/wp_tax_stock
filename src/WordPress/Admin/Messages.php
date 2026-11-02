@@ -75,6 +75,10 @@ final class Messages
             'already_cancelled'         => sprintf(__('Vorgang #%s ist schon storniert oder selbst ein Storno.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id of the Vorgang */
             'not_cancellable'           => sprintf(__('Vorgang #%s lässt sich hier nicht stornieren.', 'taxmod-stock'), $error->detail),
+            /* translators: %s: record id of the lot */
+            'already_reserved'          => sprintf(__('Posten #%s ist schon reserviert und darf nicht in einen für die Produktion reservierten Bereich.', 'taxmod-stock'), $error->detail),
+            /* translators: %s: record id of the place */
+            'reserved_for_production'   => sprintf(__('Lagerort #%s ist für die Produktion reserviert: erst aus dem Bereich umbuchen, dann verbrauchen.', 'taxmod-stock'), $error->detail),
             'model_refused'             => sprintf(__('Der Taxonomy Modeller hat die Buchung abgelehnt, nichts wurde geschrieben: %s', 'taxmod-stock'), $error->detail),
             default                     => $error->getMessage(),
         };

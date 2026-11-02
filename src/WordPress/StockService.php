@@ -17,6 +17,8 @@ use TaxmodStock\Core\LocationTree;
 use TaxmodStock\Core\NotStocked;
 use TaxmodStock\Core\ReceiptChoice;
 use TaxmodStock\Core\ReceiptPlan;
+use TaxmodStock\Core\ReservationRow;
+use TaxmodStock\Core\Reservations;
 use TaxmodStock\Core\ReservedPlaces;
 use TaxmodStock\Core\SourceRow;
 use TaxmodStock\Core\SplitRow;
@@ -799,7 +801,91 @@ final class StockService
      */
     public function boundLots(): array
     {
-        return [];
+        return array_fill_keys(array_keys($this->reservations()->boundLots()), true);
+    }
+
+    /** D-1083: the reservations of subjects, read from the Vorgänge once per request. */
+    public function reservations(): Reservations
+    {
+        return Reservations::from($this->structure(), $this->table('transaction'), $this->table('line'), $this->ledger());
+    }
+
+    /**
+     * D-1083: what is reserved of each thing — by a subject's reservation and by lying in a reserved area (D-1082).
+     *
+     * @return array<int, float> thing → quantity
+     */
+    public function reservedByThing(): array
+    {
+        $out = $this->reservations()->reservedByThing();
+
+        foreach ($this->reservedPlaces()->reservedByThing($this->ledger()) as $thing => $quantity) {
+            $out[$thing] = ($out[$thing] ?? 0.0) + $quantity;
+        }
+
+        return $out;
+    }
+
+    /**
+     * The records a reservation can be for: projects and sales, as far as the structure names their nodes. Build runs and
+     * repairs join when the model has them (D-1083 names them; the model does not yet).
+     *
+     * @return array<string, array<int, string>> group name → record id → label
+     */
+    public function subjects(): array
+    {
+        $s   = $this->structure();
+        $out = [];
+
+        if ($s->hasNode('project')) {
+            $out[__('Projekte', 'taxmod-stock')] = $this->labels('project');
+        }
+
+        if ($s->hasNode('sale')) {
+            $out[__('Verkäufe', 'taxmod-stock')] = $this->labels('sale');
+        }
+
+        return array_filter($out);
+    }
+
+    /**
+     * D-1083: a position for a subject's reservation — into its open reservation, or a new one with date and deadline.
+     *
+     * @return array<string, mixed> the modeller's answer
+     */
+    public function reserve(int $subject, string $deadline, int $thing, string $quantity, ?int $lot, string $today, string $title): array
+    {
+        $s = $this->structure();
+
+        if (! $s->hasValue('kind_reservation')) {
+            throw StockError::notConfigured('values.kind_reservation');
+        }
+
+        if ($subject <= 0 || $this->model->nodesOf([$subject]) === []) {
+            throw StockError::noSubject();
+        }
+
+        $this->checkThings([$thing]);
+        $rows         = [new ReservationRow($thing, $quantity, $lot)];
+        $reservations = $this->reservations();
+        $reservations->check($rows, $this->ledger(), $this->reservedPlaces());
+
+        return $this->model->write((new Bookings($s, $today))->reserve($subject, $deadline, $rows, $reservations->forSubject($subject), $this->table('transaction'), $title));
+    }
+
+    /**
+     * D-1036 for a reservation: whole, or one position (`$line`); who and when stand in the Storno.
+     *
+     * @return array<string, mixed> the modeller's answer
+     */
+    public function cancelReservation(int $deal, ?int $line, string $now, string $who): array
+    {
+        $reservations = $this->reservations();
+        $positions    = $reservations->toCancel($deal, $line);
+        /* translators: %s: the name of the reservation taken back */
+        $title        = sprintf(__('Storno: %s', 'taxmod-stock'), (string) ($this->table('transaction')->first($deal, $this->structure()->field('label')) ?? '#' . $deal));
+
+        return $this->model->write((new Bookings($this->structure(), $now))->cancelReservation($reservations->subjectOf($deal), $positions, $title, $who . ', ' . $now));
     }
 
     public function notStockedReason(int $purchase): string

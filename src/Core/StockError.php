@@ -227,6 +227,30 @@ final class StockError extends \RuntimeException
         return new self('reserved_for_production', (string) $place);
     }
 
+    /** D-1083: the record is no reservation. */
+    public static function notAReservation(int $transaction): self
+    {
+        return new self('not_a_reservation', (string) $transaction);
+    }
+
+    /** D-1083: a lot gives a reservation only what lies free of it. */
+    public static function notEnoughFree(int $lot): self
+    {
+        return new self('not_enough_free', (string) $lot);
+    }
+
+    /** D-1083: a reservation needs its subject — a project, a sale, a build run, a repair. */
+    public static function noSubject(): self
+    {
+        return new self('no_subject', '');
+    }
+
+    /** A date as the form sends it: Y-m-d. */
+    public static function notADate(string $given): self
+    {
+        return new self('not_a_date', $given);
+    }
+
     public static function modelRefused(string $message): self
     {
         return new self('model_refused', $message);

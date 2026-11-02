@@ -42,7 +42,7 @@ final class StockPage
     /** Rows per page of the material list (design 20: a list of thousands draws only what is seen). */
     private const PER_PAGE  = 50;
     private const ROWS      = 6;
-    private const TABS      = ['wareneingang', 'material', 'inventur', 'verbrauch', 'lagerorte', 'lagerstruktur'];
+    private const TABS      = ['wareneingang', 'material', 'inventur', 'verbrauch', 'reservierungen', 'lagerorte', 'lagerstruktur'];
     private const VIEWS     = ['daten', 'bearbeiten', 'einkauf', 'lager', 'bestand', 'verkauf'];
     private const FILTER_FORM = 'taxmod-stock-filter';
     private const BULK_FORM   = 'taxmod-stock-bulk';
@@ -78,6 +78,7 @@ final class StockPage
                 'inventur'  => $this->inventoryForm(),
                 'verbrauch' => $this->consumptionForm($thing, absint($_GET['lot'] ?? 0), absint($_GET['place'] ?? 0)),
                 'lagerorte' => $this->locationList(false),
+                'reservierungen' => $this->reservationList(),
                 'lagerstruktur' => $this->locationList(true),
                 default     => absint($_GET['split'] ?? 0) > 0
                     ? $this->splitForm(absint($_GET['order'] ?? 0), absint($_GET['split']), sanitize_key((string) ($_GET['back'] ?? '')))
@@ -126,6 +127,16 @@ final class StockPage
                     $today,
                     $this->title(__('Umbuchung', 'taxmod-stock'), $today)
                 ),
+                'reservieren'  => $this->stock->reserve(
+                    absint($_POST['subject'] ?? 0),
+                    sanitize_text_field(wp_unslash((string) ($_POST['deadline'] ?? ''))),
+                    $thing,
+                    sanitize_text_field(wp_unslash((string) ($_POST['quantity'] ?? ''))),
+                    absint($_POST['lot'] ?? 0) ?: null,
+                    $today,
+                    $this->title(__('Reservierung', 'taxmod-stock'), $today)
+                ),
+                'reservierungstorno' => $this->stock->cancelReservation(absint($_POST['transaction'] ?? 0), absint($_POST['line'] ?? 0) ?: null, current_time('Y-m-d H:i:s'), wp_get_current_user()->display_name),
                 'storno'       => $this->stock->cancelTransfer(absint($_POST['transaction'] ?? 0), current_time('Y-m-d H:i:s'), wp_get_current_user()->display_name),
                 'wareneingang' => $this->stock->bookReceipt(
                     absint($_POST['order'] ?? 0),
@@ -166,7 +177,8 @@ final class StockPage
             $this->remember('success', match ($kind) {
                 'umhaengen'      => __('Umgehängt: der Ort liegt jetzt dort, mit allem, was in ihm liegt.', 'taxmod-stock'),
                 'umbuchen'       => __('Umgebucht: ein Vorgang «Umbuchung» mit Abgang am alten und Zugang am neuen Ort.', 'taxmod-stock'),
-                'storno'         => __('Storniert: die Gegenbuchung hebt den Vorgang auf, beide bleiben im Protokoll.', 'taxmod-stock'),
+                'storno', 'reservierungstorno' => __('Storniert: die Gegenbuchung hebt den Vorgang auf, beide bleiben im Protokoll.', 'taxmod-stock'),
+                'reservieren'    => __('Reserviert: der verfügbare Bestand sinkt, der Bestand bleibt.', 'taxmod-stock'),
                 'ort'            => __('Lagerort angelegt.', 'taxmod-stock'),
                 'reservieren'    => __('Reserviert für Produktion: alles, was dort und darunter liegt, ist reserviert.', 'taxmod-stock'),
                 'freigeben'      => __('Kennzeichen entfernt: was dort liegt, ist nicht mehr reserviert.', 'taxmod-stock'),
@@ -184,6 +196,8 @@ final class StockPage
                 'verschieben'  => ['material', ['thing' => $thing, 'view' => 'daten']],
                 'lager'        => ['material', ['thing' => $thing, 'view' => 'lager']],
                 'umbuchen', 'storno' => ['material', ['thing' => $thing, 'view' => 'bestand']],
+                'reservieren', 'reservierungstorno' => sanitize_key((string) ($_POST['back'] ?? '')) === 'bestand' && $thing > 0
+                    ? ['material', ['thing' => $thing, 'view' => 'bestand']] : ['reservierungen', []],
                 'wareneingang', 'aufteilen', 'zuordnen', 'nichteinlagern', 'einlagern' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
                 'umhaengen', 'ort', 'reservieren', 'freigeben' => ['lagerstruktur', []],
                 default        => ['material', $thing > 0 ? ['thing' => $thing, 'view' => 'bestand'] : []],
@@ -198,6 +212,8 @@ final class StockPage
                 // D-1073: refused because values would fall — named, nothing moved (his doubt 2026-11-01: «das verschieben ist problematisch»).
                 'verschieben'       => ['material', ['thing' => $thing, 'view' => 'daten']],
                 'verbrauch'         => ['verbrauch', ['thing' => $thing]],
+                'reservieren', 'reservierungstorno' => sanitize_key((string) ($_POST['back'] ?? '')) === 'bestand' && $thing > 0
+                    ? ['material', ['thing' => $thing, 'view' => 'bestand']] : ['reservierungen', []],
                 default             => [$kind, []],
             };
         }
@@ -693,7 +709,7 @@ final class StockPage
         $stock   = $ledger->stockOf($thing);
         $moves   = $this->movements($ledger->lotsOf($thing), $thing);
         $flags   = $this->stock->reservedPlaces();
-        $held    = $flags->reservedByThing($ledger)[$thing] ?? 0.0;
+        $held    = $this->stock->reservedByThing()[$thing] ?? 0.0;
         $worth   = 0.0;
         $rows    = '';
 
@@ -727,6 +743,7 @@ final class StockPage
             . $tile(__('Wert', 'taxmod-stock'), $this->number($worth), '#edfaef')
             . $tile(__('Mindestbestand', 'taxmod-stock'), $min === null ? '—' : $min . ' ' . ($stock < (float) $min ? '✗' : '✓'), '#f6f7f7')
             . '</div>'
+            . $this->reservedOf($thing, $ledger, $flags)
             . ($rows === '' ? '<p>' . esc_html__('Kein Bestandsposten.', 'taxmod-stock') . '</p>' : ListPage::table([
                 [__('Posten', 'taxmod-stock'), '6em'], [__('Ort', 'taxmod-stock'), ''], [__('Menge', 'taxmod-stock'), '6em'], [__('Wert je Stück', 'taxmod-stock'), '8em'],
                 [__('Kauf', 'taxmod-stock'), '7em'], [__('Eingang', 'taxmod-stock'), '7em'],
@@ -754,6 +771,193 @@ final class StockPage
             . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">' . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
             . ListPage::dialogAction('taxmod-stock-transfer-' . $lot . '-' . $from, __('Umbuchen', 'taxmod-stock'), __('Umbuchen', 'taxmod-stock'), $body, 'booking', 'umbuchen', __('Umbuchen', 'taxmod-stock'))
             . '</form>';
+    }
+
+    /**
+     * D-1083: «n reserviert → Reservierung …» — each reservation holding some of the thing, and each reserved place where
+     * some of it lies; and «Reservieren» for this material.
+     */
+    private function reservedOf(int $thing, Ledger $ledger, \TaxmodStock\Core\ReservedPlaces $flags): string
+    {
+        $s        = $this->stock->structure();
+        $list     = $this->stock->reservations();
+        $places   = $this->stock->places();
+        $subjects = $this->stock->recordLabels(array_values(array_filter(array_map(static fn (array $h): int => $h['subject'], $list->all()))));
+        $items    = [];
+
+        foreach ($list->ofThing($thing) as $deal => $quantity) {
+            $subject = $list->all()[$deal]['subject'];
+            $items[] = '<li>' . esc_html($this->number($quantity)) . ' ' . esc_html__('reserviert', 'taxmod-stock') . ' → <a href="' . esc_url($this->reservationUrl('r' . $deal)) . '">'
+                . esc_html(sprintf(/* translators: %s: the subject of the reservation */ __('Reservierung für %s', 'taxmod-stock'), $subjects[$subject] ?? '#' . $subject)) . '</a></li>';
+        }
+
+        foreach ($flags->holdings($ledger) as $holder => $lots) {
+            $quantity = 0.0;
+
+            foreach ($lots as $lot => $at) {
+                $quantity += $ledger->thingOf($lot) === $thing ? array_sum($at) : 0.0;
+            }
+
+            if ($quantity > 0.0) {
+                $items[] = '<li>' . esc_html($this->number($quantity)) . ' ' . esc_html__('reserviert', 'taxmod-stock') . ' → <a href="' . esc_url($this->reservationUrl('o' . $holder)) . '">'
+                    . esc_html(sprintf(/* translators: %s: the reserved place, by its path */ __('Reservierung des Ortes %s', 'taxmod-stock'), $places[$holder] ?? '#' . $holder)) . '</a></li>';
+            }
+        }
+
+        $button = $s->hasValue('kind_reservation') ? '<p style="text-align:right">' . $this->reserveFormDialog($thing, 'bestand') . '</p>' : '';
+
+        return ($items === [] ? '' : '<ul style="margin:0 0 12px">' . implode('', $items) . '</ul>') . $button;
+    }
+
+    private function reservationUrl(string $anchor): string
+    {
+        return add_query_arg(['page' => self::PAGE, 'tab' => 'reservierungen'], admin_url('admin.php')) . '#taxmod-stock-' . $anchor;
+    }
+
+    /** A form around one shared dialog, posting to the page's one handler (CD-5 there). */
+    private function dialogForm(string $dialog): string
+    {
+        return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'
+            . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">' . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
+            . $dialog . '</form>';
+    }
+
+    /**
+     * D-1083: «Reservieren» in the shared dialog — subject, deadline, material, quantity, lot 0..1. A subject that has an
+     * open reservation gets the position there (one per subject).
+     *
+     * @param int $thing the material already known (Bestand tab), 0 to pick one
+     * @param int $subject the subject already known (a reservation's row), 0 to pick one
+     */
+    private function reserveFormDialog(int $thing, string $back, int $subject = 0): string
+    {
+        if (! method_exists(ListPage::class, 'dialogAction')) {
+            return '';
+        }
+
+        $ledger  = $this->stock->ledger();
+        $lots    = $this->stock->table('lot');
+        $date    = $this->stock->structure()->field('lot_date');
+        $choices = '';
+
+        foreach ($this->stock->subjects() as $group => $records) {
+            $choices .= '<optgroup label="' . esc_attr($group) . '">' . $this->options($records, '', $subject) . '</optgroup>';
+        }
+
+        $lotChoice = '';
+
+        if ($thing > 0) {
+            $lotChoice = '<option value="0">' . esc_html__('— kein bestimmter Posten —', 'taxmod-stock') . '</option>';
+
+            foreach ($ledger->lotsOf($thing) as $lot) {
+                if ($ledger->restOf($lot) > 0.0) {
+                    $lotChoice .= '<option value="' . esc_attr((string) $lot) . '">' . esc_html('#' . $lot . ' · ' . substr((string) $lots->first($lot, $date), 0, 10) . ' · ' . __('Rest', 'taxmod-stock') . ' ' . $this->number($ledger->restOf($lot))) . '</option>';
+                }
+            }
+        }
+
+        $id   = 'taxmod-stock-reserve-' . $thing . '-' . $subject . '-' . $back;
+        $body = '<input type="hidden" name="back" value="' . esc_attr($back) . '">'
+            . ($subject > 0 ? '<input type="hidden" name="subject" value="' . esc_attr((string) $subject) . '">'
+                : '<label style="display:block">' . esc_html__('Bezug', 'taxmod-stock') . '<br><select name="subject" style="width:100%" required><option value="">—</option>' . $choices . '</select></label>')
+            . ($thing > 0 ? '<input type="hidden" name="thing" value="' . esc_attr((string) $thing) . '">'
+                : '<span style="display:block;margin-top:.5em">' . esc_html__('Material', 'taxmod-stock') . '<br>' . $this->thingField('thing', $id . '-thing', null) . '</span>')
+            . '<label style="display:block;margin-top:.5em">' . esc_html__('Menge', 'taxmod-stock') . '<br><input type="text" inputmode="decimal" name="quantity" style="width:7em" required></label>'
+            . ($thing > 0 ? '<label style="display:block;margin-top:.5em">' . esc_html__('Bestandsposten', 'taxmod-stock') . '<br><select name="lot" style="width:100%">' . $lotChoice . '</select></label>'
+                : '<label style="display:block;margin-top:.5em">' . esc_html__('Bestandsposten (Nr., optional)', 'taxmod-stock') . '<br><input type="number" min="1" name="lot" style="width:8em"></label>')
+            . ($this->stock->structure()->hasField('transaction_deadline') ? '<label style="display:block;margin-top:.5em">' . esc_html__('Frist (optional)', 'taxmod-stock') . '<br><input type="date" name="deadline"></label>' : '')
+            . '<p class="description">' . esc_html__('Senkt den verfügbaren Bestand, nicht den Bestand. Hat der Bezug schon eine offene Reservierung, kommt die Position dorthin.', 'taxmod-stock') . '</p>';
+
+        return $this->dialogForm(ListPage::dialogAction($id, $subject > 0 ? __('Position hinzufügen', 'taxmod-stock') : __('Reservieren', 'taxmod-stock'), __('Reservieren', 'taxmod-stock'), $body, 'booking', 'reservieren', __('Reservieren', 'taxmod-stock')));
+    }
+
+    /** D-1036: the Storno of a reservation, whole or one position, asked in the shared dialog. */
+    private function reservationStornoDialog(int $deal, ?int $line, string $what): string
+    {
+        if (! method_exists(ListPage::class, 'dialogAction')) {
+            return '';
+        }
+
+        $body = '<input type="hidden" name="transaction" value="' . esc_attr((string) $deal) . '">'
+            . ($line === null ? '' : '<input type="hidden" name="line" value="' . esc_attr((string) $line) . '">')
+            . '<p style="margin:0">' . esc_html($what) . '</p><p class="description">' . esc_html__('Eine Gegenbuchung gibt die Menge wieder frei; beide bleiben stehen und werden in den Listen ausgeblendet.', 'taxmod-stock') . '</p>';
+
+        return $this->dialogForm(ListPage::dialogAction(
+            'taxmod-stock-rstorno-' . $deal . '-' . ($line ?? 0),
+            __('Stornieren', 'taxmod-stock'),
+            $line === null ? __('Reservierung stornieren', 'taxmod-stock') : __('Position stornieren', 'taxmod-stock'),
+            $body,
+            'booking',
+            'reservierungstorno',
+            __('Stornieren', 'taxmod-stock')
+        ));
+    }
+
+    /**
+     * D-1083, the tab «Reservierungen»: every open reservation of a subject with its positions, and the one reservation of
+     * each reserved place (D-1082), whose positions are computed from what lies there and can only be read.
+     */
+    private function reservationList(): string
+    {
+        $s = $this->stock->structure();
+
+        if (! $s->hasValue('kind_reservation')) {
+            return '<div class="notice notice-warning inline"><p>' . esc_html__('Reservierungen brauchen die Vorgangsart «Reservierung» und die Felder «Bezug», «Frist» und «Material» (values.kind_reservation, fields.transaction_reference, fields.transaction_deadline, fields.line_thing in der Lager-Struktur).', 'taxmod-stock') . '</p></div>';
+        }
+
+        $ledger   = $this->stock->ledger();
+        $list     = $this->stock->reservations();
+        $flags    = $this->stock->reservedPlaces();
+        $tree     = $this->stock->locationTree();
+        $places   = $this->stock->places();
+        $things   = $this->stock->things()->all();
+        $open     = $list->open();
+        $subjects = $this->stock->recordLabels(array_values(array_unique(array_filter(array_map(static fn (array $h): int => $h['subject'], $open)))));
+        $name     = fn (int $thing): string => '<a href="' . esc_url($this->thingUrl($thing, 'bestand')) . '">' . esc_html($things[$thing] ?? '#' . $thing) . '</a>';
+        $body     = '';
+
+        foreach ($open as $deal => $head) {
+            $subject = $subjects[$head['subject']] ?? '#' . $head['subject'];
+            $lines   = '';
+
+            foreach ($head['positions'] as $line => $position) {
+                $lines .= '<li>' . $name($position['thing']) . ' · ' . esc_html($this->number($position['quantity']))
+                    . ($position['lot'] === null ? '' : ' · ' . esc_html__('Posten', 'taxmod-stock') . ' #' . esc_html((string) $position['lot']))
+                    . ' ' . $this->reservationStornoDialog($deal, $line, sprintf(/* translators: 1: material, 2: quantity */ __('%1$s, %2$s', 'taxmod-stock'), $things[$position['thing']] ?? '#' . $position['thing'], $this->number($position['quantity']))) . '</li>';
+            }
+
+            $body .= str_replace('<tr>', '<tr id="taxmod-stock-r' . esc_attr((string) $deal) . '">', ListPage::row(
+                self::BULK_FORM,
+                'r' . $deal,
+                [esc_html($head['label']), esc_html($subject), esc_html($head['date']), esc_html($head['deadline'] === '' ? '—' : $head['deadline']), esc_html((string) count($head['positions']))],
+                $this->reserveFormDialog(0, 'reservierungen', $head['subject']) . ' ' . $this->reservationStornoDialog($deal, null, $head['label'] . ' · ' . $subject),
+                '<ul style="margin:0">' . $lines . '</ul>'
+            ));
+        }
+
+        foreach ($flags->holdings($ledger) + array_fill_keys($flags->flagged(), []) as $holder => $lots) {
+            $lines = '';
+
+            foreach ($lots as $lot => $at) {
+                foreach ($at as $place => $quantity) {
+                    $lines .= '<li>' . $name((int) $ledger->thingOf($lot)) . ' · ' . esc_html($this->number($quantity)) . ' · ' . esc_html__('Posten', 'taxmod-stock') . ' #' . esc_html((string) $lot)
+                        . ' · ' . esc_html($places[$place] ?? '#' . $place) . '</li>';
+                }
+            }
+
+            $body .= str_replace('<tr>', '<tr id="taxmod-stock-o' . esc_attr((string) $holder) . '">', ListPage::row(
+                self::BULK_FORM,
+                'o' . $holder,
+                [esc_html(sprintf(/* translators: %s: the reserved place, by its path */ __('Ort %s', 'taxmod-stock'), $tree->pathOf($holder))), esc_html($tree->projectOf($holder) ?? __('Produktion', 'taxmod-stock')), '', '—', esc_html((string) count($lots))],
+                '<span class="description">' . esc_html__('nur lesbar, aus dem Ort gerechnet', 'taxmod-stock') . '</span>',
+                $lines === '' ? '<p class="description">' . esc_html__('Dort liegt nichts.', 'taxmod-stock') . '</p>' : '<ul style="margin:0">' . $lines . '</ul>'
+            ));
+        }
+
+        return '<p>' . esc_html__('Eine Reservierung je Bezug: Projekt, Verkauf, Baulauf oder Reparatur. Ein für die Produktion reservierter Lagerort hat genau eine Reservierung, gerechnet aus dem, was dort liegt.', 'taxmod-stock') . '</p>'
+            . '<p style="text-align:right">' . $this->reserveFormDialog(0, 'reservierungen') . '</p>'
+            . ListPage::table([[__('Reservierung', 'taxmod-stock'), ''], [__('Bezug', 'taxmod-stock'), '14em'], [__('Datum', 'taxmod-stock'), '7em'], [__('Frist', 'taxmod-stock'), '7em'], [__('Positionen', 'taxmod-stock'), '6em']],
+                $body === '' ? $this->noItems(5) : $body);
     }
 
     /** D-1036: «Stornieren» of a Vorgang, asked in the shared dialog; the Storno names who and when. */
@@ -1766,6 +1970,7 @@ final class StockPage
             ['material', __('Material', 'taxmod-stock'), count($this->stock->things()->all())],
             ['inventur', __('Inventur', 'taxmod-stock')],
             ['verbrauch', __('Verbrauch', 'taxmod-stock')],
+            ['reservierungen', __('Reservierungen', 'taxmod-stock')],
             ['lagerorte', __('Lagerorte', 'taxmod-stock')],
             ['lagerstruktur', __('Lagerstruktur', 'taxmod-stock')],
         ], $active, fn (string $slug): string => $this->listUrl($slug, $slug === $active ? $list : new StockList(), []));

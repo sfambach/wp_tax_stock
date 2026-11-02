@@ -34,6 +34,10 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
     A place can be «reserviert für Produktion» (D-1082, from 0.12.0, set on «Lagerstruktur»): what lies on it or below
     it is reserved, computed from where it lies. Strict: freed only by moving it out, consumed only after that, and goods
     already reserved are not moved or hung into such an area. The Bestand tab shows «Reserviert» and «Verfügbar».
+  - **Reservierungen** (D-1083, from 0.13.0) — one reservation per subject (project, sale): a Vorgang «Reservierung» with
+    Bezug, date, deadline and positions (material, quantity, lot 0..1). It lowers the available stock, not the stock;
+    its lines move nothing. «Reservieren» on the tab and on a material's Bestand tab; «Stornieren» whole or per position
+    (D-1036). Each reserved place shows its one reservation, computed from what lies there, read-only.
     A purchase «noch nicht näher bestimmt» (a lot, Konvolut) is first told apart with «Aufteilen» (concept R3): the
     purchase becomes its first part, every further part a purchase of the same order, each with its material.
   - **Inventur** — counted stock without a purchase, on an existing thing or a new one in a group.

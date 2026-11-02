@@ -79,6 +79,13 @@ final class Messages
             'already_reserved'          => sprintf(__('Posten #%s ist schon reserviert und darf nicht in einen für die Produktion reservierten Bereich.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id of the place */
             'reserved_for_production'   => sprintf(__('Lagerort #%s ist für die Produktion reserviert: erst aus dem Bereich umbuchen, dann verbrauchen.', 'taxmod-stock'), $error->detail),
+            /* translators: %s: record id */
+            'not_a_reservation'         => sprintf(__('#%s ist keine Reservierung.', 'taxmod-stock'), $error->detail),
+            /* translators: %s: record id of the lot */
+            'not_enough_free'           => sprintf(__('Posten #%s hat nicht so viel frei — ein Teil liegt in einem reservierten Bereich oder ist schon reserviert.', 'taxmod-stock'), $error->detail),
+            'no_subject'                => __('Eine Reservierung braucht ihren Bezug: ein Projekt, einen Verkauf, einen Baulauf oder eine Reparatur.', 'taxmod-stock'),
+            /* translators: %s: what was typed */
+            'not_a_date'                => sprintf(__('«%s» ist kein gültiges Datum.', 'taxmod-stock'), $error->detail),
             'model_refused'             => sprintf(__('Der Taxonomy Modeller hat die Buchung abgelehnt, nichts wurde geschrieben: %s', 'taxmod-stock'), $error->detail),
             default                     => $error->getMessage(),
         };

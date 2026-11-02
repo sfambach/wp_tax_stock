@@ -345,6 +345,95 @@ final class Bookings
         return $this->finish($title, 'kind_transfer', $extra);
     }
 
+    /**
+     * D-1083: positions of a subject's reservation. The first make the Vorgang «Reservierung» with its subject, date and
+     * deadline; later ones join the open reservation of the same subject (one per subject). Checks of the quantities are
+     * {@see Reservations::check()}'s.
+     *
+     * @param list<ReservationRow> $rows
+     * @param int|null             $open the subject's open reservation
+     * @return list<array<string, mixed>>
+     */
+    public function reserve(int $subject, string $deadline, array $rows, ?int $open, Table $transactions, string $title): array
+    {
+        $s = $this->structure;
+
+        foreach (['transaction_reference', 'line_thing'] as $key) {
+            if (! $s->hasField($key)) {
+                throw StockError::notConfigured('fields.' . $key);
+            }
+        }
+
+        if ($subject <= 0) {
+            throw StockError::noSubject();
+        }
+
+        if ($rows === []) {
+            throw StockError::nothingToBook();
+        }
+
+        $this->start();
+
+        foreach ($rows as $row) {
+            $this->line($title, $row->lot === null ? '' : (string) $row->lot, Quantity::positive($row->quantity), null, null, null, $row->thing);
+        }
+
+        $deadline = $this->deadline($deadline);
+
+        if ($open === null) {
+            return $this->finish($title, 'kind_reservation', [(string) $s->field('transaction_reference') => (string) $subject] + $deadline);
+        }
+
+        $this->changes[] = ['op' => 'set_values', 'record' => (string) $open, 'values' => [
+            (string) $s->field('transaction_lines') => ['values' => [...$transactions->all($open, $s->field('transaction_lines')), ...$this->lineRefs]],
+        ] + $deadline];
+
+        return $this->changes;
+    }
+
+    /**
+     * D-1036 for a reservation: a Vorgang «Reservierung» whose lines take back what is left of the positions, each naming
+     * the position it cancels.
+     *
+     * @param array<int, array{thing: int, lot: int|null, quantity: float}> $positions line → what to cancel
+     * @return list<array<string, mixed>>
+     */
+    public function cancelReservation(int $subject, array $positions, string $title, string $note): array
+    {
+        $s = $this->structure;
+
+        if (! $s->hasField('line_reverses')) {
+            throw StockError::notConfigured('fields.line_reverses');
+        }
+
+        $this->start();
+
+        foreach ($positions as $line => $position) {
+            $this->line($title, $position['lot'] === null ? '' : (string) $position['lot'], '-' . rtrim(rtrim(number_format($position['quantity'], 6, '.', ''), '0'), '.'), null, null, $line, $position['thing']);
+        }
+
+        $extra = ($subject > 0 && $s->hasField('transaction_reference') ? [(string) $s->field('transaction_reference') => (string) $subject] : [])
+            + ($note !== '' && $s->hasField('description') ? [(string) $s->field('description') => $note] : []);
+
+        return $this->finish($title, 'kind_reservation', $extra);
+    }
+
+    /** @return array<string, string> the deadline's value, when one is given and the field is there */
+    private function deadline(string $deadline): array
+    {
+        $deadline = trim($deadline);
+
+        if ($deadline === '' || ! $this->structure->hasField('transaction_deadline')) {
+            return [];
+        }
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $deadline) !== 1) {
+            throw StockError::notADate($deadline);
+        }
+
+        return [(string) $this->structure->field('transaction_deadline') => $deadline];
+    }
+
     private function start(): void
     {
         $this->changes  = [];
@@ -419,16 +508,23 @@ final class Bookings
         return '@' . $ref;
     }
 
-    private function line(string $name, string $lot, string $quantity, ?string $counted, ?int $place = null, ?int $reverses = null): void
+    private function line(string $name, string $lot, string $quantity, ?string $counted, ?int $place = null, ?int $reverses = null, ?int $thing = null): void
     {
         $s   = $this->structure;
         $ref = $this->ref('p');
 
-        $values = [
-            (string) $s->field('label')         => $name,
-            (string) $s->field('line_lot')      => $lot,
-            (string) $s->field('line_quantity') => $quantity,
-        ];
+        $values = [(string) $s->field('label') => $name];
+
+        // D-1083: a reservation position may name no lot, only its material.
+        if ($lot !== '') {
+            $values[(string) $s->field('line_lot')] = $lot;
+        }
+
+        $values[(string) $s->field('line_quantity')] = $quantity;
+
+        if ($thing !== null) {
+            $values[(string) $s->field('line_thing')] = (string) $thing;
+        }
 
         if ($counted !== null) {
             $values[(string) $s->field('line_counted')] = $counted;

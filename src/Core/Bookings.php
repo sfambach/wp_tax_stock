@@ -382,6 +382,33 @@ final class Bookings
     }
 
     /**
+     * D-1091: a box (a movable place) hung elsewhere is a Vorgang «Umlagerung» — the box in its own field and two positions
+     * without a lot (− one at the old place, + one at the new), so from and to stay readable; the stock counts only
+     * positions with a lot, so nothing in the box is rebooked. A place of 0 is the top level, written as a position
+     * without a place.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function relocate(int $box, int $from, int $to, string $title): array
+    {
+        $s = $this->structure;
+
+        if (! $s->hasValue('kind_relocation') || ! $s->hasField('transaction_carrier') || ! $s->hasField('line_location')) {
+            throw StockError::notConfigured('values.kind_relocation, fields.transaction_carrier');
+        }
+
+        if ($from === $to) {
+            throw StockError::samePlace($box);
+        }
+
+        $this->start();
+        $this->line($title, '', '-1', null, $from);
+        $this->line($title, '', '1', null, $to);
+
+        return $this->finish($title, 'kind_relocation', [(string) $s->field('transaction_carrier') => (string) $box]);
+    }
+
+    /**
      * D-1083: positions of a subject's reservation. The first make the Vorgang «Reservierung» with its subject, date and
      * deadline; later ones join the open reservation of the same subject (one per subject). Checks of the quantities are
      * {@see Reservations::check()}'s.

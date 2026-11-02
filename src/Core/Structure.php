@@ -56,6 +56,8 @@ final class Structure
         'location_reserved',
         // D-1083: the reservation's subject (project or sale; D-1088: also the purpose of a consumption), its deadline, and the material of a position.
         'transaction_reference', 'transaction_deadline', 'line_thing',
+        // D-1091: the box (a movable place) a Vorgang «Umlagerung» moved.
+        'transaction_carrier',
     ];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];
@@ -66,6 +68,8 @@ final class Structure
         'test_ok', 'test_partial', 'test_maintenance', 'test_defect', 'condition_new', 'condition_untested',
         // D-1039 «Umbuchung», D-1083 «Reservierung»: kinds of Vorgang.
         'kind_transfer', 'kind_reservation',
+        // D-1091: a box moved with its content, no lot rebooked.
+        'kind_relocation',
     ];
 
     /**

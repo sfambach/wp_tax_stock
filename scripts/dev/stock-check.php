@@ -58,6 +58,7 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'create_node', 'ref' => 'k_vb', 'name' => 'Verbrauch', 'parent' => '@arten'],
     ['op' => 'create_node', 'ref' => 'k_in', 'name' => 'Inventur', 'parent' => '@arten'],
     ['op' => 'create_node', 'ref' => 'k_um', 'name' => 'Umbuchung', 'parent' => '@arten'],
+    ['op' => 'create_node', 'ref' => 'k_ul', 'name' => 'Umlagerung', 'parent' => '@arten'],
     ['op' => 'create_node', 'ref' => 'stat', 'name' => '__Bestellstatus', 'parent' => 410, 'class' => 'Choice'],
     ['op' => 'create_node', 'ref' => 's_teil', 'name' => 'teilweise eingegangen', 'parent' => '@stat'],
     ['op' => 'create_node', 'ref' => 's_ganz', 'name' => 'eingegangen', 'parent' => '@stat'],
@@ -85,6 +86,9 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     $field('p_menge', '@vp', 'Menge', $decimal, 'composition', '1..1'),
     $field('p_gez', '@vp', 'Gezählt', $decimal, 'composition', '0..1'),
     $field('p_lo', '@vp', 'Lagerort', '@lo', 'aggregation', '0..1'),
+    $field('lo_vater', '@lo', 'Übergeordneter Ort', '@lo', 'aggregation', '0..1'),
+    $field('lo_beweg', '@lo', 'beweglich', $bool, 'composition', '1..1'),
+    $field('v_traeger', '@vg', 'Ladungsträger', '@lo', 'aggregation', '0..1'),
     $field('o_stat', '@ord', 'Status', '@stat', 'aggregation', '0..1'),
     $field('o_pos', '@ord', 'Positionen', '@pur', 'aggregation', '0..*'),
     $field('k_anz', '@pur', 'Anzahl', $int, 'composition', '0..1'),
@@ -137,12 +141,13 @@ $struktur = [
         'lot_thing' => $r['l_mat'], 'lot_purchase' => $r['l_kauf'], 'lot_location' => $r['l_lo'], 'lot_value' => $r['l_wert'], 'lot_date' => $r['l_dat'],
         'transaction_kind' => $r['v_art'], 'transaction_date' => $r['v_dat'], 'transaction_order' => $r['v_best'], 'transaction_source' => $r['v_quel'], 'transaction_lines' => $r['v_pos'],
         'line_lot' => $r['p_lot'], 'line_quantity' => $r['p_menge'], 'line_counted' => $r['p_gez'], 'line_location' => $r['p_lo'],
+        'location_parent' => $r['lo_vater'], 'location_movable' => $r['lo_beweg'], 'transaction_carrier' => $r['v_traeger'],
         'order_status' => $r['o_stat'], 'order_lines' => $r['o_pos'],
         'purchase_quantity' => $r['k_anz'], 'purchase_undetermined' => $r['k_offen'],
         'purchase_landed_price' => $r['k_ein'], 'purchase_unit_price' => $r['k_preis'], 'money_amount' => 4234, 'money_unit' => 4236,
     ],
     'values' => [
-        'kind_receipt' => $r['k_we'], 'kind_consumption' => $r['k_vb'], 'kind_count' => $r['k_in'], 'kind_transfer' => $r['k_um'], 'source_manual' => $r['q_hand'],
+        'kind_receipt' => $r['k_we'], 'kind_consumption' => $r['k_vb'], 'kind_count' => $r['k_in'], 'kind_transfer' => $r['k_um'], 'kind_relocation' => $r['k_ul'], 'source_manual' => $r['q_hand'],
         'status_partial' => $r['s_teil'], 'status_received' => $r['s_ganz'], 'location_default' => $r['lager'],
     ],
 ];
@@ -335,6 +340,46 @@ $vor = $s->ledger()->stockOf($r['t1']);
 (new StockService())->bookReceipt($r['best'], [$r['kaufA'] => ReceiptChoice::keep(), $neuK => ReceiptChoice::keep()], '2026-10-28', 'WE Konvolut');
 $s = new StockService();
 $pruefe($s->ledger()->stockOf($r['t1']) === $vor + 2.0 && $s->ledger()->stockOf((int) $plan[$neuK]['model']) === 3.0 && $s->table('order')->first($r['best'], $r['o_stat']) === (string) $r['s_ganz'], 'both parts are received and the order is complete');
+
+// D-1090/D-1091, his words «links baum rechts detail» and «Ja das passt»: places in the modeller's tree, a box is a carrier.
+$ort = static fn (string $name, int $parent, bool $movable = false): int => (int) ((new StockService())->createPlace($name, $parent, $movable, 0)['refs']['ort'] ?? 0);
+$schrank = $ort('__Schrank', $r['lager']);
+$fach1   = $ort('__Schublade 1', $schrank);
+$fach2   = $ort('__Schublade 2', $schrank);
+$kiste   = $ort('__Kiste', $fach1, true);
+$s       = new StockService();
+$posten  = (int) ($s->ledger()->lotsOf($bc)[0] ?? 0);
+$wo      = $s->ledger()->placesOf($posten);
+$menge   = (float) reset($wo);
+$s->moveLot($posten, (int) key($wo), $kiste, (string) $menge, '2026-11-02', 'Umbuchung in die Kiste');
+$bestand = (new StockService())->ledger()->stockOf($bc);
+$vorgaenge = count((new StockService())->table('transaction')->ids());
+(new StockService())->movePlace($kiste, $fach2, '2026-11-02', 'Umlagerung');
+$s = new StockService();
+$pruefe($s->locationTree()->parentOf($kiste) === $fach2, 'a box from Schublade 1 to Schublade 2 of the same Schrank hangs there');
+$pruefe(array_map(static fn (array $m): array => [substr($m['date'], 0, 10), $m['from'], $m['to']], $s->relocationsOf($kiste)) === [['2026-11-02', $fach1, $fach2]], 'its move is a Vorgang «Umlagerung» with the box, from and to (D-1091)');
+$pruefe(($s->ledger()->placesOf($posten)[$kiste] ?? 0.0) === $menge && $s->ledger()->stockOf($bc) === $bestand, 'what lies in the box stays in it; no lot is rebooked');
+(new StockService())->movePlace($fach1, 0, '2026-11-02', 'Umlagerung');
+$pruefe(count((new StockService())->table('transaction')->ids()) === $vorgaenge + 1, 'a fixed place hung elsewhere is a change of the structure, no Vorgang');
+(new StockService())->movePlace($fach1, $schrank, '2026-11-02', 'Umlagerung');
+
+try {
+    (new StockService())->movePlace($schrank, $kiste);
+    $pruefe(false, 'a place does not go into what lies in it');
+} catch (StockError $e) {
+    $pruefe($e->reason === 'place_into_itself', 'a place does not go into what lies in it');
+}
+
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'lagerstruktur', 'ort' => $kiste];
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'taxmod-record-tree') && str_contains($html, 'data-taxmod-drag="1"') && str_contains($html, 'tab=lagerstruktur&amp;ort=__ID__') && str_contains($html, '__Kiste (1)'), 'Lagerstruktur: the tree on the left, a click opens a place, the count follows the name');
+$pruefe(str_contains($html, '<h2 style="margin-top:0">__Kiste') && str_contains($html, 'Lager › __Schrank › __Schublade 2') && str_contains($html, 'Umlagerungen') && str_contains($html, 'taxmod-stock-move-place-' . $kiste) && str_contains($html, 'taxmod-stock-new-place-' . $kiste), 'Lagerstruktur: the place on the right with where it lies, its moves and its actions');
+$pruefe(str_contains($html, 'data-taxmod-drop-record="0"') && str_contains($html, 'taxmod-stock-drop-place') && str_contains($html, 'name="return_ort" value="' . $kiste . '"'), 'Lagerstruktur: the top level takes a drop, a drop asks first, the forms come back to the place');
+$pruefe(! str_contains($html, 'name="parent[' . $kiste . ']" value="' . $kiste . '"'), 'Verschieben does not offer the box itself');
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'lagerorte', 'ort' => $schrank];
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'data-taxmod-stock-lot="' . $posten . ':' . $kiste . ':' . rtrim(rtrim(number_format($menge, 3, '.', ''), '0'), '.') . ':' . $bc . '"') && str_contains($html, '__Schublade 2 › __Kiste') && str_contains($html, 'BC547C'), 'Lagerorte: what lies at the place and below it, each row draggable onto a place');
+$pruefe(str_contains($html, 'taxmod-stock-drop-lot') && ! str_contains($html, 'taxmod-stock-move-place-'), 'Lagerorte: a lot dropped on a place asks for the Umbuchung; no structure actions here');
 
 // A structure pasted before 0.2.0 still reads: the old keys name the same ids.
 $alt = $struktur;

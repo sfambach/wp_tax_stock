@@ -10,6 +10,7 @@ use TaxmodStock\Core\LagerInput;
 use TaxmodStock\Core\SourceRow;
 use TaxmodStock\Core\NewThing;
 use TaxmodStock\Core\LocationStock;
+use TaxmodStock\Core\LocationTree;
 use TaxmodStock\Core\ReceiptChoice;
 use TaxmodStock\Core\SplitRow;
 use TaxmodStock\Core\StockError;
@@ -79,9 +80,9 @@ final class StockPage
                 'material'  => $thing > 0 ? $this->thingView($thing) : $this->materialList($list),
                 'inventur'  => $this->inventoryForm(),
                 'verbrauch' => $this->consumptionForm($thing, absint($_GET['lot'] ?? 0), absint($_GET['place'] ?? 0)),
-                'lagerorte' => $this->locationList(false),
+                'lagerorte' => $this->locationSplit(false),
                 'reservierungen' => $this->reservationList(),
-                'lagerstruktur' => $this->locationList(true),
+                'lagerstruktur' => $this->locationSplit(true),
                 default     => absint($_GET['split'] ?? 0) > 0
                     ? $this->splitForm(absint($_GET['order'] ?? 0), absint($_GET['split']), sanitize_key((string) ($_GET['back'] ?? '')))
                     : $this->receiptTab($list, absint($_GET['order'] ?? 0)),
@@ -155,7 +156,7 @@ final class StockPage
                 ),
                 'einlagern'    => $this->stock->reopenForStock(absint($_POST['order'] ?? 0), $rowPurchase),
                 // D-1030: the row buttons of the structure page carry their place the same way.
-                'umhaengen'    => $this->stock->movePlace($rowPurchase, absint(((array) ($_POST['parent'] ?? []))[$rowPurchase] ?? 0)),
+                'umhaengen'    => $this->stock->movePlace($rowPurchase, absint(((array) ($_POST['parent'] ?? []))[$rowPurchase] ?? 0), $today, $this->title(__('Umlagerung', 'taxmod-stock'), $today)),
                 // D-1082: the flag «reserviert für Produktion», set and taken off from the row's dialog.
                 'reservieren', 'freigeben' => $this->stock->reservePlace($rowPurchase, $kind === 'reservieren'),
                 'ort'          => $this->stock->createPlace(
@@ -220,6 +221,13 @@ final class StockPage
                     ? ['material', ['thing' => $thing, 'view' => 'bestand']] : ['reservierungen', []],
                 default             => [$kind, []],
             };
+        }
+
+        // D-1090: the split pages go back to the place that was open.
+        $returnTab = sanitize_key((string) ($_POST['return_tab'] ?? ''));
+
+        if (in_array($returnTab, ['lagerorte', 'lagerstruktur'], true)) {
+            $back = [$returnTab, array_filter(['ort' => absint($_POST['return_ort'] ?? 0)])];
         }
 
         if ($fromCockpit) {
@@ -759,7 +767,7 @@ final class StockPage
      *
      * @param array<int, string> $places
      */
-    private function transferDialog(int $thing, int $lot, int $from, float $quantity, array $places): string
+    private function transferDialog(int $thing, int $lot, int $from, float $quantity, array $places, int $returnPlace = 0): string
     {
         if (! method_exists(ListPage::class, 'dialogAction')) {
             return '';
@@ -773,6 +781,7 @@ final class StockPage
 
         return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'
             . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">' . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
+            . ($returnPlace > 0 ? $this->returnFields('lagerorte', $returnPlace) : '')
             . ListPage::dialogAction('taxmod-stock-transfer-' . $lot . '-' . $from, __('Umbuchen', 'taxmod-stock'), __('Umbuchen', 'taxmod-stock'), $body, 'booking', 'umbuchen', __('Umbuchen', 'taxmod-stock'))
             . '</form>';
     }
@@ -1519,6 +1528,336 @@ final class StockPage
             . ($s->hasField('location_reserved') ? '<label><input type="checkbox" name="reserved" value="1"> ' . esc_html__('reserviert für Produktion', 'taxmod-stock') . '</label> ' : '')
             . ($projects === [] ? '' : '<label>' . esc_html__('Projekt', 'taxmod-stock') . ' <select name="project">' . $this->options($projects, '—') . '</select></label> ')
             . '<button type="submit" class="button button-primary" name="booking" value="ort">' . esc_html__('Anlegen', 'taxmod-stock') . '</button></p></form>';
+    }
+
+    /**
+     * D-1090: the places as the modeller's tree on the left, the chosen place on the right — in the structure its data and
+     * actions, in «Lagerorte» what lies there and below. A modeller without the tree on the page keeps the table.
+     */
+    private function locationSplit(bool $edit): string
+    {
+        $tab   = $edit ? 'lagerstruktur' : 'lagerorte';
+        $tree  = $this->stock->locationTree();
+        $rows  = LocationStock::of($this->stock->structure(), $this->stock->table('lot'), $this->stock->ledger(), $this->stock->places());
+        $place = absint($_GET['ort'] ?? 0);
+        $place = $this->stock->table('location')->has($place) ? $place : 0;
+        $left  = $this->placeTree($tab, $place, $tree, $rows);
+
+        if ($left === '') {
+            return $this->locationList($edit);
+        }
+
+        $right = match (true) {
+            $place === 0 => '<p class="description">' . esc_html__('Links einen Ort wählen. Orte und Posten lassen sich auf einen Ort im Baum ziehen.', 'taxmod-stock') . '</p>'
+                . ($edit ? '' : $this->unplacedStock($rows)),
+            $edit        => $this->placeDetails($place, $tree, $rows),
+            default      => $this->placeStock($place, $tree),
+        };
+
+        return '<div class="taxmod-stock-split" style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">'
+            . '<div style="flex:0 1 24em;max-width:100%;min-width:16em;overflow-x:auto">'
+            . ($edit ? '<div style="text-align:right;margin-bottom:8px">' . $this->newPlaceDialog(0, $tab) . '</div>'
+                . '<div data-taxmod-drop-record="0" style="padding:4px 6px;border:1px dashed #c3c4c7;border-radius:3px;margin-bottom:4px;color:#50575e">'
+                . esc_html__('— oberste Ebene —', 'taxmod-stock') . '</div>' : '')
+            . $left . '</div>'
+            . '<div style="flex:1 1 30em;min-width:0">' . $right . '</div></div>'
+            . $this->dropDialogs($tab, $place, $tree);
+    }
+
+    /**
+     * D-1090: the tree itself — the modeller's record tree on the page; a click opens a place, places and lots drop on it.
+     *
+     * @param array<int, array{name: string, lots: int, things: list<int>}> $rows
+     */
+    private function placeTree(string $tab, int $chosen, LocationTree $tree, array $rows): string
+    {
+        $s = $this->stock->structure();
+
+        if (! $s->hasField('location_parent')) {
+            return '';
+        }
+
+        $suffix = [];
+
+        foreach (array_keys($this->stock->places()) as $place) {
+            $all = array_sum(array_map(static fn (int $p): int => $rows[$p]['lots'] ?? 0, $tree->withAllBelow($place)));
+
+            if ($all > 0) {
+                $suffix[$place] = '(' . $all . ')';
+            }
+        }
+
+        return (string) apply_filters('taxmod_record_chooser', '', [
+            'name'         => 'taxmod_stock_place',
+            'node'         => $s->node('location'),
+            'parent_field' => $s->field('location_parent'),
+            'label_field'  => $s->field('label'),
+            'preselected'  => $chosen > 0 ? $chosen : null,
+            'inline'       => true,
+            'pick_url'     => add_query_arg(['page' => self::PAGE, 'tab' => $tab, 'ort' => '{id}'], admin_url('admin.php')),
+            'drag'         => true,
+            'suffix'       => $suffix,
+        ]);
+    }
+
+    /** The head of the right side: the place's name, where it lies and its marks. */
+    private function placeHead(int $place, LocationTree $tree): string
+    {
+        $parent  = $tree->parentOf($place);
+        $project = $tree->projectOf($place);
+        $marks   = ($tree->isMovable($place) ? ' <span class="description">(' . esc_html__('beweglich', 'taxmod-stock') . ')</span>' : '')
+            . $this->reservedMark($place, $this->stock->reservedPlaces());
+
+        return '<h2 style="margin-top:0">' . esc_html((string) (array_reverse(explode(' › ', $tree->pathOf($place)))[0])) . $marks . '</h2>'
+            . '<p>' . esc_html__('Liegt in', 'taxmod-stock') . ': ' . esc_html($parent > 0 ? $tree->pathOf($parent) : __('— oberste Ebene —', 'taxmod-stock'))
+            . ($project === null ? '' : ' · ' . esc_html__('Projekt', 'taxmod-stock') . ': ' . esc_html($project)) . '</p>';
+    }
+
+    /**
+     * D-1090, structure: the place's data and actions — Verschieben, Neuer Unterort, Reservieren, Bearbeiten — each in the
+     * shared dialog; a box shows where it moved (D-1091).
+     *
+     * @param array<int, array{name: string, lots: int, things: list<int>}> $rows
+     */
+    private function placeDetails(int $place, LocationTree $tree, array $rows): string
+    {
+        $back = add_query_arg(['page' => self::PAGE, 'tab' => 'lagerstruktur', 'ort' => $place], admin_url('admin.php'));
+
+        if (! empty($_GET['bearbeiten'])) {
+            $form = (string) apply_filters('taxmod_record_editor', '', $place, $back);
+
+            return $this->placeHead($place, $tree) . ($form === ''
+                ? '<p><a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $place], admin_url('admin.php'))) . '">' . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a></p>'
+                : $form . '<p><a href="' . esc_url($back) . '">' . esc_html__('Abbrechen', 'taxmod-stock') . '</a></p>');
+        }
+
+        $below = $tree->withAllBelow($place);
+        $all   = array_sum(array_map(static fn (int $p): int => $rows[$p]['lots'] ?? 0, $below));
+        $flags = $this->stock->reservedPlaces();
+        $facts = [
+            [__('Beweglich (Kiste, Karton)', 'taxmod-stock'), $tree->isMovable($place) ? __('ja', 'taxmod-stock') : __('nein', 'taxmod-stock')],
+            [__('Posten hier', 'taxmod-stock'), (string) ($rows[$place]['lots'] ?? 0)],
+            [__('Posten mit Inhalt', 'taxmod-stock'), (string) $all],
+            [__('Unterorte', 'taxmod-stock'), (string) (count($below) - 1)],
+        ];
+        $table = '';
+
+        foreach ($facts as [$label, $value]) {
+            $table .= '<tr><th scope="row" style="width:14em">' . esc_html($label) . '</th><td>' . esc_html($value) . '</td></tr>';
+        }
+
+        $html = $this->placeHead($place, $tree)
+            . '<div class="taxmod-stock-place-actions" style="text-align:right;margin-bottom:12px">'
+            . '<a class="button" href="' . esc_url(add_query_arg('bearbeiten', '1', $back)) . '">' . esc_html__('Bearbeiten', 'taxmod-stock') . '</a> '
+            . $this->movePlaceDialog($place, $tree) . ' '
+            . $this->newPlaceDialog($place, 'lagerstruktur') . ' '
+            . $this->formStart('lagerstruktur') . $this->returnFields('lagerstruktur', $place)
+            . $this->reserveDialog($place, $flags->isFlagged($place), $all) . '</form></div>'
+            . '<table class="widefat striped" style="max-width:40em">' . $table . '</table>';
+
+        if ($tree->isMovable($place) && $this->stock->relocates()) {
+            $moves = $this->stock->relocationsOf($place);
+            $where = static fn (int $p): string => $p > 0 ? $tree->pathOf($p) : __('— oberste Ebene —', 'taxmod-stock');
+            $html .= '<h3>' . esc_html__('Umlagerungen', 'taxmod-stock') . '</h3>' . ($moves === []
+                ? '<p class="description">' . esc_html__('Noch keine.', 'taxmod-stock') . '</p>'
+                : '<ul>' . implode('', array_map(static fn (array $m): string => '<li>' . esc_html(substr($m['date'], 0, 10) . ': ' . $where($m['from']) . ' → ' . $where($m['to'])) . '</li>', $moves)) . '</ul>');
+        }
+
+        return $html;
+    }
+
+    /**
+     * D-1090, «Lagerorte»: what lies at the place and below it, one row per lot and place; a row can be dragged onto a place
+     * in the tree (an Umbuchung, D-1039).
+     */
+    private function placeStock(int $place, LocationTree $tree): string
+    {
+        $s      = $this->stock->structure();
+        $ledger = $this->stock->ledger();
+        $lots   = $this->stock->table('lot');
+        $things = $this->stock->things()->all();
+        $places = $this->stock->places();
+        $flags  = $this->stock->reservedPlaces();
+        $byPlace = [];
+
+        foreach ($ledger->stockByPlace() as $lot => $at) {
+            foreach ($at as $where => $quantity) {
+                if ($quantity > 0.0) {
+                    $byPlace[$where][$lot] = $quantity;
+                }
+            }
+        }
+
+        $body  = '';
+        $count = 0;
+        $depth = count($tree->lineOf($place));
+
+        foreach ($tree->withAllBelow($place) as $where) {
+            foreach ($byPlace[$where] ?? [] as $lot => $quantity) {
+                $thing = (int) $lots->first($lot, $s->field('lot_thing'));
+                $inner = $where === $place ? '' : implode(' › ', array_slice(explode(' › ', $tree->pathOf($where)), $depth));
+                $count++;
+                $body .= '<tr draggable="true" data-taxmod-stock-lot="' . esc_attr(implode(':', [$lot, $where, $this->plain($quantity), $thing])) . '" style="cursor:grab">'
+                    . '<th scope="row" class="check-column"></th>'
+                    . '<td><a href="' . esc_url($this->thingUrl($thing, 'bestand')) . '">' . esc_html($things[$thing] ?? '#' . $thing) . '</a></td>'
+                    . '<td>#' . esc_html((string) $lot) . '</td>'
+                    . '<td>' . esc_html($inner) . $this->reservedMark($where, $flags) . '</td>'
+                    . '<td>' . esc_html($this->number($quantity)) . '</td>'
+                    . '<td style="text-align:right;white-space:nowrap">' . $this->transferDialog($thing, $lot, $where, $quantity, $places, $place)
+                    . ' <a class="button" href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'verbrauch', 'thing' => $thing, 'lot' => $lot, 'place' => $where], admin_url('admin.php'))) . '">' . esc_html__('Ausbuchen', 'taxmod-stock') . '</a></td></tr>';
+            }
+        }
+
+        $structure = add_query_arg(['page' => self::PAGE, 'tab' => 'lagerstruktur', 'ort' => $place], admin_url('admin.php'));
+
+        return $this->placeHead($place, $tree)
+            . '<p>' . esc_html(sprintf(/* translators: %d: lots at the place and below it */ _n('%d Posten hier und darunter.', '%d Posten hier und darunter.', $count, 'taxmod-stock'), $count))
+            . ' <a href="' . esc_url($structure) . '">' . esc_html__('Lagerstruktur bearbeiten', 'taxmod-stock') . '</a></p>'
+            . ListPage::table([[__('Material', 'taxmod-stock'), ''], [__('Posten', 'taxmod-stock'), '6em'], [__('Unterort', 'taxmod-stock'), '12em'], [__('Menge', 'taxmod-stock'), '6em']], $body === '' ? $this->noItems(5) : $body);
+    }
+
+    /**
+     * What lies at no known place, so nothing in stock goes missing from the overview.
+     *
+     * @param array<int, array{name: string, lots: int, things: list<int>}> $rows
+     */
+    private function unplacedStock(array $rows): string
+    {
+        if (! isset($rows[0])) {
+            return '';
+        }
+
+        $things = $this->stock->things()->all();
+
+        return '<h3>' . esc_html__('ohne Lagerort', 'taxmod-stock') . '</h3><p>'
+            . implode(', ', array_map(fn (int $thing): string => '<a href="' . esc_url($this->thingUrl($thing, 'bestand')) . '">' . esc_html($things[$thing] ?? '#' . $thing) . '</a>', $rows[0]['things'])) . '</p>';
+    }
+
+    /** Where a form of the split page goes back to: the same tab with the same place open. */
+    private function returnFields(string $tab, int $place): string
+    {
+        return '<input type="hidden" name="return_tab" value="' . esc_attr($tab) . '"><input type="hidden" name="return_ort" value="' . esc_attr((string) $place) . '">';
+    }
+
+    /** D-1090: «Neuer Lagerort» (on top) or «Neuer Unterort» of a place, in the shared dialog. */
+    private function newPlaceDialog(int $parent, string $tab): string
+    {
+        if (! method_exists(ListPage::class, 'dialogAction')) {
+            return '';
+        }
+
+        $s        = $this->stock->structure();
+        $projects = $this->stock->projects();
+        $body     = '<input type="hidden" name="new_parent" value="' . esc_attr((string) $parent) . '">'
+            . '<label style="display:block">' . esc_html__('Name', 'taxmod-stock') . '<br><input type="text" name="name" style="width:100%" required></label>'
+            . '<label style="display:block;margin-top:.5em"><input type="checkbox" name="movable" value="1"> ' . esc_html__('beweglich (Kiste, Karton)', 'taxmod-stock') . '</label>'
+            . ($s->hasField('location_reserved') ? '<label style="display:block"><input type="checkbox" name="reserved" value="1"> ' . esc_html__('reserviert für Produktion', 'taxmod-stock') . '</label>' : '')
+            . ($projects === [] ? '' : '<label style="display:block;margin-top:.5em">' . esc_html__('Projekt', 'taxmod-stock') . '<br><select name="project" style="width:100%">' . $this->options($projects, '—') . '</select></label>');
+
+        return $this->formStart('ort') . $this->returnFields($tab, $parent)
+            . ListPage::dialogAction(
+                'taxmod-stock-new-place-' . $parent,
+                $parent > 0 ? __('Neuer Unterort', 'taxmod-stock') : __('+ Neuer Lagerort', 'taxmod-stock'),
+                $parent > 0 ? sprintf(/* translators: %s: the place, by its path */ __('Neuer Unterort in %s', 'taxmod-stock'), $this->stock->locationTree()->pathOf($parent)) : __('Neuer Lagerort', 'taxmod-stock'),
+                $body,
+                'booking',
+                'ort',
+                __('Anlegen', 'taxmod-stock')
+            ) . '</form>';
+    }
+
+    /** D-1090: «Verschieben» — the new place chosen in the same tree, the place itself and what lies in it left out. */
+    private function movePlaceDialog(int $place, LocationTree $tree): string
+    {
+        if (! method_exists(ListPage::class, 'dialogAction')) {
+            return '';
+        }
+
+        $s      = $this->stock->structure();
+        $name   = 'parent[' . $place . ']';
+        $parent = $tree->parentOf($place);
+        $choice = (string) apply_filters('taxmod_record_chooser', '', [
+            'name'         => $name,
+            'node'         => $s->node('location'),
+            'parent_field' => $s->field('location_parent'),
+            'label_field'  => $s->field('label'),
+            'exclude'      => [$place],
+            'preselected'  => $parent > 0 ? $parent : null,
+            'inline'       => true,
+        ]);
+        $body = '<label style="display:block;margin-bottom:.5em"><input type="radio" name="' . esc_attr($name) . '" value="0"' . checked($parent, 0, false) . '> '
+            . esc_html__('— oberste Ebene —', 'taxmod-stock') . '</label>'
+            . ($choice !== '' ? '<div style="max-height:50vh;overflow:auto">' . $choice . '</div>'
+                : '<select name="' . esc_attr($name) . '" style="width:100%">' . $this->options(array_diff_key($this->stock->places(), array_flip($tree->withAllBelow($place))), __('— oberste Ebene —', 'taxmod-stock'), $parent) . '</select>')
+            . '<p class="description">' . esc_html($tree->isMovable($place) && $this->stock->relocates()
+                ? __('Alles, was darin liegt, zieht mit; der Umzug wird als Vorgang «Umlagerung» festgehalten.', 'taxmod-stock')
+                : __('Alles, was darin liegt, zieht mit.', 'taxmod-stock')) . '</p>';
+
+        return $this->formStart('lagerstruktur') . $this->returnFields('lagerstruktur', $place)
+            . ListPage::dialogAction('taxmod-stock-move-place-' . $place, __('Verschieben', 'taxmod-stock'), __('Verschieben nach', 'taxmod-stock'), $body, 'booking', 'umhaengen-' . $place, __('Verschieben', 'taxmod-stock'))
+            . '</form>';
+    }
+
+    /**
+     * D-1090: what a drop on the tree asks before it acts — a place onto a place (Verschieben), a lot onto a place
+     * (Umbuchung). The modeller only reports the drop; this script fills the dialog and opens it.
+     */
+    private function dropDialogs(string $tab, int $place, LocationTree $tree): string
+    {
+        if (! method_exists(ListPage::class, 'dialogAction')) {
+            return '';
+        }
+
+        $paths   = [0 => __('— oberste Ebene —', 'taxmod-stock')];
+        $movable = [];
+
+        foreach (array_keys($this->stock->places()) as $id) {
+            $paths[$id] = $tree->pathOf($id);
+
+            if ($tree->isMovable($id)) {
+                $movable[] = $id;
+            }
+        }
+
+        $hangBody = '<input type="hidden" class="taxmod-stock-drop-parent" value="0">'
+            . '<p style="margin:0" class="taxmod-stock-drop-text"></p>'
+            . '<p class="description taxmod-stock-drop-box" hidden>' . esc_html__('Der Umzug wird als Vorgang «Umlagerung» festgehalten.', 'taxmod-stock') . '</p>';
+        $lotBody  = '<input type="hidden" name="thing" value=""><input type="hidden" name="lot" value=""><input type="hidden" name="from" value=""><input type="hidden" name="location" value="">'
+            . '<p style="margin-top:0" class="taxmod-stock-drop-text"></p>'
+            . '<label style="display:block">' . esc_html__('Menge', 'taxmod-stock') . '<br><input type="text" inputmode="decimal" name="quantity" style="width:7em"></label>'
+            . '<p class="description">' . esc_html__('Bucht die Menge vom bisherigen Ort ab und am neuen zu, als Vorgang «Umbuchung».', 'taxmod-stock') . '</p>';
+
+        $texts = [
+            'hang' => __('«%1$s» nach «%2$s» verschieben? Alles, was darin liegt, zieht mit.', 'taxmod-stock'),
+            'lot'  => __('Posten #%1$s von «%2$s» nach «%3$s» umbuchen.', 'taxmod-stock'),
+        ];
+
+        return '<style>.taxmod-stock-drop-dialogs .taxmod-dialog-open{display:none}.taxmod-stock-place-actions form{display:inline}</style><div class="taxmod-stock-drop-dialogs">'
+            . $this->formStart('lagerstruktur') . $this->returnFields($tab, $place)
+            . ListPage::dialogAction('taxmod-stock-drop-place', __('Verschieben', 'taxmod-stock'), __('Verschieben', 'taxmod-stock'), $hangBody, 'booking', 'umhaengen-0', __('Verschieben', 'taxmod-stock'))
+            . '</form>'
+            . $this->formStart('umbuchen') . $this->returnFields($tab, $place)
+            . ListPage::dialogAction('taxmod-stock-drop-lot', __('Umbuchen', 'taxmod-stock'), __('Umbuchen', 'taxmod-stock'), $lotBody, 'booking', 'umbuchen', __('Umbuchen', 'taxmod-stock'))
+            . '</form></div>'
+            . '<script>(function(){'
+            . 'var paths=' . wp_json_encode((object) $paths) . ',movable=' . wp_json_encode($movable) . ',texts=' . wp_json_encode($texts) . ';'
+            . 'function fill(t,a){return t.replace(/%(\\d)\\$s/g,function(m,n){return a[parseInt(n,10)-1];});}'
+            . 'function open(id){var sw=document.getElementById(id);sw.checked=true;sw.dispatchEvent(new Event("change",{bubbles:true}));return sw.closest("form");}'
+            . 'document.addEventListener("dragstart",function(e){var r=e.target.closest&&e.target.closest("[data-taxmod-stock-lot]");if(!r){return;}e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("application/x-taxmod-item","lot:"+r.getAttribute("data-taxmod-stock-lot"));});'
+            . 'document.addEventListener("taxmod-record-drop",function(e){var d=e.detail,f;'
+            . 'if(d.record!==null){f=open("taxmod-stock-drop-place");var p=f.querySelector(".taxmod-stock-drop-parent");p.name="parent["+d.record+"]";p.value=d.target;'
+            . 'f.querySelector("button[name=booking]").value="umhaengen-"+d.record;f.querySelector(".taxmod-stock-drop-text").textContent=fill(texts.hang,[paths[d.record]||"#"+d.record,paths[d.target]||"#"+d.target]);'
+            . 'f.querySelector(".taxmod-stock-drop-box").hidden=movable.indexOf(d.record)<0;return;}'
+            . 'if(!d.item||d.item.indexOf("lot:")!==0||d.target===0){return;}var x=d.item.split(":");if(parseInt(x[2],10)===d.target){return;}f=open("taxmod-stock-drop-lot");'
+            . 'f.elements.lot.value=x[1];f.elements.from.value=x[2];f.elements.quantity.value=x[3];f.elements.thing.value=x[4];f.elements.location.value=d.target;'
+            . 'f.querySelector(".taxmod-stock-drop-text").textContent=fill(texts.lot,[x[1],paths[x[2]]||"#"+x[2],paths[d.target]||"#"+d.target]);});'
+            . '})();</script>';
+    }
+
+    /** A quantity as the forms take it: a dot, no trailing zeros. */
+    private function plain(float $quantity): string
+    {
+        return rtrim(rtrim(number_format($quantity, 3, '.', ''), '0'), '.');
     }
 
     /** D-1082: «reserviert für Produktion» at the place that carries the flag, «reserviert» at what lies below it. */

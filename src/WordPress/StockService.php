@@ -774,12 +774,61 @@ final class StockService
      *
      * @return array<string, mixed> the modeller's answer
      */
-    public function movePlace(int $place, int $parent): array
+    public function movePlace(int $place, int $parent, string $today = '', string $title = ''): array
     {
-        $changes = (new LocationChanges($this->structure()))->move($place, $parent, $this->locationTree(), $this->table('location'));
+        $tree    = $this->locationTree();
+        $changes = (new LocationChanges($this->structure()))->move($place, $parent, $tree, $this->table('location'));
         $this->reservedPlaces()->checkHang($place, $parent, $this->ledger(), $this->boundLots());
 
+        // D-1091: a box that moves is a Vorgang «Umlagerung» in the same step; a fixed place is a change of the structure only.
+        if ($this->relocates() && $tree->isMovable($place) && $tree->parentOf($place) !== $parent) {
+            $changes = [...$changes, ...(new Bookings($this->structure(), $today === '' ? current_time('Y-m-d') : $today))->relocate($place, $tree->parentOf($place), $parent, $title === '' ? 'Umlagerung' : $title)];
+        }
+
         return $this->model->write($changes);
+    }
+
+    /** D-1091: whether the model knows the Vorgang «Umlagerung» (its kind and the field for the box). */
+    public function relocates(): bool
+    {
+        $s = $this->structure();
+
+        return $s->hasValue('kind_relocation') && $s->hasField('transaction_carrier') && $s->hasField('line_location');
+    }
+
+    /**
+     * D-1091: the moves of one box, newest first — date, from and to (0: top level).
+     *
+     * @return list<array{date: string, from: int, to: int}>
+     */
+    public function relocationsOf(int $box): array
+    {
+        if (! $this->relocates()) {
+            return [];
+        }
+
+        $s     = $this->structure();
+        $deals = $this->table('transaction');
+        $lines = $this->table('line');
+        $out   = [];
+
+        foreach ($deals->ids() as $deal) {
+            if ((int) $deals->first($deal, $s->field('transaction_kind')) !== $s->value('kind_relocation') || (int) $deals->first($deal, $s->field('transaction_carrier')) !== $box) {
+                continue;
+            }
+
+            $move = ['date' => (string) $deals->first($deal, $s->field('transaction_date')), 'from' => 0, 'to' => 0];
+
+            foreach ($deals->all($deal, $s->field('transaction_lines')) as $line) {
+                $move[(float) $lines->first((int) $line, $s->field('line_quantity')) < 0 ? 'from' : 'to'] = (int) $lines->first((int) $line, $s->field('line_location'));
+            }
+
+            $out[] = $move;
+        }
+
+        usort($out, static fn (array $a, array $b): int => strcmp($b['date'], $a['date']));
+
+        return $out;
     }
 
     /** D-1082: the places reserved for production, computed from the tree read once. */

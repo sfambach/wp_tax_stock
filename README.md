@@ -19,7 +19,8 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
   tracking number, 21 days on the way). Concept:
   [`docs/pakete/lager/cockpit-wareneingang.md`](https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/lager/cockpit-wareneingang.md).
 - **Page «Lager»**, drawn with the modeller's shared list page (D-989, needs the
-  modeller from 0.1.65), four tabs, «Wareneingang» first:
+  modeller from 0.1.65); the tabs are the menu group «Bestand» (Material, Inventur, Verbrauch, Reservierungen,
+  Lagerorte); «Wareneingang» (Eingang → Einbuchen) and «Lagerstruktur» (Einstellungen) stand without them:
   - **Wareneingang** — the orders as a list, each opening to its purchases; receive determined purchases (partial
     receipts allowed). Each purchase goes in as its «Modell» or as another thing picked in the modeller's record chooser
     (search or tree, both over the groups of things; D-1011); the choice is written into the purchase's «Modell». Each gets a proposed place
@@ -40,6 +41,16 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
     (D-1036). Each reserved place shows its one reservation, computed from what lies there, read-only.
     A purchase «noch nicht näher bestimmt» (a lot, Konvolut) is first told apart with «Aufteilen» (concept R3): the
     purchase becomes its first part, every further part a purchase of the same order, each with its material.
+  - **Lagerorte** (D-1090, from 0.14.0) — the places as the modeller's tree on the left (search, fold, a click opens a
+    place; needs the modeller from 0.1.123), on the right what lies there and below it, one row per lot and place with
+    «Umbuchen» and «Ausbuchen». A row dragged onto a place in the tree asks for the Umbuchung (D-1039).
+  - **Lagerstruktur** (Logistik → Einstellungen, D-1085, D-1090) — the same tree; on the right the place with
+    «Bearbeiten» (the modeller's form), «Verschieben» (the target in the same tree, the place and what lies in it left
+    out), «Neuer Unterort» and «Für Produktion reservieren», each in the shared dialog; «+ Neuer Lagerort» above the tree.
+    A place dragged onto another (or onto «oberste Ebene») is hung there after a dialog, with everything in it.
+    A box is a carrier, not stock (D-1091): its move is a Vorgang «Umlagerung» (field «Ladungsträger», two positions
+    without a lot, − old place, + new place), listed at the box; no lot is rebooked. Needs `values.kind_relocation` and
+    `fields.transaction_carrier` in the structure; without them the box is hung as before, without a Vorgang.
   - **Inventur** — counted stock without a purchase, on an existing thing or a new one in a group.
   - **Verbrauch** — take a quantity from a lot; the oldest lot with a rest is proposed.
 - **Page «Einkauf»** (D-1027), purchasing in three steps: a **demand** without a supplier (an order

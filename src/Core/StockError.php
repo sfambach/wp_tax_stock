@@ -233,13 +233,19 @@ final class StockError extends \RuntimeException
         return new self('not_a_reservation', (string) $transaction);
     }
 
+    /** D-1088: reserved goods are consumed only for their own Bezug. */
+    public static function reservedForOther(int $lot): self
+    {
+        return new self('reserved_for_other', (string) $lot);
+    }
+
     /** D-1083: a lot gives a reservation only what lies free of it. */
     public static function notEnoughFree(int $lot): self
     {
         return new self('not_enough_free', (string) $lot);
     }
 
-    /** D-1083: a reservation needs its subject — a project, a sale, a build run, a repair. */
+    /** D-1083: a reservation needs its subject — a project or a sale (D-1088: build runs and repairs are no Bezug). */
     public static function noSubject(): self
     {
         return new self('no_subject', '');

@@ -5,6 +5,7 @@ namespace TaxmodStock\Tests\Core;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use TaxmodStock\Core\Bookings;
+use TaxmodStock\Core\Purpose;
 use TaxmodStock\Core\InventoryRow;
 use TaxmodStock\Core\LagerInput;
 use TaxmodStock\Core\NewThing;
@@ -141,11 +142,14 @@ final class BookingsTest extends TestCase
     public function a_consumption_books_a_negative_line_on_the_chosen_lot(): void
     {
         $s       = Fixture::structure();
-        $values  = $this->valuesByNode((new Bookings($s, '2026-10-21'))->consumption(11, '2,5', 18507, 'Verbrauch'));
+        $values  = $this->valuesByNode((new Bookings($s, '2026-10-21'))->consumption(11, '2,5', Purpose::subject(18507), 'Verbrauch', null, 'Reparatur'));
 
         self::assertSame('-2.5', $values[4][(string) $s->field('line_quantity')]);
         self::assertSame('11', $values[4][(string) $s->field('line_lot')]);
-        self::assertSame('18507', $values[3][(string) $s->field('transaction_project')]);
+        // D-1088: the purpose stands in the Vorgang's Bezug, the reason in its description.
+        self::assertSame('18507', $values[3][(string) $s->field('transaction_reference')]);
+        self::assertArrayNotHasKey((string) $s->field('transaction_project'), $values[3]);
+        self::assertSame('Reparatur', $values[3][(string) $s->field('description')]);
     }
 
     #[Test]

@@ -78,12 +78,14 @@ final class Messages
             /* translators: %s: record id of the lot */
             'already_reserved'          => sprintf(__('Posten #%s ist schon reserviert und darf nicht in einen für die Produktion reservierten Bereich.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id of the place */
-            'reserved_for_production'   => sprintf(__('Lagerort #%s ist für die Produktion reserviert: erst aus dem Bereich umbuchen, dann verbrauchen.', 'taxmod-stock'), $error->detail),
+            'reserved_for_production'   => sprintf(__('Lagerort #%s ist reserviert: verbraucht wird dort nur für seinen Bezug (sein Projekt, sonst «für Produktion»), für alles andere erst aus dem Bereich umbuchen.', 'taxmod-stock'), $error->detail),
+            /* translators: %s: record id of the lot */
+            'reserved_for_other'        => sprintf(__('Posten #%s ist reserviert: verbraucht werden darf nur, was frei ist, oder für genau den Bezug der Reservierung.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id */
             'not_a_reservation'         => sprintf(__('#%s ist keine Reservierung.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id of the lot */
             'not_enough_free'           => sprintf(__('Posten #%s hat nicht so viel frei — ein Teil liegt in einem reservierten Bereich oder ist schon reserviert.', 'taxmod-stock'), $error->detail),
-            'no_subject'                => __('Eine Reservierung braucht ihren Bezug: ein Projekt, einen Verkauf, einen Baulauf oder eine Reparatur.', 'taxmod-stock'),
+            'no_subject'                => __('Kein gültiger Bezug: ein Projekt oder ein Verkauf.', 'taxmod-stock'),
             /* translators: %s: what was typed */
             'not_a_date'                => sprintf(__('«%s» ist kein gültiges Datum.', 'taxmod-stock'), $error->detail),
             'model_refused'             => sprintf(__('Der Taxonomy Modeller hat die Buchung abgelehnt, nichts wurde geschrieben: %s', 'taxmod-stock'), $error->detail),

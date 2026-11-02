@@ -9,6 +9,7 @@ namespace TaxmodStock\Core;
  * ```mermaid
  * flowchart LR
  *   U["Umbuchung: −A, +B"] -.-> S["Storno: −B (von +B), +A (von −A)"]
+ *   V["Verbrauch: −n an A"] -.-> T["Storno: +n an A (von −n)"]
  * ```
  */
 final class Storno
@@ -87,6 +88,46 @@ final class Storno
         }
 
         return $rows;
+    }
+
+    /**
+     * The rows of the Storno of a consumption (D-1036): every line «−Menge» comes back «+Menge» at its place. Only whole.
+     *
+     * @return list<array{lot: int, place: int|null, quantity: string, reverses: int}>
+     */
+    public function consumptionRows(int $deal, Table $transactions, Table $lines): array
+    {
+        $s = $this->structure;
+
+        if (! $s->hasField('line_reverses')) {
+            throw StockError::notConfigured('fields.line_reverses');
+        }
+
+        if (! $transactions->has($deal) || (int) $transactions->first($deal, $s->field('transaction_kind')) !== $s->value('kind_consumption')) {
+            throw StockError::notCancellable($deal);
+        }
+
+        $paired = $this->pairedLines($lines);
+        $where  = $s->hasField('line_location') ? $s->field('line_location') : null;
+        $rows   = [];
+
+        foreach (array_map('intval', $transactions->all($deal, $s->field('transaction_lines'))) as $line) {
+            if (isset($paired[$line])) {
+                throw StockError::alreadyCancelled($deal);
+            }
+
+            $lot      = (int) $lines->first($line, $s->field('line_lot'));
+            $quantity = trim((string) $lines->first($line, $s->field('line_quantity')));
+            $place    = $where === null ? 0 : (int) $lines->first($line, $where);
+
+            if ($lot <= 0 || ! str_starts_with($quantity, '-') || (float) $quantity >= 0.0) {
+                throw StockError::notCancellable($deal);
+            }
+
+            $rows[] = ['lot' => $lot, 'place' => $place > 0 ? $place : null, 'quantity' => substr($quantity, 1), 'reverses' => $line];
+        }
+
+        return $rows === [] ? throw StockError::notCancellable($deal) : $rows;
     }
 
     private function placeOf(int $line, int $lot, Table $lines, Ledger $ledger): int

@@ -5,6 +5,7 @@ namespace TaxmodStock\Tests\Core;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use TaxmodStock\Core\Bookings;
+use TaxmodStock\Core\Purpose;
 use TaxmodStock\Core\Ledger;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\Storno;
@@ -100,7 +101,7 @@ final class TransferTest extends TestCase
     public function a_consumption_names_its_place(): void
     {
         $s       = Fixture::structure();
-        $changes = (new Bookings($s, '2026-11-02'))->consumption(60, '1', null, 'Verbrauch', 4);
+        $changes = (new Bookings($s, '2026-11-02'))->consumption(60, '1', Purpose::none(), 'Verbrauch', 4);
 
         self::assertSame('4', $changes[1]['values'][(string) $s->field('line_location')]);
     }

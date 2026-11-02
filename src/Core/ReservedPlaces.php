@@ -7,14 +7,15 @@ namespace TaxmodStock\Core;
  * about it is stored at a material or a lot — it is computed from where things lie, so a box hung elsewhere takes its
  * whole content with it at once.
  *
- * Strict, his word «wir bleiben bei streng»: the reservation is freed only by moving the goods out of the area, nothing
- * is consumed inside it, and goods already reserved may not go into such an area.
+ * Strict, his word «wir bleiben bei streng»: the reservation is freed only by moving the goods out of the area or by
+ * consuming them for exactly the area's Bezug (D-1088), and goods already reserved may not go into such an area.
  *
  * ```mermaid
  * flowchart TD
  *   P["Platz P (reserviert)"] --> K["Kiste K"]
  *   K --> X["Posten: reserviert, Bezug = Projekt von K oder P, sonst «Produktion»"]
  *   X -->|Umbuchung hinaus| F["frei"]
+ *   X -->|Verbrauch für genau diesen Bezug| V["verbraucht"]
  * ```
  */
 final class ReservedPlaces
@@ -93,10 +94,26 @@ final class ReservedPlaces
         }
     }
 
-    /** Nothing is consumed inside a reserved area; first move it out. */
-    public function checkConsumption(int $place): void
+    /**
+     * The Bezug of what lies at `$place` in a reserved area: the project of the nearest place up the tree, 0 for
+     * «Produktion» (D-1082).
+     */
+    public function subjectAt(int $place): int
     {
-        if ($this->reservingPlaceOf($place) !== null) {
+        return $this->tree->projectIdOf($place);
+    }
+
+    /**
+     * Inside a reserved area only a consumption for exactly its Bezug (D-1088): the project of the nearest place up the
+     * tree, or «Produktion» chosen explicitly where there is none. Any other purpose moves the goods out first (D-1082).
+     */
+    public function checkConsumption(int $place, ?Purpose $purpose = null): void
+    {
+        if ($this->reservingPlaceOf($place) === null) {
+            return;
+        }
+
+        if (! ($purpose ?? Purpose::none())->matchesPlace($this->subjectAt($place))) {
             throw StockError::reservedForProduction($place);
         }
     }

@@ -14,6 +14,7 @@ use TaxmodStock\Core\ReceiptChoice;
 use TaxmodStock\Core\SplitRow;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\StockList;
+use TaxmodStock\Core\Purpose;
 use TaxmodStock\Core\Storno;
 use TaxmodStock\Core\Ledger;
 use TaxmodStock\Core\Things;
@@ -138,6 +139,7 @@ final class StockPage
                 ),
                 'reservierungstorno' => $this->stock->cancelReservation(absint($_POST['transaction'] ?? 0), absint($_POST['line'] ?? 0) ?: null, current_time('Y-m-d H:i:s'), wp_get_current_user()->display_name),
                 'storno'       => $this->stock->cancelTransfer(absint($_POST['transaction'] ?? 0), current_time('Y-m-d H:i:s'), wp_get_current_user()->display_name),
+                'verbrauchstorno' => $this->stock->cancelConsumption(absint($_POST['transaction'] ?? 0), current_time('Y-m-d H:i:s'), wp_get_current_user()->display_name),
                 'wareneingang' => $this->stock->bookReceipt(
                     absint($_POST['order'] ?? 0),
                     $this->receiptChoices(),
@@ -167,17 +169,18 @@ final class StockPage
                     $thing,
                     absint($_POST['lot'] ?? 0) ?: null,
                     sanitize_text_field(wp_unslash((string) ($_POST['quantity'] ?? ''))),
-                    absint($_POST['project'] ?? 0) ?: null,
+                    $this->purpose(sanitize_key(wp_unslash((string) ($_POST['purpose'] ?? '')))),
                     $today,
                     $this->title(__('Verbrauch', 'taxmod-stock'), $today),
-                    absint($_POST['place'] ?? 0) ?: null
+                    absint($_POST['place'] ?? 0) ?: null,
+                    sanitize_text_field(wp_unslash((string) ($_POST['reason'] ?? '')))
                 ),
                 default        => throw StockError::nothingToBook(),
             };
             $this->remember('success', match ($kind) {
                 'umhaengen'      => __('Umgehängt: der Ort liegt jetzt dort, mit allem, was in ihm liegt.', 'taxmod-stock'),
                 'umbuchen'       => __('Umgebucht: ein Vorgang «Umbuchung» mit Abgang am alten und Zugang am neuen Ort.', 'taxmod-stock'),
-                'storno', 'reservierungstorno' => __('Storniert: die Gegenbuchung hebt den Vorgang auf, beide bleiben im Protokoll.', 'taxmod-stock'),
+                'storno', 'reservierungstorno', 'verbrauchstorno' => __('Storniert: die Gegenbuchung hebt den Vorgang auf, beide bleiben im Protokoll.', 'taxmod-stock'),
                 'reservieren'    => __('Reserviert: der verfügbare Bestand sinkt, der Bestand bleibt.', 'taxmod-stock'),
                 'ort'            => __('Lagerort angelegt.', 'taxmod-stock'),
                 'reservieren'    => __('Reserviert für Produktion: alles, was dort und darunter liegt, ist reserviert.', 'taxmod-stock'),
@@ -195,7 +198,7 @@ final class StockPage
             $back = match ($kind) {
                 'verschieben'  => ['material', ['thing' => $thing, 'view' => 'daten']],
                 'lager'        => ['material', ['thing' => $thing, 'view' => 'lager']],
-                'umbuchen', 'storno' => ['material', ['thing' => $thing, 'view' => 'bestand']],
+                'umbuchen', 'storno', 'verbrauchstorno' => ['material', ['thing' => $thing, 'view' => 'bestand']],
                 'reservieren', 'reservierungstorno' => sanitize_key((string) ($_POST['back'] ?? '')) === 'bestand' && $thing > 0
                     ? ['material', ['thing' => $thing, 'view' => 'bestand']] : ['reservierungen', []],
                 'wareneingang', 'aufteilen', 'zuordnen', 'nichteinlagern', 'einlagern' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
@@ -208,7 +211,7 @@ final class StockPage
                 'wareneingang', 'zuordnen', 'nichteinlagern', 'einlagern' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
                 'umhaengen', 'ort', 'reservieren', 'freigeben' => ['lagerstruktur', []],
                 'aufteilen'         => ['wareneingang', ['order' => absint($_POST['order'] ?? 0), 'split' => absint($_POST['purchase'] ?? 0)]],
-                'lager', 'umbuchen', 'storno' => ['material', ['thing' => $thing, 'view' => $kind === 'lager' ? 'lager' : 'bestand']],
+                'lager', 'umbuchen', 'storno', 'verbrauchstorno' => ['material', ['thing' => $thing, 'view' => $kind === 'lager' ? 'lager' : 'bestand']],
                 // D-1073: refused because values would fall — named, nothing moved (his doubt 2026-11-01: «das verschieben ist problematisch»).
                 'verschieben'       => ['material', ['thing' => $thing, 'view' => 'daten']],
                 'verbrauch'         => ['verbrauch', ['thing' => $thing]],
@@ -954,14 +957,14 @@ final class StockPage
             ));
         }
 
-        return '<p>' . esc_html__('Eine Reservierung je Bezug: Projekt, Verkauf, Baulauf oder Reparatur. Ein für die Produktion reservierter Lagerort hat genau eine Reservierung, gerechnet aus dem, was dort liegt.', 'taxmod-stock') . '</p>'
+        return '<p>' . esc_html__('Eine Reservierung je Bezug: Projekt oder Verkauf. Ein für die Produktion reservierter Lagerort hat genau eine Reservierung, gerechnet aus dem, was dort liegt.', 'taxmod-stock') . '</p>'
             . '<p style="text-align:right">' . $this->reserveFormDialog(0, 'reservierungen') . '</p>'
             . ListPage::table([[__('Reservierung', 'taxmod-stock'), ''], [__('Bezug', 'taxmod-stock'), '14em'], [__('Datum', 'taxmod-stock'), '7em'], [__('Frist', 'taxmod-stock'), '7em'], [__('Positionen', 'taxmod-stock'), '6em']],
                 $body === '' ? $this->noItems(5) : $body);
     }
 
     /** D-1036: «Stornieren» of a Vorgang, asked in the shared dialog; the Storno names who and when. */
-    private function stornoDialog(int $thing, int $deal, string $what): string
+    private function stornoDialog(int $thing, int $deal, string $what, string $booking = 'storno'): string
     {
         if (! method_exists(ListPage::class, 'dialogAction')) {
             return '';
@@ -972,13 +975,13 @@ final class StockPage
 
         return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'
             . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">' . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
-            . ListPage::dialogAction('taxmod-stock-storno-' . $deal, __('Stornieren', 'taxmod-stock'), __('Vorgang stornieren', 'taxmod-stock'), $body, 'booking', 'storno', __('Stornieren', 'taxmod-stock'))
+            . ListPage::dialogAction('taxmod-stock-storno-' . $deal, __('Stornieren', 'taxmod-stock'), __('Vorgang stornieren', 'taxmod-stock'), $body, 'booking', $booking, __('Stornieren', 'taxmod-stock'))
             . '</form>';
     }
 
     /**
      * The movements per lot: date, kind, place and quantity of each line, read from the Vorgänge in one go (CD-7). A Storno
-     * and what it cancels are left out (D-1036); an Umbuchung offers its own Storno.
+     * and what it cancels are left out (D-1036); an Umbuchung and a consumption offer their own Storno.
      *
      * @param list<int> $lots
      * @return array<int, string> lot → its movements as a list
@@ -1018,10 +1021,12 @@ final class StockPage
             $kind     = $deal === null ? 0 : (int) $deals->first($deal, $s->field('transaction_kind'));
             $place    = $where === null ? 0 : (int) $lines->first($line, $where);
             $transfer = $deal !== null && $s->hasValue('kind_transfer') && $kind === $s->value('kind_transfer');
-            // One Storno per Umbuchung, at its first line on this lot.
-            $storno   = $transfer && ! isset($offered[$deal]) ? ' ' . $this->stornoDialog($thing, $deal, (string) $deals->first($deal, $s->field('label'))) : '';
+            $consumed = $deal !== null && $kind === $s->value('kind_consumption') && $s->hasField('line_reverses');
+            // One Storno per Umbuchung or consumption, at its first line on this lot.
+            $storno   = ($transfer || $consumed) && ! isset($offered[$deal])
+                ? ' ' . $this->stornoDialog($thing, $deal, (string) $deals->first($deal, $s->field('label')), $transfer ? 'storno' : 'verbrauchstorno') : '';
 
-            if ($transfer) {
+            if ($transfer || $consumed) {
                 $offered[$deal] = true;
             }
 
@@ -1583,8 +1588,51 @@ final class StockPage
                 __('Ausgebucht wird am Ort %s.', 'taxmod-stock'),
                 $this->stock->places()[$presetPlace] ?? '#' . $presetPlace
             )) . '</p>' : '')
-            . '<p><label>' . esc_html__('Projekt (Satz-Id, optional)', 'taxmod-stock') . ' <input type="number" min="1" name="project" style="width:8em"></label></p>'
+            . $this->purposeField($presetPlace)
+            . '<p><label>' . esc_html__('Grund (optional)', 'taxmod-stock') . ' <input type="text" name="reason" list="taxmod-stock-consumption-reasons" style="width:20em"></label>'
+            . '<datalist id="taxmod-stock-consumption-reasons">' . implode('', array_map(static fn (string $r): string => '<option value="' . esc_attr($r) . '">', self::consumptionReasons())) . '</datalist></p>'
             . get_submit_button(__('Verbrauch buchen', 'taxmod-stock')) . '</form>';
+    }
+
+    /**
+     * D-1088: the purpose of a consumption — a subject, «für Produktion», or none. Taken from a reserved place, its Bezug
+     * is preselected: reserved goods go only for exactly that purpose.
+     */
+    private function purposeField(int $place): string
+    {
+        $preset   = $this->stock->purposeAt($place);
+        $selected = $preset === null ? '' : ($preset->production ? 'produktion' : (string) $preset->subject);
+        $choices  = '<option value="">' . esc_html__('— kein Bezug —', 'taxmod-stock') . '</option>'
+            . '<option value="produktion"' . selected($selected, 'produktion', false) . '>' . esc_html__('für Produktion (ohne Projekt)', 'taxmod-stock') . '</option>';
+
+        foreach ($this->stock->purposes() as $group => $records) {
+            $choices .= '<optgroup label="' . esc_attr($group) . '">';
+
+            foreach ($records as $id => $label) {
+                $choices .= '<option value="' . esc_attr((string) $id) . '"' . selected($selected, (string) $id, false) . '>' . esc_html($label) . '</option>';
+            }
+
+            $choices .= '</optgroup>';
+        }
+
+        return '<p><label>' . esc_html__('Bezug', 'taxmod-stock') . ' <select name="purpose">' . $choices . '</select></label></p>'
+            . '<p class="description">' . esc_html__('Reservierte Ware darf nur für genau ihren Bezug verbraucht werden; der Verbrauch mindert dann die offene Reservierung. Für jeden anderen Zweck erst aus dem reservierten Bereich umbuchen.', 'taxmod-stock') . '</p>';
+    }
+
+    /** D-1088: «produktion», a record id, or nothing — as the form sends it. */
+    private function purpose(string $value): Purpose
+    {
+        return $value === 'produktion' ? Purpose::production() : Purpose::subject(absint($value));
+    }
+
+    /**
+     * D-1088: the reasons offered for a consumption; any other text is accepted too. A repair is a reason, not a Bezug.
+     *
+     * @return list<string>
+     */
+    private static function consumptionReasons(): array
+    {
+        return [__('Reparatur', 'taxmod-stock')];
     }
 
     /**

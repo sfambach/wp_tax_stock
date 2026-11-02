@@ -17,6 +17,7 @@ use TaxmodStock\Core\LocationTree;
 use TaxmodStock\Core\NotStocked;
 use TaxmodStock\Core\ReceiptChoice;
 use TaxmodStock\Core\ReceiptPlan;
+use TaxmodStock\Core\Purpose;
 use TaxmodStock\Core\ReservationRow;
 use TaxmodStock\Core\Reservations;
 use TaxmodStock\Core\ReservedPlaces;
@@ -838,8 +839,8 @@ final class StockService
     }
 
     /**
-     * The records a reservation can be for: projects and sales, as far as the structure names their nodes. Build runs and
-     * repairs join when the model has them (D-1083 names them; the model does not yet).
+     * The records a reservation or a consumption can be for: projects and sales, as far as the structure names their
+     * nodes. Build runs and repairs are no Bezug (D-1088): a repair is a reason for a consumption.
      *
      * @return array<string, array<int, string>> group name → record id → label
      */
@@ -857,6 +858,19 @@ final class StockService
         }
 
         return array_filter($out);
+    }
+
+    /**
+     * D-1088: what a consumption can name as its purpose — the subjects; before the model has the Bezug field only the
+     * projects, which the Vorgang's «Projekt» holds.
+     *
+     * @return array<string, array<int, string>> group name → record id → label
+     */
+    public function purposes(): array
+    {
+        $subjects = $this->subjects();
+
+        return $this->structure()->hasField('transaction_reference') ? $subjects : array_intersect_key($subjects, [__('Projekte', 'taxmod-stock') => true]);
     }
 
     /**
@@ -1063,10 +1077,12 @@ final class StockService
 
     /**
      * D-1039: a consumption takes from the place it names, else from where the lot lies — the place it came in first.
+     * D-1088: reserved goods only for exactly their purpose — inside a reserved area its Bezug, for a lot a reservation
+     * names that reservation's subject; any other purpose stays refused (D-1082).
      *
      * @return array<string, mixed>
      */
-    public function bookConsumption(int $thing, ?int $lot, string $quantity, ?int $project, string $today, string $title, ?int $place = null): array
+    public function bookConsumption(int $thing, ?int $lot, string $quantity, Purpose $purpose, string $today, string $title, ?int $place = null, string $reason = ''): array
     {
         $ledger = $this->ledger();
         $lot  ??= $ledger->proposedLot($thing);
@@ -1075,21 +1091,58 @@ final class StockService
             throw StockError::noLot($thing);
         }
 
+        if ($purpose->subject > 0 && ! in_array($purpose->subject, array_merge(...array_map('array_keys', array_values($this->purposes()))), true)) {
+            throw StockError::noSubject();
+        }
+
         // A place where this lot does not lie (another lot picked in the form) falls back to where it does.
         $reserved = $this->reservedPlaces();
         $place    = $place !== null && $ledger->restAt($lot, $place) > 0.0 ? $place : null;
-        $place  ??= $this->takenFrom($lot, $ledger, $reserved);
-        // D-1082: nothing is consumed inside a reserved area.
-        $reserved->checkConsumption($place ?? $ledger->homeOf($lot));
+        $place  ??= $this->takenFrom($lot, $ledger, $reserved, $purpose);
+        $reserved->checkConsumption($place ?? $ledger->homeOf($lot), $purpose);
+        $this->reservations()->checkConsumption($lot, $quantity, $place ?? $ledger->homeOf($lot), $purpose, $ledger, $reserved);
 
-        return $this->model->write((new Bookings($this->structure(), $today))->consumption($lot, $quantity, $project, $title, $place));
+        return $this->model->write((new Bookings($this->structure(), $today))->consumption($lot, $quantity, $purpose, $title, $place, $reason));
+    }
+
+    /**
+     * D-1088: the purpose a consumption at `$place` is preselected with — the Bezug of the reserved area it lies in
+     * (its project, else «Produktion»); null where the place is free.
+     */
+    public function purposeAt(int $place): ?Purpose
+    {
+        $reserved = $this->reservedPlaces();
+
+        if ($place <= 0 || $reserved->reservingPlaceOf($place) === null) {
+            return null;
+        }
+
+        $project = $reserved->subjectAt($place);
+
+        return $project > 0 ? Purpose::subject($project) : Purpose::production();
+    }
+
+    /**
+     * D-1036 for a consumption: the goods come back where they were taken; who and when stand in the Storno.
+     *
+     * @return array<string, mixed>
+     */
+    public function cancelConsumption(int $deal, string $now, string $who): array
+    {
+        $s     = $this->structure();
+        $deals = $this->table('transaction');
+        $rows  = (new Storno($s))->consumptionRows($deal, $deals, $this->table('line'));
+        /* translators: %s: the name of the Vorgang taken back */
+        $title = sprintf(__('Storno: %s', 'taxmod-stock'), (string) ($deals->first($deal, $s->field('label')) ?? '#' . $deal));
+
+        return $this->model->write((new Bookings($s, $now))->cancelConsumption($rows, $title, $who . ', ' . $now));
     }
 
     /**
      * Where a consumption takes from when no place is named: where the lot came in if something lies there, else where
-     * most lies — a reserved place only when nothing lies elsewhere, so the refusal names it.
+     * most lies — a reserved place only when nothing lies elsewhere or the purpose is its Bezug, so a refusal names it.
      */
-    private function takenFrom(int $lot, Ledger $ledger, ReservedPlaces $reserved): ?int
+    private function takenFrom(int $lot, Ledger $ledger, ReservedPlaces $reserved, Purpose $purpose): ?int
     {
         if (! $this->structure()->hasField('line_location')) {
             return null;

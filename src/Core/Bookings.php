@@ -280,20 +280,56 @@ final class Bookings
 
     /**
      * A consumption: one line «−Menge» on the lot it is taken from, at the place it is taken from (D-1039) when the
-     * lines carry a place.
+     * lines carry a place. D-1088: the Vorgang names its purpose in its Bezug — before the model has that field, in its
+     * project — and its reason («Grund», e.g. «Reparatur») in its description. «Für Produktion» names no record; the
+     * place it is taken from says enough.
      *
      * @return list<array<string, mixed>>
      */
-    public function consumption(int $lot, string $quantity, ?int $project, string $title, ?int $place = null): array
+    public function consumption(int $lot, string $quantity, Purpose $purpose, string $title, ?int $place = null, string $reason = ''): array
     {
+        $s      = $this->structure;
         $amount = Quantity::positive($quantity);
 
         $this->start();
         $this->line($title, (string) $lot, '-' . $amount, null, $place);
 
-        $extra = $project === null || ! $this->structure->hasField('transaction_project')
-            ? []
-            : [(string) $this->structure->field('transaction_project') => (string) $project];
+        $field = $s->hasField('transaction_reference') ? 'transaction_reference' : 'transaction_project';
+        $extra = $purpose->subject > 0 && $s->hasField($field) ? [(string) $s->field($field) => (string) $purpose->subject] : [];
+
+        if (trim($reason) !== '' && $s->hasField('description')) {
+            $extra[(string) $s->field('description')] = trim($reason);
+        }
+
+        return $this->finish($title, 'kind_consumption', $extra);
+    }
+
+    /**
+     * D-1036 for a consumption: a Vorgang «Verbrauch» whose lines put back what each line took, at its place, naming
+     * the line it cancels. A reservation the consumption lowered is open again by as much (D-1088).
+     *
+     * @param list<array{lot: int, place: int|null, quantity: string, reverses: int}> $rows
+     * @return list<array<string, mixed>>
+     */
+    public function cancelConsumption(array $rows, string $title, string $note): array
+    {
+        $s = $this->structure;
+
+        if (! $s->hasField('line_reverses')) {
+            throw StockError::notConfigured('fields.line_reverses');
+        }
+
+        if ($rows === []) {
+            throw StockError::nothingToBook();
+        }
+
+        $this->start();
+
+        foreach ($rows as $row) {
+            $this->line($title, (string) $row['lot'], $row['quantity'], null, $row['place'], $row['reverses']);
+        }
+
+        $extra = $note !== '' && $s->hasField('description') ? [(string) $s->field('description') => $note] : [];
 
         return $this->finish($title, 'kind_consumption', $extra);
     }

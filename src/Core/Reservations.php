@@ -3,10 +3,14 @@
 namespace TaxmodStock\Core;
 
 /**
- * The reservations, read from the Vorgänge of kind «Reservierung» (D-1083): one per subject — a project, a sale, a build
- * run, a repair — with a date, a deadline 0..1 and positions (material, quantity, lot 0..1). A reservation lowers the
- * available stock, not the stock. Taken back as a Storno (D-1036), whole or per position: the Storno's lines name the
- * positions they cancel, and a position counts with what is left of it.
+ * The reservations, read from the Vorgänge of kind «Reservierung» (D-1083): one per subject — a project or a sale; build
+ * runs and repairs are no Bezug (D-1088) — with a date, a deadline 0..1 and positions (material, quantity, lot 0..1). A
+ * reservation lowers the available stock, not the stock. Taken back as a Storno (D-1036), whole or per position: the
+ * Storno's lines name the positions they cancel, and a position counts with what is left of it.
+ *
+ * D-1088: a consumption for the subject lowers its open reservation — computed, nothing stored twice: what is open is
+ * reserved − consumed for that Bezug. A consumed lot first lowers the positions naming it, then those of its material
+ * without a lot.
  *
  * The reservation of a reserved place (D-1082) is not stored here: its positions are computed from what lies there
  * ({@see ReservedPlaces::holdings()}).
@@ -15,6 +19,7 @@ namespace TaxmodStock\Core;
  * flowchart LR
  *   V["Vorgang «Reservierung»: Bezug, Datum, Frist"] --> P["Pos: Material, Menge, Posten 0..1"]
  *   S["Storno: Pos −Menge, Storno von"] -.-> P
+ *   C["Verbrauch mit diesem Bezug"] -.->|mindert| P
  *   P --> A["verfügbar = Bestand − reserviert"]
  * ```
  */
@@ -38,6 +43,9 @@ final class Reservations
 
         $field     = static fn (string $key): ?int => $s->hasField($key) ? $s->field($key) : null;
         $reverses  = $field('line_reverses');
+        $project   = $field('transaction_project');
+        $paired    = (new Storno($s))->pairedLines($lines);
+        $consumed  = [];
         $thingOf   = $field('line_thing');
         $subject   = $field('transaction_reference');
         $deadline  = $field('transaction_deadline');
@@ -45,7 +53,24 @@ final class Reservations
         $deals     = [];
 
         foreach ($transactions->ids() as $deal) {
-            if ((int) $transactions->first($deal, $s->field('transaction_kind')) !== $s->value('kind_reservation')) {
+            $kind = (int) $transactions->first($deal, $s->field('transaction_kind'));
+
+            // D-1088: what was consumed for a subject, a Storno and what it cancelled left out.
+            if ($kind === $s->value('kind_consumption')) {
+                $for = self::purposeOf($deal, $transactions, $subject, $project);
+
+                foreach ($for > 0 ? $transactions->all($deal, $s->field('transaction_lines')) : [] as $line) {
+                    $lot = (int) $lines->first((int) $line, $s->field('line_lot'));
+
+                    if ($lot > 0 && ! isset($paired[(int) $line])) {
+                        $consumed[$for][$lot] = ($consumed[$for][$lot] ?? 0.0) - (float) $lines->first((int) $line, $s->field('line_quantity'));
+                    }
+                }
+
+                continue;
+            }
+
+            if ($kind !== $s->value('kind_reservation')) {
                 continue;
             }
 
@@ -92,7 +117,60 @@ final class Reservations
             ];
         }
 
-        return new self($heads);
+        return new self(self::lowered($heads, $consumed, $ledger));
+    }
+
+    /** The subject a consumption names: its Bezug, or — before the Bezug field — its project. */
+    private static function purposeOf(int $deal, Table $transactions, ?int $reference, ?int $project): int
+    {
+        $subject = $reference === null ? 0 : (int) $transactions->first($deal, $reference);
+
+        return $subject > 0 || $project === null ? $subject : (int) $transactions->first($deal, $project);
+    }
+
+    /**
+     * The positions lowered by what was consumed for their subject: a lot first from the positions naming it, the rest
+     * from the positions of its material without a lot; a position consumed whole is no longer open.
+     *
+     * @param array<int, array{label: string, subject: int, date: string, deadline: string, positions: array<int, array{thing: int, lot: int|null, quantity: float}>}> $heads
+     * @param array<int, array<int, float>> $consumed subject → lot → quantity consumed
+     * @return array<int, array{label: string, subject: int, date: string, deadline: string, positions: array<int, array{thing: int, lot: int|null, quantity: float}>}>
+     */
+    private static function lowered(array $heads, array $consumed, Ledger $ledger): array
+    {
+        foreach ($consumed as $subject => $lots) {
+            foreach ($lots as $lot => $left) {
+                $thing = (int) $ledger->thingOf($lot);
+
+                foreach ([true, false] as $named) {
+                    foreach ($heads as $deal => $head) {
+                        if ($head['subject'] !== $subject) {
+                            continue;
+                        }
+
+                        foreach ($head['positions'] as $line => $position) {
+                            $fits = $named ? $position['lot'] === $lot : $position['lot'] === null && $position['thing'] === $thing;
+
+                            if (! $fits || $left <= self::NOTHING) {
+                                continue;
+                            }
+
+                            $taken = min($left, $position['quantity']);
+                            $left -= $taken;
+                            $rest  = $position['quantity'] - $taken;
+
+                            if ($rest > self::NOTHING) {
+                                $heads[$deal]['positions'][$line]['quantity'] = $rest;
+                            } else {
+                                unset($heads[$deal]['positions'][$line]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return $heads;
     }
 
     /**
@@ -151,6 +229,53 @@ final class Reservations
         }
 
         return $out;
+    }
+
+    /**
+     * The lots the open reservations of one subject name.
+     *
+     * @return array<int, float> lot → quantity
+     */
+    public function boundLotsOf(int $subject): array
+    {
+        $out = [];
+
+        foreach ($this->heads as $head) {
+            foreach ($subject > 0 && $head['subject'] === $subject ? $head['positions'] : [] as $position) {
+                if ($position['lot'] !== null) {
+                    $out[$position['lot']] = ($out[$position['lot']] ?? 0.0) + $position['quantity'];
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * D-1088: a consumption of a lot a reservation names takes what lies free, and beyond it only for exactly the
+     * reservation's Bezug; for any other purpose it stays strict. Inside a reserved area the place decides
+     * ({@see ReservedPlaces::checkConsumption()}); a lot no reservation names may still go below zero (concept §11).
+     */
+    public function checkConsumption(int $lot, string $quantity, int $place, Purpose $purpose, Ledger $ledger, ReservedPlaces $places): void
+    {
+        $amount = (float) Quantity::positive($quantity);
+        $bound  = $this->boundLots()[$lot] ?? 0.0;
+
+        if ($bound <= self::NOTHING || $places->reservingPlaceOf($place) !== null) {
+            return;
+        }
+
+        $inAreas = 0.0;
+
+        foreach ($places->holdings($ledger) as $lots) {
+            $inAreas += array_sum($lots[$lot] ?? []);
+        }
+
+        $free = max(0.0, $ledger->restOf($lot) - $inAreas - $bound);
+
+        if ($amount > $free + ($this->boundLotsOf($purpose->subject)[$lot] ?? 0.0) + self::NOTHING) {
+            throw StockError::reservedForOther($lot);
+        }
     }
 
     /** @return array<int, float> reservation id → what it holds of this thing */

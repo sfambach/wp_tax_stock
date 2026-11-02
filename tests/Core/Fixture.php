@@ -7,7 +7,8 @@ use TaxmodStock\Core\Structure;
 /** A structure with small ids, so a test reads like the table it builds. */
 final class Fixture
 {
-    public static function structure(): Structure
+    /** @param string ...$without optional fields left out, as on a model that does not have them yet */
+    public static function structure(string ...$without): Structure
     {
         $fields = [];
 
@@ -27,6 +28,8 @@ final class Fixture
         ] as $i => $key) {
             $fields[$key] = 100 + $i;
         }
+
+        $fields = array_diff_key($fields, array_flip($without));
 
         return Structure::fromArray([
             'nodes'  => ['lager' => 1, 'lot' => 2, 'transaction' => 3, 'line' => 4, 'location' => 5, 'order' => 6, 'purchase' => 7, 'money' => 8, 'lager_use' => 9, 'source' => 10, 'firm' => 11],

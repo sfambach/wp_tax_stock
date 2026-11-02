@@ -22,19 +22,21 @@ final class LocationTree
      * @param array<int, int>    $parents  place id → the place it sits in, 0 at the top
      * @param array<int, string> $projects place id → the name of its project, only where one is set
      * @param array<int, true>   $movable  places that are boxes, cartons, pallets
+     * @param array<int, int>    $projectIds place id → the record id of its project, only where one is set
      */
     public function __construct(
         private readonly array $names,
         private readonly array $parents,
         private readonly array $projects = [],
         private readonly array $movable = [],
+        private readonly array $projectIds = [],
     ) {
     }
 
     /** @param array<int, string> $projectNames project record id → name */
     public static function from(Structure $s, Table $places, array $projectNames): self
     {
-        $names = $parents = $projects = $movable = [];
+        $names = $parents = $projects = $movable = $projectIds = [];
 
         foreach ($places->ids() as $id) {
             $names[$id]   = (string) ($places->first($id, $s->field('label')) ?? '#' . $id);
@@ -43,6 +45,7 @@ final class LocationTree
             if ($s->hasField('location_project') && (int) $places->first($id, $s->field('location_project')) > 0) {
                 $project       = (int) $places->first($id, $s->field('location_project'));
                 $projects[$id] = $projectNames[$project] ?? '#' . $project;
+                $projectIds[$id] = $project;
             }
 
             if ($s->hasField('location_movable') && $places->first($id, $s->field('location_movable')) === '1') {
@@ -50,7 +53,7 @@ final class LocationTree
             }
         }
 
-        return new self($names, $parents, $projects, $movable);
+        return new self($names, $parents, $projects, $movable, $projectIds);
     }
 
     /** @return list<int> the record ids of the projects some place names */
@@ -93,6 +96,18 @@ final class LocationTree
         }
 
         return null;
+    }
+
+    /** The record id of the project of the place or of the nearest place it sits in; 0 when there is none. */
+    public function projectIdOf(int $id): int
+    {
+        foreach (array_reverse($this->lineOf($id)) as $place) {
+            if (isset($this->projectIds[$place])) {
+                return $this->projectIds[$place];
+            }
+        }
+
+        return 0;
     }
 
     public function isMovable(int $id): bool

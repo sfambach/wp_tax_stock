@@ -24,6 +24,7 @@ use TaxmodStock\Core\InventoryRow;
 use TaxmodStock\Core\LagerInput;
 use TaxmodStock\Core\NewThing;
 use TaxmodStock\Core\ReceiptChoice;
+use TaxmodStock\Core\Purpose;
 use TaxmodStock\Core\SplitRow;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\WordPress\Admin\StockPage;
@@ -166,7 +167,7 @@ try {
 }
 
 // Consumption: FIFO lot, negative line.
-(new StockService())->bookConsumption($bc, null, '15', null, '2026-10-21', 'Verbrauch Reparatur');
+(new StockService())->bookConsumption($bc, null, '15', Purpose::none(), '2026-10-21', 'Verbrauch Reparatur');
 $pruefe((new StockService())->ledger()->stockOf($bc) === 25.0, 'consuming 15 leaves 25');
 
 // Goods receipt: the undetermined purchase is refused, the other one goes in as its Modell and the order is partly received.

@@ -54,7 +54,7 @@ final class Structure
         'line_reverses',
         // D-1082: a place reserved for production; everything on it and below it is reserved.
         'location_reserved',
-        // D-1083: the reservation's subject (project, sale, build run, repair), its deadline, and the material of a position.
+        // D-1083: the reservation's subject (project or sale; D-1088: also the purpose of a consumption), its deadline, and the material of a position.
         'transaction_reference', 'transaction_deadline', 'line_thing',
     ];
 

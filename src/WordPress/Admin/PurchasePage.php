@@ -202,7 +202,8 @@ final class PurchasePage
     }
 
     /**
-     * The things under their minimum, counting what is already wanted or ordered.
+     * The things under their minimum, counting what is already wanted or ordered. D-1088: «Nachbestellen» counts the
+     * available stock — stock less what is reserved — not the stock.
      *
      * @return array<int, array{name: string, stock: float, minimum: float, open: float, proposed: int}>
      */
@@ -213,6 +214,7 @@ final class PurchasePage
         $ledger = $this->stock->ledger();
         $things = $this->stock->things();
         $open   = $this->stock->purchasing()->openQuantities($orders, $purchases);
+        $held   = $this->stock->reservedByThing();
         $out    = [];
 
         foreach ($lager->ids() as $record) {
@@ -223,7 +225,7 @@ final class PurchasePage
                 continue;
             }
 
-            $stock = $ledger->stockOf($thing);
+            $stock = $ledger->stockOf($thing) - ($held[$thing] ?? 0.0);
             $come  = $open[$thing] ?? 0.0;
 
             if ($stock + $come < $minimum) {
@@ -239,7 +241,7 @@ final class PurchasePage
     /** @param array<int, array{name: string, stock: float, minimum: float, open: float, proposed: int}> $rows */
     private function reorderList(array $rows): string
     {
-        $html = '<p class="description">' . esc_html__('Material unter dem Mindestbestand (Bestand plus schon gewünscht oder bestellt). Auswählen und «In Bedarf übernehmen».', 'taxmod-stock') . '</p>'
+        $html = '<p class="description">' . esc_html__('Material unter dem Mindestbestand (verfügbarer Bestand plus schon gewünscht oder bestellt). Auswählen und «In Bedarf übernehmen».', 'taxmod-stock') . '</p>'
             . $this->bulkBar('nachbestellen', ['pick' => __('In Bedarf übernehmen', 'taxmod-stock')], count($rows));
         $body = '';
 
@@ -254,7 +256,7 @@ final class PurchasePage
 
         $body = $body !== '' ? $body : '<tr class="no-items"><td colspan="6">' . esc_html__('Alles über dem Mindestbestand.', 'taxmod-stock') . '</td></tr>';
 
-        return $html . ListPage::table([[__('Material', 'taxmod-stock'), ''], [__('Bestand', 'taxmod-stock'), '7em'], [__('Mindestbestand', 'taxmod-stock'), '9em'], [__('Unterwegs / gewünscht', 'taxmod-stock'), '11em']], $body);
+        return $html . ListPage::table([[__('Material', 'taxmod-stock'), ''], [__('Verfügbar', 'taxmod-stock'), '7em'], [__('Mindestbestand', 'taxmod-stock'), '9em'], [__('Unterwegs / gewünscht', 'taxmod-stock'), '11em']], $body);
     }
 
     /**
@@ -270,6 +272,7 @@ final class PurchasePage
         $ledger  = $this->stock->ledger();
         $lager   = $this->stock->table('lager');
         $open    = $this->stock->purchasing()->openQuantities($orders, $purchases);
+        $held    = $this->stock->reservedByThing();
         $choices = ['0' => __('— Neuer Bedarf —', 'taxmod-stock')];
 
         if ($things === []) {
@@ -283,13 +286,13 @@ final class PurchasePage
         $html = '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="background:#fff;border:1px solid #c3c4c7;padding:16px;margin-top:12px;max-width:900px">'
             . $this->hidden('reorder', 'neu')
             . '<h2 style="margin-top:0">' . esc_html__('Nachbestellen', 'taxmod-stock') . '</h2>'
-            . '<table class="widefat striped"><thead><tr><th>' . esc_html__('Material', 'taxmod-stock') . '</th><th>' . esc_html__('Bestand', 'taxmod-stock') . '</th><th>'
+            . '<table class="widefat striped"><thead><tr><th>' . esc_html__('Material', 'taxmod-stock') . '</th><th>' . esc_html__('Verfügbar', 'taxmod-stock') . '</th><th>'
             . esc_html__('Mindestbestand', 'taxmod-stock') . '</th><th>' . esc_html__('Unterwegs / gewünscht', 'taxmod-stock') . '</th><th>' . esc_html__('Menge', 'taxmod-stock') . '</th></tr></thead><tbody>';
 
         foreach ($things as $thing) {
             $record  = $this->stock->things()->lagerOf($thing);
             $minimum = $record === null ? null : $lager->first($record, $s->field('lager_min'));
-            $stock   = $ledger->stockOf($thing);
+            $stock   = $ledger->stockOf($thing) - ($held[$thing] ?? 0.0);
             $come    = $open[$thing] ?? 0.0;
             $html   .= '<tr><td>' . esc_html(($labels[$thing] ?? '') . ' (Nr. ' . $thing . ')') . '</td><td>' . esc_html($this->number($stock)) . '</td><td>'
                 . esc_html($minimum === null ? '—' : $minimum) . '</td><td>' . esc_html($this->number($come)) . '</td>'

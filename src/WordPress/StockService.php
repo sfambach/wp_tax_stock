@@ -476,6 +476,17 @@ final class StockService
         return new Ledger($this->structure(), $this->table('lot'), $this->table('line'), $this->table('transaction'));
     }
 
+    /**
+     * Only these records of a node — one query, not the whole node (CD-7). Falls back to the whole node if the
+     * modeller cannot read single records.
+     *
+     * @param list<int> $records
+     */
+    public function recordsOf(string $node, array $records): Table
+    {
+        return $records === [] ? new Table([]) : ($this->tables[$this->structure()->node($node)] ?? $this->model->records($records) ?? $this->table($node));
+    }
+
     /** @return array<int, string> record id → its label */
     public function labels(string $node): array
     {

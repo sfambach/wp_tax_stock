@@ -11,8 +11,10 @@ use TaxmodStock\Core\Table;
  * Reading is `taxmod/read-node` — one call per node, which is one query per table (CD-7). Writing is
  * `taxmod/write-data` (D-936): records only, one change number, all or nothing.
  *
- * ⚠️ One exception, {@see nodesOf()}: no ability says which node a record belongs to, and «Bezug» may point
- * at a record under any node of `Model`. Reading every node to find a label would be hundreds of reads.
+ * ⚠️ Exceptions, through the modeller's record repository (like {@see recordsMatching()} and {@see recordsOf()}):
+ * {@see nodesOf()} — no ability says which node a record belongs to, and «Bezug» may point at a record under any node of
+ * `Model`; reading every node to find a label would be hundreds of reads. {@see records()} — a few records of a node too
+ * large to read whole: the amounts node holds every price of the installation (4634 records, measured 2026-11-02).
  */
 final class ModelGateway
 {
@@ -143,6 +145,34 @@ final class ModelGateway
         }
 
         return $out;
+    }
+
+    /**
+     * Only these records with their values, in one query — for a few records of a node too large to read whole
+     * (the amounts: every price of the installation is one).
+     *
+     * @param list<int> $records
+     * @return Table|null null if the modeller does not offer it
+     */
+    public function records(array $records): ?Table
+    {
+        $repository = \Taxmod\WordPress\Persistence\WpdbRecordRepository::class;
+
+        if (! class_exists($repository) || ! method_exists($repository, 'valuesOfMany')) {
+            return null;
+        }
+
+        $out = [];
+
+        foreach ((new $repository())->valuesOfMany($records) as $id => $values) {
+            $out[(int) $id] = [];
+
+            foreach ($values as $value) {
+                $out[(int) $id][(int) $value->relationId][] = $value->value->rawValue();
+            }
+        }
+
+        return new Table($out);
     }
 
     /** @return array<int, string> child node id → name */

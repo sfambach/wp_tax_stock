@@ -43,6 +43,9 @@ final class InboundPage
     /** DHL events shown in a row's details, newest first. */
     private const EVENTS = 5;
 
+    /** Built once per request: it indexes every lot and line. */
+    private ?\TaxmodStock\Core\Ledger $ledger = null;
+
     public function __construct(private readonly InboundService $inbound = new InboundService())
     {
     }
@@ -386,7 +389,7 @@ final class InboundPage
         $stock  = $this->inbound->stock();
         $s      = $stock->structure();
         $lots   = $stock->table('lot');
-        $ledger = $stock->ledger();
+        $ledger = $this->ledger ??= $stock->ledger();
         $things = $stock->things();
         $places = $stock->places();
         $out    = [];
@@ -418,7 +421,18 @@ final class InboundPage
             . '<th style="width:8em;text-align:right">' . esc_html__('Gesamt', 'taxmod-stock') . '</th>'
             . '<th style="width:16em;text-align:right"></th></tr></thead><tbody>';
         $table     = $this->inbound->stock()->table('purchase');
-        $money     = $this->inbound->stock()->table('money');
+        $parts     = [];
+
+        foreach ($purchases as $purchase) {
+            foreach (['purchase_unit_price', 'purchase_total_price'] as $key) {
+                if ($s->hasField($key)) {
+                    $parts[] = (int) $table->first((int) $purchase, $s->field($key));
+                }
+            }
+        }
+
+        // Only this order's amounts: the whole amounts node is every price of the installation (Stefan 2026-11-02: «Versendet» slow).
+        $money     = $this->inbound->stock()->recordsOf('money', array_values(array_filter($parts)));
         $amountOf  = static function (?string $part) use ($money, $s): ?float {
             $amount = $part === null || $part === '' ? null : $money->first((int) $part, $s->field('money_amount'));
 

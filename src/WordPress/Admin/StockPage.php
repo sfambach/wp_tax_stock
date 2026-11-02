@@ -14,6 +14,8 @@ use TaxmodStock\Core\ReceiptChoice;
 use TaxmodStock\Core\SplitRow;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\StockList;
+use TaxmodStock\Core\Storno;
+use TaxmodStock\Core\Ledger;
 use TaxmodStock\Core\Things;
 use TaxmodStock\WordPress\StockService;
 
@@ -74,7 +76,7 @@ final class StockPage
             $html .= '<div class="taxmod-stock-pagetabs">' . $this->tabBar($tab, $list) . '</div>' . match ($tab) {
                 'material'  => $thing > 0 ? $this->thingView($thing) : $this->materialList($list),
                 'inventur'  => $this->inventoryForm(),
-                'verbrauch' => $this->consumptionForm($thing, absint($_GET['lot'] ?? 0)),
+                'verbrauch' => $this->consumptionForm($thing, absint($_GET['lot'] ?? 0), absint($_GET['place'] ?? 0)),
                 'lagerorte' => $this->locationList(false),
                 'lagerstruktur' => $this->locationList(true),
                 default     => absint($_GET['split'] ?? 0) > 0
@@ -116,7 +118,15 @@ final class StockPage
                 'inventur'     => $this->stock->bookInventory($this->inventoryRows(), $today, $this->title(__('Inventur', 'taxmod-stock'), $today)),
                 'lager'        => $this->stock->saveLager($thing, $this->lagerInput()),
                 'verschieben'  => $this->stock->moveThing($thing, absint($_POST['group'] ?? 0)),
-                'umbuchen'     => $this->stock->moveLot(absint($_POST['lot'] ?? 0), absint($_POST['location'] ?? 0)),
+                'umbuchen'     => $this->stock->moveLot(
+                    absint($_POST['lot'] ?? 0),
+                    absint($_POST['from'] ?? 0),
+                    absint($_POST['location'] ?? 0),
+                    sanitize_text_field(wp_unslash((string) ($_POST['quantity'] ?? ''))),
+                    $today,
+                    $this->title(__('Umbuchung', 'taxmod-stock'), $today)
+                ),
+                'storno'       => $this->stock->cancelTransfer(absint($_POST['transaction'] ?? 0), current_time('Y-m-d H:i:s'), wp_get_current_user()->display_name),
                 'wareneingang' => $this->stock->bookReceipt(
                     absint($_POST['order'] ?? 0),
                     $this->receiptChoices(),
@@ -145,12 +155,15 @@ final class StockPage
                     sanitize_text_field(wp_unslash((string) ($_POST['quantity'] ?? ''))),
                     absint($_POST['project'] ?? 0) ?: null,
                     $today,
-                    $this->title(__('Verbrauch', 'taxmod-stock'), $today)
+                    $this->title(__('Verbrauch', 'taxmod-stock'), $today),
+                    absint($_POST['place'] ?? 0) ?: null
                 ),
                 default        => throw StockError::nothingToBook(),
             };
             $this->remember('success', match ($kind) {
                 'umhaengen'      => __('Umgehängt: der Ort liegt jetzt dort, mit allem, was in ihm liegt.', 'taxmod-stock'),
+                'umbuchen'       => __('Umgebucht: ein Vorgang «Umbuchung» mit Abgang am alten und Zugang am neuen Ort.', 'taxmod-stock'),
+                'storno'         => __('Storniert: die Gegenbuchung hebt den Vorgang auf, beide bleiben im Protokoll.', 'taxmod-stock'),
                 'ort'            => __('Lagerort angelegt.', 'taxmod-stock'),
                 'verschieben'    => __('Verschoben: das Material steht jetzt in der neuen Gruppe, ihre weiteren Felder sind leer.', 'taxmod-stock'),
                 'nichteinlagern' => __('Abgeschlossen ohne Lager: kein Bestand, der Grund steht am Kauf.', 'taxmod-stock'),
@@ -165,7 +178,7 @@ final class StockPage
             $back = match ($kind) {
                 'verschieben'  => ['material', ['thing' => $thing, 'view' => 'daten']],
                 'lager'        => ['material', ['thing' => $thing, 'view' => 'lager']],
-                'umbuchen'     => ['material', ['thing' => $thing, 'view' => 'bestand']],
+                'umbuchen', 'storno' => ['material', ['thing' => $thing, 'view' => 'bestand']],
                 'wareneingang', 'aufteilen', 'zuordnen', 'nichteinlagern', 'einlagern' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
                 'umhaengen', 'ort' => ['lagerstruktur', []],
                 default        => ['material', $thing > 0 ? ['thing' => $thing, 'view' => 'bestand'] : []],
@@ -176,7 +189,7 @@ final class StockPage
                 'wareneingang', 'zuordnen', 'nichteinlagern', 'einlagern' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
                 'umhaengen', 'ort'  => ['lagerstruktur', []],
                 'aufteilen'         => ['wareneingang', ['order' => absint($_POST['order'] ?? 0), 'split' => absint($_POST['purchase'] ?? 0)]],
-                'lager', 'umbuchen' => ['material', ['thing' => $thing, 'view' => $kind === 'lager' ? 'lager' : 'bestand']],
+                'lager', 'umbuchen', 'storno' => ['material', ['thing' => $thing, 'view' => $kind === 'lager' ? 'lager' : 'bestand']],
                 // D-1073: refused because values would fall — named, nothing moved (his doubt 2026-11-01: «das verschieben ist problematisch»).
                 'verschieben'       => ['material', ['thing' => $thing, 'view' => 'daten']],
                 'verbrauch'         => ['verbrauch', ['thing' => $thing]],
@@ -344,19 +357,17 @@ final class StockPage
         );
     }
 
-    /** The places where a thing has a rest, by path and project. */
+    /** The places where a thing has a rest, by path and project; a lot may lie at several (D-1039). */
     private function placesOf(int $thing, \TaxmodStock\Core\Ledger $ledger): string
     {
-        $s      = $this->stock->structure();
-        $lots   = $this->stock->table('lot');
         $places = $this->stock->places();
         $out    = [];
 
         foreach ($ledger->lotsOf($thing) as $lot) {
-            $place = (int) $lots->first($lot, $s->field('lot_location'));
-
-            if ($place > 0 && $ledger->restOf($lot) > 0.0) {
-                $out[$place] = $places[$place] ?? '#' . $place;
+            foreach ($ledger->placesOf($lot) as $place => $quantity) {
+                if ($place > 0 && $quantity > 0.0) {
+                    $out[$place] = $places[$place] ?? '#' . $place;
+                }
             }
         }
 
@@ -376,13 +387,13 @@ final class StockPage
             $value    = $lots->first($lot, $s->field('lot_value'));
             $amount   = $value === null ? null : $money->first((int) $value, $s->field('money_amount'));
             $purchase = $lots->first($lot, $s->field('lot_purchase'));
-            $place    = $lots->first($lot, $s->field('lot_location'));
+            $place    = implode(', ', array_map(static fn (int $p): string => $places[$p] ?? '#' . $p, array_keys(array_filter($ledger->placesOf($lot), static fn (float $q): bool => $q > 0.0))));
 
             $html .= '<li>' . esc_html(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10))
                 . ' · ' . esc_html__('Rest', 'taxmod-stock') . ' ' . esc_html($this->number($ledger->restOf($lot)))
                 . ($amount === null ? '' : ' · ' . esc_html($amount) . ' ' . esc_html__('je Stück', 'taxmod-stock'))
                 . ($purchase === null ? ' · ' . esc_html__('Inventur', 'taxmod-stock') : ' · ' . esc_html__('Kauf', 'taxmod-stock') . ' #' . esc_html($purchase))
-                . ($place === null ? '' : ' · ' . esc_html($places[(int) $place] ?? '#' . $place)) . '</li>';
+                . ($place === '' ? '' : ' · ' . esc_html($place)) . '</li>';
         }
 
         return $html === '' ? '—' : '<ul style="margin:0">' . $html . '</ul>';
@@ -662,7 +673,8 @@ final class StockPage
     }
 
     /**
-     * D-997, tab «Bestand»: quantity, value and minimum on top, the lots below with their movements, «Umbuchen» and «Ausbuchen».
+     * D-997, tab «Bestand»: quantity, value and minimum on top, then where the lots lie — one row per lot and place, since
+     * an Umbuchung may move part of a lot (D-1039) — with «Umbuchen» and «Ausbuchen», and the Vorgänge of each lot below.
      */
     private function stockView(int $thing): string
     {
@@ -674,7 +686,7 @@ final class StockPage
         $record  = $this->stock->things()->lagerOf($thing);
         $min     = $record === null ? null : $this->stock->table('lager')->first($record, $s->field('lager_min'));
         $stock   = $ledger->stockOf($thing);
-        $moves   = $this->movements($ledger->lotsOf($thing));
+        $moves   = $this->movements($ledger->lotsOf($thing), $thing);
         $worth   = 0.0;
         $rows    = '';
 
@@ -682,18 +694,21 @@ final class StockPage
             $value    = $lots->first($lot, $s->field('lot_value'));
             $amount   = $value === null ? null : $money->first((int) $value, $s->field('money_amount'));
             $purchase = $lots->first($lot, $s->field('lot_purchase'));
-            $place    = (int) $lots->first($lot, $s->field('lot_location'));
-            $rest     = $ledger->restOf($lot);
-            $worth   += $amount === null ? 0.0 : $rest * (float) $amount;
+            $worth   += $amount === null ? 0.0 : $ledger->restOf($lot) * (float) $amount;
+            $where    = $ledger->placesOf($lot) ?: [$ledger->homeOf($lot) => 0.0];
+            $first    = true;
 
-            $rows .= '<tr><td>#' . esc_html((string) $lot) . '</td><td>' . esc_html($places[$place] ?? '—') . '</td><td>' . esc_html($this->number($rest)) . '</td>'
-                . '<td>' . esc_html($amount ?? '—') . '</td>'
-                . '<td>' . esc_html($purchase === null ? __('Inventur', 'taxmod-stock') : '#' . $purchase) . '</td>'
-                . '<td>' . esc_html(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10)) . '</td>'
-                . '<td style="white-space:nowrap">' . $this->formStart('umbuchen') . '<input type="hidden" name="thing" value="' . esc_attr((string) $thing) . '"><input type="hidden" name="lot" value="' . esc_attr((string) $lot) . '">'
-                . '<select name="location">' . $this->options($places, '', $place) . '</select> ' . get_submit_button(__('Umbuchen', 'taxmod-stock'), 'small', '', false) . '</form> '
-                . '<a class="button button-small" href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'verbrauch', 'thing' => $thing, 'lot' => $lot], admin_url('admin.php'))) . '">' . esc_html__('Ausbuchen', 'taxmod-stock') . '</a></td></tr>'
-                . '<tr><td></td><td colspan="6"><details><summary>' . esc_html__('Vorgänge', 'taxmod-stock') . '</summary>' . ($moves[$lot] ?? '—') . '</details></td></tr>';
+            foreach ($where as $place => $quantity) {
+                $rows .= '<tr><th scope="row" class="check-column"></th><td>' . ($first ? '#' . esc_html((string) $lot) : '') . '</td><td>' . esc_html($places[$place] ?? '—') . '</td><td>' . esc_html($this->number($quantity)) . '</td>'
+                    . '<td>' . ($first ? esc_html($amount ?? '—') : '') . '</td>'
+                    . '<td>' . ($first ? esc_html($purchase === null ? __('Inventur', 'taxmod-stock') : '#' . $purchase) : '') . '</td>'
+                    . '<td>' . ($first ? esc_html(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10)) : '') . '</td>'
+                    . '<td style="text-align:right;white-space:nowrap">' . ($quantity > 0.0 ? $this->transferDialog($thing, $lot, $place, $quantity, $places) : '')
+                    . ' <a class="button" href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'verbrauch', 'thing' => $thing, 'lot' => $lot, 'place' => $place], admin_url('admin.php'))) . '">' . esc_html__('Ausbuchen', 'taxmod-stock') . '</a></td></tr>';
+                $first = false;
+            }
+
+            $rows .= '<tr><th scope="row" class="check-column"></th><td></td><td colspan="6"><details><summary>' . esc_html__('Vorgänge', 'taxmod-stock') . '</summary>' . ($moves[$lot] ?? '—') . '</details></td></tr>';
         }
 
         $tile = static fn (string $label, string $value, string $tone): string => '<div style="flex:1;background:' . $tone . ';border-radius:6px;padding:10px 14px"><div style="color:#50575e">' . esc_html($label) . '</div><div style="font-size:1.6em;font-weight:600">' . esc_html($value) . '</div></div>';
@@ -703,28 +718,74 @@ final class StockPage
             . $tile(__('Wert', 'taxmod-stock'), $this->number($worth), '#edfaef')
             . $tile(__('Mindestbestand', 'taxmod-stock'), $min === null ? '—' : $min . ' ' . ($stock < (float) $min ? '✗' : '✓'), '#f6f7f7')
             . '</div>'
-            . ($rows === '' ? '<p>' . esc_html__('Kein Bestandsposten.', 'taxmod-stock') . '</p>' : '<table class="widefat striped"><thead><tr><th>' . esc_html__('Posten', 'taxmod-stock') . '</th><th>' . esc_html__('Ort', 'taxmod-stock') . '</th><th>'
-            . esc_html__('Menge', 'taxmod-stock') . '</th><th>' . esc_html__('Wert je Stück', 'taxmod-stock') . '</th><th>' . esc_html__('Kauf', 'taxmod-stock') . '</th><th>' . esc_html__('Eingang', 'taxmod-stock') . '</th><th></th></tr></thead><tbody>' . $rows . '</tbody></table>');
+            . ($rows === '' ? '<p>' . esc_html__('Kein Bestandsposten.', 'taxmod-stock') . '</p>' : ListPage::table([
+                [__('Posten', 'taxmod-stock'), '6em'], [__('Ort', 'taxmod-stock'), ''], [__('Menge', 'taxmod-stock'), '6em'], [__('Wert je Stück', 'taxmod-stock'), '8em'],
+                [__('Kauf', 'taxmod-stock'), '7em'], [__('Eingang', 'taxmod-stock'), '7em'],
+            ], $rows));
     }
 
     /**
-     * The movements per lot: date, kind and quantity of each line, read from the Vorgänge in one go (CD-7).
+     * D-1039: «Umbuchen» in the shared dialog — how much (all of it unless he says less) and to which place.
+     *
+     * @param array<int, string> $places
+     */
+    private function transferDialog(int $thing, int $lot, int $from, float $quantity, array $places): string
+    {
+        if (! method_exists(ListPage::class, 'dialogAction')) {
+            return '';
+        }
+
+        $body = '<input type="hidden" name="thing" value="' . esc_attr((string) $thing) . '"><input type="hidden" name="lot" value="' . esc_attr((string) $lot) . '">'
+            . '<input type="hidden" name="from" value="' . esc_attr((string) $from) . '">'
+            . '<label style="display:block">' . esc_html__('Menge', 'taxmod-stock') . '<br><input type="text" inputmode="decimal" name="quantity" style="width:7em" value="' . esc_attr(str_replace(',', '.', rtrim(rtrim(number_format($quantity, 3, '.', ''), '0'), '.'))) . '"></label>'
+            . '<label style="display:block;margin-top:.5em">' . esc_html__('Nach', 'taxmod-stock') . '<br><select name="location" style="width:100%">' . $this->options(array_diff_key($places, [$from => true]), '') . '</select></label>'
+            . '<p class="description">' . esc_html__('Bucht die Menge vom bisherigen Ort ab und am neuen zu, als Vorgang «Umbuchung». Weniger als alles teilt den Posten auf zwei Orte; «Stornieren» bei den Vorgängen nimmt es zurück.', 'taxmod-stock') . '</p>';
+
+        return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'
+            . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">' . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
+            . ListPage::dialogAction('taxmod-stock-transfer-' . $lot . '-' . $from, __('Umbuchen', 'taxmod-stock'), __('Umbuchen', 'taxmod-stock'), $body, 'booking', 'umbuchen', __('Umbuchen', 'taxmod-stock'))
+            . '</form>';
+    }
+
+    /** D-1036: «Stornieren» of a Vorgang, asked in the shared dialog; the Storno names who and when. */
+    private function stornoDialog(int $thing, int $deal, string $what): string
+    {
+        if (! method_exists(ListPage::class, 'dialogAction')) {
+            return '';
+        }
+
+        $body = '<input type="hidden" name="thing" value="' . esc_attr((string) $thing) . '"><input type="hidden" name="transaction" value="' . esc_attr((string) $deal) . '">'
+            . '<p style="margin:0">' . esc_html($what) . '</p><p class="description">' . esc_html__('Eine Gegenbuchung hebt den Vorgang auf; beide bleiben stehen und werden in den Listen ausgeblendet.', 'taxmod-stock') . '</p>';
+
+        return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'
+            . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">' . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
+            . ListPage::dialogAction('taxmod-stock-storno-' . $deal, __('Stornieren', 'taxmod-stock'), __('Vorgang stornieren', 'taxmod-stock'), $body, 'booking', 'storno', __('Stornieren', 'taxmod-stock'))
+            . '</form>';
+    }
+
+    /**
+     * The movements per lot: date, kind, place and quantity of each line, read from the Vorgänge in one go (CD-7). A Storno
+     * and what it cancels are left out (D-1036); an Umbuchung offers its own Storno.
      *
      * @param list<int> $lots
      * @return array<int, string> lot → its movements as a list
      */
-    private function movements(array $lots): array
+    private function movements(array $lots, int $thing): array
     {
         $s       = $this->stock->structure();
         $lines   = $this->stock->table('line');
         $deals   = $this->stock->table('transaction');
+        $places  = $this->stock->places();
         $kinds   = [
             $s->value('kind_receipt')     => __('Wareneingang', 'taxmod-stock'),
             $s->value('kind_consumption') => __('Verbrauch', 'taxmod-stock'),
             $s->value('kind_count')       => __('Inventur', 'taxmod-stock'),
-        ];
+        ] + ($s->hasValue('kind_transfer') ? [$s->value('kind_transfer') => __('Umbuchung', 'taxmod-stock')] : []);
         $wanted  = array_flip($lots);
+        $hidden  = (new Storno($s))->pairedLines($lines) + Ledger::reservationLines($s, $deals);
+        $where   = $s->hasField('line_location') ? $s->field('line_location') : null;
         $dealOf  = [];
+        $offered = [];
         $out     = [];
 
         foreach ($deals->ids() as $deal) {
@@ -736,14 +797,25 @@ final class StockPage
         foreach ($lines->ids() as $line) {
             $lot = (int) $lines->first($line, $s->field('line_lot'));
 
-            if (! isset($wanted[$lot])) {
+            if (! isset($wanted[$lot]) || isset($hidden[$line])) {
                 continue;
             }
 
-            $deal       = $dealOf[$line] ?? null;
+            $deal     = $dealOf[$line] ?? null;
+            $kind     = $deal === null ? 0 : (int) $deals->first($deal, $s->field('transaction_kind'));
+            $place    = $where === null ? 0 : (int) $lines->first($line, $where);
+            $transfer = $deal !== null && $s->hasValue('kind_transfer') && $kind === $s->value('kind_transfer');
+            // One Storno per Umbuchung, at its first line on this lot.
+            $storno   = $transfer && ! isset($offered[$deal]) ? ' ' . $this->stornoDialog($thing, $deal, (string) $deals->first($deal, $s->field('label'))) : '';
+
+            if ($transfer) {
+                $offered[$deal] = true;
+            }
+
             $out[$lot]  = ($out[$lot] ?? '') . '<li>' . esc_html($deal === null ? '—' : substr((string) $deals->first($deal, $s->field('transaction_date')), 0, 10))
-                . ' · ' . esc_html($deal === null ? '' : ($kinds[(int) $deals->first($deal, $s->field('transaction_kind'))] ?? ''))
-                . ' · ' . esc_html((string) $lines->first($line, $s->field('line_quantity'))) . '</li>';
+                . ' · ' . esc_html($kinds[$kind] ?? '')
+                . ($place > 0 ? ' · ' . esc_html($places[$place] ?? '#' . $place) : '')
+                . ' · ' . esc_html((string) $lines->first($line, $s->field('line_quantity'))) . $storno . '</li>';
         }
 
         return array_map(static fn (string $html): string => '<ul style="margin:4px 0 0">' . $html . '</ul>', $out);
@@ -1223,7 +1295,7 @@ final class StockPage
             . '<button type="submit" class="button button-primary" name="booking" value="ort">' . esc_html__('Anlegen', 'taxmod-stock') . '</button></p></form>';
     }
 
-    private function consumptionForm(int $preset, int $presetLot): string
+    private function consumptionForm(int $preset, int $presetLot, int $presetPlace = 0): string
     {
         $ledger = $this->stock->ledger();
         $labels = $this->stock->things()->all();
@@ -1243,6 +1315,12 @@ final class StockPage
             . '<p><label>' . esc_html__('Material', 'taxmod-stock') . ' <select name="thing" required>' . $this->options($have, '', $preset) . '</select></label></p>'
             . '<p><label>' . esc_html__('Menge', 'taxmod-stock') . ' <input type="text" inputmode="decimal" name="quantity" required style="width:6em"></label></p>'
             . '<p><label>' . esc_html__('Bestandsposten', 'taxmod-stock') . ' <select name="lot">' . $choice . '</select></label></p>'
+            // D-1039: «Ausbuchen» on a row of the Bestand tab takes from that row's place.
+            . ($presetPlace > 0 ? '<input type="hidden" name="place" value="' . esc_attr((string) $presetPlace) . '"><p class="description">' . esc_html(sprintf(
+                /* translators: %s: the place, by its path */
+                __('Ausgebucht wird am Ort %s.', 'taxmod-stock'),
+                $this->stock->places()[$presetPlace] ?? '#' . $presetPlace
+            )) . '</p>' : '')
             . '<p><label>' . esc_html__('Projekt (Satz-Id, optional)', 'taxmod-stock') . ' <input type="number" min="1" name="project" style="width:8em"></label></p>'
             . get_submit_button(__('Verbrauch buchen', 'taxmod-stock')) . '</form>';
     }

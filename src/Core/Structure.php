@@ -27,7 +27,7 @@ final class Structure
     ];
 
     /** Nodes the module uses when they are there: the choices of «Verwendung». */
-    private const OPTIONAL_NODES = ['lager_use', 'source', 'firm', 'base_units', 'prefixes', 'project'];
+    private const OPTIONAL_NODES = ['lager_use', 'source', 'firm', 'base_units', 'prefixes', 'project', 'sale'];
 
     /** Fields the module uses when they are there and leaves out when they are not. */
     private const OPTIONAL_FIELDS = [
@@ -48,6 +48,14 @@ final class Structure
         'purchase_not_stocked',
         // D-1030: the place a place sits in, whether it is a box, and the project a box belongs to.
         'location_parent', 'location_movable', 'location_project',
+        // D-1039: the place a Pos line moves at; without it a line sits where its lot came in («Lagerort» of the lot).
+        'line_location',
+        // D-1036: a line that cancels another one (Storno), pointing at it.
+        'line_reverses',
+        // D-1082: a place reserved for production; everything on it and below it is reserved.
+        'location_reserved',
+        // D-1083: the reservation's subject (project, sale, build run, repair), its deadline, and the material of a position.
+        'transaction_reference', 'transaction_deadline', 'line_thing',
     ];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];
@@ -56,6 +64,8 @@ final class Structure
     private const OPTIONAL_VALUES = [
         'currency_default', 'status_draft', 'status_cancelled', 'status_ordered',
         'test_ok', 'test_partial', 'test_maintenance', 'test_defect', 'condition_new', 'condition_untested',
+        // D-1039 «Umbuchung», D-1083 «Reservierung»: kinds of Vorgang.
+        'kind_transfer', 'kind_reservation',
     ];
 
     /**

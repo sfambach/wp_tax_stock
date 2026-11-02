@@ -67,6 +67,14 @@ final class Messages
             'not_a_draft'               => sprintf(__('Bestellung #%s steht nicht im passenden Status für diesen Schritt.', 'taxmod-stock'), $error->detail),
             /* translators: %s: the modeller's message */
             'would_drop'                => sprintf(__('Nicht verschoben: in der neuen Gruppe fehlen Felder, deren Werte dabei verloren gingen: %s. Erst die Werte leeren oder die Felder an der Gruppe anlegen.', 'taxmod-stock'), $error->detail),
+            /* translators: %s: record id of the lot */
+            'same_place'                => sprintf(__('Posten #%s liegt schon dort — bitte einen anderen Ort wählen.', 'taxmod-stock'), $error->detail),
+            /* translators: %s: lot and place, «lot@place» */
+            'not_enough_at'             => sprintf(__('So viel liegt dort nicht (Posten@Ort %s) — höchstens die Menge, die an diesem Ort liegt, umbuchen.', 'taxmod-stock'), $error->detail),
+            /* translators: %s: record id of the Vorgang */
+            'already_cancelled'         => sprintf(__('Vorgang #%s ist schon storniert oder selbst ein Storno.', 'taxmod-stock'), $error->detail),
+            /* translators: %s: record id of the Vorgang */
+            'not_cancellable'           => sprintf(__('Vorgang #%s lässt sich hier nicht stornieren.', 'taxmod-stock'), $error->detail),
             'model_refused'             => sprintf(__('Der Taxonomy Modeller hat die Buchung abgelehnt, nichts wurde geschrieben: %s', 'taxmod-stock'), $error->detail),
             default                     => $error->getMessage(),
         };

@@ -3,7 +3,7 @@
 namespace TaxmodStock\Core;
 
 /**
- * Turns a stock count, a goods receipt or a consumption into one change list for the modeller.
+ * Turns a stock count, a goods receipt, a consumption or an Umbuchung into one change list for the modeller.
  *
  * Every booking is one Vorgang with its Pos lines; a receipt or a count also creates the Bestandsposten the lines
  * name (D-956). A lot belongs to a thing of the tree, which is the material (D-995); a new thing is created in the
@@ -279,22 +279,65 @@ final class Bookings
     }
 
     /**
-     * A consumption: one line «−Menge» on the lot it is taken from.
+     * A consumption: one line «−Menge» on the lot it is taken from, at the place it is taken from (D-1039) when the
+     * lines carry a place.
      *
      * @return list<array<string, mixed>>
      */
-    public function consumption(int $lot, string $quantity, ?int $project, string $title): array
+    public function consumption(int $lot, string $quantity, ?int $project, string $title, ?int $place = null): array
     {
         $amount = Quantity::positive($quantity);
 
         $this->start();
-        $this->line($title, (string) $lot, '-' . $amount, null);
+        $this->line($title, (string) $lot, '-' . $amount, null, $place);
 
         $extra = $project === null || ! $this->structure->hasField('transaction_project')
             ? []
             : [(string) $this->structure->field('transaction_project') => (string) $project];
 
         return $this->finish($title, 'kind_consumption', $extra);
+    }
+
+    /**
+     * An Umbuchung (D-1039): one Vorgang, per row a line «−Menge» at the old place and «+Menge» at the new one — also
+     * when a whole lot moves. The lot keeps its «Lagerort» (where it came in); where it lies now is the sum of its lines.
+     * A Storno (D-1036) is the same with the places swapped and each line naming the line it cancels.
+     *
+     * @param list<TransferRow> $rows
+     * @return list<array<string, mixed>>
+     */
+    public function transfer(array $rows, string $title, Ledger $ledger, string $note = ''): array
+    {
+        $s = $this->structure;
+
+        if (! $s->hasField('line_location')) {
+            throw StockError::notConfigured('fields.line_location');
+        }
+
+        if ($rows === []) {
+            throw StockError::nothingToBook();
+        }
+
+        $this->start();
+
+        foreach ($rows as $row) {
+            $quantity = Quantity::positive($row->quantity);
+
+            if ($row->from === $row->to) {
+                throw StockError::samePlace($row->lot);
+            }
+
+            if ((float) $quantity > $ledger->restAt($row->lot, $row->from) + 0.0000001) {
+                throw StockError::notEnoughAt($row->lot, $row->from);
+            }
+
+            $this->line($title, (string) $row->lot, '-' . $quantity, null, $row->from, $row->reversesOut);
+            $this->line($title, (string) $row->lot, $quantity, null, $row->to, $row->reversesIn);
+        }
+
+        $extra = $note !== '' && $s->hasField('description') ? [(string) $s->field('description') => $note] : [];
+
+        return $this->finish($title, 'kind_transfer', $extra);
     }
 
     private function start(): void
@@ -371,7 +414,7 @@ final class Bookings
         return '@' . $ref;
     }
 
-    private function line(string $name, string $lot, string $quantity, ?string $counted): void
+    private function line(string $name, string $lot, string $quantity, ?string $counted, ?int $place = null, ?int $reverses = null): void
     {
         $s   = $this->structure;
         $ref = $this->ref('p');
@@ -384,6 +427,14 @@ final class Bookings
 
         if ($counted !== null) {
             $values[(string) $s->field('line_counted')] = $counted;
+        }
+
+        if ($place !== null && $place > 0 && $s->hasField('line_location')) {
+            $values[(string) $s->field('line_location')] = (string) $place;
+        }
+
+        if ($reverses !== null) {
+            $values[(string) $s->field('line_reverses')] = (string) $reverses;
         }
 
         $this->changes[] = ['op' => 'create_record', 'ref' => $ref, 'node' => $s->node('line')];

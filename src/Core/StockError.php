@@ -191,6 +191,30 @@ final class StockError extends \RuntimeException
         return new self('would_drop', $fields);
     }
 
+    /** D-1039: an Umbuchung needs another place than the one the goods lie at. */
+    public static function samePlace(int $lot): self
+    {
+        return new self('same_place', (string) $lot);
+    }
+
+    /** D-1039: an Umbuchung moves at most what lies at its place; the detail is «lot@place». */
+    public static function notEnoughAt(int $lot, int $place): self
+    {
+        return new self('not_enough_at', $lot . '@' . $place);
+    }
+
+    /** D-1036: a Vorgang is cancelled once; a Storno is not cancelled again. */
+    public static function alreadyCancelled(int $transaction): self
+    {
+        return new self('already_cancelled', (string) $transaction);
+    }
+
+    /** D-1036: only Vorgänge whose Storno the module can build are offered one. */
+    public static function notCancellable(int $transaction): self
+    {
+        return new self('not_cancellable', (string) $transaction);
+    }
+
     public static function modelRefused(string $message): self
     {
         return new self('model_refused', $message);

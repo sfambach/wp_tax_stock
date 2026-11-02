@@ -20,6 +20,8 @@ use TaxmodStock\Core\ReceiptPlan;
 use TaxmodStock\Core\SourceRow;
 use TaxmodStock\Core\SplitRow;
 use TaxmodStock\Core\StockError;
+use TaxmodStock\Core\Storno;
+use TaxmodStock\Core\TransferRow;
 use TaxmodStock\Core\Structure;
 use TaxmodStock\Core\Table;
 use TaxmodStock\Core\TestSettings;
@@ -468,7 +470,7 @@ final class StockService
 
     public function ledger(): Ledger
     {
-        return new Ledger($this->structure(), $this->table('lot'), $this->table('line'));
+        return new Ledger($this->structure(), $this->table('lot'), $this->table('line'), $this->table('transaction'));
     }
 
     /** @return array<int, string> record id → its label */
@@ -920,8 +922,12 @@ final class StockService
         return $this->model->write((new LagerChanges($this->structure()))->save($thing, $this->things()->lagerOf($thing), $input));
     }
 
-    /** @return array<string, mixed> */
-    public function bookConsumption(int $thing, ?int $lot, string $quantity, ?int $project, string $today, string $title): array
+    /**
+     * D-1039: a consumption takes from the place it names, else from where the lot lies — the place it came in first.
+     *
+     * @return array<string, mixed>
+     */
+    public function bookConsumption(int $thing, ?int $lot, string $quantity, ?int $project, string $today, string $title, ?int $place = null): array
     {
         $ledger = $this->ledger();
         $lot  ??= $ledger->proposedLot($thing);
@@ -930,19 +936,39 @@ final class StockService
             throw StockError::noLot($thing);
         }
 
-        return $this->model->write((new Bookings($this->structure(), $today))->consumption($lot, $quantity, $project, $title));
+        // A place where this lot does not lie (another lot picked in the form) falls back to where it does.
+        $place = $place !== null && $ledger->restAt($lot, $place) > 0.0 ? $place : null;
+        $place ??= $this->structure()->hasField('line_location') ? $this->takenFrom($lot, $ledger) : null;
+
+        return $this->model->write((new Bookings($this->structure(), $today))->consumption($lot, $quantity, $project, $title, $place));
+    }
+
+    /** Where a consumption takes from when no place is named: where the lot came in if something lies there, else where most lies. */
+    private function takenFrom(int $lot, Ledger $ledger): ?int
+    {
+        $places = array_filter($ledger->placesOf($lot), static fn (float $q, int $place): bool => $q > 0.0 && $place > 0, ARRAY_FILTER_USE_BOTH);
+
+        if ($places === []) {
+            return null;
+        }
+
+        if (isset($places[$ledger->homeOf($lot)])) {
+            return $ledger->homeOf($lot);
+        }
+
+        arsort($places);
+
+        return (int) array_key_first($places);
     }
 
     /**
-     * «Umbuchen»: the whole lot moves to another place. ⚠️ INFERRED: D-997 names the button, not whether part of a
-     * lot can move; a part would need a lot of its own and is left for when he asks.
+     * «Umbuchen» (D-1039): a quantity of a lot from the place it lies at to another, as a Vorgang «Umbuchung» with the
+     * lines «− old place, + new place» — also when the whole lot moves. Replaces writing the lot's «Lagerort» (0.10.x).
      *
      * @return array<string, mixed>
      */
-    public function moveLot(int $lot, int $location): array
+    public function moveLot(int $lot, int $from, int $location, string $quantity, string $today, string $title): array
     {
-        $s = $this->structure();
-
         if (! $this->table('lot')->has($lot)) {
             throw StockError::noLot($lot);
         }
@@ -951,7 +977,24 @@ final class StockService
             throw StockError::notALocation($location);
         }
 
-        return $this->model->write([['op' => 'set_values', 'record' => $lot, 'values' => [(string) $s->field('lot_location') => (string) $location]]]);
+        return $this->model->write((new Bookings($this->structure(), $today))->transfer([new TransferRow($lot, $from, $location, $quantity)], $title, $this->ledger()));
+    }
+
+    /**
+     * D-1036: an Umbuchung taken back as a Storno — the goods go back where they lay; who did it and when stand in the
+     * Storno's description and date.
+     *
+     * @return array<string, mixed>
+     */
+    public function cancelTransfer(int $deal, string $now, string $who): array
+    {
+        $s     = $this->structure();
+        $deals = $this->table('transaction');
+        $rows  = (new Storno($s))->transferRows($deal, $deals, $this->table('line'), $this->ledger());
+        /* translators: %s: the name of the Vorgang taken back */
+        $title = sprintf(__('Storno: %s', 'taxmod-stock'), (string) ($deals->first($deal, $s->field('label')) ?? '#' . $deal));
+
+        return $this->model->write((new Bookings($s, $now))->transfer($rows, $title, $this->ledger(), $who . ', ' . $now));
     }
 
     /** D-1027: purchasing — demand, source, order per supplier. */

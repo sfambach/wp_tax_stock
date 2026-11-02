@@ -3,9 +3,10 @@
 namespace TaxmodStock\Core;
 
 /**
- * What lies at each storage place: the lots with a rest and their materials (design 2, «Lager (Stammdaten)»).
+ * What lies at each storage place: the lots with a rest there and their materials (design 2, «Lager (Stammdaten)»).
  *
- * A lot without a place is counted under 0, so nothing in stock goes missing from the overview.
+ * A lot may lie at several places since the Umbuchung moves parts of it (D-1039, D-1082); it counts at each. What lies at
+ * no known place is counted under 0, so nothing in stock goes missing from the overview.
  */
 final class LocationStock
 {
@@ -21,19 +22,17 @@ final class LocationStock
             $out[$id] = ['name' => $name, 'lots' => 0, 'things' => []];
         }
 
-        foreach ($lots->ids() as $lot) {
-            if ($ledger->restOf($lot) <= 0.0) {
-                continue;
-            }
-
-            $place = (int) $lots->first($lot, $s->field('lot_location'));
-            $place = isset($out[$place]) ? $place : 0;
-            $out[$place] ??= ['name' => '', 'lots' => 0, 'things' => []];
-            $out[$place]['lots']++;
+        foreach ($ledger->stockByPlace() as $lot => $places) {
             $thing = (int) $lots->first($lot, $s->field('lot_thing'));
 
-            if ($thing > 0 && ! in_array($thing, $out[$place]['things'], true)) {
-                $out[$place]['things'][] = $thing;
+            foreach (array_keys($places) as $place) {
+                $place = isset($out[$place]) ? $place : 0;
+                $out[$place] ??= ['name' => '', 'lots' => 0, 'things' => []];
+                $out[$place]['lots']++;
+
+                if ($thing > 0 && ! in_array($thing, $out[$place]['things'], true)) {
+                    $out[$place]['things'][] = $thing;
+                }
             }
         }
 

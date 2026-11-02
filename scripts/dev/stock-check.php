@@ -27,6 +27,7 @@ use TaxmodStock\Core\ReceiptChoice;
 use TaxmodStock\Core\Purpose;
 use TaxmodStock\Core\SplitRow;
 use TaxmodStock\Core\StockError;
+use TaxmodStock\WordPress\Admin\LogisticsShell;
 use TaxmodStock\WordPress\Admin\StockPage;
 use TaxmodStock\WordPress\StockService;
 
@@ -377,6 +378,10 @@ $pruefe(str_contains($html, 'taxmod-record-tree') && str_contains($html, 'data-t
 $pruefe(str_contains($html, '<h2 style="margin-top:0">__Kiste') && str_contains($html, 'Lager › __Schrank › __Schublade 2') && str_contains($html, 'Umlagerungen') && str_contains($html, 'taxmod-stock-move-place-' . $kiste) && str_contains($html, 'taxmod-stock-new-place-' . $kiste), 'Lagerstruktur: the place on the right with where it lies, its moves and its actions');
 $pruefe(str_contains($html, 'data-taxmod-drop-record="0"') && str_contains($html, 'taxmod-stock-drop-place') && str_contains($html, 'name="return_ort" value="' . $kiste . '"'), 'Lagerstruktur: the top level takes a drop, a drop asks first, the forms come back to the place');
 $pruefe(! str_contains($html, 'name="parent[' . $kiste . ']" value="' . $kiste . '"'), 'Verschieben does not offer the box itself');
+$parts = (new StockPage())->parts();
+$pruefe(str_contains($parts['side'], 'taxmod-record-tree') && str_contains($parts['side'], 'data-taxmod-drop-record="0"') && str_contains($parts['side'], 'for="taxmod-stock-new-place-0"') && ! str_contains($parts['main'], 'data-taxmod-pick=') && str_contains($parts['main'], 'id="taxmod-stock-new-place-0"'), 'D-1092: the tree goes under the navigation, the right side is only the place; «Neuer Lagerort» opens its dialog from there');
+$framed = LogisticsShell::wrap(StockPage::PAGE, $parts['main'], $parts['side']);
+$pruefe(str_contains($framed, 'class="taxmod-shell has-side"') && strpos($framed, 'class="taxmod-shell-side"') > strpos($framed, 'class="taxmod-shell-nav"') && strpos($framed, 'class="taxmod-shell-side"') < strpos($framed, 'class="taxmod-shell-main"'), 'D-1092: in the frame the tree is a second box in the navigation column');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'lagerorte', 'ort' => $schrank];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'data-taxmod-stock-lot="' . $posten . ':' . $kiste . ':' . rtrim(rtrim(number_format($menge, 3, '.', ''), '0'), '.') . ':' . $bc . '"') && str_contains($html, '__Schublade 2 › __Kiste') && str_contains($html, 'BC547C'), 'Lagerorte: what lies at the place and below it, each row draggable onto a place');

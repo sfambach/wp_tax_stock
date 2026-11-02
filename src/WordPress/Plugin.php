@@ -74,14 +74,18 @@ final class Plugin
      */
     public function registerMenu(): void
     {
-        $page = static fn (string $slug, callable $render): \Closure => static fn () => print LogisticsShell::wrap($slug, $render());
+        // A page hands back its HTML, or (D-1092) `side` and `main` when it shows a box under the navigation.
+        $page = static fn (string $slug, callable $render): \Closure => static function () use ($slug, $render): void {
+            $out = $render();
+            print is_array($out) ? LogisticsShell::wrap($slug, $out['main'], $out['side']) : LogisticsShell::wrap($slug, $out);
+        };
 
         $hooks = [
             add_submenu_page(self::PARENT, __('Logistik', 'taxmod-stock'), __('Logistik', 'taxmod-stock'), 'manage_options', CockpitPage::PAGE, $page(CockpitPage::PAGE, static fn (): string => (new CockpitPage())->render())),
             // D-1027: demand, source, order per supplier — he orders at the shop himself.
             add_submenu_page(self::PARENT, __('Einkauf', 'taxmod-stock'), __('Einkauf', 'taxmod-stock'), 'manage_options', PurchasePage::PAGE, $page(PurchasePage::PAGE, static fn (): string => (new PurchasePage())->render())),
             add_submenu_page(self::PARENT, __('Wareneingang', 'taxmod-stock'), __('Wareneingang', 'taxmod-stock'), 'manage_options', self::MENU, $page(self::MENU, static fn (): string => (new InboundPage())->render())),
-            add_submenu_page(self::PARENT, __('Lager', 'taxmod-stock'), __('Lager', 'taxmod-stock'), 'manage_options', StockPage::PAGE, $page(StockPage::PAGE, static fn (): string => (new StockPage())->render())),
+            add_submenu_page(self::PARENT, __('Lager', 'taxmod-stock'), __('Lager', 'taxmod-stock'), 'manage_options', StockPage::PAGE, $page(StockPage::PAGE, static fn (): array => (new StockPage())->parts())),
             // D-1085: Logistik › Einstellungen › Grundeinstellungen, inside the navigation.
             add_submenu_page(self::PARENT, __('Grundeinstellungen', 'taxmod-stock'), __('Grundeinstellungen', 'taxmod-stock'), 'manage_options', SettingsPage::PAGE, $page(SettingsPage::PAGE, static fn (): string => (new SettingsPage())->render())),
         ];

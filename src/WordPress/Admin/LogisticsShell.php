@@ -97,19 +97,24 @@ final class LogisticsShell
         return $items;
     }
 
-    /** Puts a page of the stock interface into the frame; a page outside it comes back unchanged. */
-    public static function wrap(string $page, string $html): string
+    /**
+     * Puts a page of the stock interface into the frame; a page outside it comes back unchanged. `$side` is what the page
+     * shows under the navigation, in its own box of the same width (D-1092); most pages have none.
+     */
+    public static function wrap(string $page, string $html, string $side = ''): string
     {
         $navigation = self::navigation();
         $tab        = sanitize_key((string) ($_GET['tab'] ?? ''));
         $active     = $navigation->active($page, $tab, $page === ModulePage::PAGE ? ModulePage::requested() : '');
 
         if ($active === null) {
-            return $html;
+            return $side . $html;
         }
 
-        return self::style() . (self::isFullscreen() ? self::fullscreenStyle() : '') . '<div class="taxmod-shell"><nav class="taxmod-shell-nav" aria-label="' . esc_attr__('Logistik', 'taxmod-stock') . '">'
-            . self::menu($navigation, $active) . '</nav><div class="taxmod-shell-main">' . $html . '</div></div>';
+        return self::style() . (self::isFullscreen() ? self::fullscreenStyle() : '') . '<div class="taxmod-shell' . ($side === '' ? '' : ' has-side') . '">'
+            . '<div class="taxmod-shell-column"><nav class="taxmod-shell-nav" aria-label="' . esc_attr__('Logistik', 'taxmod-stock') . '">'
+            . self::menu($navigation, $active) . '</nav>' . ($side === '' ? '' : '<div class="taxmod-shell-side">' . $side . '</div>')
+            . '</div><div class="taxmod-shell-main">' . $html . '</div></div>';
     }
 
     /** @param array{area: string, item: string} $active */
@@ -148,7 +153,7 @@ final class LogisticsShell
     private static function fullscreenStyle(): string
     {
         return '<style>#wpadminbar,#adminmenumain,#wpfooter{display:none}html.wp-toolbar{padding-top:0}#wpcontent,#wpfooter{margin-left:0}'
-            . '#wpcontent{padding-left:20px}.taxmod-shell-nav{top:10px}</style>';
+            . '#wpcontent{padding-left:20px}.taxmod-shell-column{top:10px}.taxmod-shell.has-side .taxmod-shell-column{height:calc(100vh - 20px)}</style>';
     }
 
     /**
@@ -166,7 +171,8 @@ final class LogisticsShell
         // The current item is marked by weight and a bar, not by colour alone (design 29).
         return '<style>'
             . '.taxmod-shell{display:grid;grid-template-columns:200px minmax(0,1fr);gap:20px;margin-top:10px}'
-            . '.taxmod-shell-nav{background:#fff;border:1px solid #c3c4c7;padding:8px 0;align-self:start;position:sticky;top:42px}'
+            . '.taxmod-shell-column{align-self:start;position:sticky;top:42px;display:flex;flex-direction:column;gap:12px;min-width:0}'
+            . '.taxmod-shell-nav{background:#fff;border:1px solid #c3c4c7;padding:8px 0;flex:none}'
             . '.taxmod-shell-title{margin:0 12px 6px;font-weight:600;font-size:14px}'
             . '.taxmod-shell-nav ul{margin:0;list-style:none}.taxmod-shell-nav li{margin:0}'
             . '.taxmod-shell-nav a{display:block;padding:5px 12px;text-decoration:none;border-left:3px solid transparent}'
@@ -179,7 +185,42 @@ final class LogisticsShell
             . '.taxmod-shell-main{overflow-x:auto}.taxmod-shell-main>.wrap{margin-top:0}'
             // The narrower column leaves fixed layout too little room for a header without a width.
             . '.taxmod-shell-main .wp-list-table{table-layout:auto}'
-            . '@media (max-width:782px){.taxmod-shell{grid-template-columns:1fr}.taxmod-shell-nav{position:static}}'
+            . self::sideStyle()
+            . '@media (max-width:782px){.taxmod-shell{grid-template-columns:1fr}.taxmod-shell-column{position:static}.taxmod-shell.has-side .taxmod-shell-column{height:auto}.taxmod-shell-side .taxmod-chooser-tree{max-height:50vh}}'
             . '</style>';
+    }
+
+    /**
+     * D-1092: the page's box under the navigation runs to the bottom of the window and scrolls inside; in the modeller's
+     * tree only the frame changes here — its rows, folding and highlight stay as the modeller draws them. In the frame of
+     * another page (html.taxmod-in-frame) the navigation is hidden and the box stands above the content.
+     */
+    private static function sideStyle(): string
+    {
+        $css = '.taxmod-shell.has-side .taxmod-shell-column{height:calc(100vh - 52px)}'
+            . '.taxmod-shell-side{flex:1 1 auto;min-height:16em;display:flex;flex-direction:column;background:#fff;border:1px solid #c3c4c7;padding:8px 0 0;overflow:hidden}'
+            . '.taxmod-shell-side>*{flex:none}'
+            . '.taxmod-shell-side>.taxmod-stock-places{flex:1 1 auto;min-height:0;min-width:0;display:flex;flex-direction:column}'
+            . '.taxmod-stock-places-head{display:flex;align-items:center;justify-content:space-between;gap:6px;margin:0 8px 6px 0}'
+            . '.taxmod-stock-places-head{flex-wrap:wrap;padding-left:12px}.taxmod-stock-places-head .taxmod-shell-title{margin:0}'
+            . '.wp-core-ui .taxmod-stock-places-head .button-small{padding:0 6px;font-size:12px;white-space:nowrap}'
+            . '.taxmod-stock-places-top{margin:0 8px 4px 12px;padding:3px 6px;border:1px dashed #c3c4c7;border-radius:3px;color:#50575e;font-size:12px}'
+            . '.taxmod-shell-side .taxmod-record-tree,.taxmod-shell-side .taxmod-record-tree>.taxmod-chooser{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;width:100%;min-width:0}'
+            . '.taxmod-shell-side .taxmod-chooser-tree{flex:1 1 auto;min-height:0;max-height:none;overflow-x:hidden;overflow-y:auto;border:0;border-top:1px solid #dcdcde;border-radius:0;padding:0;margin:0}'
+            . '.taxmod-shell-side .taxmod-tree-search{padding:6px 8px}.taxmod-shell-side .taxmod-tree-filter{min-width:0;width:100%}'
+            . '.taxmod-shell-side .taxmod-tree-row{padding:1px 4px}'
+            . '.taxmod-shell-side .taxmod-tree-fold-box{width:1.1em}'
+            . '.taxmod-shell-side .taxmod-chooser-row{display:flex;min-width:0;max-width:100%}'
+            . '.taxmod-shell-side .taxmod-tree-node{min-width:0;overflow:hidden}'
+            . '.taxmod-shell-side .taxmod-tree-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+            . 'html.taxmod-in-frame .taxmod-shell.has-side .taxmod-shell-column{position:static;height:auto;margin-bottom:16px}'
+            . 'html.taxmod-in-frame .taxmod-shell-side .taxmod-chooser-tree{max-height:40vh}';
+
+        // A deep tree in a narrow box: each level indents less than the modeller's 1.4em (its width stands inline per row).
+        for ($depth = 1; $depth <= 16; $depth++) {
+            $css .= '.taxmod-shell-side .taxmod-tree-row[data-depth="' . $depth . '"]>.taxmod-tree-indent{width:' . ($depth * 0.8) . 'em!important}';
+        }
+
+        return $css;
     }
 }

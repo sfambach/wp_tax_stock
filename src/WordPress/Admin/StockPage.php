@@ -57,11 +57,38 @@ final class StockPage
     public const THING_NODES  = 'taxmod_stock_thing_nodes';
     public const THING_BRANCH = 'taxmod_stock_thing_branch';
 
+    /** What {@see parts()} puts beside the navigation; filled while the page is drawn. */
+    private string $side = '';
+
     public function __construct(private readonly StockService $stock = new StockService())
     {
     }
 
+    /**
+     * The page alone, for a caller without the logistics frame: what the frame shows beside the navigation stands above it.
+     */
     public function render(): string
+    {
+        $parts = $this->parts();
+
+        return $parts['side'] . $parts['main'];
+    }
+
+    /**
+     * D-1092: the page split for the logistics frame — `side` goes into the left column under the navigation (the place
+     * tree on «Lagerorte» and «Lagerstruktur», empty elsewhere), `main` is the page.
+     *
+     * @return array{side: string, main: string}
+     */
+    public function parts(): array
+    {
+        $this->side = '';
+        $main       = $this->main();
+
+        return ['side' => $this->side, 'main' => $main];
+    }
+
+    private function main(): string
     {
         $tab  = sanitize_key((string) ($_GET['tab'] ?? self::TABS[0]));
         $tab  = in_array($tab, self::TABS, true) ? $tab : self::TABS[0];
@@ -1554,14 +1581,31 @@ final class StockPage
             default      => $this->placeStock($place, $tree),
         };
 
-        return '<div class="taxmod-stock-split" style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">'
-            . '<div style="flex:0 1 24em;max-width:100%;min-width:16em;overflow-x:auto">'
-            . ($edit ? '<div style="text-align:right;margin-bottom:8px">' . $this->newPlaceDialog(0, $tab) . '</div>'
-                . '<div data-taxmod-drop-record="0" style="padding:4px 6px;border:1px dashed #c3c4c7;border-radius:3px;margin-bottom:4px;color:#50575e">'
-                . esc_html__('— oberste Ebene —', 'taxmod-stock') . '</div>' : '')
-            . $left . '</div>'
-            . '<div style="flex:1 1 30em;min-width:0">' . $right . '</div></div>'
+        // D-1092: the tree is the left column's second box, under the navigation; the right side is only the place.
+        $this->side = '<div class="taxmod-stock-places">'
+            . '<div class="taxmod-stock-places-head"><p class="taxmod-shell-title">' . esc_html__('Lagerorte', 'taxmod-stock') . '</p>'
+            . ($edit ? '<label class="button button-small" for="taxmod-stock-new-place-0">' . esc_html__('+ Neuer Lagerort', 'taxmod-stock') . '</label>' : '') . '</div>'
+            . ($edit ? '<div class="taxmod-stock-places-top" data-taxmod-drop-record="0">' . esc_html__('— oberste Ebene —', 'taxmod-stock') . '</div>' : '')
+            . $left . '</div>' . $this->placeTreeScript();
+
+        return '<div class="taxmod-stock-split">' . $right . '</div>'
+            // The opener of «Neuer Lagerort» stands in the tree's box; its dialog stays here, outside the sticky column.
+            . ($edit ? '<div class="taxmod-stock-drop-dialogs">' . $this->newPlaceDialog(0, $tab) . '</div>' : '')
             . $this->dropDialogs($tab, $place, $tree);
+    }
+
+    /**
+     * D-1092: in the narrow column a long name ends in «…» and shows whole on hover; the chosen place is scrolled into view
+     * inside the tree's box, not the page.
+     */
+    private function placeTreeScript(): string
+    {
+        return '<script>(function(){function run(){var box=document.querySelector(".taxmod-stock-places");if(!box){return;}'
+            . 'box.querySelectorAll(".taxmod-tree-label").forEach(function(l){var row=l.closest(".taxmod-tree-row");if(row){row.title=row.textContent.trim();}});'
+            . 'var on=box.querySelector(".taxmod-chooser-row input[type=radio]:checked"),list=box.querySelector(".taxmod-chooser-tree");if(!on||!list){return;}'
+            . 'var row=on.closest(".taxmod-tree-row"),r=row.getBoundingClientRect(),l=list.getBoundingClientRect(),head=box.querySelector(".taxmod-tree-search"),top=l.top+(head?head.offsetHeight:0);'
+            . 'if(r.top<top||r.bottom>l.bottom){list.scrollTop+=r.top-top-(l.bottom-top)/3;}}'
+            . 'if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",run);}else{run();}})();</script>';
     }
 
     /**

@@ -1954,10 +1954,10 @@ final class StockPage
         $body     = '<input type="hidden" name="new_parent" value="' . esc_attr((string) $parent) . '">'
             . '<label style="display:block">' . esc_html__('Name', 'taxmod-stock') . '<br><input type="text" name="name" style="width:100%" required></label>'
             // D-1123: a kind decides whether the place moves and brings its parts along (Alex: nine drawers).
-            . ($types === [] ? '' : '<label style="display:block;margin-top:.5em">' . esc_html__('Platzart', 'taxmod-stock') . '<br><select name="place_type" style="width:100%">' . $this->options($types, '—') . '</select></label>')
+            . ($types === [] ? '' : '<div style="margin-top:.5em">' . esc_html__('Platzart', 'taxmod-stock') . '<br>' . $this->recordChoice('place_type', 'location_type', $types) . '</div>')
             . '<label style="display:block;margin-top:.5em"><input type="checkbox" name="movable" value="1"> ' . esc_html($types === [] ? __('beweglich (Kiste, Karton)', 'taxmod-stock') : __('beweglich (Kiste, Karton) — ohne Platzart', 'taxmod-stock')) . '</label>'
             . ($s->hasField('location_reserved') ? '<label style="display:block"><input type="checkbox" name="reserved" value="1"> ' . esc_html__('reserviert für Produktion', 'taxmod-stock') . '</label>' : '')
-            . ($projects === [] ? '' : '<label style="display:block;margin-top:.5em">' . esc_html__('Projekt', 'taxmod-stock') . '<br><select name="project" style="width:100%">' . $this->options($projects, '—') . '</select></label>');
+            . ($projects === [] ? '' : '<div style="margin-top:.5em">' . esc_html__('Projekt', 'taxmod-stock') . '<br>' . $this->recordChoice('project', 'project', $projects) . '</div>');
 
         return $this->formStart('ort') . $this->returnFields($tab, $parent)
             . ListPage::dialogAction(
@@ -1987,6 +1987,24 @@ final class StockPage
         return $this->formStart('lagerstruktur') . $this->returnFields('lagerstruktur', $place)
             . ListPage::dialogAction('taxmod-stock-copy-place-' . $place, __('Kopieren', 'taxmod-stock'), __('Lagerort kopieren', 'taxmod-stock'), $body, 'booking', 'ortkopieren-' . $place, __('Kopieren', 'taxmod-stock'))
             . '</form>';
+    }
+
+    /**
+     * The modeller's record chooser for one value — the same everywhere (his rule 2026-11-03: «tree chooser bzw wenn es nicht
+     * hierarchich ist selct feld … beides mit suchfield genormt über das ganze projekt»); a plain select only without the modeller.
+     *
+     * @param array<int, string> $fallback
+     */
+    private function recordChoice(string $name, string $node, array $fallback): string
+    {
+        $s      = $this->stock->structure();
+        $choice = (string) apply_filters('taxmod_record_chooser', '', [
+            'name'        => $name,
+            'node'        => $s->node($node),
+            'label_field' => $s->field('label'),
+        ]);
+
+        return $choice !== '' ? $choice : '<select name="' . esc_attr($name) . '" style="width:100%">' . $this->options($fallback, '—') . '</select>';
     }
 
     /** D-1090: «Verschieben» — the new place chosen in the same tree, the place itself and what lies in it left out. */

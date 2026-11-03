@@ -1667,37 +1667,33 @@ final class StockPage
     {
         $back = add_query_arg(['page' => self::PAGE, 'tab' => 'lagerstruktur', 'ort' => $place], admin_url('admin.php'));
 
-        if (! empty($_GET['bearbeiten'])) {
-            $form = (string) apply_filters('taxmod_record_editor', '', $place, $back);
-
-            return $this->placeHead($place, $tree) . ($form === ''
-                ? '<p><a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $place], admin_url('admin.php'))) . '">' . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a></p>'
-                : $form . '<p><a href="' . esc_url($back) . '">' . esc_html__('Abbrechen', 'taxmod-stock') . '</a></p>');
-        }
-
         $below = $tree->withAllBelow($place);
         $all   = array_sum(array_map(static fn (int $p): int => $rows[$p]['lots'] ?? 0, $below));
         $flags = $this->stock->reservedPlaces();
+        // His word 2026-11-03 (D-1122): «lager struktur unter einstellung gleich die einstellungen/details des platzes zeigt nicht
+        // den bestand» — the place's own fields open at once; what lies there belongs to «Lagerorte».
+        $form  = (string) apply_filters('taxmod_record_editor', '', $place, $back);
+        $label = (string) apply_filters('taxmod_label_button', '', $tree->isMovable($place) ? 'K' : 'O', $place,
+            (string) (array_reverse(explode(' › ', $tree->pathOf($place)))[0]), $tree->parentOf($place) > 0 ? $tree->pathOf($tree->parentOf($place)) : '');
         $facts = [
             [__('Beweglich (Kiste, Karton)', 'taxmod-stock'), $tree->isMovable($place) ? __('ja', 'taxmod-stock') : __('nein', 'taxmod-stock')],
-            [__('Posten hier', 'taxmod-stock'), (string) ($rows[$place]['lots'] ?? 0)],
-            [__('Posten mit Inhalt', 'taxmod-stock'), (string) $all],
             [__('Unterorte', 'taxmod-stock'), (string) (count($below) - 1)],
         ];
         $table = '';
 
-        foreach ($facts as [$label, $value]) {
-            $table .= '<tr><th scope="row" style="width:14em">' . esc_html($label) . '</th><td>' . esc_html($value) . '</td></tr>';
+        foreach ($facts as [$name, $value]) {
+            $table .= '<tr><th scope="row" style="width:14em">' . esc_html($name) . '</th><td>' . esc_html($value) . '</td></tr>';
         }
 
         $html = $this->placeHead($place, $tree)
             . '<div class="taxmod-stock-place-actions" style="text-align:right;margin-bottom:12px">'
-            . '<a class="button" href="' . esc_url(add_query_arg('bearbeiten', '1', $back)) . '">' . esc_html__('Bearbeiten', 'taxmod-stock') . '</a> '
+            . ($form === '' ? '<a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $place], admin_url('admin.php'))) . '">' . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a> ' : '')
             . $this->movePlaceDialog($place, $tree) . ' '
             . $this->newPlaceDialog($place, 'lagerstruktur') . ' '
             . $this->formStart('lagerstruktur') . $this->returnFields('lagerstruktur', $place)
-            . $this->reserveDialog($place, $flags->isFlagged($place), $all) . '</form></div>'
-            . '<table class="widefat striped" style="max-width:40em">' . $table . '</table>';
+            . $this->reserveDialog($place, $flags->isFlagged($place), $all) . '</form>'
+            . ($label === '' ? '' : ' ' . $label) . '</div>'
+            . ($form === '' ? '<table class="widefat striped" style="max-width:40em">' . $table . '</table>' : $form);
 
         if ($tree->isMovable($place) && $this->stock->relocates()) {
             $moves = $this->stock->relocationsOf($place);

@@ -69,14 +69,15 @@ final class LogisticsShell
                 $item('places', __('Lagerorte', 'taxmod-stock'), StockPage::PAGE, 'lagerorte'),
             ]],
             ['key' => 'outbound', 'label' => __('Warenausgang', 'taxmod-stock'), 'items' => self::modules('outbound')],
-            // His word 2026-11-03: «Würde menü druck machen dann unterpunkte aufträge, etiketten, ...» — the modeller announces the pages (D-1115).
-            ['key' => 'print', 'label' => __('Druck', 'taxmod-stock'), 'items' => self::modules('print')],
             // His word 2026-11-01: «einen Punkt Einstellung … die API-Konfiguration, die Grundeinstellung und ja, die Lagerstruktur».
             ['key' => 'settings', 'label' => __('Einstellungen', 'taxmod-stock'), 'items' => [
                 // D-1085: the business settings inside the navigation; the technical structure stays on the modeller's Configuration.
                 $item('basics', __('Grundeinstellungen', 'taxmod-stock'), SettingsPage::PAGE),
                 $item('structure', __('Lagerstruktur', 'taxmod-stock'), StockPage::PAGE, 'lagerstruktur'),
                 ...self::modules('settings'),
+                // His words 2026-11-03: «pack mal das menü drucken unter einstellungen», «warum hat das nur zwei ebenen», «kannst du
+                // das so bauen das es n ebenen zulässt» — an item's `path` puts it any depth below its area (D-1121).
+                ...array_map(static fn (array $item): array => ['path' => [__('Druck', 'taxmod-stock'), ...$item['path']]] + $item, self::modules('print')),
             ]],
         ]);
     }
@@ -92,7 +93,7 @@ final class LogisticsShell
 
         foreach (ModulePage::all() as $module) {
             if ($module['area'] === $area) {
-                $items[] = ['key' => 'module-' . sanitize_key($module['slug']), 'label' => $module['label'], 'page' => ModulePage::PAGE, 'tab' => '', 'module' => $module['slug']];
+                $items[] = ['key' => 'module-' . sanitize_key($module['slug']), 'label' => $module['label'], 'page' => ModulePage::PAGE, 'tab' => '', 'module' => $module['slug'], 'path' => $module['path']];
             }
         }
 
@@ -131,14 +132,7 @@ final class LogisticsShell
             $html .= '<li class="taxmod-shell-area' . ($here ? ' is-open' : '') . '"><a href="' . esc_url(self::url($area['items'][0])) . '">' . esc_html($area['label']) . '</a>';
 
             if ($here || count($area['items']) > 1) {
-                $html .= '<ul>';
-
-                foreach ($area['items'] as $item) {
-                    $current = $here && $item['key'] === $active['item'];
-                    $html   .= '<li><a href="' . esc_url(self::url($item)) . '"' . ($current ? ' class="is-current" aria-current="page"' : '') . '>' . esc_html($item['label']) . '</a></li>';
-                }
-
-                $html .= '</ul>';
+                $html .= self::items($area['items'], 0, $here ? $active['item'] : '');
             }
 
             $html .= '</li>';
@@ -149,6 +143,42 @@ final class LogisticsShell
             . '<input type="hidden" name="return" value="' . esc_attr($back) . '"><button type="submit" class="button-link">'
             . ($full ? esc_html__('Mit WordPress-Leisten', 'taxmod-stock') : esc_html__('Vollbild', 'taxmod-stock')) . '</button></form>'
             . ($full ? '<p class="taxmod-shell-mode"><a href="' . esc_url(admin_url()) . '">' . esc_html__('Zu WordPress', 'taxmod-stock') . '</a></p>' : '');
+    }
+
+    /**
+     * The items of an area as nested lists: an item's `path` names the groups above it, any number (D-1121). A group links to
+     * its first item and opens when the current item lies in it.
+     *
+     * @param list<array{key: string, label: string, page: string, tab: string, module?: string, path?: list<string>}> $items
+     */
+    private static function items(array $items, int $depth, string $current): string
+    {
+        $html  = '<ul>';
+        $count = count($items);
+
+        for ($i = 0; $i < $count; $i++) {
+            $item = $items[$i];
+            $path = array_values($item['path'] ?? []);
+
+            if (count($path) <= $depth) {
+                $html .= '<li><a href="' . esc_url(self::url($item)) . '" style="padding-left:' . (24 + 12 * $depth) . 'px"'
+                    . ($item['key'] === $current ? ' class="is-current" aria-current="page"' : '') . '>' . esc_html($item['label']) . '</a></li>';
+                continue;
+            }
+
+            $group   = $path[$depth];
+            $members = [];
+            while ($i < $count && ($items[$i]['path'][$depth] ?? null) === $group) {
+                $members[] = $items[$i];
+                $i++;
+            }
+            $i--;
+            $open  = in_array($current, array_column($members, 'key'), true);
+            $html .= '<li class="taxmod-shell-group' . ($open ? ' is-open' : '') . '"><a href="' . esc_url(self::url($members[0])) . '" style="padding-left:' . (24 + 12 * $depth) . 'px">'
+                . esc_html($group) . '</a>' . self::items($members, $depth + 1, $current) . '</li>';
+        }
+
+        return $html . '</ul>';
     }
 
     /** Full screen: the WordPress bars go, the stock interface fills the window; login and rights stay WordPress's. */
@@ -181,6 +211,7 @@ final class LogisticsShell
             . '.taxmod-shell-area>a{font-weight:600;color:#1d2327}'
             . '.taxmod-shell-area ul a{padding-left:24px;color:#2271b1}'
             . '.taxmod-shell-area:not(.is-open) ul{display:none}'
+            . '.taxmod-shell-group>a{color:#2271b1}.taxmod-shell-group:not(.is-open)>ul{display:none}'
             . '.taxmod-shell-nav a.is-current{font-weight:600;border-left-color:#2271b1;background:#f0f6fc}'
             . '.taxmod-shell-nav a:focus{box-shadow:0 0 0 2px #2271b1;outline:none}'
             . '.taxmod-shell-mode{margin:10px 12px 0;padding-top:8px;border-top:1px solid #dcdcde}.taxmod-shell-mode+.taxmod-shell-mode{border-top:0;padding-top:0;margin-top:4px}'

@@ -32,7 +32,8 @@ final class ModulePage
     public const PAGE = 'taxmod-lager-modul';
 
     /**
-     * Filter: `list<array{slug: string, label: string, area?: 'settings'|'outbound'|'print', capability?: string, render?: callable(): string}>`.
+     * Filter: `list<array{slug: string, label: string, area?: 'settings'|'outbound'|'print', path?: list<string>, capability?: string, render?: callable(): string}>`.
+     * `path` puts the page under groups in the navigation, any depth (D-1121); area «print» stands under Einstellungen › Druck.
      * An entry with the slug of a menu entry replaces what was read from the menu.
      */
     public const FILTER = 'taxmod_logistics_pages';
@@ -46,7 +47,7 @@ final class ModulePage
     /** Kept from the D-1053 navigation: the eBay shipping page stands under «Warenausgang», the other modules under «Einstellungen». */
     private const OUTBOUND = ['taxebay-shipping'];
 
-    /** @var array<string, array{slug: string, label: string, area: string, capability: string, render: ?callable, menu: bool}>|null */
+    /** @var array<string, array{slug: string, label: string, area: string, capability: string, render: ?callable, menu: bool, path: list<string>}>|null */
     private static ?array $captured = null;
 
     /** admin_menu, after every module has hung its page under the Taxmod menu: the list is kept before admin_head empties the menu. */
@@ -55,7 +56,7 @@ final class ModulePage
         self::$captured = self::read();
     }
 
-    /** @return array<string, array{slug: string, label: string, area: string, capability: string, render: ?callable, menu: bool}> */
+    /** @return array<string, array{slug: string, label: string, area: string, capability: string, render: ?callable, menu: bool, path: list<string>}> */
     public static function all(): array
     {
         return self::$captured ?? self::read();
@@ -125,7 +126,7 @@ final class ModulePage
         return (string) get_plugin_page_hookname($slug, Plugin::PARENT);
     }
 
-    /** @return array<string, array{slug: string, label: string, area: string, capability: string, render: ?callable, menu: bool}> */
+    /** @return array<string, array{slug: string, label: string, area: string, capability: string, render: ?callable, menu: bool, path: list<string>}> */
     private static function read(): array
     {
         global $submenu;
@@ -146,6 +147,7 @@ final class ModulePage
                 'capability' => (string) ($entry[1] ?? 'manage_options'),
                 'render'     => null,
                 'menu'       => true,
+                'path'       => [],
             ];
         }
 
@@ -164,6 +166,8 @@ final class ModulePage
                 'capability' => is_string($page['capability'] ?? null) && $page['capability'] !== '' ? $page['capability'] : ($known['capability'] ?? 'manage_options'),
                 'render'     => is_callable($page['render'] ?? null) ? $page['render'] : null,
                 'menu'       => $known !== null,
+                // The groups above the page in the navigation, any depth (D-1121).
+                'path'       => array_values(array_filter(array_map(static fn ($p): string => sanitize_text_field((string) $p), array_filter((array) ($page['path'] ?? []), 'is_scalar')), static fn (string $p): bool => $p !== '')),
             ];
         }
 

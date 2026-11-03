@@ -80,16 +80,25 @@ foreach ($navigation->areas() as $area) {
 
 $pruefe($outside === [], 'no item leaves the logistics navigation' . ($outside === [] ? '' : ': ' . implode('; ', $outside)));
 $settings = array_values(array_filter($navigation->areas(), static fn (array $area): bool => $area['key'] === 'settings'))[0]['items'] ?? [];
-$pruefe(array_column($settings, 'key') === ['basics', 'structure', 'module-__navcheck-dhl'], 'Einstellungen: Grundeinstellungen, Lagerstruktur, then the module (' . implode(', ', array_column($settings, 'key')) . ')');
+$pruefe(array_slice(array_column($settings, 'key'), 0, 3) === ['basics', 'structure', 'module-__navcheck-dhl'] && array_filter(array_slice(array_column($settings, 'key'), 3), static fn (string $key): bool => ! str_starts_with($key, 'module-')) === [], 'Einstellungen: Grundeinstellungen, Lagerstruktur, then the module (' . implode(', ', array_column($settings, 'key')) . ')');
 $pruefe(($settings[0]['page'] ?? '') === SettingsPage::PAGE, 'Grundeinstellungen is a page of the stock interface, not the modeller\'s Configuration');
 $pruefe(($settings[2]['label'] ?? '') === 'DHL 2', 'the module keeps its menu label, without markup');
 $outbound = array_values(array_filter($navigation->areas(), static fn (array $area): bool => $area['key'] === 'outbound'))[0]['items'] ?? [];
 $pruefe(array_column($outbound, 'module') === ['taxebay-shipping'], 'Warenausgang holds the eBay shipping page');
-// His word 2026-11-03 (D-1115): «Würde menü druck machen dann unterpunkte aufträge, etiketten, ...».
-add_filter(ModulePage::FILTER, static fn (array $pages): array => [...$pages, ['slug' => '__navcheck-print', 'label' => 'Aufträge', 'area' => 'print', 'render' => static fn (): string => '']]);
+// His words 2026-11-03 (D-1121): «pack mal das menü drucken unter einstellungen», «kannst du das so bauen das es n ebenen zulässt».
+add_filter(ModulePage::FILTER, static fn (array $pages): array => [...$pages,
+    ['slug' => '__navcheck-print', 'label' => 'Aufträge', 'area' => 'print', 'render' => static fn (): string => ''],
+    ['slug' => '__navcheck-deep', 'label' => 'Tief', 'area' => 'settings', 'path' => ['Ebene A', 'Ebene B'], 'render' => static fn (): string => ''],
+]);
 ModulePage::capture();
-$print = array_values(array_filter(LogisticsShell::navigation()->areas(), static fn (array $area): bool => $area['key'] === 'print'))[0] ?? null;
-$pruefe($print !== null && $print['label'] === 'Druck' && in_array('__navcheck-print', array_column($print['items'], 'module'), true), 'a page announced with area «print» stands under its own area «Druck»');
+$areas = LogisticsShell::navigation()->areas();
+$einstellungen = array_values(array_filter($areas, static fn (array $area): bool => $area['key'] === 'settings'))[0]['items'] ?? [];
+$druck = array_values(array_filter($einstellungen, static fn (array $item): bool => ($item['module'] ?? '') === '__navcheck-print'))[0] ?? null;
+$pruefe($druck !== null && ($druck['path'] ?? []) === ['Druck'] && ! in_array('print', array_column($areas, 'key'), true), 'a page announced with area «print» stands under Einstellungen › Druck, not in an area of its own');
+$_GET = ['page' => ModulePage::PAGE, 'module' => '__navcheck-deep'];
+$tief = LogisticsShell::wrap(ModulePage::PAGE, '<p>x</p>');
+$pruefe(substr_count($tief, 'taxmod-shell-group is-open') === 2 && str_contains($tief, '>Ebene B</a><ul><li><a') && str_contains($tief, 'aria-current="page">Tief</a>'), 'a page with a path of two groups stands three levels deep, its groups open (n levels)');
+$_GET = [];
 
 echo "WP menu\n";
 $hidden = ModulePage::menuEntries();

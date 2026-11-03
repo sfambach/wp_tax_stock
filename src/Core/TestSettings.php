@@ -3,14 +3,18 @@
 namespace TaxmodStock\Core;
 
 /**
- * Which branches under `Model` are tested after the goods receipt (D-1002), as stored in one option.
+ * Which branches under `Model` are tested after the goods receipt (D-1002), and the place that holds what waits for its
+ * test (D-1111) — as stored in one option.
  *
  * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/lager/cockpit-wareneingang.md WC7
  */
 final class TestSettings
 {
-    /** @param list<int> $branches */
-    private function __construct(public readonly array $branches)
+    /**
+     * @param list<int> $branches
+     * @param int|null  $place    D-1111: the location record «Lagerort für Test»; null when none is set
+     */
+    private function __construct(public readonly array $branches, public readonly ?int $place = null)
     {
     }
 
@@ -27,13 +31,15 @@ final class TestSettings
             }
         }
 
-        return new self($branches);
+        $place = filter_var($raw['place'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+
+        return new self($branches, $place === false ? null : $place);
     }
 
-    /** @return array{branches: list<int>} */
+    /** @return array{branches: list<int>, place: int|null} */
     public function toArray(): array
     {
-        return ['branches' => $this->branches];
+        return ['branches' => $this->branches, 'place' => $this->place];
     }
 
     /**

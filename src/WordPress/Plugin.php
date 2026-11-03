@@ -2,6 +2,7 @@
 
 namespace TaxmodStock\WordPress;
 
+use TaxmodStock\Core\TestSettings;
 use TaxmodStock\WordPress\Admin\CockpitPage;
 use TaxmodStock\WordPress\Admin\InboundPage;
 use TaxmodStock\WordPress\Admin\LogisticsShell;
@@ -57,7 +58,7 @@ final class Plugin
         add_action('admin_post_' . LogisticsShell::FULLSCREEN_ACTION, [LogisticsShell::class, 'switchFullscreen']);
     }
 
-    /** The branches without material, settable over REST (/wp/v2/settings) as well as on Logistik › Einstellungen. */
+    /** The branches without material and the test settings, settable over REST (/wp/v2/settings) as well as on Logistik › Einstellungen. */
     public function registerSettings(): void
     {
         register_setting('taxmod_stock', StockService::NOT_MATERIAL, [
@@ -65,6 +66,17 @@ final class Plugin
             'default'           => [],
             'sanitize_callback' => static fn ($value): array => array_values(array_filter(array_map('absint', is_array($value) ? $value : []))),
             'show_in_rest'      => ['schema' => ['type' => 'array', 'items' => ['type' => 'integer']]],
+        ]);
+
+        // D-1111: the tested branches and «Lagerort für Test», so the place can be named over REST once it is created.
+        register_setting('taxmod_stock', StockService::TESTS, [
+            'type'              => 'object',
+            'default'           => ['branches' => [], 'place' => null],
+            'sanitize_callback' => static fn ($value): array => TestSettings::fromArray(is_array($value) ? $value : [])->toArray(),
+            'show_in_rest'      => ['schema' => ['type' => 'object', 'properties' => [
+                'branches' => ['type' => 'array', 'items' => ['type' => 'integer']],
+                'place'    => ['type' => ['integer', 'null']],
+            ]]],
         ]);
     }
 

@@ -49,26 +49,51 @@ final class TestQueue
             return [];
         }
 
-        $s   = $this->structure;
-        $out = [];
+        $field = $this->structure->field('lot_condition');
+        $out   = [];
 
         foreach ($lots->ids() as $lot) {
-            $node = $nodeOfLot[$lot] ?? null;
-
-            if ($node === null || $ledger->restOf($lot) <= 0.0 || ! $settings->covers($node, $parents)) {
-                continue;
+            if ($ledger->restOf($lot) > 0.0 && $this->needsTest($nodeOfLot[$lot] ?? null, (string) ($lots->first($lot, $field) ?? ''), $parents, $settings)) {
+                $out[] = $lot;
             }
-
-            $condition = (string) ($lots->first($lot, $s->field('lot_condition')) ?? '');
-
-            if ($condition !== '' && ! ($s->hasValue('condition_untested') && $condition === (string) $s->value('condition_untested'))) {
-                continue;
-            }
-
-            $out[] = $lot;
         }
 
         return $out;
+    }
+
+    /**
+     * The one rule of D-1002, for a lot that is there and for one the goods receipt is about to make: the material lies in a
+     * tested branch, and the condition is empty or «ungetestet».
+     *
+     * @param string          $condition the condition's value id as stored, '' when none
+     * @param array<int, int> $parents   node → parent, the tree of the groups
+     */
+    public function needsTest(?int $node, string $condition, array $parents, TestSettings $settings): bool
+    {
+        $s = $this->structure;
+
+        if ($node === null || ! $this->isConfigured() || ! $settings->covers($node, $parents)) {
+            return false;
+        }
+
+        return $condition === '' || ($s->hasValue('condition_untested') && $condition === (string) $s->value('condition_untested'));
+    }
+
+    /**
+     * D-1111: the place the goods receipt proposes — «Lagerort für Test» for what will wait for its test, else the usual one.
+     *
+     * ```mermaid
+     * flowchart LR
+     *   P["usual proposal"] --> T{"test place set and the lot needs a test?"}
+     *   T -->|yes| X["test place"]
+     *   T -->|no| P2["usual proposal"]
+     * ```
+     *
+     * @param array<int, int> $parents node → parent, the tree of the groups
+     */
+    public function receiptPlace(int $usual, ?int $node, string $condition, array $parents, TestSettings $settings): int
+    {
+        return $settings->place !== null && $this->needsTest($node, $condition, $parents, $settings) ? $settings->place : $usual;
     }
 
     /** @return list<array<string, mixed>> */

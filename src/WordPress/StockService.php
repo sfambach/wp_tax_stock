@@ -28,6 +28,7 @@ use TaxmodStock\Core\Storno;
 use TaxmodStock\Core\TransferRow;
 use TaxmodStock\Core\Structure;
 use TaxmodStock\Core\Table;
+use TaxmodStock\Core\TestQueue;
 use TaxmodStock\Core\TestSettings;
 use TaxmodStock\Core\Things;
 use TaxmodStock\Core\ViewSettings;
@@ -308,6 +309,12 @@ final class StockService
         } while (count($drop) > $before);
 
         return $this->tree = array_diff_key($tree, $drop);
+    }
+
+    /** @return array<int, int> node → parent, the tree of the groups as the test rule (D-1002) walks it */
+    public function groupParents(): array
+    {
+        return array_map(static fn (array $node): int => $node['parent'], $this->tree());
     }
 
     /**
@@ -623,6 +630,8 @@ final class StockService
 
     /**
      * D-972: the place proposed for each purchase of the plan — the thing's own Standard-Lagerort, else its branch's.
+     * D-1111: «Lagerort für Test» instead, where the lot will wait for its test (D-1002); a place saved with «Zuordnung
+     * speichern» is his own choice and stays.
      *
      * @param array<int, array{lock: string|null, model: int|null, proposal: ReceiptChoice|null}> $plan
      * @return array<int, int> purchase → location record
@@ -638,13 +647,21 @@ final class StockService
         $nodes    = $this->model->nodesOf($models);
         $out      = [];
         $planned  = $this->plannedPlaces();
+        $tests    = $this->testSettings();
+        // A test place that is no place any more proposes nothing; the tree is read only when there is one.
+        $testing  = $tests->place !== null && $this->table('location')->has($tests->place);
+        $queue    = new TestQueue($s);
+        $parents  = $testing ? $this->groupParents() : [];
 
         foreach ($plan as $purchase => $row) {
             $thing  = $row['model'];
             $record = $thing === null ? null : $things->lagerOf($thing);
             $own    = $record !== null && $s->hasField('lager_location') ? (int) $lager->first($record, $s->field('lager_location')) : 0;
+            $node   = $thing === null ? null : ($nodes[$thing] ?? 0);
+            $usual  = $rules->propose($own > 0 ? $own : null, $node);
 
-            $out[$purchase] = $planned[$purchase] ?? $rules->propose($own > 0 ? $own : null, $thing === null ? null : ($nodes[$thing] ?? 0));
+            // The lot is made by this receipt, so it has no condition yet: '' — new goods would carry «neu» (D-1002).
+            $out[$purchase] = $planned[$purchase] ?? ($testing ? $queue->receiptPlace($usual, $node ?: null, '', $parents, $tests) : $usual);
         }
 
         return $out;

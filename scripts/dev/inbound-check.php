@@ -143,6 +143,20 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'set_values', 'record' => '@pos8', 'values' => ['@p_lot' => '@lot8', '@p_menge' => '1']],
     ['op' => 'create_record', 'ref' => 'vg8', 'node' => '@vg'],
     ['op' => 'set_values', 'record' => '@vg8', 'values' => ['@v_art' => '@a_we', '@v_best' => '@o8', '@v_pos' => ['values' => ['@pos8']]]],
+    // D-1111: an arrived order with a used purchase from the tested group and one from an untested group, two places.
+    $field('k_mod', '@pur', 'Modell', 402, 'aggregation', '0..1'),
+    ['op' => 'create_node', 'ref' => 'misc', 'name' => '__Kabel', 'parent' => 402],
+    ['op' => 'create_record', 'ref' => 'kabel', 'node' => '@misc'],
+    ['op' => 'set_values', 'record' => '@kabel', 'values' => ['@label' => 'IDE-Kabel']],
+    ['op' => 'create_record', 'ref' => 'ortTest', 'node' => '@lo'],
+    ['op' => 'set_values', 'record' => '@ortTest', 'values' => ['@label' => '__Test']],
+    ['op' => 'create_record', 'ref' => 'ortRegal', 'node' => '@lo'],
+    ['op' => 'set_values', 'record' => '@ortRegal', 'values' => ['@label' => '__Regal']],
+    ['op' => 'create_record', 'ref' => 'kaufT', 'node' => '@pur'],
+    ['op' => 'set_values', 'record' => '@kaufT', 'values' => ['@label' => 'IDE-SATA-Adapterkarte', '@k_mod' => '@et4000']],
+    ['op' => 'create_record', 'ref' => 'kaufU', 'node' => '@pur'],
+    ['op' => 'set_values', 'record' => '@kaufU', 'values' => ['@label' => 'Kabel', '@k_mod' => '@kabel']],
+    ...$order('o9', 'Einlagern mit Test', ['@o_ein' => '2026-11-03', '@o_pos' => ['values' => ['@kaufT', '@kaufU']]]),
 ]]);
 
 if (is_wp_error($aufbau)) {
@@ -169,15 +183,15 @@ if ($kind === 'composition') {
 update_option(StockService::OPTION, [
     'nodes'  => ['lager' => $r['mat'], 'lot' => $r['lot'], 'transaction' => $r['vg'], 'line' => $r['vp'], 'location' => $r['lo'], 'order' => $r['ord'], 'purchase' => $r['pur'], 'money' => $money],
     'fields' => array_fill_keys(['lager_thing', 'lager_single', 'lager_min', 'lot_location', 'lot_value', 'transaction_date',
-        'transaction_source', 'line_counted', 'purchase_model', 'purchase_quantity',
+        'transaction_source', 'line_counted', 'purchase_quantity',
         'purchase_landed_price', 'purchase_unit_price'], 1) + [
         'lot_date' => $r['l_dat'], 'line_lot' => $r['p_lot'], 'line_quantity' => $r['p_menge'],
         'transaction_kind' => $r['v_art'], 'transaction_order' => $r['v_best'], 'transaction_lines' => $r['v_pos'],
         'lot_tested_on' => $r['l_tdat'], 'lot_test_note' => $r['l_tbef'], 'lot_condition' => $r['l_zust'],
         'label' => $r['label'], 'lot_thing' => $r['l_mat'], 'lot_purchase' => $r['l_kauf'], 'order_status' => $r['o_stat'], 'order_lines' => $r['o_pos'],
-        'purchase_undetermined' => $r['k_offen'], 'money_amount' => 4234, 'money_unit' => 4236,
+        'purchase_undetermined' => $r['k_offen'], 'purchase_model' => $r['k_mod'], 'money_amount' => 4234, 'money_unit' => 4236,
     ],
-    'values' => ['kind_receipt' => $r['a_we'], 'kind_consumption' => 1, 'kind_count' => 1, 'source_manual' => 1, 'location_default' => 1,
+    'values' => ['kind_receipt' => $r['a_we'], 'kind_consumption' => 1, 'kind_count' => 1, 'source_manual' => 1, 'location_default' => $r['ortRegal'],
         'status_partial' => $r['s_teil'], 'status_received' => $r['s_ganz'], 'status_draft' => $r['s_entw'],
         'test_ok' => $r['t_ok'], 'test_partial' => $r['t_teil'], 'test_maintenance' => $r['t_wart'], 'test_defect' => $r['t_def'], 'condition_new' => $r['z_neu'], 'condition_untested' => $r['z_unget']],
 ]);
@@ -274,6 +288,38 @@ try {
 $t = (new StockService())->table('lot');
 $pruefe($t->first($r['lotA'], $r['l_zust']) === (string) $r['t_wart'] && $t->first($r['lotA'], $r['l_tbef']) === 'Elkos tauschen' && substr((string) $t->first($r['lotA'], $r['l_tdat']), 0, 10) === '2026-10-28', 'the result, its reason and the day stand at the lot');
 $pruefe((new InboundService())->lotsToTest() === [], 'a tested lot waits no more');
+
+// D-1111 · «Lagerort für Test» is proposed at the receipt for what will wait for its test.
+$stock = new StockService();
+$plan  = $stock->receiptPlan($r['o9']);
+$pruefe($stock->receiptLocations($plan) === [$r['kaufT'] => $r['ortRegal'], $r['kaufU'] => $r['ortRegal']], 'without a test place both purchases keep the usual proposal');
+
+$settings = new \TaxmodStock\WordPress\Admin\SettingsPage();
+$_GET     = ['page' => \TaxmodStock\WordPress\Admin\SettingsPage::PAGE];
+$pruefe(str_contains($settings->render(), 'name="taxmod_stock_test_place"'), 'Einstellungen › Test nach dem Wareneingang offers «Lagerort für Test»');
+$settings->save(['taxmod_stock_tests_sent' => '1', 'taxmod_stock_tests' => [(string) $r['gk'], ''], 'taxmod_stock_test_place' => (string) $r['ortTest']]);
+$pruefe((new StockService())->testSettings()->toArray() === ['branches' => [$r['gk']], 'place' => $r['ortTest']], 'it is stored with the tested branches in ' . StockService::TESTS);
+$pruefe(str_contains($settings->render(), 'value="' . $r['ortTest'] . '" selected'), 'the page shows the chosen test place');
+
+$stock = new StockService();
+$pruefe($stock->receiptLocations($plan) === [$r['kaufT'] => $r['ortTest'], $r['kaufU'] => $r['ortRegal']], 'the used purchase of the tested group is proposed for the test place, the other keeps its proposal');
+
+$_GET = ['page' => \TaxmodStock\WordPress\Admin\StockPage::PAGE, 'tab' => 'wareneingang', 'order' => $r['o9']];
+$html = (new \TaxmodStock\WordPress\Admin\StockPage())->render();
+$pruefe(preg_match('/name="location\[' . $r['kaufT'] . '\]">(.*?)<\/select>/s', $html, $select) === 1
+    && str_contains($select[1], 'value="' . $r['ortTest'] . '" selected') && str_contains($select[1], 'value="' . $r['ortRegal'] . '"'), 'the Einlagern row preselects the test place and still offers the others');
+$pruefe(str_contains($html, 'id="taxmod-stock-material-' . $r['kaufT'] . '"')
+    && str_contains($html, 'taxmod-stock-material-link" for="taxmod-stock-material-' . $r['kaufT'] . '"') && str_contains($html, '>ET4000</label>'), 'the material text opens the same dialog as the row\'s «Material» button');
+
+$stock->planPlaces([$r['kaufT'] => $r['ortRegal']]);
+$pruefe((new StockService())->receiptLocations($plan)[$r['kaufT']] === $r['ortRegal'], 'a place saved with «Zuordnung speichern» stays his choice');
+$stock->planPlaces([$r['kaufT'] => 0]);
+
+update_option(StockService::TESTS, ['branches' => [$r['gk']], 'place' => 999999999]);
+$pruefe((new StockService())->receiptLocations($plan)[$r['kaufT']] === $r['ortRegal'], 'a test place that is no place proposes nothing');
+update_option(StockService::TESTS, ['branches' => [(string) $r['gk'], 'x'], 'place' => (string) $r['ortTest']]);
+$rest = rest_do_request(new WP_REST_Request('GET', '/wp/v2/settings'))->get_data();
+$pruefe(get_option(StockService::TESTS) === ['branches' => [$r['gk']], 'place' => $r['ortTest']] && ($rest[StockService::TESTS] ?? null) === ['branches' => [$r['gk']], 'place' => $r['ortTest']], 'the option is cleaned on write and readable over REST (/wp/v2/settings)');
 
 // D-1009 · back from «Eingebucht».
 $pruefe((new InboundService())->orders()[$r['o8']]->stage((new StockService())->structure()) === InboundStage::Booked, 'a booked order stands under «Eingebucht»');

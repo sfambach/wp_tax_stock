@@ -71,9 +71,37 @@ final class TestQueueTest extends TestCase
     {
         $settings = TestSettings::fromArray(['branches' => [20, '20', 0, 'x', 35]]);
 
-        self::assertSame(['branches' => [20, 35]], $settings->toArray());
+        self::assertSame(['branches' => [20, 35], 'place' => null], $settings->toArray());
         self::assertTrue($settings->covers(35, []));
         self::assertFalse($settings->covers(36, [36 => 37, 37 => 36]), 'a loop in the tree ends');
+    }
+
+    #[Test]
+    public function the_test_place_survives_a_round_trip_and_junk_is_no_place(): void
+    {
+        self::assertSame(['branches' => [20], 'place' => 9001], TestSettings::fromArray(['branches' => [20], 'place' => '9001'])->toArray());
+        self::assertNull(TestSettings::fromArray(['branches' => [20], 'place' => 0])->place);
+        self::assertNull(TestSettings::fromArray(['place' => 'x'])->place);
+        self::assertSame(9001, TestSettings::fromArray(TestSettings::fromArray(['place' => 9001])->toArray())->place, 'stored and read back');
+    }
+
+    #[Test]
+    public function the_receipt_proposes_the_test_place_for_what_will_wait_for_its_test(): void
+    {
+        // D-1111: the same rule as «Zu testen» (D-1002) — node 30 lies below the tested 20, node 40 does not.
+        $q        = new TestQueue($this->structure());
+        $parents  = [30 => 20, 20 => 10, 40 => 10];
+        $settings = TestSettings::fromArray(['branches' => [20], 'place' => 9001]);
+
+        self::assertSame(9001, $q->receiptPlace(77, 30, '', $parents, $settings), 'used goods in a tested branch go to the test place');
+        self::assertSame(9001, $q->receiptPlace(77, 20, '401', $parents, $settings), '«ungetestet» in the branch itself too');
+        self::assertSame(77, $q->receiptPlace(77, 30, '400', $parents, $settings), 'new goods keep the usual proposal');
+        self::assertSame(77, $q->receiptPlace(77, 30, '301', $parents, $settings), 'a lot with a result keeps it');
+        self::assertSame(77, $q->receiptPlace(77, 40, '', $parents, $settings), 'an untested branch keeps it');
+        self::assertSame(77, $q->receiptPlace(77, null, '', $parents, $settings), 'a purchase without material keeps it');
+        self::assertSame(77, $q->receiptPlace(77, 30, '', $parents, TestSettings::fromArray(['branches' => [20]])), 'no test place set: as before');
+        self::assertSame(77, (new TestQueue(Fixture::structure()))->receiptPlace(77, 30, '', $parents, $settings), 'without the test fields in the structure there is no test');
+        self::assertTrue($q->needsTest(30, '', $parents, $settings) && ! $q->needsTest(30, '400', $parents, $settings), 'one rule for the queue and the proposal');
     }
 
     private function structure(): Structure

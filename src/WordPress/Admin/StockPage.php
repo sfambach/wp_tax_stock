@@ -1431,7 +1431,7 @@ final class StockPage
             // ⚠️ *Enter in a reason field must book, not close the first row: the browser presses the first submit button.*
             . '<button type="submit" name="booking" value="wareneingang" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px"></button>'
             . ($closing ? '<datalist id="taxmod-stock-reasons">' . implode('', array_map(static fn (string $r): string => '<option value="' . esc_attr($r) . '">', self::notStockedReasons())) . '</datalist>' : '')
-            . '<p>' . esc_html__('Je Kauf das Material: vorgeschlagen ist das «Modell» des Kaufs; «Zurücksetzen» (Pfeil) gibt die Suche frei; «Neues Material» (oder eine Gruppe in der Suche) legt ein neues Material in der Gruppe an. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seiner Gruppe.', 'taxmod-stock') . '</p>'
+            . '<p>' . esc_html__('Je Kauf das Material: vorgeschlagen ist das «Modell» des Kaufs; «Zurücksetzen» (Pfeil) gibt die Suche frei; «Neues Material» (oder eine Gruppe in der Suche) legt ein neues Material in der Gruppe an. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seiner Gruppe; Gebrauchtware aus einem Zweig mit Test nach dem Wareneingang geht an den «Lagerort für Test», wenn einer eingestellt ist. Der Materialtext öffnet das Material wie der Knopf «Material».', 'taxmod-stock') . '</p>'
             . '<div class="tablenav top"><div class="tablenav-pages one-page"><span class="displaying-num">' . esc_html(sprintf(
                 /* translators: %d: number of purchases */
                 _n('%d Kauf', '%d Käufe', count($plan), 'taxmod-stock'),
@@ -1467,7 +1467,7 @@ final class StockPage
                     $lock === 'purchase_undetermined' && $closing => $this->closeControls($purchase),
                     default => '',
                 };
-                $html .= '<td>' . esc_html($model === null ? '—' : '#' . $model . ' · ' . ($models[$model] ?? '')) . '</td>'
+                $html .= '<td>' . ($model === null ? esc_html('—') : $this->materialLink($purchase, $model, '#' . $model . ' · ' . ($models[$model] ?? ''))) . '</td>'
                     . '<td>' . ($lock === 'not_stocked' ? esc_html($this->stock->notStockedReason($purchase)) : '') . '</td>'
                     . $actions(($model === null ? '' : $this->materialDialog($purchase, $model)) . $split . ' ' . $again) . '</tr>';
                 continue;
@@ -1475,7 +1475,7 @@ final class StockPage
 
             // The modeller's own record chooser on the purchase's «Modell» (his word 2026-10-28: «eigentlich haben wir doch den tax chooser»).
             $html .= '<td><input type="hidden" name="model[' . esc_attr((string) $purchase) . ']" value="' . esc_attr((string) ($model ?? '')) . '">'
-                . $this->recordPicker('thing[' . $purchase . ']', $model, $model === null ? '' : ($models[$model] ?? '#' . $model)) . '</td>'
+                . $this->recordPicker('thing[' . $purchase . ']', $model, $model === null ? '' : ($models[$model] ?? '#' . $model), $purchase) . '</td>'
                 . '<td><select name="location[' . esc_attr((string) $purchase) . ']">' . $this->options($places, '—', $where[$purchase] ?? 0) . '</select></td>'
                 . $actions(($model === null ? $this->newThingDialog($purchase, $groups ??= $this->groupOptions()) : $this->materialDialog($purchase, $model)) . ($closing ? $this->closeControls($purchase) : '')) . '</tr>';
         }
@@ -2169,8 +2169,10 @@ final class StockPage
      * The modeller's chooser for «every record under Model» (D-958 F3a, D-1011): the chosen word with a bin, or a search field and
      * a tree button. Hits and tree come from the material endpoints, kept to the groups of things. Same markup as the modeller's
      * summary field, so its script and stylesheet drive it.
+     *
+     * @param int|null $purchase D-1111: the receipt row whose «Material» dialog the chosen word opens; null: a plain word
      */
-    private function recordPicker(string $name, ?int $value, string $word): string
+    private function recordPicker(string $name, ?int $value, string $word, ?int $purchase = null): string
     {
         $radio = static fn (string $choice, bool $on): string => '<label class="taxmod-record-choice"><input type="radio" name="' . esc_attr($name) . '" value="' . esc_attr($choice) . '"'
             . ($on ? ' checked' : '') . '></label>';
@@ -2183,7 +2185,9 @@ final class StockPage
             . '<input type="search" class="taxmod-record-quick" autocomplete="off" placeholder="' . esc_attr__('Material suchen …', 'taxmod-stock') . '"' . ($none ? '' : ' hidden') . '>'
             . '<button type="button" class="button taxmod-icon-button taxmod-record-browse"' . ($none ? '' : ' hidden') . ' title="' . esc_attr($tree) . '">'
                 . '<span class="dashicons dashicons-networking" aria-hidden="true"></span><span class="screen-reader-text">' . esc_html($tree) . '</span></button>'
-            . '<span class="taxmod-record-dialog-open taxmod-record-word"' . ($none ? ' hidden' : '') . '>' . esc_html($word) . '</span>'
+            . ($none || $purchase === null
+                ? '<span class="taxmod-record-dialog-open taxmod-record-word"' . ($none ? ' hidden' : '') . '>' . esc_html($word) . '</span>'
+                : $this->materialLink($purchase, $value, $word, 'taxmod-record-dialog-open taxmod-record-word'))
             . '<button type="button" class="button taxmod-icon-button taxmod-record-clear"' . ($none ? ' hidden' : '') . ' title="' . esc_attr($clear) . '">'
                 . '<span class="dashicons dashicons-undo" aria-hidden="true"></span><span class="screen-reader-text">' . esc_html($clear) . '</span></button>'
             . '<span class="taxmod-record-hits" hidden></span>'
@@ -2310,6 +2314,21 @@ final class StockPage
     private static function notStockedReasons(): array
     {
         return [__('privat', 'taxmod-stock'), __('sofort verbaut', 'taxmod-stock'), __('verschenkt', 'taxmod-stock'), __('zurückgeschickt', 'taxmod-stock'), __('defekt entsorgt', 'taxmod-stock')];
+    }
+
+    /**
+     * D-1111: the material's text as a link with the effect of the row's «Material» button — it toggles the same dialog
+     * switch, so the same frame loads; without the modeller's dialog it opens the same page the button opens.
+     */
+    private function materialLink(int $purchase, int $thing, string $text, string $class = ''): string
+    {
+        $look = ' style="cursor:pointer;color:#2271b1;text-decoration:underline"';
+
+        if (! class_exists(\Taxmod\Core\Renderer\DialogMarkup::class)) {
+            return '<a class="' . esc_attr(trim($class . ' taxmod-stock-material-link')) . '" href="' . esc_url(self::thingUrl($thing, 'daten')) . '" target="_blank">' . esc_html($text) . '</a>';
+        }
+
+        return '<label class="' . esc_attr(trim($class . ' taxmod-stock-material-link')) . '" for="' . esc_attr('taxmod-stock-material-' . $purchase) . '"' . $look . '>' . esc_html($text) . '</label>';
     }
 
     /** D-1058: the reason field and the «Nicht einlagern» button of one purchase. */

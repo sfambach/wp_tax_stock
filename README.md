@@ -70,7 +70,11 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
 - **Logistik → Einstellungen → Grundeinstellungen** (D-1085) — the business settings, inside the logistics navigation:
   «Kein Material» (branches under Model that hold no material, left out of search, tree and groups; also settable over
   REST as `taxmod_stock_not_material`), «Einlagerung nach Typ» (rows «branch node id → place», D-972), the test after the
-  goods receipt and the view of the tabs. Same option names as before on the Configuration tab.
+  goods receipt with its «Lagerort für Test» (D-1111; option `taxmod_stock_tests` = `{branches: [node ids], place: location
+  record id}`, also settable over REST) and the view of the tabs. Same option names as before on the Configuration tab.
+- **Test place at the receipt** (D-1111, from 0.18.0): «Einlagern» proposes «Lagerort für Test» for a purchase whose material
+  lies in a tested branch (the rule of «Zu testen», D-1002), unless a place was saved for it; the material text in the row
+  opens the same dialog as its «Material» button.
 - **Module pages inside the navigation** (D-1085): the connection modules' pages under the Taxmod menu open at
   `admin.php?page=taxmod-lager-modul&module=<slug>` inside the logistics frame and leave the WP menu. A module may hand over
   its page with the filter `taxmod_logistics_pages` (`slug`, `label`, `area` settings|outbound, `capability`, `render`

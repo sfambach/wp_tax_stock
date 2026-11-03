@@ -227,7 +227,7 @@ final class InboundService
         $ledger  = $stock->ledger();
         $things  = $stock->things();
         $nodes   = [];
-        $parents = array_map(static fn (array $node): int => $node['parent'], $stock->tree());
+        $parents = $stock->groupParents();
 
         foreach ($stock->table('lot')->ids() as $lot) {
             $thing       = $ledger->thingOf($lot);

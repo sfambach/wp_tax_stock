@@ -100,6 +100,51 @@ final class LocationChanges
     }
 
     /**
+     * D-1130: «Kopieren» — the place beside itself under a name of its own, with all its fields; with «Unterorte» each place
+     * inside it too, hung into its copy. What lies there stays: a lot names its place, a place names no lot.
+     *
+     * @return list<array<string, mixed>> the copy of $place answers the ref «kopie0»
+     */
+    public function copy(int $place, string $name, bool $withBelow, LocationTree $tree, Table $places): array
+    {
+        $name = trim($name);
+
+        if ($name === '') {
+            throw StockError::placeWithoutName();
+        }
+
+        if (! $places->has($place)) {
+            throw StockError::notALocation($place);
+        }
+
+        $s       = $this->structure;
+        $changes = [
+            ['op' => 'duplicate_record', 'ref' => 'kopie0', 'record' => (string) $place],
+            ['op' => 'set_values', 'record' => '@kopie0', 'values' => [(string) $s->field('label') => $name]],
+        ];
+
+        if (! $withBelow) {
+            return $changes;
+        }
+
+        $this->needTree();
+        $refs = [$place => 'kopie0'];
+
+        // *Parents before children, so each copy can name the copy of its parent.*
+        foreach ($tree->ordered() as [$below]) {
+            if ($below === $place || ! in_array($place, $tree->lineOf($below), true)) {
+                continue;
+            }
+
+            $refs[$below] = 'kopie' . count($refs);
+            $changes[]    = ['op' => 'duplicate_record', 'ref' => $refs[$below], 'record' => (string) $below];
+            $changes[]    = ['op' => 'set_values', 'record' => '@' . $refs[$below], 'values' => [(string) $s->field('location_parent') => '@' . $refs[$tree->parentOf($below)]]];
+        }
+
+        return $changes;
+    }
+
+    /**
      * D-1082: the flag «reserviert für Produktion» set or taken off. Checks on what lies there are the caller's
      * ({@see ReservedPlaces::checkFlag()}); taking it off frees the area — the boundary asks first.
      *

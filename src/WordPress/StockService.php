@@ -13,6 +13,7 @@ use TaxmodStock\Core\LocationSettings;
 use TaxmodStock\Core\NewThing;
 use TaxmodStock\Core\Purchasing;
 use TaxmodStock\Core\LocationChanges;
+use TaxmodStock\Core\MaterialCopy;
 use TaxmodStock\Core\LocationTree;
 use TaxmodStock\Core\PlaceTypes;
 use TaxmodStock\Core\NotStocked;
@@ -856,6 +857,37 @@ final class StockService
     }
 
     /**
+     * D-1130: «Kopieren» of a place, with its places inside or without; nothing that lies there comes along.
+     *
+     * @return int the copy of the place
+     */
+    public function copyPlace(int $place, string $name, bool $withBelow): int
+    {
+        $answer = $this->model->write((new LocationChanges($this->structure()))->copy($place, $name, $withBelow, $this->locationTree(), $this->table('location')));
+
+        return (int) ($answer['refs']['kopie0'] ?? 0);
+    }
+
+    /**
+     * D-1130: «Kopieren» of a material — its data and its Lager record, no stock; the sources without their numbers.
+     *
+     * @return int the copy of the thing
+     */
+    public function copyThing(int $thing): int
+    {
+        $this->checkThings([$thing]);
+
+        $s      = $this->structure();
+        $lager  = $this->things()->lagerOf($thing);
+        $node   = (int) ($this->nodesOf([$thing])[$thing] ?? 0);
+        $own    = $node > 0 ? $this->tableOf($node)->first($thing, $s->field('label')) : null;
+        $label  = $own === null || trim($own) === '' ? null : sprintf(/* translators: %s: the name of the original */ __('%s (Kopie)', 'taxmod-stock'), $own);
+        $answer = $this->model->write((new MaterialCopy($s))->copy($thing, $lager, $this->table('lager'), $this->sourcesOf($lager), $label));
+
+        return (int) ($answer['refs']['kopie'] ?? 0);
+    }
+
+    /**
      * «Umhängen»: the place with all it holds; into a reserved area only what is not reserved yet (D-1082).
      *
      * @return array<string, mixed> the modeller's answer
@@ -1393,6 +1425,37 @@ final class StockService
         }
 
         return $this->model->write($this->purchasing()->reorder($rows, $demand, $newName, $this->table('order'), $this->table('purchase')));
+    }
+
+    /**
+     * D-1130: «Nochmal bestellen» — the materials and quantities of an order or demand as a new demand; the original stays as
+     * it is. A position without a material has nothing to order again and stays behind.
+     *
+     * @return array<string, mixed>
+     */
+    public function reorderOrder(int $order): array
+    {
+        $s         = $this->structure();
+        $orders    = $this->table('order');
+        $purchases = $this->table('purchase');
+
+        if (! $orders->has($order)) {
+            throw StockError::notADemand($order);
+        }
+
+        $quantities = [];
+
+        foreach ($orders->all($order, $s->field('order_lines')) as $line) {
+            $thing = (int) ($purchases->first((int) $line, $s->field('purchase_model')) ?? 0);
+
+            if ($thing > 0) {
+                $quantities[$thing] = (string) ((int) ($quantities[$thing] ?? 0) + max(1, (int) ($purchases->first((int) $line, $s->field('purchase_quantity')) ?? 1)));
+            }
+        }
+
+        $label = trim((string) $orders->first($order, $s->field('label')));
+
+        return $this->reorder($quantities, null, sprintf(/* translators: %s: name of the original order */ __('%s (nochmal)', 'taxmod-stock'), $label === '' ? '#' . $order : $label));
     }
 
     /**

@@ -441,6 +441,26 @@ try {
     $pruefe($e->reason === 'place_into_itself', 'a place does not go into what lies in it');
 }
 
+// D-1130: «Kopieren» — a place with or without its places inside, a material with its Lager view; nothing in stock comes along.
+$s       = new StockService();
+$orte    = count($s->places());
+$kopie   = $s->copyPlace($schrank, '__Schrank (Kopie)', false);
+$s       = new StockService();
+$pruefe($kopie > 0 && count($s->places()) === $orte + 1 && $s->locationTree()->parentOf($kopie) === $r['lager'] && $s->locationTree()->pathOf($kopie) === $s->locationTree()->pathOf($r['lager']) . ' › __Schrank (Kopie)', 'Kopieren: the place stands beside itself under its new name, alone');
+$tief    = (new StockService())->copyPlace($schrank, '__Schrank 2', true);
+$s       = new StockService();
+$baum    = $s->locationTree();
+$pruefe(count($s->places()) === $orte + 1 + 4 && count($baum->withAllBelow($tief)) === 4 && in_array('Lager › __Schrank 2 › __Schublade 2 › __Kiste', array_map($baum->pathOf(...), $baum->withAllBelow($tief)), true), 'Kopieren with Unterorte: each place inside hangs in the copy of its parent');
+$pruefe($baum->isMovable((int) array_values(array_filter($baum->withAllBelow($tief), static fn (int $p): bool => str_ends_with($baum->pathOf($p), '__Kiste')))[0]), 'the copied box is still a box');
+$pruefe(array_sum(array_map(static fn (int $p): float => array_sum(array_map(static fn (array $at): float => (float) ($at[$p] ?? 0.0), $s->ledger()->stockByPlace())), $baum->withAllBelow($tief))) === 0.0 && $s->ledger()->stockOf($bc) === $bestand, 'nothing that lay in the original lies in the copy; the stock is unchanged');
+(new StockService())->saveLager($bc, new LagerInput(true, null, $schrank, 7));
+$teil  = (new StockService())->copyThing($bc);
+$s     = new StockService();
+$lager = $s->things()->lagerOf($teil);
+$pruefe($teil > 0 && $teil !== $bc && $s->tableOf($r['teile'])->first($teil, $r['label']) === 'BC547C (Kopie)', 'Kopieren: the material stands beside itself with «(Kopie)» after its own name');
+$pruefe($lager !== null && $lager !== $s->things()->lagerOf($bc) && $s->table('lager')->first($lager, $r['m_min']) === '7' && $s->table('lager')->first($lager, $r['m_ort']) === (string) $schrank && $s->table('lager')->first($lager, $r['m_einz']) === '1', 'the copy has a Lager view of its own with the same minimum, place and single flag');
+$pruefe($s->ledger()->stockOf($teil) === 0.0 && $s->ledger()->stockOf($bc) === $bestand, 'the copy has no stock; the original keeps its own');
+
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'lagerstruktur', 'ort' => $kiste];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'taxmod-record-tree') && str_contains($html, 'data-taxmod-drag="1"') && str_contains($html, 'tab=lagerstruktur&amp;ort=__ID__') && str_contains($html, '__Kiste (1)'), 'Lagerstruktur: the tree on the left, a click opens a place, the count follows the name');
@@ -481,6 +501,13 @@ $pruefe(in_array((string) $nachT1, $s->table('order')->all($bedarf, $r['o_pos'])
 (new StockService())->removePosition($bedarf, $nachT1);
 $s = new StockService();
 $pruefe(count($s->table('order')->all($bedarf, $r['o_pos'])) === 1 && ! $s->table('purchase')->has($nachT1), 'a position removed leaves its demand and is gone');
+
+// D-1130: «Nochmal bestellen» — the materials and quantities of the demand as a new one; the original stays.
+$vorher = $offen(new StockService());
+(new StockService())->reorderOrder($bedarf);
+$s      = new StockService();
+$neu    = array_values(array_diff($offen($s), $vorher))[0] ?? 0;
+$pruefe($neu > 0 && $s->table('order')->first($neu, $r['label']) === '__Bedarf (nochmal)' && array_map(static fn (string $k): string => (string) $s->table('purchase')->first((int) $k, $r['k_mod']), $s->table('order')->all($neu, $r['o_pos'])) === [(string) $r['t2']] && count($s->table('order')->all($bedarf, $r['o_pos'])) === 1, '«Nochmal bestellen» makes a new demand with the same materials; the original keeps its position');
 
 // D-1083 with D-1097: a second position joins the subject's open reservation.
 (new StockService())->reserve($r['t2'], '', $bc, '1', null, '2026-11-02', 'Reservierung');

@@ -108,12 +108,14 @@ final class PurchasePage
                 'back'      => $this->stock->orderBackToDraft($order, (string) (($this->inbound->orders()[$order] ?? null)?->receivedOn ?? '')),
                 'discard'   => $this->stock->discardOrder($order),
                 'restore'   => $this->stock->restoreOrder($order),
+                // D-1130: a copy of the order as a new demand.
+                'again'     => $this->stock->reorderOrder($order),
                 default     => throw StockError::nothingToBook(),
             };
             /* translators: %d: number of changes the modeller applied */
             $this->remember('success', sprintf(__('Gespeichert: %d Änderungen in einem Schritt.', 'taxmod-stock'), count((array) ($result['applied'] ?? []))));
             $back = match ($op) {
-                'reorder' => ['tab' => 'bedarf'],
+                'reorder', 'again' => ['tab' => 'bedarf'],
                 'ordered' => ['tab' => 'bestellt'],
                 'source'  => ['tab' => 'bedarf', 'order' => $order],
                 'unsource', 'restore' => ['tab' => 'bedarf'],
@@ -316,7 +318,8 @@ final class PurchasePage
         $sourced  = $tab === 'bedarf' ? $this->sourcedFrom($order, $purchases) : [];
         $count    = sprintf(/* translators: %d: positions */ _n('%d Position', '%d Positionen', count($lines), 'taxmod-stock'), count($lines))
             . ($sourced === [] ? '' : ' · ' . sprintf(/* translators: %d: positions at a supplier */ __('%d beim Händler', 'taxmod-stock'), count($sourced)));
-        $buttons  = match ($tab) {
+        $again    = $tab === 'verworfen' ? '' : $this->button('again', $order, 0, __('Nochmal bestellen', 'taxmod-stock'), $tab, false);
+        $buttons  = $again . match ($tab) {
             'bedarf', 'bestellen' => $this->button('discard', $order, 0, __('Verwerfen', 'taxmod-stock'), $tab, false, __('Verwerfen? Er wird storniert, nicht gelöscht, und lässt sich unter «Verworfen» wiederherstellen.', 'taxmod-stock')),
             'bestellt'  => $this->button('back', $order, 0, __('Zurück zu Entwurf', 'taxmod-stock'), $tab, false)
                 . '<a class="button" href="' . esc_url(InboundPage::url(['tab' => 'ordered'])) . '">' . esc_html__('Wareneingang', 'taxmod-stock') . '</a>',

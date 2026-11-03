@@ -135,7 +135,7 @@ final class StockPage
 
         $kind  = sanitize_key((string) ($_POST['booking'] ?? ''));
         // D-1058: the row buttons carry their purchase in the value, «nichteinlagern-<id>» and «einlagern-<id>».
-        $rowPurchase = preg_match('/^(nichteinlagern|einlagern|umhaengen|reservieren|freigeben)-(\d+)$/', $kind, $m) === 1 ? (int) $m[2] : 0;
+        $rowPurchase = preg_match('/^(nichteinlagern|einlagern|umhaengen|reservieren|freigeben|ortkopieren)-(\d+)$/', $kind, $m) === 1 ? (int) $m[2] : 0;
         $kind        = $rowPurchase > 0 ? $m[1] : $kind;
         $today = current_time('Y-m-d');
         // The goods receipt sends «thing» as a list (one per purchase); only the other forms send one thing.
@@ -146,6 +146,8 @@ final class StockPage
 
         // D-1072: the material just created with «Neues Material» opens in its dialog once the page is back.
         $open = 0;
+        // D-1130: a copy opens at once, to change what differs.
+        $copy = 0;
 
         try {
             $result = match ($kind) {
@@ -204,6 +206,9 @@ final class StockPage
                     absint($_POST['place_type'] ?? 0)
                 ),
                 'platzart'     => $this->stock->createPlaceType(sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? '')))),
+                // D-1130: «Kopieren» — the copy's id is what the page goes back to.
+                'ortkopieren'  => $copy = $this->stock->copyPlace($rowPurchase, sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? ''))), ! empty($_POST['below'])),
+                'kopieren'     => $copy = $this->stock->copyThing($thing),
                 'zuordnen'     => $this->stock->assignPurchases(absint($_POST['order'] ?? 0), $this->assignedThings(), $this->assignedPlaces(), $this->newThings()),
                 'verbrauch'    => $this->stock->bookConsumption(
                     $thing,
@@ -225,6 +230,8 @@ final class StockPage
                 'reservieren'    => __('Reserviert: der verfügbare Bestand sinkt, der Bestand bleibt.', 'taxmod-stock'),
                 'ort'            => __('Lagerort angelegt.', 'taxmod-stock'),
                 'platzart'       => __('Platzart angelegt; die weiteren Felder stehen jetzt zum Ausfüllen da.', 'taxmod-stock'),
+                'ortkopieren'    => __('Kopiert: der neue Ort trägt die Felder des alten, aber nichts von dem, was dort liegt.', 'taxmod-stock'),
+                'kopieren'       => __('Kopiert: das neue Material trägt Daten und Lagersicht des alten, aber keinen Bestand; Bestellnummern bitte neu eintragen.', 'taxmod-stock'),
                 'reservieren'    => __('Reserviert für Produktion: alles, was dort und darunter liegt, ist reserviert.', 'taxmod-stock'),
                 'freigeben'      => __('Kennzeichen entfernt: was dort liegt, ist nicht mehr reserviert.', 'taxmod-stock'),
                 'verschieben'    => __('Verschoben: das Material steht jetzt in der neuen Gruppe, ihre weiteren Felder sind leer.', 'taxmod-stock'),
@@ -239,6 +246,7 @@ final class StockPage
             $open = $kind === 'zuordnen' ? (int) array_key_first(array_filter(array_map('absint', (array) ($_POST['newgroup'] ?? [])))) : 0;
             $back = match ($kind) {
                 'verschieben'  => ['material', ['thing' => $thing, 'view' => 'daten']],
+                'kopieren'     => ['material', ['thing' => $copy, 'view' => 'bearbeiten']],
                 'lager'        => ['material', ['thing' => $thing, 'view' => 'lager']],
                 'umbuchen', 'storno', 'verbrauchstorno' => ['material', ['thing' => $thing, 'view' => 'bestand']],
                 'reservieren', 'reservierungstorno' => sanitize_key((string) ($_POST['back'] ?? '')) === 'bestand' && $thing > 0
@@ -259,6 +267,7 @@ final class StockPage
                 // D-1073: refused because values would fall — named, nothing moved (his doubt 2026-11-01: «das verschieben ist problematisch»).
                 'verschieben'       => ['material', ['thing' => $thing, 'view' => 'daten']],
                 'verbrauch'         => ['verbrauch', ['thing' => $thing]],
+                'kopieren'          => ['material', ['thing' => $thing, 'view' => 'daten']],
                 'reservieren', 'reservierungstorno' => sanitize_key((string) ($_POST['back'] ?? '')) === 'bestand' && $thing > 0
                     ? ['material', ['thing' => $thing, 'view' => 'bestand']] : ['reservierungen', []],
                 default             => [$kind, []],
@@ -269,7 +278,7 @@ final class StockPage
         $returnTab = sanitize_key((string) ($_POST['return_tab'] ?? ''));
 
         if (in_array($returnTab, ['lagerorte', 'lagerstruktur'], true)) {
-            $back = [$returnTab, array_filter(['ort' => absint($_POST['return_ort'] ?? 0)])];
+            $back = [$returnTab, array_filter(['ort' => $kind === 'ortkopieren' && $copy > 0 ? $copy : absint($_POST['return_ort'] ?? 0)])];
         }
 
         // An Umbuchung started in the material list goes back to that very list, search and page included.
@@ -549,7 +558,7 @@ final class StockPage
             . ($about === '' ? '' : '<p style="margin:0">' . esc_html($about) . '</p>') . $chips . '</div>'
             . '<span style="margin-left:auto;white-space:nowrap"><a class="button button-primary" href="' . esc_url(PurchasePage::reorderUrl($thing)) . '">'
             . esc_html__('Nachbestellen', 'taxmod-stock') . '</a> <a class="button" href="' . esc_url($this->thingUrl($thing, 'bearbeiten')) . '">'
-            . esc_html__('Material bearbeiten', 'taxmod-stock') . '</a> ' . $this->moveDialog($thing, $node) . '</span></div>'
+            . esc_html__('Material bearbeiten', 'taxmod-stock') . '</a> ' . $this->copyDialog($thing) . ' ' . $this->moveDialog($thing, $node) . '</span></div>'
             . '<nav class="nav-tab-wrapper" style="margin-top:0">';
 
         foreach ($titles as $slug => $title) {
@@ -1241,6 +1250,24 @@ final class StockPage
         return $html . '</tbody></table>' . get_submit_button(__('Inventur buchen', 'taxmod-stock')) . '</form>';
     }
 
+    /** D-1130: «Kopieren» — the material beside itself, asked in the shared dialog because it says what does not come along. */
+    private function copyDialog(int $thing): string
+    {
+        if (! method_exists(ListPage::class, 'dialogAction')) {
+            return '';
+        }
+
+        $body = '<p>' . esc_html__('Die Kopie bekommt alle Daten und die Lagersicht dieses Materials und öffnet sich gleich zum Bearbeiten.', 'taxmod-stock') . '</p>'
+            . '<p class="description">' . esc_html__('Nicht mitkopiert: Bestand, Reservierungen und die Bestellnummern der Bezugsquellen.', 'taxmod-stock') . '</p>';
+
+        return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'
+            . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
+            . '<input type="hidden" name="thing" value="' . esc_attr((string) $thing) . '">'
+            . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
+            . ListPage::dialogAction('taxmod-stock-copy-' . $thing, __('Kopieren', 'taxmod-stock'), __('Material kopieren', 'taxmod-stock'), $body, 'booking', 'kopieren', __('Kopieren', 'taxmod-stock'))
+            . '</form>';
+    }
+
     /** D-1073: «Verschieben» — the material into another group of the tree, asked in the shared dialog. */
     private function moveDialog(int $thing, int $node): string
     {
@@ -1761,6 +1788,7 @@ final class StockPage
             . ($form === '' ? '<a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $place], admin_url('admin.php'))) . '">' . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a> ' : '')
             . $this->movePlaceDialog($place, $tree) . ' '
             . $this->newPlaceDialog($place, 'lagerstruktur') . ' '
+            . $this->copyPlaceDialog($place, $tree, count($below) - 1) . ' '
             . $this->formStart('lagerstruktur') . $this->returnFields('lagerstruktur', $place)
             . $this->reserveDialog($place, $flags->isFlagged($place), $all) . '</form>'
             . ($label === '' ? '' : ' ' . $label) . '</div>'
@@ -1941,6 +1969,24 @@ final class StockPage
                 'ort',
                 __('Anlegen', 'taxmod-stock')
             ) . '</form>';
+    }
+
+    /** D-1130: «Kopieren» of a place — its name proposed with «(Kopie)», the places inside it on request. */
+    private function copyPlaceDialog(int $place, LocationTree $tree, int $inside): string
+    {
+        if (! method_exists(ListPage::class, 'dialogAction')) {
+            return '';
+        }
+
+        $name = sprintf(/* translators: %s: the name of the original place */ __('%s (Kopie)', 'taxmod-stock'), (string) (array_reverse(explode(' › ', $tree->pathOf($place)))[0]));
+        $body = '<label style="display:block">' . esc_html__('Name', 'taxmod-stock') . '<br><input type="text" name="name" value="' . esc_attr($name) . '" style="width:100%" required></label>'
+            . ($inside > 0 ? '<label style="display:block;margin-top:.5em"><input type="checkbox" name="below" value="1"> '
+                . esc_html(sprintf(/* translators: %d: number of places inside */ _n('Unterort mitkopieren (%d)', 'Unterorte mitkopieren (%d)', $inside, 'taxmod-stock'), $inside)) . '</label>' : '')
+            . '<p class="description">' . esc_html__('Die Kopie steht neben dem Original, mit denselben Feldern. Was dort liegt, wird nicht kopiert.', 'taxmod-stock') . '</p>';
+
+        return $this->formStart('lagerstruktur') . $this->returnFields('lagerstruktur', $place)
+            . ListPage::dialogAction('taxmod-stock-copy-place-' . $place, __('Kopieren', 'taxmod-stock'), __('Lagerort kopieren', 'taxmod-stock'), $body, 'booking', 'ortkopieren-' . $place, __('Kopieren', 'taxmod-stock'))
+            . '</form>';
     }
 
     /** D-1090: «Verschieben» — the new place chosen in the same tree, the place itself and what lies in it left out. */

@@ -326,6 +326,12 @@ foreach (['material' => '>' . $r['lm'] . '</a></td>', 'inventur' => 'Material su
     $pruefe(str_contains($html, $erwartet) && ! str_contains($html, 'notice-error'), "tab «{$tab}» shows «{$erwartet}»");
 }
 
+// His wish 2026-11-03: «Umbuchen» already in the material list — here the lot lies at two places, so each gets its own
+// in the row's details, and the dialog leads back to the list.
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'material'];
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'taxmod-stock-transfer-' . $lot . '-' . $r['platz'] . '-list') && str_contains($html, 'name="return_tab" value="materialliste"'), '«Umbuchen» sits in the material list for each place of a lot and returns to the list');
+
 // D-997 · one thing opened: the head fixed, the views as tabs.
 foreach (['daten' => 'Taxonomy Modeller', 'einkauf' => 'LM2930T-5.0 ×5', 'lager' => 'Mindestbestand', 'bestand' => 'Umbuchen', 'verkauf' => 'später'] as $view => $erwartet) {
     $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => $r['lm'], 'view' => $view];

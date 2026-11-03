@@ -41,6 +41,8 @@ final class StockPage
     /** The notice after a booking; the goods receipt cockpit shows it too, when the booking came from there. */
     public const NOTICE     = 'taxmod_stock_notice';
     private const LAST_LIST = 'taxmod_stock_last_list_';
+
+    private const BACK_TO_LIST = 'materialliste';
     /** Rows per page of the material list (design 20: a list of thousands draws only what is seen). */
     private const PER_PAGE  = 50;
     private const ROWS      = 6;
@@ -257,6 +259,14 @@ final class StockPage
             $back = [$returnTab, array_filter(['ort' => absint($_POST['return_ort'] ?? 0)])];
         }
 
+        // An Umbuchung started in the material list goes back to that very list, search and page included.
+        $last = $returnTab === self::BACK_TO_LIST ? get_transient(self::LAST_LIST . get_current_user_id()) : false;
+
+        if (is_string($last) && $last !== '') {
+            wp_safe_redirect($last);
+            exit;
+        }
+
         if ($fromCockpit) {
             wp_safe_redirect(InboundPage::url(['tab' => 'arrived', 'order' => absint($_POST['order'] ?? 0)] + ($open > 0 ? ['material' => $open] : [])));
             exit;
@@ -351,7 +361,8 @@ final class StockPage
         // «← Zur Liste» in the material view comes back to exactly this list (design 7.3).
         set_transient(self::LAST_LIST . get_current_user_id(), $url(['paged' => absint($_GET['paged'] ?? 0) > 1 ? (string) absint($_GET['paged']) : '']), DAY_IN_SECONDS);
 
-        $paged = absint($_GET['paged'] ?? 1);
+        $paged  = absint($_GET['paged'] ?? 1);
+        $places = $this->stock->places();
 
         foreach (ListView::page($shown, $paged, self::PER_PAGE) as $row) {
             $id    = $row['id'];
@@ -368,8 +379,12 @@ final class StockPage
                 };
             }
 
-            $body .= ListPage::row(self::BULK_FORM, (string) $id, $cells, '<a class="button button-small" href="' . $link . '">'
-                . esc_html__('Öffnen', 'taxmod-stock') . '</a>', $this->lotList($id, $ledger), $open);
+            // His wish 2026-11-03: «vielleicht könnte man den button umbuchen schon hier anzeigen» — one lot at one place
+            // moves straight from the row; with more, each lies in the details below with its own «Umbuchen».
+            $held  = $this->heldAt($id, $ledger);
+            $move  = count($held) === 1 ? $this->transferDialog($id, $held[0][0], $held[0][1], $held[0][2], $places, 0, true) . ' ' : '';
+            $body .= ListPage::row(self::BULK_FORM, (string) $id, $cells, $move . '<a class="button button-small" href="' . $link . '">'
+                . esc_html__('Öffnen', 'taxmod-stock') . '</a>', $this->lotList($id, $ledger, count($held) > 1), $open);
         }
 
         return $html . ListPage::table(ListPage::heads($view, $url), $body, ListPage::filterRow(self::FILTER_FORM, $view))
@@ -435,7 +450,7 @@ final class StockPage
     }
 
     /** The lots of a thing, one line each: date, rest, price, origin, place. */
-    private function lotList(int $thing, \TaxmodStock\Core\Ledger $ledger): string
+    private function lotList(int $thing, \TaxmodStock\Core\Ledger $ledger, bool $withTransfer = false): string
     {
         $s      = $this->stock->structure();
         $lots   = $this->stock->table('lot');
@@ -453,10 +468,36 @@ final class StockPage
                 . ' · ' . esc_html__('Rest', 'taxmod-stock') . ' ' . esc_html($this->number($ledger->restOf($lot)))
                 . ($amount === null ? '' : ' · ' . esc_html($amount) . ' ' . esc_html__('je Stück', 'taxmod-stock'))
                 . ($purchase === null ? ' · ' . esc_html__('Inventur', 'taxmod-stock') : ' · ' . esc_html__('Kauf', 'taxmod-stock') . ' #' . esc_html($purchase))
-                . ($place === '' ? '' : ' · ' . esc_html($place)) . '</li>';
+                . ($place === '' ? '' : ' · ' . esc_html($place));
+
+            foreach ($withTransfer ? array_filter($ledger->placesOf($lot), static fn (float $q): bool => $q > 0.0) : [] as $at => $quantity) {
+                $html .= ' ' . $this->transferDialog($thing, $lot, $at, $quantity, $places, 0, true);
+            }
+
+            $html .= '</li>';
         }
 
         return $html === '' ? '—' : '<ul style="margin:0">' . $html . '</ul>';
+    }
+
+    /**
+     * Where a thing lies, one entry per lot and place with something left — the cases «Umbuchen» can act on.
+     *
+     * @return list<array{0: int, 1: int, 2: float}> lot, place, quantity
+     */
+    private function heldAt(int $thing, \TaxmodStock\Core\Ledger $ledger): array
+    {
+        $held = [];
+
+        foreach ($ledger->lotsOf($thing) as $lot) {
+            foreach ($ledger->placesOf($lot) as $place => $quantity) {
+                if ($quantity > 0.0) {
+                    $held[] = [$lot, (int) $place, $quantity];
+                }
+            }
+        }
+
+        return $held;
     }
 
     /** D-997: one thing opened whole — the head fixed, the views as tabs below. */
@@ -794,7 +835,7 @@ final class StockPage
      *
      * @param array<int, string> $places
      */
-    private function transferDialog(int $thing, int $lot, int $from, float $quantity, array $places, int $returnPlace = 0): string
+    private function transferDialog(int $thing, int $lot, int $from, float $quantity, array $places, int $returnPlace = 0, bool $toList = false): string
     {
         if (! method_exists(ListPage::class, 'dialogAction')) {
             return '';
@@ -809,7 +850,8 @@ final class StockPage
         return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'
             . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">' . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
             . ($returnPlace > 0 ? $this->returnFields('lagerorte', $returnPlace) : '')
-            . ListPage::dialogAction('taxmod-stock-transfer-' . $lot . '-' . $from, __('Umbuchen', 'taxmod-stock'), __('Umbuchen', 'taxmod-stock'), $body, 'booking', 'umbuchen', __('Umbuchen', 'taxmod-stock'))
+            . ($toList ? '<input type="hidden" name="return_tab" value="' . esc_attr(self::BACK_TO_LIST) . '">' : '')
+            . ListPage::dialogAction('taxmod-stock-transfer-' . $lot . '-' . $from . ($toList ? '-list' : ''), __('Umbuchen', 'taxmod-stock'), __('Umbuchen', 'taxmod-stock'), $body, 'booking', 'umbuchen', __('Umbuchen', 'taxmod-stock'))
             . '</form>';
     }
 

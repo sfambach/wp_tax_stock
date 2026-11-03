@@ -99,6 +99,18 @@ $pruefe($druck !== null && ($druck['path'] ?? []) === ['Druck'] && ! in_array('p
 $_GET = ['page' => ModulePage::PAGE, 'module' => '__navcheck-deep'];
 $tief = LogisticsShell::wrap(ModulePage::PAGE, '<p>x</p>');
 $pruefe(substr_count($tief, 'taxmod-shell-group is-open') === 2 && str_contains($tief, '>Ebene B</a><ul><li><a') && str_contains($tief, 'aria-current="page">Tief</a>'), 'a page with a path of two groups stands three levels deep, its groups open (n levels)');
+// D-1128, his word «auf dem hauptknoten eine übersicht zu bekommen mit abstprung»: an area and a group open an overview of tiles.
+$_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'stock'];
+$uebersicht = LogisticsShell::wrap(CockpitPage::PAGE, (new CockpitPage())->render());
+$pruefe(str_contains($uebersicht, 'taxmod-shell-area is-open"><a href="' . esc_url(CockpitPage::overviewUrl('stock')) . '">Bestand</a>') && substr_count($uebersicht, 'taxmod-tile-label"') === 5 && str_contains($uebersicht, '<span class="taxmod-tile-label">Lagerorte</span>'), 'Bestand opens an overview with a tile for each of its five items, the area open in the navigation');
+$_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'settings'];
+$uebersicht = (new CockpitPage())->render();
+$pruefe(str_contains($uebersicht, esc_url(CockpitPage::overviewUrl('settings', 'Lagerstruktur'))) && substr_count($uebersicht, '>Lagerstruktur</span>') === 1, 'a group (Lagerstruktur) is one tile that opens its own overview');
+$_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'settings', CockpitPage::GROUP => 'Lagerstruktur'];
+$uebersicht = (new CockpitPage())->render();
+$pruefe(str_contains($uebersicht, '>Layout</span>') && str_contains($uebersicht, '>Platzarten</span>') && ! str_contains($uebersicht, '>Grundeinstellungen</span>'), 'the group overview shows only its own items');
+$_GET = ['page' => CockpitPage::PAGE];
+$pruefe(str_contains((new CockpitPage())->render(), 'Angekommen, einbuchen'), 'the cockpit itself still shows what is due');
 $_GET = [];
 
 echo "WP menu\n";

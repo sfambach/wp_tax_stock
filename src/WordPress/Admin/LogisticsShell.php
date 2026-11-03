@@ -110,7 +110,9 @@ final class LogisticsShell
     {
         $navigation = self::navigation();
         $tab        = sanitize_key((string) ($_GET['tab'] ?? ''));
-        $active     = $navigation->active($page, $tab, $page === ModulePage::PAGE ? ModulePage::requested() : '');
+        $overview   = $page === CockpitPage::PAGE ? sanitize_key((string) ($_GET[CockpitPage::AREA] ?? '')) : '';
+        // D-1128: an area's overview opens its area in the navigation, no item marked.
+        $active     = $overview !== '' && $overview !== 'cockpit' ? ['area' => $overview, 'item' => ''] : $navigation->active($page, $tab, $page === ModulePage::PAGE ? ModulePage::requested() : '');
 
         if ($active === null) {
             return $side . $html;
@@ -131,10 +133,12 @@ final class LogisticsShell
 
         foreach ($navigation->areas() as $area) {
             $here  = $area['key'] === $active['area'];
-            $html .= '<li class="taxmod-shell-area' . ($here ? ' is-open' : '') . '"><a href="' . esc_url(self::url($area['items'][0])) . '">' . esc_html($area['label']) . '</a>';
+            // D-1128: the area itself opens its overview with a tile per item; the cockpit is that overview already.
+            $link  = $area['key'] === 'cockpit' ? self::url($area['items'][0]) : CockpitPage::overviewUrl($area['key']);
+            $html .= '<li class="taxmod-shell-area' . ($here ? ' is-open' : '') . '"><a href="' . esc_url($link) . '">' . esc_html($area['label']) . '</a>';
 
             if ($here || count($area['items']) > 1) {
-                $html .= self::items($area['items'], 0, $here ? $active['item'] : '');
+                $html .= self::items($area['items'], 0, $here ? $active['item'] : '', $area['key']);
             }
 
             $html .= '</li>';
@@ -153,7 +157,7 @@ final class LogisticsShell
      *
      * @param list<array{key: string, label: string, page: string, tab: string, module?: string, path?: list<string>}> $items
      */
-    private static function items(array $items, int $depth, string $current): string
+    private static function items(array $items, int $depth, string $current, string $area = ''): string
     {
         $html  = '<ul>';
         $count = count($items);
@@ -176,8 +180,9 @@ final class LogisticsShell
             }
             $i--;
             $open  = in_array($current, array_column($members, 'key'), true);
-            $html .= '<li class="taxmod-shell-group' . ($open ? ' is-open' : '') . '"><a href="' . esc_url(self::url($members[0])) . '" style="padding-left:' . (24 + 12 * $depth) . 'px">'
-                . esc_html($group) . '</a>' . self::items($members, $depth + 1, $current) . '</li>';
+            // D-1128: a group opens its own overview, like an area.
+            $html .= '<li class="taxmod-shell-group' . ($open ? ' is-open' : '') . '"><a href="' . esc_url($area === '' ? self::url($members[0]) : CockpitPage::overviewUrl($area, implode('/', array_slice($path, 0, $depth + 1)))) . '" style="padding-left:' . (24 + 12 * $depth) . 'px">'
+                . esc_html($group) . '</a>' . self::items($members, $depth + 1, $current, $area) . '</li>';
         }
 
         return $html . '</ul>';

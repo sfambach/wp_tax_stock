@@ -85,6 +85,11 @@ $pruefe(($settings[0]['page'] ?? '') === SettingsPage::PAGE, 'Grundeinstellungen
 $pruefe(($settings[2]['label'] ?? '') === 'DHL 2', 'the module keeps its menu label, without markup');
 $outbound = array_values(array_filter($navigation->areas(), static fn (array $area): bool => $area['key'] === 'outbound'))[0]['items'] ?? [];
 $pruefe(array_column($outbound, 'module') === ['taxebay-shipping'], 'Warenausgang holds the eBay shipping page');
+// His word 2026-11-03 (D-1115): «Würde menü druck machen dann unterpunkte aufträge, etiketten, ...».
+add_filter(ModulePage::FILTER, static fn (array $pages): array => [...$pages, ['slug' => '__navcheck-print', 'label' => 'Aufträge', 'area' => 'print', 'render' => static fn (): string => '']]);
+ModulePage::capture();
+$print = array_values(array_filter(LogisticsShell::navigation()->areas(), static fn (array $area): bool => $area['key'] === 'print'))[0] ?? null;
+$pruefe($print !== null && $print['label'] === 'Druck' && in_array('__navcheck-print', array_column($print['items'], 'module'), true), 'a page announced with area «print» stands under its own area «Druck»');
 
 echo "WP menu\n";
 $hidden = ModulePage::menuEntries();

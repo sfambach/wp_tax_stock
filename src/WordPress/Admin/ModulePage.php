@@ -32,13 +32,13 @@ final class ModulePage
     public const PAGE = 'taxmod-lager-modul';
 
     /**
-     * Filter: `list<array{slug: string, label: string, area?: 'settings'|'outbound', capability?: string, render?: callable(): string}>`.
+     * Filter: `list<array{slug: string, label: string, area?: 'settings'|'outbound'|'print', capability?: string, render?: callable(): string}>`.
      * An entry with the slug of a menu entry replaces what was read from the menu.
      */
     public const FILTER = 'taxmod_logistics_pages';
 
     /** The navigation areas a module page may stand in. */
-    private const AREAS = ['settings', 'outbound'];
+    private const AREAS = ['settings', 'outbound', 'print'];
 
     /** Pages of the Taxmod menu that are not modules: the modeller's (D-1085 level 1) and ours. */
     private const NOT_MODULES = [Plugin::PARENT, 'taxmod-inbox', 'taxmod-cleanup', 'taxmod-backup', 'taxmod-settings', CockpitPage::PAGE, InboundPage::PAGE, StockPage::PAGE, PurchasePage::PAGE, SettingsPage::PAGE, self::PAGE];

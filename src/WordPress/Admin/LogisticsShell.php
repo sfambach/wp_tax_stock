@@ -69,6 +69,8 @@ final class LogisticsShell
                 $item('places', __('Lagerorte', 'taxmod-stock'), StockPage::PAGE, 'lagerorte'),
             ]],
             ['key' => 'outbound', 'label' => __('Warenausgang', 'taxmod-stock'), 'items' => self::modules('outbound')],
+            // His word 2026-11-03: «Würde menü druck machen dann unterpunkte aufträge, etiketten, ...» — the modeller announces the pages (D-1115).
+            ['key' => 'print', 'label' => __('Druck', 'taxmod-stock'), 'items' => self::modules('print')],
             // His word 2026-11-01: «einen Punkt Einstellung … die API-Konfiguration, die Grundeinstellung und ja, die Lagerstruktur».
             ['key' => 'settings', 'label' => __('Einstellungen', 'taxmod-stock'), 'items' => [
                 // D-1085: the business settings inside the navigation; the technical structure stays on the modeller's Configuration.

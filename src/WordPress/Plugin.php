@@ -126,6 +126,14 @@ final class Plugin
             }
         });
 
+        // The modeller's forms (record editor, choosers, dialogs) on a logistics page need its stylesheet in the head: enqueued late,
+        // from inside the filter, it came too late, and a chosen project showed its hidden search field beside it (2026-11-03).
+        add_action('admin_enqueue_scripts', static function (): void {
+            if (in_array(sanitize_key((string) ($_GET['page'] ?? '')), [self::MENU, CockpitPage::PAGE, StockPage::PAGE, PurchasePage::PAGE, SettingsPage::PAGE, ModulePage::PAGE, InboundPage::PAGE], true)) {
+                do_action('taxmod_enqueue_admin_style');
+            }
+        });
+
         // D-1069: the material page inside a goods receipt dialog shows only itself — no admin menu, bar or logistics navigation.
         add_action('admin_enqueue_scripts', static function (): void {
             if (! in_array(sanitize_key((string) ($_GET['page'] ?? '')), [StockPage::PAGE, 'taxmod'], true)) {

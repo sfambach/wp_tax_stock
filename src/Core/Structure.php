@@ -27,7 +27,9 @@ final class Structure
     ];
 
     /** Nodes the module uses when they are there: the choices of «Verwendung». */
-    private const OPTIONAL_NODES = ['lager_use', 'source', 'firm', 'base_units', 'prefixes', 'project', 'sale'];
+    private const OPTIONAL_NODES = ['lager_use', 'source', 'firm', 'base_units', 'prefixes', 'project', 'sale',
+        // D-1123: the kinds of place and the parts a kind brings along.
+        'location_type', 'location_type_part'];
 
     /** Fields the module uses when they are there and leaves out when they are not. */
     private const OPTIONAL_FIELDS = [
@@ -58,6 +60,8 @@ final class Structure
         'transaction_reference', 'transaction_deadline', 'line_thing',
         // D-1091: the box (a movable place) a Vorgang «Umlagerung» moved.
         'transaction_carrier',
+        // D-1123: a place's kind; a kind's movable mark and parts; a part's kind and count.
+        'location_place_type', 'type_movable', 'type_parts', 'part_type', 'part_count',
     ];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];

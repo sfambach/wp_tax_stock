@@ -42,6 +42,12 @@ final class StockError extends \RuntimeException
         return new self('place_into_itself', (string) $place);
     }
 
+    /** D-1123: a type of place whose parts lead back to itself. */
+    public static function placeTypeLoop(int $type): self
+    {
+        return new self('place_type_loop', (string) $type);
+    }
+
     /** D-1058: closing a purchase without stock needs its reason. */
     public static function notStockedWithoutReason(int $purchaseId): self
     {

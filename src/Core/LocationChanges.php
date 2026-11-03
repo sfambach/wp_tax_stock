@@ -14,7 +14,7 @@ final class LocationChanges
     }
 
     /** @return list<array<string, mixed>> */
-    public function create(string $name, int $parent, bool $movable, int $project, LocationTree $tree, Table $places, bool $reserved = false): array
+    public function create(string $name, int $parent, bool $movable, int $project, LocationTree $tree, Table $places, bool $reserved = false, int $type = 0, PlaceTypes $types = new PlaceTypes()): array
     {
         $s    = $this->structure;
         $name = trim($name);
@@ -27,16 +27,60 @@ final class LocationChanges
             throw StockError::notALocation($parent);
         }
 
-        $values = [(string) $s->field('label') => $name] + $this->treeValues($parent, $movable, $project);
+        // D-1123: a known kind decides whether the place moves and which places it brings along (Alex: nine drawers).
+        $type   = $types->has($type) && $s->hasField('location_place_type') ? $type : 0;
+        $values = [(string) $s->field('label') => $name] + $this->treeValues($parent, $type > 0 ? (bool) $types->isMovable($type) : $movable, $project);
+
+        if ($type > 0) {
+            $values[(string) $s->field('location_place_type')] = (string) $type;
+        }
 
         if ($reserved) {
             $values[(string) $this->reservedField()] = '1';
         }
 
-        return [
+        $changes = [
             ['op' => 'create_record', 'ref' => 'ort', 'node' => (string) $s->node('location')],
             ['op' => 'set_values', 'record' => '@ort', 'values' => $values],
         ];
+
+        if ($type > 0) {
+            $this->needTree();
+            $count = 0;
+            $this->bring($types->brought($type), 'ort', $types, $changes, $count);
+        }
+
+        return $changes;
+    }
+
+    /**
+     * @param list<array{type: int, name: string, below: list<array<string, mixed>>}> $places
+     * @param list<array<string, mixed>> $changes
+     */
+    private function bring(array $places, string $parentRef, PlaceTypes $types, array &$changes, int &$count): void
+    {
+        $s = $this->structure;
+
+        foreach ($places as $place) {
+            $ref     = 'teil' . ++$count;
+            $values  = [
+                (string) $s->field('label')               => $place['name'],
+                (string) $s->field('location_parent')     => '@' . $parentRef,
+                (string) $s->field('location_place_type') => (string) $place['type'],
+            ];
+
+            if ($s->hasField('location_movable')) {
+                $values[(string) $s->field('location_movable')] = $types->isMovable($place['type']) ? '1' : '0';
+            }
+
+            if ($s->hasField('location_reserved')) {
+                $values[(string) $s->field('location_reserved')] = '0';
+            }
+
+            $changes[] = ['op' => 'create_record', 'ref' => $ref, 'node' => (string) $s->node('location')];
+            $changes[] = ['op' => 'set_values', 'record' => '@' . $ref, 'values' => $values];
+            $this->bring($place['below'], $ref, $types, $changes, $count);
+        }
     }
 
     /** @return list<array<string, mixed>> */

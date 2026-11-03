@@ -73,7 +73,9 @@ final class LogisticsShell
             ['key' => 'settings', 'label' => __('Einstellungen', 'taxmod-stock'), 'items' => [
                 // D-1085: the business settings inside the navigation; the technical structure stays on the modeller's Configuration.
                 $item('basics', __('Grundeinstellungen', 'taxmod-stock'), SettingsPage::PAGE),
-                $item('structure', __('Lagerstruktur', 'taxmod-stock'), StockPage::PAGE, 'lagerstruktur'),
+                // His words 2026-11-03 (D-1129): «sollte eigener punkt in einstellungen sein vielleicht lagerstrukut platzarten, layout».
+                ['path' => [__('Lagerstruktur', 'taxmod-stock')]] + $item('structure', __('Layout', 'taxmod-stock'), StockPage::PAGE, 'lagerstruktur'),
+                ['path' => [__('Lagerstruktur', 'taxmod-stock')]] + $item('place-types', __('Platzarten', 'taxmod-stock'), StockPage::PAGE, 'platzarten'),
                 ...self::modules('settings'),
                 // His words 2026-11-03: «pack mal das menü drucken unter einstellungen», «warum hat das nur zwei ebenen», «kannst du
                 // das so bauen das es n ebenen zulässt» — an item's `path` puts it any depth below its area (D-1121).

@@ -14,6 +14,7 @@ use TaxmodStock\Core\NewThing;
 use TaxmodStock\Core\Purchasing;
 use TaxmodStock\Core\LocationChanges;
 use TaxmodStock\Core\LocationTree;
+use TaxmodStock\Core\PlaceTypes;
 use TaxmodStock\Core\NotStocked;
 use TaxmodStock\Core\ReceiptChoice;
 use TaxmodStock\Core\ReceiptPlan;
@@ -79,6 +80,8 @@ final class StockService
     private ?Things $things = null;
 
     private ?LocationTree $locationTree = null;
+
+    private ?PlaceTypes $placeTypes = null;
 
     /** @var list<string>|null D-1097: the position lists the model holds as compositions, read once */
     private ?array $composed = null;
@@ -797,7 +800,41 @@ final class StockService
         $s      = $this->structure();
         $places = $this->table('location');
 
-        return $this->locationTree = LocationTree::from($s, $places, $this->recordLabels(LocationTree::projectIds($s, $places)));
+        return $this->locationTree = LocationTree::from($s, $places, $this->recordLabels(LocationTree::projectIds($s, $places)), $this->placeTypes());
+    }
+
+    /** D-1123: the kinds of place; none while the model has no node for them. */
+    public function placeTypes(): PlaceTypes
+    {
+        $s = $this->structure();
+
+        if (! $s->hasNode('location_type')) {
+            return new PlaceTypes();
+        }
+
+        return $this->placeTypes ??= PlaceTypes::from($s, $this->table('location_type'), $s->hasNode('location_type_part') ? $this->table('location_type_part') : new Table([]));
+    }
+
+    /**
+     * D-1123: a new kind of place, by its name; its other fields are filled in the record editor.
+     *
+     * @return array<string, mixed> the modeller's answer
+     */
+    public function createPlaceType(string $name): array
+    {
+        $s    = $this->structure();
+        $name = trim($name);
+
+        if ($name === '' || ! $s->hasNode('location_type')) {
+            throw StockError::placeWithoutName();
+        }
+
+        $values = [(string) $s->field('label') => $name] + ($s->hasField('type_movable') ? [(string) $s->field('type_movable') => '0'] : []);
+
+        return $this->model->write([
+            ['op' => 'create_record', 'ref' => 'art', 'node' => (string) $s->node('location_type')],
+            ['op' => 'set_values', 'record' => '@art', 'values' => $values],
+        ]);
     }
 
     /** @return array<int, string> every place by its path and project, in tree order — what a place chooser offers */
@@ -813,9 +850,9 @@ final class StockService
     }
 
     /** @return array<string, mixed> the modeller's answer */
-    public function createPlace(string $name, int $parent, bool $movable, int $project, bool $reserved = false): array
+    public function createPlace(string $name, int $parent, bool $movable, int $project, bool $reserved = false, int $type = 0): array
     {
-        return $this->model->write((new LocationChanges($this->structure()))->create($name, $parent, $movable, $project, $this->locationTree(), $this->table('location'), $reserved));
+        return $this->model->write((new LocationChanges($this->structure()))->create($name, $parent, $movable, $project, $this->locationTree(), $this->table('location'), $reserved, $type, $this->placeTypes()));
     }
 
     /**

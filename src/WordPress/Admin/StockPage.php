@@ -46,7 +46,7 @@ final class StockPage
     /** Rows per page of the material list (design 20: a list of thousands draws only what is seen). */
     private const PER_PAGE  = 50;
     private const ROWS      = 6;
-    private const TABS      = ['wareneingang', 'material', 'inventur', 'verbrauch', 'reservierungen', 'lagerorte', 'lagerstruktur'];
+    private const TABS      = ['wareneingang', 'material', 'inventur', 'verbrauch', 'reservierungen', 'lagerorte', 'lagerstruktur', 'platzarten'];
     private const VIEWS     = ['daten', 'bearbeiten', 'einkauf', 'lager', 'bestand', 'verkauf'];
     private const FILTER_FORM = 'taxmod-stock-filter';
     private const BULK_FORM   = 'taxmod-stock-bulk';
@@ -105,13 +105,14 @@ final class StockPage
         try {
             $thing = absint($_GET['thing'] ?? 0);
             // The tabs are the menu group «Bestand»; Einbuchen (Eingang) and the structure (Einstellungen, D-1085) stand alone.
-            $html .= (in_array($tab, ['wareneingang', 'lagerstruktur'], true) ? '' : '<div class="taxmod-stock-pagetabs">' . $this->tabBar($tab, $list) . '</div>') . match ($tab) {
+            $html .= (in_array($tab, ['wareneingang', 'lagerstruktur', 'platzarten'], true) ? '' : '<div class="taxmod-stock-pagetabs">' . $this->tabBar($tab, $list) . '</div>') . match ($tab) {
                 'material'  => $thing > 0 ? $this->thingView($thing) : $this->materialList($list),
                 'inventur'  => $this->inventoryForm(),
                 'verbrauch' => $this->consumptionForm($thing, absint($_GET['lot'] ?? 0), absint($_GET['place'] ?? 0)),
                 'lagerorte' => $this->locationSplit(false),
                 'reservierungen' => $this->reservationList(),
                 'lagerstruktur' => $this->locationSplit(true),
+                'platzarten' => $this->placeTypesPage(absint($_GET['typ'] ?? 0)),
                 default     => absint($_GET['split'] ?? 0) > 0
                     ? $this->splitForm(absint($_GET['order'] ?? 0), absint($_GET['split']), sanitize_key((string) ($_GET['back'] ?? '')))
                     : $this->receiptTab($list, absint($_GET['order'] ?? 0)),
@@ -199,8 +200,10 @@ final class StockPage
                     absint($_POST['new_parent'] ?? 0),
                     ! empty($_POST['movable']),
                     absint($_POST['project'] ?? 0),
-                    ! empty($_POST['reserved'])
+                    ! empty($_POST['reserved']),
+                    absint($_POST['place_type'] ?? 0)
                 ),
+                'platzart'     => $this->stock->createPlaceType(sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? '')))),
                 'zuordnen'     => $this->stock->assignPurchases(absint($_POST['order'] ?? 0), $this->assignedThings(), $this->assignedPlaces(), $this->newThings()),
                 'verbrauch'    => $this->stock->bookConsumption(
                     $thing,
@@ -221,6 +224,7 @@ final class StockPage
                 'storno', 'reservierungstorno', 'verbrauchstorno' => __('Storniert: die Gegenbuchung hebt den Vorgang auf, beide bleiben im Protokoll.', 'taxmod-stock'),
                 'reservieren'    => __('Reserviert: der verfügbare Bestand sinkt, der Bestand bleibt.', 'taxmod-stock'),
                 'ort'            => __('Lagerort angelegt.', 'taxmod-stock'),
+                'platzart'       => __('Platzart angelegt; die weiteren Felder stehen jetzt zum Ausfüllen da.', 'taxmod-stock'),
                 'reservieren'    => __('Reserviert für Produktion: alles, was dort und darunter liegt, ist reserviert.', 'taxmod-stock'),
                 'freigeben'      => __('Kennzeichen entfernt: was dort liegt, ist nicht mehr reserviert.', 'taxmod-stock'),
                 'verschieben'    => __('Verschoben: das Material steht jetzt in der neuen Gruppe, ihre weiteren Felder sind leer.', 'taxmod-stock'),
@@ -240,6 +244,7 @@ final class StockPage
                 'reservieren', 'reservierungstorno' => sanitize_key((string) ($_POST['back'] ?? '')) === 'bestand' && $thing > 0
                     ? ['material', ['thing' => $thing, 'view' => 'bestand']] : ['reservierungen', []],
                 'wareneingang', 'aufteilen', 'zuordnen', 'nichteinlagern', 'einlagern' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
+                'platzart'     => ['platzarten', array_filter(['typ' => (int) (((array) ($result['refs'] ?? []))['art'] ?? 0)])],
                 'umhaengen', 'ort', 'reservieren', 'freigeben' => ['lagerstruktur', []],
                 default        => ['material', $thing > 0 ? ['thing' => $thing, 'view' => 'bestand'] : []],
             };
@@ -247,6 +252,7 @@ final class StockPage
             $this->remember('error', Messages::of($e));
             $back = match ($kind) {
                 'wareneingang', 'zuordnen', 'nichteinlagern', 'einlagern' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
+                'platzart'          => ['platzarten', []],
                 'umhaengen', 'ort', 'reservieren', 'freigeben' => ['lagerstruktur', []],
                 'aufteilen'         => ['wareneingang', ['order' => absint($_POST['order'] ?? 0), 'split' => absint($_POST['purchase'] ?? 0)]],
                 'lager', 'umbuchen', 'storno', 'verbrauchstorno' => ['material', ['thing' => $thing, 'view' => $kind === 'lager' ? 'lager' : 'bestand']],
@@ -1772,6 +1778,69 @@ final class StockPage
     }
 
     /**
+     * D-1123, Einstellungen › Lagerstruktur › Platzarten: the kinds of place in a list, one opened in the modeller's record
+     * editor; «+ Neue Platzart» asks only for the name.
+     */
+    private function placeTypesPage(int $chosen): string
+    {
+        $s     = $this->stock->structure();
+        $types = $this->stock->placeTypes();
+        $html  = '<h2>' . esc_html__('Platzarten', 'taxmod-stock') . '</h2>';
+
+        if (! $s->hasNode('location_type')) {
+            return $html . '<p class="description">' . esc_html__('Das Modell kennt noch keine Platzarten.', 'taxmod-stock') . '</p>';
+        }
+
+        $list = add_query_arg(['page' => self::PAGE, 'tab' => 'platzarten'], admin_url('admin.php'));
+
+        if ($chosen > 0 && $types->has($chosen)) {
+            $back = add_query_arg('typ', $chosen, $list);
+            $form = (string) apply_filters('taxmod_record_editor', '', $chosen, $back);
+
+            return $html . '<h3>' . esc_html($types->nameOf($chosen)) . '</h3>'
+                . ($form === '' ? '<p><a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $chosen], admin_url('admin.php'))) . '">' . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a></p>' : $form)
+                . '<p><a href="' . esc_url($list) . '">' . esc_html__('← alle Platzarten', 'taxmod-stock') . '</a></p>';
+        }
+
+        $places = $this->stock->table('location');
+        $used   = [];
+
+        if ($s->hasField('location_place_type')) {
+            foreach ($places->ids() as $place) {
+                $type = (int) $places->first($place, $s->field('location_place_type'));
+                $used[$type] = ($used[$type] ?? 0) + 1;
+            }
+        }
+
+        $body = '';
+
+        foreach ($types->names() as $type => $name) {
+            $parts = implode(', ', array_map(static fn (array $part): string => $part[1] . ' × ' . $types->nameOf($part[0]), $types->partsOf($type)));
+            $body .= '<tr><th scope="row" class="check-column"></th>'
+                . '<td><a href="' . esc_url(add_query_arg('typ', $type, $list)) . '"><strong>' . esc_html($name) . '</strong></a></td>'
+                . '<td>' . esc_html($types->isMovable($type) ? __('ja', 'taxmod-stock') : __('nein', 'taxmod-stock')) . '</td>'
+                . '<td>' . esc_html($parts === '' ? '—' : $parts) . '</td>'
+                . '<td>' . esc_html((string) ($used[$type] ?? 0)) . '</td>'
+                . '<td style="text-align:right"><a class="button" href="' . esc_url(add_query_arg('typ', $type, $list)) . '">' . esc_html__('Bearbeiten', 'taxmod-stock') . '</a></td></tr>';
+        }
+
+        $dialog = method_exists(ListPage::class, 'dialogAction')
+            ? $this->formStart('platzart') . ListPage::dialogAction(
+                'taxmod-stock-new-place-type',
+                __('+ Neue Platzart', 'taxmod-stock'),
+                __('Neue Platzart', 'taxmod-stock'),
+                '<label style="display:block">' . esc_html__('Name', 'taxmod-stock') . '<br><input type="text" name="name" style="width:100%" required></label>',
+                'booking',
+                'platzart',
+                __('Anlegen', 'taxmod-stock')
+            ) . '</form>'
+            : '';
+
+        return $html . '<div style="text-align:right;margin-bottom:12px">' . $dialog . '</div>'
+            . ListPage::table([[__('Platzart', 'taxmod-stock'), ''], [__('Beweglich', 'taxmod-stock'), '7em'], [__('Teile', 'taxmod-stock'), ''], [__('Plätze', 'taxmod-stock'), '5em']], $body === '' ? $this->noItems(5) : $body);
+    }
+
+    /**
      * D-1090, «Lagerorte»: what lies at the place and below it, one row per lot and place; a row can be dragged onto a place
      * in the tree (an Umbuchung, D-1039).
      */
@@ -1853,9 +1922,12 @@ final class StockPage
 
         $s        = $this->stock->structure();
         $projects = $this->stock->projects();
+        $types    = $this->stock->placeTypes()->names();
         $body     = '<input type="hidden" name="new_parent" value="' . esc_attr((string) $parent) . '">'
             . '<label style="display:block">' . esc_html__('Name', 'taxmod-stock') . '<br><input type="text" name="name" style="width:100%" required></label>'
-            . '<label style="display:block;margin-top:.5em"><input type="checkbox" name="movable" value="1"> ' . esc_html__('beweglich (Kiste, Karton)', 'taxmod-stock') . '</label>'
+            // D-1123: a kind decides whether the place moves and brings its parts along (Alex: nine drawers).
+            . ($types === [] ? '' : '<label style="display:block;margin-top:.5em">' . esc_html__('Platzart', 'taxmod-stock') . '<br><select name="place_type" style="width:100%">' . $this->options($types, '—') . '</select></label>')
+            . '<label style="display:block;margin-top:.5em"><input type="checkbox" name="movable" value="1"> ' . esc_html($types === [] ? __('beweglich (Kiste, Karton)', 'taxmod-stock') : __('beweglich (Kiste, Karton) — ohne Platzart', 'taxmod-stock')) . '</label>'
             . ($s->hasField('location_reserved') ? '<label style="display:block"><input type="checkbox" name="reserved" value="1"> ' . esc_html__('reserviert für Produktion', 'taxmod-stock') . '</label>' : '')
             . ($projects === [] ? '' : '<label style="display:block;margin-top:.5em">' . esc_html__('Projekt', 'taxmod-stock') . '<br><select name="project" style="width:100%">' . $this->options($projects, '—') . '</select></label>');
 

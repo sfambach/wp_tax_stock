@@ -30,6 +30,7 @@ final class Messages
             'not_closed_without_stock'  => sprintf(__('Kauf #%s ist nicht als «nicht eingelagert» abgeschlossen.', 'taxmod-stock'), $error->detail),
             'place_without_name'        => __('Ein neuer Lagerort braucht einen Namen.', 'taxmod-stock'),
             /* translators: %s: record id of the place */
+            'place_type_loop'           => sprintf(__('Platzart #%s enthält sich über ihre Teile selbst.', 'taxmod-stock'), $error->detail),
             'place_into_itself'         => sprintf(__('Lagerort #%s kann nicht in sich selbst oder in etwas liegen, das in ihm liegt.', 'taxmod-stock'), $error->detail),
             'already_received'          => sprintf(__('Kauf #%s ist schon eingegangen.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id */

@@ -34,7 +34,7 @@ final class LocationTree
     }
 
     /** @param array<int, string> $projectNames project record id → name */
-    public static function from(Structure $s, Table $places, array $projectNames): self
+    public static function from(Structure $s, Table $places, array $projectNames, PlaceTypes $types = new PlaceTypes()): self
     {
         $names = $parents = $projects = $movable = $projectIds = [];
 
@@ -48,7 +48,11 @@ final class LocationTree
                 $projectIds[$id] = $project;
             }
 
-            if ($s->hasField('location_movable') && $places->first($id, $s->field('location_movable')) === '1') {
+            // D-1123: a place of a known kind moves as its kind says; without one its own mark stands.
+            $kind  = $s->hasField('location_place_type') ? $types->isMovable((int) $places->first($id, $s->field('location_place_type'))) : null;
+            $moves = $kind ?? ($s->hasField('location_movable') && $places->first($id, $s->field('location_movable')) === '1');
+
+            if ($moves) {
                 $movable[$id] = true;
             }
         }

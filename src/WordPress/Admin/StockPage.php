@@ -1672,9 +1672,10 @@ final class StockPage
         $flags = $this->stock->reservedPlaces();
         // His word 2026-11-03 (D-1122): «lager struktur unter einstellung gleich die einstellungen/details des platzes zeigt nicht
         // den bestand» — the place's own fields open at once; what lies there belongs to «Lagerorte».
+        // «projekt steht aber nicht auf dem etikett» (2026-11-03): the second line names the project before the path.
         $form  = (string) apply_filters('taxmod_record_editor', '', $place, $back);
         $label = (string) apply_filters('taxmod_label_button', '', $tree->isMovable($place) ? 'K' : 'O', $place,
-            (string) (array_reverse(explode(' › ', $tree->pathOf($place)))[0]), $tree->parentOf($place) > 0 ? $tree->pathOf($tree->parentOf($place)) : '');
+            (string) (array_reverse(explode(' › ', $tree->pathOf($place)))[0]), implode(' · ', array_filter([(string) $tree->projectOf($place), $tree->parentOf($place) > 0 ? $tree->pathOf($tree->parentOf($place)) : ''])));
         $facts = [
             [__('Beweglich (Kiste, Karton)', 'taxmod-stock'), $tree->isMovable($place) ? __('ja', 'taxmod-stock') : __('nein', 'taxmod-stock')],
             [__('Unterorte', 'taxmod-stock'), (string) (count($below) - 1)],

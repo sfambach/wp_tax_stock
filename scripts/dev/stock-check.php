@@ -440,6 +440,51 @@ $kachel = (new TaxmodStock\WordPress\Admin\CockpitPage())->render();
 $_GET  = [];
 $pruefe(str_contains($kachel, '<span class="taxmod-tile-count">' . count((new StockService())->places()) . '</span><span class="taxmod-tile-label">Layout</span>') && str_contains($kachel, 'Zuletzt angelegt:<br>Lager › __Schrank › __Schublade 2 › __Kiste<br>Lager › __Schrank › __Schublade 2<br>'), 'the Layout tile counts the places and names the newest first');
 
+// D-1139, his word «projekt gebinde … haben die ja ein bom und auch evtl einen bestand … ob der übereinstimmt bzw was fehlt».
+$bom = wp_get_ability('taxmod/apply')->execute(['changes' => [
+    ['op' => 'create_node', 'ref' => 'proj', 'name' => '__Projekte', 'parent' => $r['stock']],
+    ['op' => 'create_node', 'ref' => 'plat', 'name' => '__Platinen', 'parent' => $r['stock']],
+    ['op' => 'create_node', 'ref' => 'rev', 'name' => '__Revisionen', 'parent' => $r['stock']],
+    ['op' => 'create_node', 'ref' => 'sl', 'name' => '__Part List Item', 'parent' => $r['stock']],
+    $field('lo_proj', $r['lo'], 'Projekt', '@proj', 'aggregation', '0..1'),
+    $field('pj_plat', '@proj', 'Platinen', '@plat', 'aggregation', '0..*'),
+    $field('pl_rev', '@plat', 'Revisionen', '@rev', 'aggregation', '1..*'),
+    $field('rv_pos', '@rev', 'Positionen', '@sl', 'aggregation', '0..*'),
+    $field('sl_part', '@sl', 'Part', 402, 'aggregation', '1..1'),
+    $field('sl_anz', '@sl', 'Anzahl', $int, 'composition', '1..1'),
+    ['op' => 'create_record', 'ref' => 'alt', 'node' => '@sl'],
+    ['op' => 'set_values', 'record' => '@alt', 'values' => ['@sl_part' => (string) $r['lm'], '@sl_anz' => '9']],
+    ['op' => 'create_record', 'ref' => 'sl1', 'node' => '@sl'],
+    ['op' => 'set_values', 'record' => '@sl1', 'values' => ['@sl_part' => (string) $bc, '@sl_anz' => (string) ((int) $menge + 1)]],
+    ['op' => 'create_record', 'ref' => 'sl2', 'node' => '@sl'],
+    ['op' => 'set_values', 'record' => '@sl2', 'values' => ['@sl_part' => (string) $r['t2'], '@sl_anz' => '1']],
+    ['op' => 'create_record', 'ref' => 'r1', 'node' => '@rev'],
+    ['op' => 'set_values', 'record' => '@r1', 'values' => [(string) $r['label'] => 'Rev 1.0', '@rv_pos' => ['values' => ['@alt']]]],
+    ['op' => 'create_record', 'ref' => 'r2', 'node' => '@rev'],
+    ['op' => 'set_values', 'record' => '@r2', 'values' => [(string) $r['label'] => 'Rev 1.1', '@rv_pos' => ['values' => ['@sl1', '@sl2']]]],
+    ['op' => 'create_record', 'ref' => 'pl', 'node' => '@plat'],
+    ['op' => 'set_values', 'record' => '@pl', 'values' => [(string) $r['label'] => 'Hauptplatine', '@pl_rev' => ['values' => ['@r1', '@r2']]]],
+    ['op' => 'create_record', 'ref' => 'pj', 'node' => '@proj'],
+    ['op' => 'set_values', 'record' => '@pj', 'values' => [(string) $r['label'] => '__Testkarte', '@pj_plat' => ['values' => ['@pl']]]],
+    ['op' => 'set_values', 'record' => $schrank, 'values' => ['@lo_proj' => '@pj']],
+]]);
+$b = is_wp_error($bom) ? [] : $bom['refs'];
+$pruefe($b !== [], 'the parts list of a project is set up' . (is_wp_error($bom) ? ': ' . $bom->get_error_message() : ''));
+$struktur['nodes']  += ['project' => $b['proj'] ?? 0, 'board' => $b['plat'] ?? 0, 'board_revision' => $b['rev'] ?? 0, 'bom_position' => $b['sl'] ?? 0];
+$struktur['fields'] += ['location_project' => $b['lo_proj'] ?? 0, 'project_boards' => $b['pj_plat'] ?? 0, 'board_revisions' => $b['pl_rev'] ?? 0, 'revision_positions' => $b['rv_pos'] ?? 0, 'position_part' => $b['sl_part'] ?? 0, 'position_count' => $b['sl_anz'] ?? 0];
+update_option(StockService::OPTION, $struktur);
+$s     = new StockService();
+$boxes = $s->projectBoxes();
+$bill  = $s->projectBill((int) ($b['pj'] ?? 0));
+$rows  = $bill === null ? [] : array_column($bill->compare($s->presentIn($schrank)), null, 'thing');
+$pruefe($boxes === [$schrank => (int) ($b['pj'] ?? 0)], 'the Schrank with a project is a project box');
+$pruefe($bill?->revisions === [(int) ($b['r2'] ?? 0)] && ! isset($rows[$r['lm']]), 'the newest revision makes the list; the older one does not count');
+$pruefe(($rows[$bc]['present'] ?? null) === $menge && ($rows[$bc]['missing'] ?? null) === 1.0 && ($rows[$r['t2']]['missing'] ?? null) === 1.0, 'what lies in the box inside the Schrank counts; one piece short and one part missing');
+$_GET  = ['page' => StockPage::PAGE, 'tab' => 'fertigung'];
+$seite = implode('', (new StockPage())->parts());
+$pruefe(str_contains($seite, '__Testkarte') && str_contains($seite, '2 Teile fehlen') && str_contains($seite, 'Stückliste aus: Rev 1.1'), 'Fertigung › Projekt-Gebinde shows the box, its project and what is missing');
+$_GET  = [];
+
 try {
     (new StockService())->movePlace($schrank, $kiste);
     $pruefe(false, 'a place does not go into what lies in it');

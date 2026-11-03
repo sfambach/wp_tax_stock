@@ -68,6 +68,10 @@ final class LogisticsShell
                 $item('reservations', __('Reservierungen', 'taxmod-stock'), StockPage::PAGE, 'reservierungen'),
                 $item('places', __('Lagerorte', 'taxmod-stock'), StockPage::PAGE, 'lagerorte'),
             ]],
+            // D-957 names «Fertigung» among the module's areas; D-1139 is its first page.
+            ['key' => 'production', 'label' => __('Fertigung', 'taxmod-stock'), 'items' => [
+                $item('project-boxes', __('Projekt-Gebinde', 'taxmod-stock'), StockPage::PAGE, 'fertigung'),
+            ]],
             ['key' => 'outbound', 'label' => __('Warenausgang', 'taxmod-stock'), 'items' => self::modules('outbound')],
             // His word 2026-11-01: «einen Punkt Einstellung … die API-Konfiguration, die Grundeinstellung und ja, die Lagerstruktur».
             ['key' => 'settings', 'label' => __('Einstellungen', 'taxmod-stock'), 'items' => [

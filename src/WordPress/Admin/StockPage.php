@@ -46,7 +46,7 @@ final class StockPage
     /** Rows per page of the material list (design 20: a list of thousands draws only what is seen). */
     private const PER_PAGE  = 50;
     private const ROWS      = 6;
-    private const TABS      = ['wareneingang', 'material', 'inventur', 'verbrauch', 'reservierungen', 'lagerorte', 'lagerstruktur', 'platzarten'];
+    private const TABS      = ['wareneingang', 'material', 'inventur', 'verbrauch', 'reservierungen', 'lagerorte', 'lagerstruktur', 'platzarten', 'fertigung'];
     private const VIEWS     = ['daten', 'bearbeiten', 'einkauf', 'lager', 'bestand', 'verkauf'];
     private const FILTER_FORM = 'taxmod-stock-filter';
     private const BULK_FORM   = 'taxmod-stock-bulk';
@@ -105,7 +105,7 @@ final class StockPage
         try {
             $thing = absint($_GET['thing'] ?? 0);
             // The tabs are the menu group «Bestand»; Einbuchen (Eingang) and the structure (Einstellungen, D-1085) stand alone.
-            $html .= (in_array($tab, ['wareneingang', 'lagerstruktur', 'platzarten'], true) ? '' : '<div class="taxmod-stock-pagetabs">' . $this->tabBar($tab, $list) . '</div>') . match ($tab) {
+            $html .= (in_array($tab, ['wareneingang', 'lagerstruktur', 'platzarten', 'fertigung'], true) ? '' : '<div class="taxmod-stock-pagetabs">' . $this->tabBar($tab, $list) . '</div>') . match ($tab) {
                 'material'  => $thing > 0 ? $this->thingView($thing) : $this->materialList($list),
                 'inventur'  => $this->inventoryForm(),
                 'verbrauch' => $this->consumptionForm($thing, absint($_GET['lot'] ?? 0), absint($_GET['place'] ?? 0)),
@@ -113,6 +113,7 @@ final class StockPage
                 'reservierungen' => $this->reservationList(),
                 'lagerstruktur' => $this->locationSplit(true),
                 'platzarten' => $this->placeTypesPage(absint($_GET['typ'] ?? 0)),
+                'fertigung' => $this->projectBoxList(),
                 default     => absint($_GET['split'] ?? 0) > 0
                     ? $this->splitForm(absint($_GET['order'] ?? 0), absint($_GET['split']), sanitize_key((string) ($_GET['back'] ?? '')))
                     : $this->receiptTab($list, absint($_GET['order'] ?? 0)),
@@ -1076,6 +1077,76 @@ final class StockPage
         return '<p>' . esc_html__('Eine Reservierung je Bezug: Projekt oder Verkauf. Ein für die Produktion reservierter Lagerort hat genau eine Reservierung, gerechnet aus dem, was dort liegt.', 'taxmod-stock') . '</p>'
             . '<p style="text-align:right">' . $this->reserveFormDialog(0, 'reservierungen') . '</p>'
             . ListPage::table([[__('Reservierung', 'taxmod-stock'), ''], [__('Bezug', 'taxmod-stock'), '14em'], [__('Datum', 'taxmod-stock'), '7em'], [__('Frist', 'taxmod-stock'), '7em'], [__('Positionen', 'taxmod-stock'), '6em']],
+                $body === '' ? $this->noItems(5) : $body);
+    }
+
+    /**
+     * D-1139, his word «projekt gebinde … haben die ja ein bom und auch evtl einen bestand … ob der übereinstimmt bzw was
+     * fehlt»: each project box against its project's parts list, read only.
+     */
+    private function projectBoxList(): string
+    {
+        $boxes = $this->stock->projectBoxes();
+
+        if ($this->stock->projectBill(0) === null) {
+            return '<div class="notice notice-warning inline"><p>' . esc_html__('Der Abgleich braucht den Weg vom Projekt zur Stückliste: nodes.project, nodes.board, nodes.board_revision, nodes.bom_position und fields.project_boards, board_revisions, revision_positions, position_part, position_count in der Lager-Struktur.', 'taxmod-stock') . '</p></div>';
+        }
+
+        $tree     = $this->stock->locationTree();
+        $things   = $this->stock->things()->all();
+        $bills    = [];
+        $wanted   = [];
+
+        foreach ($boxes as $place => $project) {
+            $bill           = $this->stock->projectBill($project);
+            $rows           = $bill === null ? [] : $bill->compare($this->stock->presentIn($place));
+            $bills[$place]  = [$bill, $rows];
+            $wanted         = [...$wanted, $project, ...($bill?->revisions ?? []), ...array_column($rows, 'thing')];
+        }
+
+        $names = $this->stock->recordLabels(array_values(array_unique(array_filter($wanted, static fn (int $id): bool => $id > 0))));
+        $name  = static fn (int $id): string => $things[$id] ?? $names[$id] ?? '#' . $id;
+        $body  = '';
+
+        foreach ($bills as $place => [$bill, $rows]) {
+            $missing = count(array_filter($rows, static fn (array $row): bool => $row['missing'] > 0.0));
+            $surplus = count(array_filter($rows, static fn (array $row): bool => $row['surplus'] > 0.0));
+            $lines   = '';
+
+            foreach ($rows as $row) {
+                $lines .= '<tr><td><a href="' . esc_url(self::thingUrl($row['thing'], 'bestand')) . '">' . esc_html($name($row['thing'])) . '</a></td>'
+                    . '<td style="text-align:right">' . esc_html($this->number($row['needed'])) . '</td><td style="text-align:right">' . esc_html($this->number($row['present'])) . '</td>'
+                    . '<td style="text-align:right">' . ($row['missing'] > 0.0 ? '<strong>' . esc_html($this->number($row['missing'])) . '</strong>' : '') . '</td>'
+                    . '<td style="text-align:right">' . ($row['surplus'] > 0.0 ? esc_html($this->number($row['surplus'])) : '') . '</td></tr>';
+            }
+
+            $revisions = $bill === null || $bill->revisions === [] ? '' : '<p class="description">' . esc_html(sprintf(
+                /* translators: %s: the revisions the parts list was read from */
+                __('Stückliste aus: %s (neueste Revision je Platine, für 1 Stück)', 'taxmod-stock'),
+                implode(', ', array_map($name, $bill->revisions))
+            )) . '</p>';
+            $details = $bill === null || $bill->needed === []
+                ? '<p class="description">' . esc_html__('Das Projekt hat keine Stückliste (Platine › Revision › Positionen).', 'taxmod-stock') . '</p>'
+                : $revisions . '<table class="widefat striped" style="max-width:720px"><thead><tr><th>' . esc_html__('Teil', 'taxmod-stock') . '</th><th style="text-align:right">' . esc_html__('Soll', 'taxmod-stock')
+                    . '</th><th style="text-align:right">' . esc_html__('Im Gebinde', 'taxmod-stock') . '</th><th style="text-align:right">' . esc_html__('Fehlt', 'taxmod-stock')
+                    . '</th><th style="text-align:right">' . esc_html__('Zu viel', 'taxmod-stock') . '</th></tr></thead><tbody>' . $lines . '</tbody></table>';
+            $state   = $bill === null || $bill->needed === [] ? __('keine Stückliste', 'taxmod-stock') : ($missing === 0 ? __('vollständig', 'taxmod-stock') : sprintf(
+                /* translators: %d: number of parts that are short */
+                _n('%d Teil fehlt', '%d Teile fehlen', $missing, 'taxmod-stock'),
+                $missing
+            ));
+
+            $body .= ListPage::row(
+                self::BULK_FORM,
+                'g' . $place,
+                [esc_html($tree->pathOf($place)), esc_html($name($boxes[$place])), esc_html((string) count($bill?->needed ?? [])), esc_html($state), esc_html($surplus === 0 ? '—' : (string) $surplus)],
+                '<a class="button button-small" href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'lagerstruktur', 'ort' => $place], admin_url('admin.php'))) . '">' . esc_html__('Zum Ort', 'taxmod-stock') . '</a>',
+                $details
+            );
+        }
+
+        return '<h2>' . esc_html__('Projekt-Gebinde', 'taxmod-stock') . '</h2><p>' . esc_html__('Jeder Lagerort mit Projekt gegen die Stückliste seines Projekts: was da ist, was fehlt, was zu viel ist. Gezählt wird alles im Gebinde und in den Orten darin.', 'taxmod-stock') . '</p>'
+            . ListPage::table([[__('Gebinde', 'taxmod-stock'), ''], [__('Projekt', 'taxmod-stock'), '14em'], [__('Teile', 'taxmod-stock'), '5em'], [__('Stand', 'taxmod-stock'), '10em'], [__('Zu viel', 'taxmod-stock'), '6em']],
                 $body === '' ? $this->noItems(5) : $body);
     }
 

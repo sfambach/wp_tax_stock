@@ -16,6 +16,7 @@ use TaxmodStock\Core\LocationChanges;
 use TaxmodStock\Core\MaterialCopy;
 use TaxmodStock\Core\LocationTree;
 use TaxmodStock\Core\PlaceTypes;
+use TaxmodStock\Core\ProjectBill;
 use TaxmodStock\Core\NotStocked;
 use TaxmodStock\Core\ReceiptChoice;
 use TaxmodStock\Core\ReceiptPlan;
@@ -842,6 +843,51 @@ final class StockService
     public function places(): array
     {
         return $this->locationTree()->labels();
+    }
+
+    /**
+     * D-1139: every place that names a project itself, with that project.
+     *
+     * @return array<int, int> place → project record
+     */
+    public function projectBoxes(): array
+    {
+        $s = $this->structure();
+
+        if (! $s->hasField('location_project')) {
+            return [];
+        }
+
+        $places = $this->table('location');
+        $out    = [];
+
+        foreach ($places->ids() as $id) {
+            $project = (int) $places->first($id, $s->field('location_project'));
+
+            if ($project > 0) {
+                $out[$id] = $project;
+            }
+        }
+
+        return $out;
+    }
+
+    /** D-1139: a project's parts list; null while the model holds no way from a project to one. */
+    public function projectBill(int $project): ?ProjectBill
+    {
+        $s = $this->structure();
+
+        if (! ProjectBill::isModelled($s) || ! $s->hasNode('project') || ! $s->hasNode('board') || ! $s->hasNode('board_revision') || ! $s->hasNode('bom_position')) {
+            return null;
+        }
+
+        return ProjectBill::of($s, $this->table('project'), $this->table('board'), $this->table('board_revision'), $this->table('bom_position'), $project);
+    }
+
+    /** @return array<int, float> D-1139: thing → pieces lying on the place and on every place in it */
+    public function presentIn(int $place): array
+    {
+        return ProjectBill::present($this->ledger(), $this->locationTree()->withAllBelow($place));
     }
 
     /** @return array<int, string> the projects a box can belong to; empty while the structure names no project node */

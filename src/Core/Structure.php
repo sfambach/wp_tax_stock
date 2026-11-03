@@ -29,7 +29,9 @@ final class Structure
     /** Nodes the module uses when they are there: the choices of «Verwendung». */
     private const OPTIONAL_NODES = ['lager_use', 'source', 'firm', 'base_units', 'prefixes', 'project', 'sale',
         // D-1123: the kinds of place and the parts a kind brings along.
-        'location_type', 'location_type_part'];
+        'location_type', 'location_type_part',
+        // D-1139: a project's boards, their revisions and the revisions' positions — the parts list of a project box.
+        'board', 'board_revision', 'bom_position'];
 
     /** Fields the module uses when they are there and leaves out when they are not. */
     private const OPTIONAL_FIELDS = [
@@ -62,6 +64,8 @@ final class Structure
         'transaction_carrier',
         // D-1123: a place's kind; a kind's movable mark and parts; a part's kind and count.
         'location_place_type', 'type_movable', 'type_parts', 'part_type', 'part_count',
+        // D-1139: the way from a project to its parts list.
+        'project_boards', 'board_revisions', 'revision_positions', 'position_part', 'position_count',
     ];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];

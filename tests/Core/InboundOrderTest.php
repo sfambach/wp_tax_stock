@@ -22,7 +22,7 @@ final class InboundOrderTest extends TestCase
         self::assertSame(InboundStage::Ordered, (new InboundOrder(1, null, '2026-10-01', null, []))->stage($s));
         self::assertSame(InboundStage::Shipped, (new InboundOrder(1, null, '2026-10-01', null, ['00340434']))->stage($s));
         self::assertSame(InboundStage::Arrived, (new InboundOrder(1, null, '2026-10-01', '2026-10-05', ['00340434']))->stage($s), 'a delivery mail wrote «Eingegangen am»');
-        self::assertSame(InboundStage::Arrived, (new InboundOrder(1, null, null, null, ['A1'], ['A1' => 'delivered']))->stage($s), 'DHL delivered counts as arrived');
+        self::assertSame(InboundStage::Arrived, (new InboundOrder(1, null, null, null, ['A1'], ['A1' => 'delivered']))->stage($s), 'a carrier\'s «delivered» counts as arrived');
         self::assertSame(InboundStage::Shipped, (new InboundOrder(1, null, null, null, ['A1'], ['A1' => 'shipped']))->stage($s));
         self::assertSame(InboundStage::Arrived, (new InboundOrder(1, 205, null, null, []))->stage($s), 'a partial receipt stays to check');
         self::assertSame(InboundStage::Booked, (new InboundOrder(1, 206, null, '2026-10-05', ['A1']))->stage($s));

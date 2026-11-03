@@ -14,8 +14,8 @@ use TaxmodStock\Core\TestResult;
  * Reads the incoming orders for the goods receipt cockpit and writes its buttons (D-1001).
  *
  * The order fields come from the modeller's import targets — the inbox writes there, so they are one fact with one owner
- * (D-952). The DHL stages come from the DHL module's filter in its default mode, which hands back the last answer and
- * never calls DHL; only {@see refreshDhl()} asks DHL.
+ * (D-952). The carrier stages come from the carrier modules' filters in their default mode, which hand back the last
+ * answer and never call the carrier; only {@see refreshTracking()} asks. D-1132: DHL first, then GLS, the first answer wins.
  *
  * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/lager/cockpit-wareneingang.md WC2, WC3
  */
@@ -23,6 +23,12 @@ final class InboundService
 {
     /** The DHL module's filter (wp_tax_api_dhl); its third argument `refresh` asks DHL now. */
     public const DHL_FILTER = 'taxmod_dhl_tracking';
+
+    /** The GLS module's filter (wp_tax_api_gls), same arguments and answer as DHL's (D-1132). */
+    public const GLS_FILTER = 'taxmod_gls_tracking';
+
+    /** Carrier → its filter, in the order they are asked (D-1132). */
+    public const CARRIERS = ['DHL' => self::DHL_FILTER, 'GLS' => self::GLS_FILTER];
 
     /** The roles of the order fields the cockpit reads, as the import targets name them. */
     private const ROLES = ['ordered_at', 'received_at', 'tracking', 'platform', 'merchant', 'order_number'];
@@ -33,8 +39,8 @@ final class InboundService
     /** @var array<int, list<int>>|null purchase → its lots, read once per request */
     private ?array $lotsOfPurchase = null;
 
-    /** @var array<string, array<string, mixed>> tracking number → the DHL module's last answer; `mixed`: its summary */
-    private array $dhl = [];
+    /** @var array<string, array<string, mixed>> tracking number → the first carrier's last answer plus `carrier`; `mixed`: its summary */
+    private array $answers = [];
 
     public function __construct(private readonly StockService $stock = new StockService())
     {
@@ -64,7 +70,7 @@ final class InboundService
             $stages   = [];
 
             foreach ($tracking as $number) {
-                $answer = $this->dhlAnswer($number);
+                $answer = $this->trackingAnswer($number);
 
                 if ($answer !== null) {
                     $stages[$number] = (string) ($answer['stage'] ?? '');
@@ -117,24 +123,38 @@ final class InboundService
         ];
     }
 
-    /** @return array<string, mixed>|null the DHL module's last answer for a number; `mixed`: its summary array */
-    public function dhlAnswer(string $number): ?array
+    /**
+     * The last answer for a number from the first carrier module that has one, DHL before GLS (D-1132).
+     *
+     * @return array<string, mixed>|null its summary with `carrier` (DHL, GLS) added; `mixed`: the module's summary array
+     */
+    public function trackingAnswer(string $number): ?array
     {
-        if (! has_filter(self::DHL_FILTER)) {
-            return null;
+        if (! array_key_exists($number, $this->answers)) {
+            $this->answers[$number] = [];
+
+            foreach ($this->carriers() as $carrier => $filter) {
+                $answer = apply_filters($filter, null, $number);
+
+                if (is_array($answer)) {
+                    $this->answers[$number] = ['carrier' => $carrier] + $answer;
+                    break;
+                }
+            }
         }
 
-        if (! array_key_exists($number, $this->dhl)) {
-            $answer             = apply_filters(self::DHL_FILTER, null, $number);
-            $this->dhl[$number] = is_array($answer) ? $answer : [];
-        }
-
-        return $this->dhl[$number] === [] ? null : $this->dhl[$number];
+        return $this->answers[$number] === [] ? null : $this->answers[$number];
     }
 
-    public function hasDhl(): bool
+    public function hasTracking(): bool
     {
-        return has_filter(self::DHL_FILTER) !== false;
+        return $this->carriers() !== [];
+    }
+
+    /** @return array<string, string> carrier → filter, only the modules that are active */
+    private function carriers(): array
+    {
+        return array_filter(self::CARRIERS, static fn (string $filter): bool => has_filter($filter) !== false);
     }
 
     /**
@@ -189,22 +209,28 @@ final class InboundService
     }
 
     /**
-     * Asks DHL now for every tracking number of the chosen orders; the DHL module keeps 5 s between calls and its budget.
+     * Asks the carriers now for every tracking number of the chosen orders: the one that answered before, else DHL, then
+     * GLS until one answers (D-1132). Each module keeps its own pause between calls and its budget.
      *
      * @param list<int> $ids
      * @return int how many numbers got an answer
      */
-    public function refreshDhl(array $ids): int
+    public function refreshTracking(array $ids): int
     {
-        if (! $this->hasDhl()) {
-            return 0;
-        }
-
         $answered = 0;
 
         foreach ($this->pick($ids) as $order) {
             foreach ($order->tracking as $number) {
-                $answered += is_array(apply_filters(self::DHL_FILTER, null, $number, 'refresh')) ? 1 : 0;
+                $known    = (string) ($this->trackingAnswer($number)['carrier'] ?? '');
+                $carriers = $this->carriers();
+                $carriers = isset($carriers[$known]) ? [$known => $carriers[$known]] : $carriers;
+
+                foreach ($carriers as $filter) {
+                    if (is_array(apply_filters($filter, null, $number, 'refresh'))) {
+                        ++$answered;
+                        break;
+                    }
+                }
             }
         }
 

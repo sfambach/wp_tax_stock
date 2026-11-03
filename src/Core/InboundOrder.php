@@ -6,7 +6,7 @@ namespace TaxmodStock\Core;
  * One order as the goods receipt cockpit reads it, and the stage that follows from it (D-1001).
  *
  * Nothing here is stored by the module: status, «Eingegangen am» and the tracking numbers are the order's own fields,
- * the DHL stages are the DHL module's last answers. The first rule that holds wins.
+ * the carrier stages are the last answers of the carrier modules (DHL, GLS; D-1132). The first rule that holds wins.
  *
  * ```mermaid
  * flowchart LR
@@ -14,7 +14,7 @@ namespace TaxmodStock\Core;
  *   R["status received"] --> B["Booked"]
  *   R -->|"received long ago"| AA["Archived"]
  *   H["ordered before the start day"] --> AA
- *   A["partial · received on · DHL delivered"] --> AR["Arrived"]
+ *   A["partial · received on · carrier delivered"] --> AR["Arrived"]
  *   T["tracking number"] --> SH["Shipped"]
  *   E["else"] --> O["Ordered"]
  * ```
@@ -29,12 +29,12 @@ final class InboundOrder
     /** Days after «Bestellt am» a shipped order that has not arrived counts as overdue (INFERRED, WC4). */
     public const SHIPPED_DAYS = 21;
 
-    /** The DHL module's stage for a delivered parcel (`taxmod_dhl_tracking`). */
-    public const DHL_DELIVERED = 'delivered';
+    /** A carrier module's stage for a delivered parcel; DHL and GLS answer alike (D-1132). */
+    public const DELIVERED = 'delivered';
 
     /**
      * @param list<string>          $tracking the order's tracking numbers
-     * @param array<string, string> $dhl      tracking number → the DHL module's last stage, where it has one
+     * @param array<string, string> $carrierStages tracking number → the carrier module's last stage, where one answered
      */
     public function __construct(
         public readonly int $id,
@@ -42,7 +42,7 @@ final class InboundOrder
         public readonly ?string $orderedOn,
         public readonly ?string $receivedOn,
         public readonly array $tracking,
-        public readonly array $dhl = [],
+        public readonly array $carrierStages = [],
         public readonly bool $closedWithoutStock = false,
     ) {
     }
@@ -63,10 +63,10 @@ final class InboundOrder
         };
     }
 
-    /** Whether he said it is here, a delivery message said so, or DHL delivered a parcel of it. */
+    /** Whether he said it is here, a delivery message said so, or a carrier delivered a parcel of it. */
     public function hasArrived(): bool
     {
-        return ($this->receivedOn ?? '') !== '' || in_array(self::DHL_DELIVERED, $this->dhl, true);
+        return ($this->receivedOn ?? '') !== '' || in_array(self::DELIVERED, $this->carrierStages, true);
     }
 
     /** Overdue: ordered too long ago without a tracking number, or shipped too long ago and not arrived. */

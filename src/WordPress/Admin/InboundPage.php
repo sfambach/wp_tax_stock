@@ -40,7 +40,7 @@ final class InboundPage
     private const FILTER_FORM = 'taxmod-stock-inbound-filter';
     private const BULK_FORM   = 'taxmod-stock-inbound-bulk';
 
-    /** DHL events shown in a row's details, newest first. */
+    /** Carrier events shown in a row's details, newest first. */
     private const EVENTS = 5;
 
     /** Built once per request: it indexes every lot and line. */
@@ -105,9 +105,9 @@ final class InboundPage
                     sanitize_textarea_field(wp_unslash((string) ($_POST['reason'] ?? ''))),
                     $today
                 )),
-                'dhl'     => sprintf(
-                    /* translators: %d: number of tracking numbers DHL answered for */
-                    _n('DHL hat für %d Sendungsnummer geantwortet.', 'DHL hat für %d Sendungsnummern geantwortet.', $n = $this->inbound->refreshDhl(array_values($ids)), 'taxmod-stock'),
+                'refresh' => sprintf(
+                    /* translators: %d: number of tracking numbers a carrier answered for */
+                    _n('Für %d Sendungsnummer kam eine Antwort.', 'Für %d Sendungsnummern kam eine Antwort.', $n = $this->inbound->refreshTracking(array_values($ids)), 'taxmod-stock'),
                     $n
                 ),
                 default   => throw StockError::nothingToBook(),
@@ -269,8 +269,8 @@ final class InboundPage
     {
         $actions = ['arrived' => __('Angekommen', 'taxmod-stock')];
 
-        if ($this->inbound->hasDhl()) {
-            $actions['dhl'] = __('DHL aktualisieren', 'taxmod-stock');
+        if ($this->inbound->hasTracking()) {
+            $actions['refresh'] = __('Sendungsstatus aktualisieren', 'taxmod-stock');
         }
 
         $bar = ListPage::bulkBar(self::BULK_FORM, self::ACTION, $actions, sprintf(
@@ -312,15 +312,15 @@ final class InboundPage
         return ListPage::row(self::BULK_FORM, (string) $order->id, $cells, $this->buttons($order, $stage, $counts['booked'], $tab), $this->details($order, $stage, $tab, $open), $open);
     }
 
-    /** Each tracking number with the DHL module's last stage, where it has one. */
+    /** Each tracking number with its carrier's last stage, where one answered. */
     private function trackingCell(InboundOrder $order): string
     {
         $out = [];
 
         foreach ($order->tracking as $number) {
-            $answer = $this->inbound->dhlAnswer($number);
+            $answer = $this->inbound->trackingAnswer($number);
             $stage  = is_array($answer) ? (string) ($answer['stage'] ?? '') : '';
-            $out[]  = '<code>' . esc_html($number) . '</code>' . ($stage === '' ? '' : ' <span class="description">' . esc_html($this->dhlStageName($stage)) . '</span>');
+            $out[]  = '<code>' . esc_html($number) . '</code>' . ($stage === '' ? '' : ' <span class="description">' . esc_html((string) ($answer['carrier'] ?? '') . ' ' . $this->carrierStageName($stage)) . '</span>');
         }
 
         return implode('<br>', $out);
@@ -349,8 +349,8 @@ final class InboundPage
             $html .= $this->trackingButton($order->id, $tab);
         }
 
-        if ($order->tracking !== [] && $this->inbound->hasDhl() && ! in_array($stage, [InboundStage::Booked, InboundStage::Archived], true)) {
-            $html .= $this->button($order->id, 'dhl', __('DHL ↻', 'taxmod-stock'), $tab, false);
+        if ($order->tracking !== [] && $this->inbound->hasTracking() && ! in_array($stage, [InboundStage::Booked, InboundStage::Archived], true)) {
+            $html .= $this->button($order->id, 'refresh', __('Status ↻', 'taxmod-stock'), $tab, false);
         }
 
         return $html;
@@ -382,7 +382,7 @@ final class InboundPage
             . '<button type="submit" class="button' . ($primary ? ' button-primary' : '') . '">' . esc_html($label) . '</button></form> ';
     }
 
-    /** «Angekommen»: the Lager page's booking form, loaded once it shows; else the purchases, DHL's events and a tracking field. */
+    /** «Angekommen»: the Lager page's booking form, loaded once it shows; else the purchases, the carrier's events and a tracking field. */
     /** His question of 2026-10-28 on a booked order: «wo befinden die?» — each lot's material, linked to its stock, and its place. */
     private function whereItWent(int $purchase): string
     {
@@ -490,20 +490,20 @@ final class InboundPage
             . '<button type="submit" class="button button-small">' . esc_html($label) . '</button></form>';
     }
 
-    /** The DHL module's last events per tracking number, newest first. */
+    /** The carrier's last events per tracking number, newest first. */
     private function events(InboundOrder $order): string
     {
         $html = '';
 
         foreach ($order->tracking as $number) {
-            $answer = $this->inbound->dhlAnswer($number);
+            $answer = $this->inbound->trackingAnswer($number);
             $events = is_array($answer) && is_array($answer['events'] ?? null) ? array_slice($answer['events'], 0, self::EVENTS) : [];
 
             if ($events === []) {
                 continue;
             }
 
-            $html .= '<h4 style="margin-bottom:.3em">DHL <code>' . esc_html($number) . '</code></h4><ul style="margin-top:0">';
+            $html .= '<h4 style="margin-bottom:.3em">' . esc_html((string) ($answer['carrier'] ?? '')) . ' <code>' . esc_html($number) . '</code></h4><ul style="margin-top:0">';
 
             foreach ($events as $event) {
                 $html .= '<li>' . esc_html(trim(substr((string) ($event['at'] ?? ''), 0, 16) . ' · ' . (string) ($event['description'] ?? $event['status'] ?? '')
@@ -553,8 +553,8 @@ final class InboundPage
         };
     }
 
-    /** The DHL module's stages (announced, shipped, delivered, problem). */
-    private function dhlStageName(string $stage): string
+    /** The carrier modules' stages (announced, shipped, delivered, problem), alike for DHL and GLS. */
+    private function carrierStageName(string $stage): string
     {
         return match ($stage) {
             'announced' => __('angekündigt', 'taxmod-stock'),

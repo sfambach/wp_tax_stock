@@ -212,6 +212,14 @@ add_filter(InboundService::DHL_FILTER, static function (mixed $previous, string 
     };
 }, 10, 3);
 
+// D-1132: the GLS module's filter, asked when DHL has no answer.
+$askedGls = 0;
+add_filter(InboundService::GLS_FILTER, static function (mixed $previous, string $number, string $mode = 'stored') use (&$askedGls): ?array {
+    $askedGls += $mode === 'refresh' ? 1 : 0;
+
+    return $number === 'ZQ123GLS' ? ['tracking_number' => $number, 'stage' => 'delivered', 'events' => [['at' => '2026-10-22T09:00', 'description' => 'Zugestellt im Paketshop', 'place' => 'Bonn']]] : null;
+}, 10, 3);
+
 $s      = (new StockService())->structure();
 $orders = (new InboundService())->orders();
 $stage  = static fn (string $ref): InboundStage => $orders[$r[$ref]]->stage($s);
@@ -266,7 +274,18 @@ $pruefe((new StockService())->table('order')->all($r['o1'], $r['o_sn']) === [], 
 (new InboundService())->addTracking($r['o2'], '00340434-aa');
 $pruefe((new StockService())->table('order')->all($r['o2'], $r['o_sn']) === ['00340434AA'], 'the same number again adds nothing');
 
-$pruefe((new InboundService())->refreshDhl([$r['o2'], $r['o3']]) === 2 && $asked === 2, '«DHL aktualisieren» asks DHL once per number');
+$pruefe((new InboundService())->refreshTracking([$r['o2'], $r['o3']]) === 2 && $asked === 2 && $askedGls === 0, '«Sendungsstatus aktualisieren» asks DHL once per number it knows, GLS not');
+
+(new InboundService())->addTracking($r['o1'], 'ZQ123GLS');
+$gls = (new InboundService())->trackingAnswer('ZQ123GLS');
+$pruefe(($gls['carrier'] ?? '') === 'GLS' && ($gls['stage'] ?? '') === 'delivered', 'D-1132: a number DHL does not know is answered by GLS');
+$pruefe((new InboundService())->orders()[$r['o1']]->stage($s) === InboundStage::Arrived, 'GLS «delivered» makes it «Angekommen»');
+$_GET = ['page' => InboundPage::PAGE, 'tab' => 'arrived'];
+$html = (new InboundPage())->render();
+$pruefe(str_contains($html, 'ZQ123GLS</code> <span class="description">GLS zugestellt'), 'the page names the carrier GLS with its stage');
+$asked = 0;
+$pruefe((new InboundService())->refreshTracking([$r['o1']]) === 1 && $asked === 0 && $askedGls === 1, 'refreshing a GLS number asks GLS only');
+(new InboundService())->removeTracking($r['o1'], 'ZQ123GLS');
 
 // D-1002 · the test after the goods receipt.
 $pruefe((new InboundService())->lotsToTest() === [], 'no tested branch, nothing to test');

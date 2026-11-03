@@ -109,6 +109,9 @@ $pruefe(str_contains($uebersicht, esc_url(CockpitPage::overviewUrl('settings', '
 $_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'settings', CockpitPage::GROUP => 'Lagerstruktur'];
 $uebersicht = (new CockpitPage())->render();
 $pruefe(str_contains($uebersicht, '>Layout</span>') && str_contains($uebersicht, '>Platzarten</span>') && ! str_contains($uebersicht, '>Grundeinstellungen</span>'), 'the group overview shows only its own items');
+$nav = LogisticsShell::wrap(CockpitPage::PAGE, $uebersicht);
+$pruefe(str_contains($nav, 'taxmod-shell-group is-open"><a href="' . esc_url(CockpitPage::overviewUrl('settings', 'Lagerstruktur')) . '" style="padding-left:24px" class="is-current"'), 'D-1134: the group\'s overview opens the group in the navigation, its sub-items shown');
+$pruefe(substr_count($uebersicht, 'class="taxmod-tile-count"') === 2, 'D-1134: Layout and Platzarten show how many there are');
 $_GET = ['page' => CockpitPage::PAGE];
 $pruefe(str_contains((new CockpitPage())->render(), 'Angekommen, einbuchen'), 'the cockpit itself still shows what is due');
 $_GET = [];

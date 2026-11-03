@@ -434,6 +434,12 @@ $pruefe(($s->ledger()->placesOf($posten)[$kiste] ?? 0.0) === $menge && $s->ledge
 $pruefe(count((new StockService())->table('transaction')->ids()) === $vorgaenge + 1, 'a fixed place hung elsewhere is a change of the structure, no Vorgang');
 (new StockService())->movePlace($fach1, $schrank, '2026-11-02', 'Umlagerung');
 
+// D-1134, his word «plätze im layoout zuletzt erstellten 3 plätze ? … od er5»: the Layout tile counts the places and names the newest.
+$_GET  = ['page' => TaxmodStock\WordPress\Admin\CockpitPage::PAGE, TaxmodStock\WordPress\Admin\CockpitPage::AREA => 'settings', TaxmodStock\WordPress\Admin\CockpitPage::GROUP => 'Lagerstruktur'];
+$kachel = (new TaxmodStock\WordPress\Admin\CockpitPage())->render();
+$_GET  = [];
+$pruefe(str_contains($kachel, '<span class="taxmod-tile-count">' . count((new StockService())->places()) . '</span><span class="taxmod-tile-label">Layout</span>') && str_contains($kachel, 'Zuletzt angelegt:<br>Lager › __Schrank › __Schublade 2 › __Kiste<br>Lager › __Schrank › __Schublade 2<br>'), 'the Layout tile counts the places and names the newest first');
+
 try {
     (new StockService())->movePlace($schrank, $kiste);
     $pruefe(false, 'a place does not go into what lies in it');

@@ -111,8 +111,9 @@ final class LogisticsShell
         $navigation = self::navigation();
         $tab        = sanitize_key((string) ($_GET['tab'] ?? ''));
         $overview   = $page === CockpitPage::PAGE ? sanitize_key((string) ($_GET[CockpitPage::AREA] ?? '')) : '';
-        // D-1128: an area's overview opens its area in the navigation, no item marked.
-        $active     = $overview !== '' && $overview !== 'cockpit' ? ['area' => $overview, 'item' => ''] : $navigation->active($page, $tab, $page === ModulePage::PAGE ? ModulePage::requested() : '');
+        // D-1128: an area's overview opens its area in the navigation, no item marked; D-1134: a group's overview opens the group.
+        $group      = $overview === '' ? '' : sanitize_text_field(wp_unslash((string) ($_GET[CockpitPage::GROUP] ?? '')));
+        $active     = $overview !== '' && $overview !== 'cockpit' ? ['area' => $overview, 'item' => '', 'group' => $group] : $navigation->active($page, $tab, $page === ModulePage::PAGE ? ModulePage::requested() : '');
 
         if ($active === null) {
             return $side . $html;
@@ -124,7 +125,7 @@ final class LogisticsShell
             . '</div><div class="taxmod-shell-main">' . $html . '</div></div>';
     }
 
-    /** @param array{area: string, item: string} $active */
+    /** @param array{area: string, item: string, group?: string} $active `group`: the open group's path, joined by «/» */
     private static function menu(Navigation $navigation, array $active): string
     {
         $full = self::isFullscreen();
@@ -138,7 +139,7 @@ final class LogisticsShell
             $html .= '<li class="taxmod-shell-area' . ($here ? ' is-open' : '') . '"><a href="' . esc_url($link) . '">' . esc_html($area['label']) . '</a>';
 
             if ($here || count($area['items']) > 1) {
-                $html .= self::items($area['items'], 0, $here ? $active['item'] : '', $area['key']);
+                $html .= self::items($area['items'], 0, $here ? $active['item'] : '', $area['key'], $here ? (string) ($active['group'] ?? '') : '');
             }
 
             $html .= '</li>';
@@ -153,11 +154,11 @@ final class LogisticsShell
 
     /**
      * The items of an area as nested lists: an item's `path` names the groups above it, any number (D-1121). A group links to
-     * its first item and opens when the current item lies in it.
+     * its overview and opens when the current item lies in it or its overview is shown (D-1134).
      *
      * @param list<array{key: string, label: string, page: string, tab: string, module?: string, path?: list<string>}> $items
      */
-    private static function items(array $items, int $depth, string $current, string $area = ''): string
+    private static function items(array $items, int $depth, string $current, string $area = '', string $openGroup = ''): string
     {
         $html  = '<ul>';
         $count = count($items);
@@ -179,10 +180,12 @@ final class LogisticsShell
                 $i++;
             }
             $i--;
-            $open  = in_array($current, array_column($members, 'key'), true);
+            $groupPath = implode('/', array_slice($path, 0, $depth + 1));
+            $open      = in_array($current, array_column($members, 'key'), true) || $openGroup === $groupPath || str_starts_with($openGroup, $groupPath . '/');
             // D-1128: a group opens its own overview, like an area.
-            $html .= '<li class="taxmod-shell-group' . ($open ? ' is-open' : '') . '"><a href="' . esc_url($area === '' ? self::url($members[0]) : CockpitPage::overviewUrl($area, implode('/', array_slice($path, 0, $depth + 1)))) . '" style="padding-left:' . (24 + 12 * $depth) . 'px">'
-                . esc_html($group) . '</a>' . self::items($members, $depth + 1, $current, $area) . '</li>';
+            $html .= '<li class="taxmod-shell-group' . ($open ? ' is-open' : '') . '"><a href="' . esc_url($area === '' ? self::url($members[0]) : CockpitPage::overviewUrl($area, $groupPath)) . '" style="padding-left:' . (24 + 12 * $depth) . 'px"'
+                . ($openGroup === $groupPath ? ' class="is-current" aria-current="page"' : '') . '>'
+                . esc_html($group) . '</a>' . self::items($members, $depth + 1, $current, $area, $openGroup) . '</li>';
         }
 
         return $html . '</ul>';

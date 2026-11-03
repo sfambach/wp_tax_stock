@@ -26,6 +26,9 @@ final class CockpitPage
     public const AREA  = 'area';
     public const GROUP = 'group';
 
+    /** How many of the last created records a tile names (D-1134: «od er5»). */
+    private const LATEST = 5;
+
     public function render(): string
     {
         $area  = sanitize_key((string) ($_GET[self::AREA] ?? ''));
@@ -92,10 +95,34 @@ final class CockpitPage
                 continue;
             }
 
-            $tiles[] = [(string) $item['label'], $counts[(string) $item['tab']] ?? null, LogisticsShell::url($item)];
+            [$count, $latest] = $this->recordsOf((string) $item['key']) ?? [$counts[(string) $item['tab']] ?? null, []];
+            $tiles[]          = [(string) $item['label'], $count, LogisticsShell::url($item), $latest];
         }
 
         return $tiles;
+    }
+
+    /**
+     * D-1134, his word «anzahl paltzarten zuletzt ersteltl ? plätze im layoout zuletzt erstellten 3 plätze ? … od er5»:
+     * how many records an item lists and the last ones created (record ids rise, so the largest are the newest).
+     *
+     * @return array{0: int, 1: list<string>}|null null for an item that lists no records of its own
+     */
+    private function recordsOf(string $item): ?array
+    {
+        $names = match ($item) {
+            'place-types' => $this->inbound->stock()->placeTypes()->names(),
+            'structure'   => $this->inbound->stock()->places(),
+            default       => null,
+        };
+
+        if ($names === null) {
+            return null;
+        }
+
+        krsort($names);
+
+        return [count($names), array_values(array_slice($names, 0, self::LATEST, true))];
     }
 
     /** @return array<string, int> orders per inbound stage, by the stage's tab */
@@ -129,21 +156,27 @@ final class CockpitPage
         return $tiles;
     }
 
-    /** @param list<array{0: string, 1: int|null, 2: string}> $tiles label, count (null: none), address */
+    /** @param list<array{0: string, 1: int|null, 2: string, 3?: list<string>}> $tiles label, count (null: none), address, last created */
     private function tiles(array $tiles): string
     {
         $html = '<div class="taxmod-tiles">';
 
-        foreach ($tiles as [$label, $count, $url]) {
+        foreach ($tiles as $tile) {
+            [$label, $count, $url] = $tile;
+            $latest                = $tile[3] ?? [];
             $html .= '<a class="taxmod-tile' . ($count === 0 ? ' is-empty' : '') . '" href="' . esc_url($url) . '">'
                 . ($count === null ? '' : '<span class="taxmod-tile-count">' . esc_html(number_format_i18n($count)) . '</span>')
-                . '<span class="taxmod-tile-label">' . esc_html($label) . '</span></a>';
+                . '<span class="taxmod-tile-label">' . esc_html($label) . '</span>'
+                . ($latest === [] ? '' : '<span class="taxmod-tile-latest">' . esc_html__('Zuletzt angelegt:', 'taxmod-stock') . '<br>'
+                    . implode('<br>', array_map('esc_html', $latest)) . '</span>')
+                . '</a>';
         }
 
         return '<style>.taxmod-tiles{display:flex;flex-wrap:wrap;gap:12px;margin-top:16px}'
             . '.taxmod-tile{display:flex;flex-direction:column;min-width:160px;padding:12px 16px;background:#fff;border:1px solid #c3c4c7;border-left:4px solid #2271b1;text-decoration:none;color:#1d2327}'
             . '.taxmod-tile:focus{box-shadow:0 0 0 2px #2271b1;outline:none}.taxmod-tile-count{font-size:28px;font-weight:600;line-height:1.2}'
-            . '.taxmod-tile.is-empty{border-left-color:#c3c4c7;color:#646970}.taxmod-tile.is-empty .taxmod-tile-count{font-size:20px}</style>'
+            . '.taxmod-tile.is-empty{border-left-color:#c3c4c7;color:#646970}.taxmod-tile.is-empty .taxmod-tile-count{font-size:20px}'
+            . '.taxmod-tile-latest{margin-top:8px;font-size:12px;color:#646970;max-width:260px}</style>'
             . $html . '</div>';
     }
 }

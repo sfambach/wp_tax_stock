@@ -151,6 +151,12 @@ final class StockPage
                 'inventur'     => $this->stock->bookInventory($this->inventoryRows(), $today, $this->title(__('Inventur', 'taxmod-stock'), $today)),
                 'lager'        => $this->stock->saveLager($thing, $this->lagerInput()),
                 'verschieben'  => $this->stock->moveThing($thing, absint($_POST['group'] ?? 0)),
+                'sammelumbuchen' => $this->stock->moveThings(
+                    array_values(array_filter(array_map('absint', (array) ($_POST['selected'] ?? [])))),
+                    absint($_POST['location'] ?? 0),
+                    $today,
+                    $this->title(__('Umbuchung', 'taxmod-stock'), $today)
+                ),
                 'umbuchen'     => $this->stock->moveLot(
                     absint($_POST['lot'] ?? 0),
                     absint($_POST['from'] ?? 0),
@@ -211,6 +217,7 @@ final class StockPage
             $this->remember('success', match ($kind) {
                 'umhaengen'      => __('Umgehängt: der Ort liegt jetzt dort, mit allem, was in ihm liegt.', 'taxmod-stock'),
                 'umbuchen'       => __('Umgebucht: ein Vorgang «Umbuchung» mit Abgang am alten und Zugang am neuen Ort.', 'taxmod-stock'),
+                'sammelumbuchen' => __('Umgebucht: alle gewählten Materialien liegen jetzt am neuen Ort, als ein Vorgang «Umbuchung».', 'taxmod-stock'),
                 'storno', 'reservierungstorno', 'verbrauchstorno' => __('Storniert: die Gegenbuchung hebt den Vorgang auf, beide bleiben im Protokoll.', 'taxmod-stock'),
                 'reservieren'    => __('Reserviert: der verfügbare Bestand sinkt, der Bestand bleibt.', 'taxmod-stock'),
                 'ort'            => __('Lagerort angelegt.', 'taxmod-stock'),
@@ -355,7 +362,7 @@ final class StockPage
             /* translators: %d: number of materials */
             _n('%d Material', '%d Materialien', count($shown), 'taxmod-stock'),
             count($shown)
-        ), ListPage::filterToggle() . ListPage::columnMenu($listId, $view, $url([])));
+        ), ListPage::filterToggle() . ListPage::columnMenu($listId, $view, $url([])) . $this->bulkTransferDialog());
         $body    = $shown === [] ? $this->noItems(count($visible)) : '';
 
         // «← Zur Liste» in the material view comes back to exactly this list (design 7.3).
@@ -853,6 +860,21 @@ final class StockPage
             . ($toList ? '<input type="hidden" name="return_tab" value="' . esc_attr(self::BACK_TO_LIST) . '">' : '')
             . ListPage::dialogAction('taxmod-stock-transfer-' . $lot . '-' . $from . ($toList ? '-list' : ''), __('Umbuchen', 'taxmod-stock'), __('Umbuchen', 'taxmod-stock'), $body, 'booking', 'umbuchen', __('Umbuchen', 'taxmod-stock'))
             . '</form>';
+    }
+
+    /** «Umbuchen nach …» for the rows ticked: the target in the shared dialog; the fields join the bulk form. */
+    private function bulkTransferDialog(): string
+    {
+        if (! method_exists(ListPage::class, 'dialogAction')) {
+            return '';
+        }
+
+        $body = '<label style="display:block">' . esc_html__('Nach', 'taxmod-stock') . '<br><select name="location" form="' . esc_attr(self::BULK_FORM) . '" style="width:100%" required>'
+            . $this->options($this->stock->places(), '') . '</select></label>'
+            . '<input type="hidden" name="return_tab" value="' . esc_attr(self::BACK_TO_LIST) . '" form="' . esc_attr(self::BULK_FORM) . '">'
+            . '<p class="description">' . esc_html__('Bucht alles von den angehakten Materialien, jeden Posten von jedem Ort, an den gewählten Ort um: ein Vorgang «Umbuchung», «Stornieren» bei den Vorgängen nimmt ihn zurück.', 'taxmod-stock') . '</p>';
+
+        return '<div class="alignleft actions">' . ListPage::dialogAction('taxmod-stock-bulk-transfer', __('Umbuchen nach …', 'taxmod-stock'), __('Ausgewählte umbuchen', 'taxmod-stock'), $body, 'booking', 'sammelumbuchen', __('Umbuchen', 'taxmod-stock'), self::BULK_FORM) . '</div>';
     }
 
     /**
@@ -2511,8 +2533,15 @@ final class StockPage
             'order'   => $list->descending ? 'desc' : '',
         ], $keep));
 
-        return ListPage::searchBox(self::FILTER_FORM, $list->search, $placeholder, $hidden, __('Suchen', 'taxmod-stock'))
-            . ListPage::bulkBar(self::BULK_FORM, self::ACTION, [], $count, ListPage::filters(self::FILTER_FORM, $filters) . $more);
+        // The shared bar posts its choice as «action», which admin-post routes on: the handler's name goes in its place, so
+        // a dialog joining the bulk form (form=) reaches the handler with the rows ticked.
+        $bar = str_replace(
+            ['name="action" id="' . self::BULK_FORM . '-action"', '</form>'],
+            ['name="bulk" id="' . self::BULK_FORM . '-action"', '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"></form>'],
+            ListPage::bulkBar(self::BULK_FORM, self::ACTION, [], $count, ListPage::filters(self::FILTER_FORM, $filters) . $more)
+        );
+
+        return ListPage::searchBox(self::FILTER_FORM, $list->search, $placeholder, $hidden, __('Suchen', 'taxmod-stock')) . $bar;
     }
 
     /** @return array<string, string> */

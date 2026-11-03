@@ -332,6 +332,18 @@ $_GET = ['page' => StockPage::PAGE, 'tab' => 'material'];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'taxmod-stock-transfer-' . $lot . '-' . $r['platz'] . '-list') && str_contains($html, 'name="return_tab" value="materialliste"'), '«Umbuchen» sits in the material list for each place of a lot and returns to the list');
 
+// His wish 2026-11-03: «3 material wählen alle umbuchen nach» — all of each ticked material to one place, one Vorgang.
+$pruefe(str_contains($html, 'value="sammelumbuchen" form="taxmod-stock-bulk"') && str_contains($html, 'name="bulk" id="taxmod-stock-bulk-action"'), 'the material list has «Umbuchen nach …» joining the bulk form');
+(new StockService())->moveThings([$r['lm']], $von, '2026-11-02', 'Sammelumbuchung');
+$ledger = (new StockService())->ledger();
+$pruefe($ledger->restAt($lot, $von) === $ledger->restOf($lot) && $ledger->restAt($lot, $r['platz']) === 0.0, '«Umbuchen nach …» moves all of a material from every place to the one chosen');
+try {
+    (new StockService())->moveThings([$r['lm']], $von, '2026-11-02', 'nichts');
+    $pruefe(false, 'a bulk Umbuchung with nothing left to move is refused');
+} catch (TaxmodStock\Core\StockError $e) {
+    $pruefe(true, 'a bulk Umbuchung with nothing left to move is refused');
+}
+
 // D-997 · one thing opened: the head fixed, the views as tabs.
 foreach (['daten' => 'Taxonomy Modeller', 'einkauf' => 'LM2930T-5.0 ×5', 'lager' => 'Mindestbestand', 'bestand' => 'Umbuchen', 'verkauf' => 'später'] as $view => $erwartet) {
     $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => $r['lm'], 'view' => $view];

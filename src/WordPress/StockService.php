@@ -1283,6 +1283,39 @@ final class StockService
     }
 
     /**
+     * «Umbuchen nach …» for several materials at once (his wish 2026-11-03: «3 material wählen alle umbuchen nach»): all
+     * of each one, every lot from every place it lies at, to one place — one Vorgang «Umbuchung», one write.
+     *
+     * @param list<int> $things
+     * @return array<string, mixed>
+     */
+    public function moveThings(array $things, int $location, string $today, string $title): array
+    {
+        if (! $this->table('location')->has($location)) {
+            throw StockError::notALocation($location);
+        }
+
+        $ledger = $this->ledger();
+        $rows   = [];
+
+        foreach ($things as $thing) {
+            foreach ($ledger->lotsOf($thing) as $lot) {
+                foreach ($ledger->placesOf($lot) as $place => $quantity) {
+                    if ($quantity > 0.0 && (int) $place !== $location) {
+                        $rows[] = new TransferRow($lot, (int) $place, $location, rtrim(rtrim(number_format($quantity, 3, '.', ''), '0'), '.'));
+                    }
+                }
+            }
+        }
+
+        if ($rows === []) {
+            throw StockError::nothingToBook();
+        }
+
+        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $this->boundLots()));
+    }
+
+    /**
      * D-1036: an Umbuchung taken back as a Storno — the goods go back where they lay; who did it and when stand in the
      * Storno's description and date.
      *

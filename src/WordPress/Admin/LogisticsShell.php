@@ -43,6 +43,7 @@ final class LogisticsShell
         return new Navigation([
             ['key' => 'cockpit', 'label' => __('Cockpit', 'taxmod-stock'), 'items' => [
                 $item('cockpit', __('Was ansteht', 'taxmod-stock'), CockpitPage::PAGE),
+                $item('period', __('Zeitraum', 'taxmod-stock'), CockpitPage::PAGE, PeriodPage::TAB),
             ]],
             ['key' => 'purchasing', 'label' => __('Einkauf', 'taxmod-stock'), 'items' => [
                 $item('reorder', __('Nachbestellen', 'taxmod-stock'), PurchasePage::PAGE, 'nachbestellen'),

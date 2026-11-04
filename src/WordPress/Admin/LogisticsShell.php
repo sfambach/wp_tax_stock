@@ -86,7 +86,7 @@ final class LogisticsShell
                 // His words 2026-11-03: «pack mal das menü drucken unter einstellungen», «warum hat das nur zwei ebenen», «kannst du
                 // das so bauen das es n ebenen zulässt» — an item's `path` puts it any depth below its area (D-1121).
                 // D-1153: label templates are records; their list sits with the print pages.
-                ['path' => [__('Druck', 'taxmod-stock')]] + $item('label-templates', __('Etikettenvorlagen', 'taxmod-stock'), StockPage::PAGE, 'etikettenvorlagen'),
+                ['path' => [__('Druck', 'taxmod-stock')]] + $item('label-templates', __('Etiketten', 'taxmod-stock'), StockPage::PAGE, 'etikettenvorlagen'),
                 ...array_map(static fn (array $item): array => ['path' => [__('Druck', 'taxmod-stock'), ...$item['path']]] + $item, self::modules('print')),
             ]],
         ]);

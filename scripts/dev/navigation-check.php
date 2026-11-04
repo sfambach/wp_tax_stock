@@ -98,7 +98,7 @@ $einstellungen = array_values(array_filter($areas, static fn (array $area): bool
 $druck = array_values(array_filter($einstellungen, static fn (array $item): bool => ($item['module'] ?? '') === '__navcheck-print'))[0] ?? null;
 $pruefe($druck !== null && ($druck['path'] ?? []) === ['Druck'] && ! in_array('print', array_column($areas, 'key'), true), 'a page announced with area «print» stands under Einstellungen › Druck, not in an area of its own');
 $vorlagen = array_values(array_filter($einstellungen, static fn (array $item): bool => $item['key'] === 'label-templates'))[0] ?? null;
-$pruefe(($vorlagen['path'] ?? []) === ['Druck'] && ($vorlagen['tab'] ?? '') === 'etikettenvorlagen' && ($vorlagen['page'] ?? '') === StockPage::PAGE, 'D-1153: Einstellungen › Druck › Etikettenvorlagen opens the Lager tab of the templates');
+$pruefe(($vorlagen['path'] ?? []) === ['Druck'] && ($vorlagen['label'] ?? '') === 'Etiketten' && ($vorlagen['tab'] ?? '') === 'etikettenvorlagen' && ($vorlagen['page'] ?? '') === StockPage::PAGE, 'D-1165: Druck › Etiketten opens the Lager tab of the templates');
 $fertigung = array_values(array_filter($areas, static fn (array $area): bool => $area['key'] === 'production'))[0]['items'] ?? [];
 $pruefe(array_column($fertigung, 'key') === ['project-boxes', 'module-__navcheck-production'], 'D-1142: a page announced with area «production» stands under Fertigung, after Projekt-Gebinde');
 $_GET = ['page' => ModulePage::PAGE, 'module' => '__navcheck-deep'];

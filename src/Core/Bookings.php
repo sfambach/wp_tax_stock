@@ -319,6 +319,29 @@ final class Bookings
     }
 
     /**
+     * D-1146: what a build takes from its box and gives back, one Vorgang «Verbrauch» with the order as its Bezug.
+     *
+     * @param list<array{lot: int, place: int, quantity: float}> $rows signed: negative is taken
+     * @return list<array<string, mixed>>
+     */
+    public function build(array $rows, int $reference, string $title): array
+    {
+        $s = $this->structure;
+
+        if (! $s->hasField('transaction_reference')) {
+            throw StockError::notConfigured('fields.transaction_reference');
+        }
+
+        $this->start();
+
+        foreach ($rows as $row) {
+            $this->line($title, (string) $row['lot'], self::signed($row['quantity']), null, $row['place']);
+        }
+
+        return $this->finish($title, 'kind_consumption', [(string) $s->field('transaction_reference') => (string) $reference]);
+    }
+
+    /**
      * D-1036 for a consumption: a Vorgang «Verbrauch» whose lines put back what each line took, at its place, naming
      * the line it cancels. A reservation the consumption lowered is open again by as much (D-1088).
      *
@@ -684,6 +707,11 @@ final class Bookings
 
         // A non-numeric key adds a new part (taxmod/apply, set_values).
         return ['neu' => $part];
+    }
+
+    private static function signed(float $quantity): string
+    {
+        return rtrim(rtrim(number_format($quantity, 6, '.', ''), '0'), '.');
     }
 
     private function ref(string $prefix): string

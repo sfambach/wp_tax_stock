@@ -2,10 +2,12 @@
 
 namespace TaxmodStock\WordPress;
 
+use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\TestSettings;
 use TaxmodStock\WordPress\Admin\CockpitPage;
 use TaxmodStock\WordPress\Admin\InboundPage;
 use TaxmodStock\WordPress\Admin\LogisticsShell;
+use TaxmodStock\WordPress\Admin\Messages;
 use TaxmodStock\WordPress\Admin\ModulePage;
 use TaxmodStock\WordPress\Admin\PurchasePage;
 use TaxmodStock\WordPress\Admin\SettingsPage;
@@ -23,6 +25,9 @@ final class Plugin
 
     /** The modeller's menu, which every Taxmod module hangs its pages under (D-1028). */
     public const PARENT = 'taxmod';
+
+    /** D-1146: the filter the manufacturing module books a build's consumption through. */
+    public const BOOK_BUILD = 'taxmod_stock_book_build';
 
     public function boot(): void
     {
@@ -56,6 +61,46 @@ final class Plugin
         add_action('admin_post_' . PurchasePage::ACTION, static fn () => (new PurchasePage())->handle());
         add_action('admin_post_' . SettingsPage::ACTION, static fn () => (new SettingsPage())->handle());
         add_action('admin_post_' . LogisticsShell::FULLSCREEN_ACTION, [LogisticsShell::class, 'switchFullscreen']);
+        add_filter(self::BOOK_BUILD, [self::class, 'bookBuild'], 10, 2);
+    }
+
+    /**
+     * D-1146 for wp_tax_manufacturing (D-1142): `apply_filters('taxmod_stock_book_build', null, $args)` books what a build
+     * order takes from its box or gives back. `$args`: reference (the order's record), place (the box), lines (thing →
+     * pieces, more than 0 taken, less than 0 given back), title, date (Y-m-d). Answers the Vorgang's id or a WP_Error.
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     the booking as the caller sends it; `mixed`: checked here
+     */
+    public static function bookBuild(mixed $previous, mixed $args): int|\WP_Error
+    {
+        if (is_int($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args  = is_array($args) ? $args : [];
+        $date  = sanitize_text_field((string) ($args['date'] ?? ''));
+        $lines = [];
+
+        foreach (is_array($args['lines'] ?? null) ? $args['lines'] : [] as $thing => $quantity) {
+            if (absint($thing) > 0 && is_numeric($quantity)) {
+                $lines[absint($thing)] = (float) $quantity;
+            }
+        }
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+            return new \WP_Error('taxmod_stock_not_a_date', Messages::of(StockError::notADate($date)));
+        }
+
+        try {
+            return (new StockService())->bookBuild(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Fertigung', 'taxmod-stock'))));
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
     }
 
     /** The branches without material and the test settings, settable over REST (/wp/v2/settings) as well as on Logistik › Einstellungen. */

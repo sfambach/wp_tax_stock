@@ -545,6 +545,21 @@ $pruefe(str_contains($framed, 'class="taxmod-shell has-side"') && strpos($framed
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'lagerorte', 'ort' => $schrank];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'data-taxmod-stock-lot="' . $posten . ':' . $kiste . ':' . rtrim(rtrim(number_format($menge, 3, '.', ''), '0'), '.') . ':' . $bc . '"') && str_contains($html, '__Schublade 2 › __Kiste') && str_contains($html, 'BC547C'), 'Lagerorte: what lies at the place and below it, each row draggable onto a place');
+
+// D-1146, his choice «Ja, so bauen»: the manufacturing module books a build's consumption from the box, and takes it back.
+add_filter(TaxmodStock\WordPress\Plugin::BOOK_BUILD, [TaxmodStock\WordPress\Plugin::class, 'bookBuild'], 10, 2);
+$auftrag = (int) ($b['pj'] ?? 0);
+$vorher  = (new StockService())->ledger()->stockOf($bc);
+$vorgang = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_BUILD, null, ['reference' => $auftrag, 'place' => $schrank, 'lines' => [$bc => 1], 'title' => 'Fertigung Testkarte', 'date' => '2026-11-04']);
+$s       = new StockService();
+$pruefe(is_int($vorgang) && $s->ledger()->stockOf($bc) === $vorher - 1.0 && (int) $s->table('transaction')->first($vorgang, $s->structure()->field('transaction_reference')) === $auftrag, 'a build takes one piece from the box, one Vorgang «Verbrauch» naming the order' . ($vorgang instanceof WP_Error ? ': ' . $vorgang->get_error_message() : ''));
+$zurueck = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_BUILD, null, ['reference' => $auftrag, 'place' => $schrank, 'lines' => [$bc => -1], 'title' => 'Fertigung Testkarte zurück', 'date' => '2026-11-04']);
+$s       = new StockService();
+$pruefe(is_int($zurueck) && $s->ledger()->stockOf($bc) === $vorher && ($s->presentIn($schrank)[$bc] ?? 0.0) === $menge, 'giving it back puts it into the box again' . ($zurueck instanceof WP_Error ? ': ' . $zurueck->get_error_message() : ''));
+$zuviel  = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_BUILD, null, ['reference' => $auftrag, 'place' => $schrank, 'lines' => [$bc => $menge + 5], 'title' => 'zu viel', 'date' => '2026-11-04']);
+$pruefe($zuviel instanceof WP_Error && $zuviel->get_error_code() === 'taxmod_stock_not_enough_for_build' && (new StockService())->ledger()->stockOf($bc) === $vorher, 'more than lies in the box is refused, nothing booked');
+$mehr    = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_BUILD, null, ['reference' => $auftrag, 'place' => $schrank, 'lines' => [$bc => -1], 'title' => 'nichts entnommen', 'date' => '2026-11-04']);
+$pruefe($mehr instanceof WP_Error && $mehr->get_error_code() === 'taxmod_stock_not_taken_for_build', 'giving back more than the order took is refused');
 $pruefe(str_contains($html, 'taxmod-stock-drop-lot') && ! str_contains($html, 'taxmod-stock-move-place-'), 'Lagerorte: a lot dropped on a place asks for the Umbuchung; no structure actions here');
 
 // D-1027 with D-1097/D-1098: a demand, a source and back, a position removed — the same before and after the switch.

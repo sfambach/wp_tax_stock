@@ -257,6 +257,18 @@ final class StockError extends \RuntimeException
         return new self('no_subject', '');
     }
 
+    /** D-1146: a build takes only what lies in its box; the detail is the thing. */
+    public static function notEnoughForBuild(int $thing): self
+    {
+        return new self('not_enough_for_build', (string) $thing);
+    }
+
+    /** D-1146: a build gives back at most what it took; the detail is the thing. */
+    public static function notTakenForBuild(int $thing): self
+    {
+        return new self('not_taken_for_build', (string) $thing);
+    }
+
     /** A date as the form sends it: Y-m-d. */
     public static function notADate(string $given): self
     {

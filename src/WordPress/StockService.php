@@ -3,6 +3,7 @@
 namespace TaxmodStock\WordPress;
 
 use TaxmodStock\Core\Bookings;
+use TaxmodStock\Core\BuildPlan;
 use TaxmodStock\Core\InboundArchive;
 use TaxmodStock\Core\InventoryRow;
 use TaxmodStock\Core\LagerChanges;
@@ -1355,6 +1356,69 @@ final class StockService
         $this->reservations()->checkConsumption($lot, $quantity, $place ?? $ledger->homeOf($lot), $purpose, $ledger, $reserved);
 
         return $this->model->write((new Bookings($this->structureWithKinds(), $today))->consumption($lot, $quantity, $purpose, $title, $place, $reason));
+    }
+
+    /**
+     * D-1146, for the manufacturing module (D-1142): what a build order takes from its box (more than 0) or gives back
+     * (less than 0), in one Vorgang «Verbrauch» whose Bezug is the order. The box's own reservation (D-1082) is not checked:
+     * a box reserved for production is there to be built from.
+     *
+     * @param array<int, float> $lines thing → pieces
+     * @return int the Vorgang
+     */
+    public function bookBuild(int $reference, int $place, array $lines, string $today, string $title): int
+    {
+        if ($reference <= 0) {
+            throw StockError::noSubject();
+        }
+
+        if (! $this->table('location')->has($place)) {
+            throw StockError::notALocation($place);
+        }
+
+        $this->checkThings(array_keys(array_filter($lines, static fn (float $q): bool => $q > 0.0)));
+        $rows   = BuildPlan::rows($this->ledger(), $place, $this->locationTree()->withAllBelow($place), $lines, $this->takenFor($reference));
+        $answer = $this->model->write((new Bookings($this->structureWithKinds(), $today))->build($rows, $reference, $title));
+
+        foreach ((array) ($answer['refs'] ?? []) as $ref => $id) {
+            if (preg_match('/^v\d+$/', (string) $ref) === 1) {
+                return (int) $id;
+            }
+        }
+
+        throw StockError::nothingToBook();
+    }
+
+    /** @return array<int, array<int, float>> thing → lot → pieces the Vorgänge naming `$reference` took, net of what came back */
+    private function takenFor(int $reference): array
+    {
+        $s = $this->structure();
+
+        if (! $s->hasField('transaction_reference')) {
+            return [];
+        }
+
+        $deals  = $this->table('transaction');
+        $lines  = $this->table('line');
+        $ledger = $this->ledger();
+        $out    = [];
+
+        foreach ($deals->ids() as $deal) {
+            if ((int) $deals->first($deal, $s->field('transaction_reference')) !== $reference || (int) $deals->first($deal, $s->field('transaction_kind')) !== $s->value('kind_consumption')) {
+                continue;
+            }
+
+            foreach ($deals->all($deal, $s->field('transaction_lines')) as $line) {
+                $lot   = (int) $lines->first((int) $line, $s->field('line_lot'));
+                $thing = $ledger->thingOf($lot);
+
+                if ($thing !== null) {
+                    $out[$thing][$lot] = ($out[$thing][$lot] ?? 0.0) - (float) ($lines->first((int) $line, $s->field('line_quantity')) ?? 0);
+                }
+            }
+        }
+
+        return $out;
     }
 
     /**

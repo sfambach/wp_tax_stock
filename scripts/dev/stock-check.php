@@ -647,6 +647,10 @@ update_option(StockService::OPTION, $alt);
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'material'];
 $pruefe(! str_contains((new StockPage())->render(), 'notice-error') && (new StockService())->ledger()->stockOf($r['lm']) === 5.0, 'an old structure keeps working');
 
+// D-1158: without sizes on the kinds of place nothing is said — the warning never stands in the way of a move.
+$ohneMass = $ort('Passt-Regal', 0);
+$pruefe((new StockService())->misfits([$ort('Passt-Box', $ohneMass, true)], $ohneMass) === [] && (new StockService())->fitsNew(0, $ohneMass) === null, 'D-1158: places without a kind or sizes give no fit warning');
+
 // The Configuration tab: the modeller lists it, and pasting structure-live.json stores those ids.
 add_filter('taxmod_config_tabs', [TaxmodStock\WordPress\Admin\SettingsTab::class, 'register']);
 $reiter = Taxmod\WordPress\Admin\SettingsScreen::moduleTabs();

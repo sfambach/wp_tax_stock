@@ -33,7 +33,9 @@ final class Structure
         // D-1139: a project's boards, their revisions and the revisions' positions — the parts list of a project box.
         'board', 'board_revision', 'bom_position',
         // D-1153, D-1159: the labels; D-1160: the category a material prints from.
-        'label_template', 'label_materials'];
+        'label_template', 'label_materials',
+        // D-1158: the Dimension node behind a place type's outer and inner size.
+        'dimension'];
 
     /** Fields the module uses when they are there and leaves out when they are not. */
     private const OPTIONAL_FIELDS = [
@@ -76,6 +78,8 @@ final class Structure
         // D-1159: a label carries its own size; the separate format records are gone.
         'template_key', 'template_width', 'template_height', 'template_roll', 'template_copies', 'template_layout',
         'type_label_template', 'type_label_copies',
+        // D-1158: a place type's outer and inner size, and the three sides of a Dimension.
+        'type_outer', 'type_inner', 'dimension_length', 'dimension_width', 'dimension_height',
     ];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];

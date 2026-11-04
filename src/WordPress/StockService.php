@@ -18,6 +18,7 @@ use TaxmodStock\Core\MaterialCopy;
 use TaxmodStock\Core\NamedCopy;
 use TaxmodStock\Core\LocationTree;
 use TaxmodStock\Core\LabelTemplates;
+use TaxmodStock\Core\PlaceFit;
 use TaxmodStock\Core\PlaceTypes;
 use TaxmodStock\Core\ProjectBill;
 use TaxmodStock\Core\NotStocked;
@@ -842,6 +843,48 @@ final class StockService
         }
 
         return $this->placeTypes ??= PlaceTypes::from($s, $this->table('location_type'), $s->hasNode('location_type_part') ? $this->table('location_type_part') : new Table([]));
+    }
+
+    /**
+     * D-1158: the places of $places whose kind does not fit into the kind of $parent — outer size against inner size.
+     * Only a warning: a place without sizes, or one in other units, is left out.
+     *
+     * @param list<int> $places
+     * @return list<int>
+     */
+    public function misfits(array $places, int $parent): array
+    {
+        $s = $this->structure();
+
+        if ($parent <= 0 || ! $s->hasNode('location_type') || ! $s->hasNode('dimension') || ! $s->hasField('location_place_type')) {
+            return [];
+        }
+
+        $locations = $this->table('location');
+        $typeOf    = static fn (int $place): int => (int) $locations->first($place, $s->field('location_place_type'));
+        $into      = $typeOf($parent);
+
+        if ($into <= 0) {
+            return [];
+        }
+
+        $fit = PlaceFit::from($s, $this->table('location_type'), $this->table('dimension'), $this->table('money'));
+
+        return array_values(array_filter($places, static fn (int $place): bool => $fit->fits($typeOf($place), $into) === false));
+    }
+
+    /** D-1158: whether a new place of $type fits into $parent; null where nothing can be said. */
+    public function fitsNew(int $type, int $parent): ?bool
+    {
+        $s = $this->structure();
+
+        if ($type <= 0 || $parent <= 0 || ! $s->hasNode('location_type') || ! $s->hasNode('dimension') || ! $s->hasField('location_place_type')) {
+            return null;
+        }
+
+        $into = (int) $this->table('location')->first($parent, $s->field('location_place_type'));
+
+        return $into <= 0 ? null : PlaceFit::from($s, $this->table('location_type'), $this->table('dimension'), $this->table('money'))->fits($type, $into);
     }
 
     /**

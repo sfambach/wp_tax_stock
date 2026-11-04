@@ -279,6 +279,18 @@ final class StockPage
                 default     => sprintf(__('Gebucht: %d Änderungen in einem Schritt.', 'taxmod-stock'), count((array) ($result['applied'] ?? []))),
             });
 
+            // D-1158: hung where it does not fit — done all the same, but said.
+            $misfits = match ($kind) {
+                'umhaengen'       => $this->stock->misfits([$rowPurchase], absint(((array) ($_POST['parent'] ?? []))[$rowPurchase] ?? 0)),
+                'orteverschieben' => $this->stock->misfits(array_values(array_filter(array_map('absint', (array) ($_POST['selected'] ?? [])))), absint($_POST['children_parent'] ?? 0)),
+                'ort'             => $this->stock->fitsNew(absint($_POST['place_type'] ?? 0), absint($_POST['new_parent'] ?? 0)) === false ? [0] : [],
+                default           => [],
+            };
+
+            if ($misfits !== []) {
+                $this->remember('warning', __('Erledigt, aber Vorsicht: die Außenabmessung passt nicht in die Innenabmessung des Ortes darüber.', 'taxmod-stock'));
+            }
+
             $open = $kind === 'zuordnen' ? (int) array_key_first(array_filter(array_map('absint', (array) ($_POST['newgroup'] ?? [])))) : 0;
             $back = match ($kind) {
                 'verschieben'  => ['material', ['thing' => $thing, 'view' => 'daten']],

@@ -41,6 +41,9 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
     A place can be «reserviert für Produktion» (D-1082, from 0.12.0, set on «Lagerstruktur»): what lies on it or below
     it is reserved, computed from where it lies. Strict: freed only by moving it out, consumed only after that, and goods
     already reserved are not moved or hung into such an area. The Bestand tab shows «Reserviert» and «Verfügbar».
+  - **Several people at once** (D-1148, from 0.35.1, needs the modeller from 0.1.152): every booking form — stock, goods receipt,
+    purchasing — runs one at a time. Two pickers who both see «1 left» cannot both take it: the second waits, reads the stock
+    again and is refused with the stock's own message if it is gone.
   - **Reservierungen** (D-1083, from 0.13.0) — one reservation per subject (project, sale): a Vorgang «Reservierung» with
     Bezug, date, deadline and positions (material, quantity, lot 0..1). It lowers the available stock, not the stock;
     its lines move nothing. «Reservieren» on the tab and on a material's Bestand tab; «Stornieren» whole or per position

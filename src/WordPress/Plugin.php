@@ -53,13 +53,13 @@ final class Plugin
         add_action('admin_menu', [$this, 'registerMenu'], 20);
         // Last, when every module has hung its page under the Taxmod menu, and before admin_head takes the entries out.
         add_action('admin_menu', [ModulePage::class, 'capture'], PHP_INT_MAX);
-        add_action('admin_post_' . StockPage::ACTION, static fn () => (new StockPage())->handle());
+        add_action('admin_post_' . StockPage::ACTION, static fn () => self::serially(static fn () => (new StockPage())->handle()));
         add_action('admin_post_' . StockPage::POSITIONS, static fn () => (new StockPage())->positions());
         add_action('admin_post_' . StockPage::THING_SEARCH, static fn () => (new StockPage())->thingSearch());
         add_action('admin_post_' . StockPage::THING_NODES, static fn () => (new StockPage())->thingNodes());
         add_action('admin_post_' . StockPage::THING_BRANCH, static fn () => (new StockPage())->thingBranch());
-        add_action('admin_post_' . InboundPage::ACTION, static fn () => (new InboundPage())->handle());
-        add_action('admin_post_' . PurchasePage::ACTION, static fn () => (new PurchasePage())->handle());
+        add_action('admin_post_' . InboundPage::ACTION, static fn () => self::serially(static fn () => (new InboundPage())->handle()));
+        add_action('admin_post_' . PurchasePage::ACTION, static fn () => self::serially(static fn () => (new PurchasePage())->handle()));
         add_action('admin_post_' . SettingsPage::ACTION, static fn () => (new SettingsPage())->handle());
         add_action('admin_post_' . LogisticsShell::FULLSCREEN_ACTION, [LogisticsShell::class, 'switchFullscreen']);
         add_filter(self::BOOK_BUILD, [self::class, 'bookBuild'], 10, 2);
@@ -109,6 +109,28 @@ final class Plugin
             return (new StockService())->bookBuild(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Fertigung', 'taxmod-stock'))));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * One booking at a time (D-1147): two pickers who both read «1 left» must not both book it.
+     *
+     * The second waits for the first, then reads the stock again inside its own request and is refused if it is no longer there.
+     * The lock lasts one request and is dropped with the connection, so a closed browser holds nothing. Without a modeller that has
+     * the lock (before 0.1.151) the booking runs as before.
+     */
+    public static function serially(callable $work): void
+    {
+        if (! class_exists(\Taxmod\WordPress\Persistence\WriteLock::class)) {
+            $work();
+
+            return;
+        }
+
+        try {
+            \Taxmod\WordPress\Persistence\WriteLock::around('stock', $work);
+        } catch (\Taxmod\Core\Exception\ConcurrentChange $e) {
+            wp_die(esc_html($e->getMessage()), esc_html__('Gerade wird gebucht', 'taxmod-stock'), ['response' => 409, 'back_link' => true]);
         }
     }
 

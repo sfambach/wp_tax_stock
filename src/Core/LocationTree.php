@@ -23,6 +23,8 @@ final class LocationTree
      * @param array<int, string> $projects place id → the name of its project, only where one is set
      * @param array<int, true>   $movable  places that are boxes, cartons, pallets
      * @param array<int, int>    $projectIds place id → the record id of its project, only where one is set
+     * @param array<int, string> $titles   place id → its Bezeichnung alone, where a short mark stands before it in `$names`
+     * @param array<int, string> $shorts   place id → its short mark (Kurzzeichen), only where one is set
      */
     public function __construct(
         private readonly array $names,
@@ -30,16 +32,27 @@ final class LocationTree
         private readonly array $projects = [],
         private readonly array $movable = [],
         private readonly array $projectIds = [],
+        private readonly array $titles = [],
+        private readonly array $shorts = [],
     ) {
     }
 
     /** @param array<int, string> $projectNames project record id → name */
     public static function from(Structure $s, Table $places, array $projectNames, PlaceTypes $types = new PlaceTypes()): self
     {
-        $names = $parents = $projects = $movable = $projectIds = [];
+        $names = $parents = $projects = $movable = $projectIds = $titles = $shorts = [];
 
         foreach ($places->ids() as $id) {
             $names[$id]   = (string) ($places->first($id, $s->field('label')) ?? '#' . $id);
+            // D-1150, his word 2026-11-04: «der name im menü sollte sich aus kurzzeichen + bezeichnung zusammen setzen».
+            $short = $s->hasField('location_short') ? trim((string) $places->first($id, $s->field('location_short'))) : '';
+
+            if ($short !== '') {
+                $shorts[$id] = $short;
+                $titles[$id] = $names[$id];
+                $names[$id]  = $short . ' ' . $names[$id];
+            }
+
             $parents[$id] = $s->hasField('location_parent') ? (int) $places->first($id, $s->field('location_parent')) : 0;
 
             if ($s->hasField('location_project') && (int) $places->first($id, $s->field('location_project')) > 0) {
@@ -57,7 +70,7 @@ final class LocationTree
             }
         }
 
-        return new self($names, $parents, $projects, $movable, $projectIds);
+        return new self($names, $parents, $projects, $movable, $projectIds, $titles, $shorts);
     }
 
     /** @return list<int> the record ids of the projects some place names */
@@ -82,6 +95,18 @@ final class LocationTree
     public function lineOf(int $id): array
     {
         return [...array_reverse($this->ancestorsOf($id)), $id];
+    }
+
+    /** D-1150: the place's Bezeichnung without its short mark — the title on its label. */
+    public function titleOf(int $id): string
+    {
+        return $this->titles[$id] ?? $this->names[$id] ?? '#' . $id;
+    }
+
+    /** D-1150: the place's short mark (Kurzzeichen), '' where none is set. */
+    public function shortOf(int $id): string
+    {
+        return $this->shorts[$id] ?? '';
     }
 
     /** «Keller › Bauteile › Regal 2» */

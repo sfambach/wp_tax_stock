@@ -66,6 +66,8 @@ final class Structure
         'location_place_type', 'type_movable', 'type_parts', 'part_type', 'part_count',
         // D-1139: the way from a project to its parts list.
         'project_boards', 'board_revisions', 'revision_positions', 'position_part', 'position_count',
+        // D-1150: a place's short mark (A1-S1), put before its name wherever the place is named.
+        'location_short',
     ];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];

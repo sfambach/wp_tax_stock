@@ -1868,13 +1868,23 @@ final class StockPage
             'name'         => 'taxmod_stock_place',
             'node'         => $s->node('location'),
             'parent_field' => $s->field('location_parent'),
-            'label_field'  => $s->field('label'),
+            'label_field'  => $this->placeWords($s),
             'preselected'  => $chosen > 0 ? $chosen : null,
             'inline'       => true,
             'pick_url'     => add_query_arg(['page' => self::PAGE, 'tab' => $tab, 'ort' => '{id}'], admin_url('admin.php')),
             'drag'         => true,
             'suffix'       => $suffix,
         ]);
+    }
+
+    /**
+     * D-1150: the fields that name a place in the modeller's tree — its short mark, then its Bezeichnung.
+     *
+     * @return int|list<int>
+     */
+    private function placeWords(\TaxmodStock\Core\Structure $s): int|array
+    {
+        return $s->hasField('location_short') ? [$s->field('location_short'), $s->field('label')] : $s->field('label');
     }
 
     /** The head of the right side: the place's name, where it lies and its marks. */
@@ -1887,7 +1897,9 @@ final class StockPage
 
         return '<h2 style="margin-top:0">' . esc_html((string) (array_reverse(explode(' › ', $tree->pathOf($place)))[0])) . $marks . '</h2>'
             . '<p>' . esc_html__('Liegt in', 'taxmod-stock') . ': ' . esc_html($parent > 0 ? $tree->pathOf($parent) : __('— oberste Ebene —', 'taxmod-stock'))
-            . ($project === null ? '' : ' · ' . esc_html__('Projekt', 'taxmod-stock') . ': ' . esc_html($project)) . '</p>';
+            . ($project === null ? '' : ' · ' . esc_html__('Projekt', 'taxmod-stock') . ': ' . esc_html($project))
+            // D-1150, his word 2026-11-04: «würde dir auch die id nennen aber die sehe ich nicht im lager layout detail sicht des platzes».
+            . ' · ' . esc_html__('Id', 'taxmod-stock') . ': ' . (int) $place . '</p>';
     }
 
     /**
@@ -1954,7 +1966,10 @@ final class StockPage
         $movable = $tree->isMovable($place);
         $project = (string) $tree->projectOf($place);
 
-        return [$movable ? 'K' : 'O', $place, (string) (array_reverse(explode(' › ', $tree->pathOf($place)))[0]), implode(' · ', array_filter([
+        // D-1150, his word 2026-11-04: «nee bezeichnung oben» — the Bezeichnung is the title across the top, the short mark leads the
+        // lines beside the QR code.
+        return [$movable ? 'K' : 'O', $place, $tree->titleOf($place), implode(' · ', array_filter([
+            $tree->shortOf($place),
             $project === '' ? '' : __('Projekt', 'taxmod-stock') . ': ' . $project,
             ! $movable && $tree->parentOf($place) > 0 ? $tree->pathOf($tree->parentOf($place)) : '',
         ]))];
@@ -2347,7 +2362,7 @@ final class StockPage
             'name'         => $name,
             'node'         => $s->node('location'),
             'parent_field' => $s->field('location_parent'),
-            'label_field'  => $s->field('label'),
+            'label_field'  => $this->placeWords($s),
             'exclude'      => [$place],
             'preselected'  => $parent > 0 ? $parent : null,
             'inline'       => true,

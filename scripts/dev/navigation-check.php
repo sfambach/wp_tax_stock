@@ -89,6 +89,7 @@ $pruefe(array_column($outbound, 'module') === ['taxebay-shipping'], 'Warenausgan
 // His words 2026-11-03 (D-1121): «pack mal das menü drucken unter einstellungen», «kannst du das so bauen das es n ebenen zulässt».
 add_filter(ModulePage::FILTER, static fn (array $pages): array => [...$pages,
     ['slug' => '__navcheck-print', 'label' => 'Aufträge', 'area' => 'print', 'render' => static fn (): string => ''],
+    ['slug' => '__navcheck-production', 'label' => 'Aufträge', 'area' => 'production', 'render' => static fn (): string => ''],
     ['slug' => '__navcheck-deep', 'label' => 'Tief', 'area' => 'settings', 'path' => ['Ebene A', 'Ebene B'], 'render' => static fn (): string => ''],
 ]);
 ModulePage::capture();
@@ -96,6 +97,8 @@ $areas = LogisticsShell::navigation()->areas();
 $einstellungen = array_values(array_filter($areas, static fn (array $area): bool => $area['key'] === 'settings'))[0]['items'] ?? [];
 $druck = array_values(array_filter($einstellungen, static fn (array $item): bool => ($item['module'] ?? '') === '__navcheck-print'))[0] ?? null;
 $pruefe($druck !== null && ($druck['path'] ?? []) === ['Druck'] && ! in_array('print', array_column($areas, 'key'), true), 'a page announced with area «print» stands under Einstellungen › Druck, not in an area of its own');
+$fertigung = array_values(array_filter($areas, static fn (array $area): bool => $area['key'] === 'production'))[0]['items'] ?? [];
+$pruefe(array_column($fertigung, 'key') === ['project-boxes', 'module-__navcheck-production'], 'D-1142: a page announced with area «production» stands under Fertigung, after Projekt-Gebinde');
 $_GET = ['page' => ModulePage::PAGE, 'module' => '__navcheck-deep'];
 $tief = LogisticsShell::wrap(ModulePage::PAGE, '<p>x</p>');
 $pruefe(substr_count($tief, 'taxmod-shell-group is-open') === 2 && str_contains($tief, '>Ebene B</a><ul><li><a') && str_contains($tief, 'aria-current="page">Tief</a>'), 'a page with a path of two groups stands three levels deep, its groups open (n levels)');

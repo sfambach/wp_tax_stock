@@ -39,7 +39,7 @@ final class ModulePage
     public const FILTER = 'taxmod_logistics_pages';
 
     /** The navigation areas a module page may stand in. */
-    private const AREAS = ['settings', 'outbound', 'print'];
+    private const AREAS = ['settings', 'outbound', 'print', 'production'];
 
     /** Pages of the Taxmod menu that are not modules: the modeller's (D-1085 level 1) and ours. */
     private const NOT_MODULES = [Plugin::PARENT, 'taxmod-inbox', 'taxmod-cleanup', 'taxmod-backup', 'taxmod-settings', CockpitPage::PAGE, InboundPage::PAGE, StockPage::PAGE, PurchasePage::PAGE, SettingsPage::PAGE, self::PAGE];

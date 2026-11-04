@@ -71,6 +71,8 @@ final class LogisticsShell
             // D-957 names «Fertigung» among the module's areas; D-1139 is its first page.
             ['key' => 'production', 'label' => __('Fertigung', 'taxmod-stock'), 'items' => [
                 $item('project-boxes', __('Projekt-Gebinde', 'taxmod-stock'), StockPage::PAGE, 'fertigung'),
+                // D-1142: the manufacturing module (wp_tax_manufacturing) hangs its pages here.
+                ...self::modules('production'),
             ]],
             ['key' => 'outbound', 'label' => __('Warenausgang', 'taxmod-stock'), 'items' => self::modules('outbound')],
             // His word 2026-11-01: «einen Punkt Einstellung … die API-Konfiguration, die Grundeinstellung und ja, die Lagerstruktur».

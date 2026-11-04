@@ -434,6 +434,22 @@ $pruefe(($s->ledger()->placesOf($posten)[$kiste] ?? 0.0) === $menge && $s->ledge
 $pruefe(count((new StockService())->table('transaction')->ids()) === $vorgaenge + 1, 'a fixed place hung elsewhere is a change of the structure, no Vorgang');
 (new StockService())->movePlace($fach1, $schrank, '2026-11-02', 'Umlagerung');
 
+// His wish 2026-11-04: «liste mit kindern und massen funktion … verschieben» — the ticked Unterorte move in one write.
+$vorgaenge = count((new StockService())->table('transaction')->ids());
+(new StockService())->movePlaces([$fach1, $fach2], $r['lager'], '2026-11-04', 'Umlagerung');
+$s = new StockService();
+$pruefe($s->locationTree()->parentOf($fach1) === $r['lager'] && $s->locationTree()->parentOf($fach2) === $r['lager'] && $s->locationTree()->parentOf($kiste) === $fach2 && count($s->table('transaction')->ids()) === $vorgaenge, 'Verschieben of ticked Unterorte: both hang there with what is in them; fixed places make no Vorgang');
+(new StockService())->movePlaces([$fach1, $fach2], $schrank, '2026-11-04', 'Umlagerung');
+(new StockService())->movePlaces([$kiste], $fach1, '2026-11-04', 'Umlagerung');
+$pruefe(count((new StockService())->table('transaction')->ids()) === $vorgaenge + 1, 'a ticked box moved is a Vorgang «Umlagerung» (D-1091)');
+(new StockService())->movePlace($kiste, $fach2, '2026-11-04', 'Umlagerung');
+try {
+    (new StockService())->movePlaces([$fach1], $schrank, '2026-11-04', 'Umlagerung');
+    $pruefe(false, 'ticked places already there move nothing');
+} catch (StockError $e) {
+    $pruefe($e->reason === 'nothing_to_book', 'ticked places already there move nothing');
+}
+
 // D-1134, his word «plätze im layoout zuletzt erstellten 3 plätze ? … od er5»: the Layout tile counts the places and names the newest.
 $_GET  = ['page' => TaxmodStock\WordPress\Admin\CockpitPage::PAGE, TaxmodStock\WordPress\Admin\CockpitPage::AREA => 'settings', TaxmodStock\WordPress\Admin\CockpitPage::GROUP => 'Lagerstruktur'];
 $kachel = (new TaxmodStock\WordPress\Admin\CockpitPage())->render();
@@ -518,6 +534,10 @@ $pruefe(str_contains($html, 'taxmod-record-tree') && str_contains($html, 'data-t
 $pruefe(str_contains($html, '<h2 style="margin-top:0">__Kiste') && str_contains($html, 'Lager › __Schrank › __Schublade 2') && str_contains($html, 'Umlagerungen') && str_contains($html, 'taxmod-stock-move-place-' . $kiste) && str_contains($html, 'taxmod-stock-new-place-' . $kiste), 'Lagerstruktur: the place on the right with where it lies, its moves and its actions');
 $pruefe(str_contains($html, 'data-taxmod-drop-record="0"') && str_contains($html, 'taxmod-stock-drop-place') && str_contains($html, 'name="return_ort" value="' . $kiste . '"'), 'Lagerstruktur: the top level takes a drop, a drop asks first, the forms come back to the place');
 $pruefe(! str_contains($html, 'name="parent[' . $kiste . ']" value="' . $kiste . '"'), 'Verschieben does not offer the box itself');
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'lagerstruktur', 'ort' => $schrank];
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'id="taxmod-stock-children"') && str_contains($html, 'value="' . $fach1 . '" form="taxmod-stock-children"') && str_contains($html, 'value="' . $fach2 . '" form="taxmod-stock-children"') && ! str_contains($html, 'value="' . $kiste . '" form="taxmod-stock-children"'), 'Lagerstruktur: the Unterorte right inside the place stand in a list with checkboxes');
+$pruefe(str_contains($html, 'taxmod-stock-children-move') && str_contains($html, 'value="orteverschieben"') && (! class_exists(Taxmod\Core\Printing\LabelFormat::class) || str_contains($html, 'value="etiketten-pdf"')), 'Lagerstruktur: «Verschieben nach …» and «Etiketten drucken …» for the ticked Unterorte');
 $parts = (new StockPage())->parts();
 $pruefe(str_contains($parts['side'], 'taxmod-record-tree') && str_contains($parts['side'], 'data-taxmod-drop-record="0"') && str_contains($parts['side'], 'for="taxmod-stock-new-place-0"') && ! str_contains($parts['main'], 'data-taxmod-pick=') && str_contains($parts['main'], 'id="taxmod-stock-new-place-0"'), 'D-1092: the tree goes under the navigation, the right side is only the place; «Neuer Lagerort» opens its dialog from there');
 $framed = LogisticsShell::wrap(StockPage::PAGE, $parts['main'], $parts['side']);

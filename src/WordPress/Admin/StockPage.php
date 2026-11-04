@@ -4,7 +4,15 @@ namespace TaxmodStock\WordPress\Admin;
 
 use Taxmod\Core\Listing\ListColumn;
 use Taxmod\Core\Listing\ListView;
+use Taxmod\Core\Printing\LabelContent;
+use Taxmod\Core\Printing\LabelDocument;
+use Taxmod\Core\Printing\LabelFormat;
+use Taxmod\Core\Printing\LabelPrefix;
+use Taxmod\Core\Renderer\DialogMarkup;
 use Taxmod\WordPress\Admin\ListPage;
+use Taxmod\WordPress\Printing\PrintJobs;
+use Taxmod\WordPress\Printing\PrintService;
+use Taxmod\WordPress\Printing\PrintTab;
 use TaxmodStock\Core\InventoryRow;
 use TaxmodStock\Core\LagerInput;
 use TaxmodStock\Core\SourceRow;
@@ -50,6 +58,8 @@ final class StockPage
     private const VIEWS     = ['daten', 'bearbeiten', 'einkauf', 'lager', 'bestand', 'verkauf'];
     private const FILTER_FORM = 'taxmod-stock-filter';
     private const BULK_FORM   = 'taxmod-stock-bulk';
+    /** The bulk form of a place's list of Unterorte on «Lagerstruktur». */
+    private const CHILD_FORM  = 'taxmod-stock-children';
 
     /** The thing's own fields that its head shows, or that say nothing in «Technische Daten». */
     private const HEAD_FIELDS = ['label', 'description', 'title_image'];
@@ -145,6 +155,11 @@ final class StockPage
         // D-1001: a receipt booked from the goods receipt cockpit goes back there.
         $fromCockpit = in_array($kind, ['wareneingang', 'aufteilen', 'zuordnen', 'nichteinlagern', 'einlagern'], true) && sanitize_key((string) ($_POST['back'] ?? '')) === InboundPage::BACK;
 
+        // His wish 2026-11-04: «liste mit kindern und massen funktion bsp alle etiketten drucken» — a PDF or the print service.
+        if ($kind === 'etiketten-service' || $kind === 'etiketten-pdf') {
+            $this->printPlaceLabels(array_values(array_filter(array_map('absint', (array) ($_POST['selected'] ?? [])))), absint($_POST['return_ort'] ?? 0), $kind === 'etiketten-service');
+        }
+
         // D-1072: the material just created with «Neues Material» opens in its dialog once the page is back.
         $open = 0;
         // D-1130: a copy opens at once, to change what differs.
@@ -196,6 +211,12 @@ final class StockPage
                 'einlagern'    => $this->stock->reopenForStock(absint($_POST['order'] ?? 0), $rowPurchase),
                 // D-1030: the row buttons of the structure page carry their place the same way.
                 'umhaengen'    => $this->stock->movePlace($rowPurchase, absint(((array) ($_POST['parent'] ?? []))[$rowPurchase] ?? 0), $today, $this->title(__('Umlagerung', 'taxmod-stock'), $today)),
+                'orteverschieben' => $this->stock->movePlaces(
+                    array_values(array_filter(array_map('absint', (array) ($_POST['selected'] ?? [])))),
+                    absint($_POST['children_parent'] ?? 0),
+                    $today,
+                    $this->title(__('Umlagerung', 'taxmod-stock'), $today)
+                ),
                 // D-1082: the flag «reserviert für Produktion», set and taken off from the row's dialog.
                 'reservieren', 'freigeben' => $this->stock->reservePlace($rowPurchase, $kind === 'reservieren'),
                 'ort'          => $this->stock->createPlace(
@@ -225,6 +246,7 @@ final class StockPage
             };
             $this->remember('success', match ($kind) {
                 'umhaengen'      => __('Umgehängt: der Ort liegt jetzt dort, mit allem, was in ihm liegt.', 'taxmod-stock'),
+                'orteverschieben' => __('Verschoben: die gewählten Orte liegen jetzt dort, mit allem, was in ihnen liegt.', 'taxmod-stock'),
                 'umbuchen'       => __('Umgebucht: ein Vorgang «Umbuchung» mit Abgang am alten und Zugang am neuen Ort.', 'taxmod-stock'),
                 'sammelumbuchen' => __('Umgebucht: alle gewählten Materialien liegen jetzt am neuen Ort, als ein Vorgang «Umbuchung».', 'taxmod-stock'),
                 'storno', 'reservierungstorno', 'verbrauchstorno' => __('Storniert: die Gegenbuchung hebt den Vorgang auf, beide bleiben im Protokoll.', 'taxmod-stock'),
@@ -254,7 +276,7 @@ final class StockPage
                     ? ['material', ['thing' => $thing, 'view' => 'bestand']] : ['reservierungen', []],
                 'wareneingang', 'aufteilen', 'zuordnen', 'nichteinlagern', 'einlagern' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
                 'platzart'     => ['platzarten', array_filter(['typ' => (int) (((array) ($result['refs'] ?? []))['art'] ?? 0)])],
-                'umhaengen', 'ort', 'reservieren', 'freigeben' => ['lagerstruktur', []],
+                'umhaengen', 'orteverschieben', 'ort', 'reservieren', 'freigeben' => ['lagerstruktur', []],
                 default        => ['material', $thing > 0 ? ['thing' => $thing, 'view' => 'bestand'] : []],
             };
         } catch (StockError $e) {
@@ -262,7 +284,7 @@ final class StockPage
             $back = match ($kind) {
                 'wareneingang', 'zuordnen', 'nichteinlagern', 'einlagern' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
                 'platzart'          => ['platzarten', []],
-                'umhaengen', 'ort', 'reservieren', 'freigeben' => ['lagerstruktur', []],
+                'umhaengen', 'orteverschieben', 'ort', 'reservieren', 'freigeben' => ['lagerstruktur', []],
                 'aufteilen'         => ['wareneingang', ['order' => absint($_POST['order'] ?? 0), 'split' => absint($_POST['purchase'] ?? 0)]],
                 'lager', 'umbuchen', 'storno', 'verbrauchstorno' => ['material', ['thing' => $thing, 'view' => $kind === 'lager' ? 'lager' : 'bestand']],
                 // D-1073: refused because values would fall — named, nothing moved (his doubt 2026-11-01: «das verschieben ist problematisch»).
@@ -1844,13 +1866,7 @@ final class StockPage
         // D-1141, his word 2026-11-04: «den übergeordneten ort sollten wir bei beweglichen pläzen nicht andrucken und wenn ein Projekt
         // zugeordnet ist sollten wir Projekt: dann Projekt name» — a box moves, so its parent would be wrong tomorrow.
         $form    = (string) apply_filters('taxmod_record_editor', '', $place, $back);
-        $movable = $tree->isMovable($place);
-        $project = (string) $tree->projectOf($place);
-        $label   = (string) apply_filters('taxmod_label_button', '', $movable ? 'K' : 'O', $place,
-            (string) (array_reverse(explode(' › ', $tree->pathOf($place)))[0]), implode(' · ', array_filter([
-                $project === '' ? '' : __('Projekt', 'taxmod-stock') . ': ' . $project,
-                ! $movable && $tree->parentOf($place) > 0 ? $tree->pathOf($tree->parentOf($place)) : '',
-            ])));
+        $label   = (string) apply_filters('taxmod_label_button', '', ...$this->placeLabel($place, $tree));
         $facts = [
             [__('Beweglich (Kiste, Karton)', 'taxmod-stock'), $tree->isMovable($place) ? __('ja', 'taxmod-stock') : __('nein', 'taxmod-stock')],
             [__('Unterorte', 'taxmod-stock'), (string) (count($below) - 1)],
@@ -1870,7 +1886,8 @@ final class StockPage
             . $this->formStart('lagerstruktur') . $this->returnFields('lagerstruktur', $place)
             . $this->reserveDialog($place, $flags->isFlagged($place), $all) . '</form>'
             . ($label === '' ? '' : ' ' . $label) . '</div>'
-            . ($form === '' ? '<table class="widefat striped" style="max-width:40em">' . $table . '</table>' : $form);
+            . ($form === '' ? '<table class="widefat striped" style="max-width:40em">' . $table . '</table>' : $form)
+            . $this->childList($place, $tree, $rows);
 
         if ($tree->isMovable($place) && $this->stock->relocates()) {
             $moves = $this->stock->relocationsOf($place);
@@ -1881,6 +1898,177 @@ final class StockPage
         }
 
         return $html;
+    }
+
+    /**
+     * What a place's label says (D-1032): kind (O fixed, K box), id, its own name, and a second line — «Projekt: …» and, for
+     * a fixed place only, where it sits (D-1141: a box moves, so its parent would be wrong tomorrow).
+     *
+     * @return array{0: string, 1: int, 2: string, 3: string}
+     */
+    private function placeLabel(int $place, LocationTree $tree): array
+    {
+        $movable = $tree->isMovable($place);
+        $project = (string) $tree->projectOf($place);
+
+        return [$movable ? 'K' : 'O', $place, (string) (array_reverse(explode(' › ', $tree->pathOf($place)))[0]), implode(' · ', array_filter([
+            $project === '' ? '' : __('Projekt', 'taxmod-stock') . ': ' . $project,
+            ! $movable && $tree->parentOf($place) > 0 ? $tree->pathOf($tree->parentOf($place)) : '',
+        ]))];
+    }
+
+    /**
+     * His wish 2026-11-04: «unter der detail ansicht liste mit kindern und massen funktion bsp alle etiketten drucken /
+     * verschieben» — the places right inside this one in the shared table template, ticked rows reach «Etiketten drucken …»
+     * and «Verschieben nach …», each in the shared dialog joining the list's bulk form.
+     *
+     * @param array<int, array{name: string, lots: int, things: list<int>}> $rows
+     */
+    private function childList(int $place, LocationTree $tree, array $rows): string
+    {
+        $children = $tree->childrenOf($place);
+
+        if ($children === [] || ! method_exists(ListPage::class, 'dialogAction')) {
+            return '';
+        }
+
+        $s     = $this->stock->structure();
+        $types = $s->hasField('location_place_type') ? $this->stock->placeTypes() : null;
+        $table = $this->stock->table('location');
+        $flags = $this->stock->reservedPlaces();
+        $body  = '';
+
+        foreach ($children as $child) {
+            $below = $tree->withAllBelow($child);
+            $type  = $types === null ? 0 : (int) $table->first($child, $s->field('location_place_type'));
+            $link  = esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'lagerstruktur', 'ort' => $child], admin_url('admin.php')));
+            $body .= ListPage::row(self::CHILD_FORM, (string) $child, [
+                '<strong><a href="' . $link . '">' . esc_html((string) (array_reverse(explode(' › ', $tree->pathOf($child)))[0])) . '</a></strong>'
+                    . $this->reservedMark($child, $flags),
+                esc_html($type > 0 && $types !== null && $types->has($type) ? $types->nameOf($type) : '—'),
+                esc_html($tree->isMovable($child) ? __('ja', 'taxmod-stock') : __('nein', 'taxmod-stock')),
+                esc_html((string) (count($below) - 1)),
+                esc_html((string) array_sum(array_map(static fn (int $p): int => $rows[$p]['lots'] ?? 0, $below))),
+            ], '<a class="button button-small" href="' . $link . '">' . esc_html__('Öffnen', 'taxmod-stock') . '</a>', $this->childDetails($child, $tree));
+        }
+
+        $count = sprintf(/* translators: %d: number of places */ _n('%d Unterort', '%d Unterorte', count($children), 'taxmod-stock'), count($children));
+        $bar   = str_replace(
+            ['name="action" id="' . self::CHILD_FORM . '-action"', '</form>'],
+            ['name="bulk" id="' . self::CHILD_FORM . '-action"', '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
+                . '<input type="hidden" name="return_tab" value="lagerstruktur"><input type="hidden" name="return_ort" value="' . esc_attr((string) $place) . '"></form>'],
+            ListPage::bulkBar(self::CHILD_FORM, self::ACTION, [], $count, $this->childLabelDialog() . $this->childMoveDialog($place))
+        );
+
+        return '<h3 style="margin-top:1.5em">' . esc_html__('Unterorte', 'taxmod-stock') . '</h3>' . $bar
+            . ListPage::table([[__('Bezeichnung', 'taxmod-stock')], [__('Platzart', 'taxmod-stock'), '12em'], [__('Beweglich', 'taxmod-stock'), '7em'],
+                [__('Unterorte', 'taxmod-stock'), '7em'], [__('Posten', 'taxmod-stock'), '6em']], $body);
+    }
+
+    /** A child's row details: what its label would say, so the bulk print holds no surprise. */
+    private function childDetails(int $child, LocationTree $tree): string
+    {
+        [$prefix, $id, $title, $subtitle] = $this->placeLabel($child, $tree);
+
+        return '<p class="description" style="margin:.5em 0 0">' . esc_html__('Etikett', 'taxmod-stock') . ': '
+            . esc_html($prefix . '-' . $id . ' · ' . $title . ($subtitle === '' ? '' : ' · ' . $subtitle)) . '</p>';
+    }
+
+    /** «Etiketten drucken …» for the ticked Unterorte: the format, then the print service or one PDF with a page per label. */
+    private function childLabelDialog(): string
+    {
+        if (! class_exists(LabelFormat::class) || ! class_exists(DialogMarkup::class)) {
+            return '';
+        }
+
+        $options = '';
+
+        foreach (LabelFormat::shipped() as $format) {
+            $options .= '<option value="' . esc_attr($format->key) . '"' . selected($format->key, 'holder62', false) . '>'
+                . esc_html(PrintTab::formatName($format) . ' · ' . PrintTab::size($format)) . '</option>';
+        }
+
+        $service = PrintService::isSetUp();
+        $form    = ' form="' . esc_attr(self::CHILD_FORM) . '"';
+        $body    = '<label style="display:block;margin-bottom:.5em"><span style="display:block;font-weight:600">' . esc_html__('Format', 'taxmod-stock') . '</span>'
+            . '<select name="format"' . $form . '>' . $options . '</select></label>'
+            . '<span class="description" style="display:block">' . esc_html__('Ein Etikett je angehaktem Ort, beschriftet wie sein eigenes.', 'taxmod-stock')
+            . ($service ? '' : ' ' . esc_html__('Kein Druckdienst eingerichtet: die Etiketten öffnen sich als PDF.', 'taxmod-stock')) . '</span>';
+        $foot    = ($service ? '<button type="submit" class="button button-primary" name="booking" value="etiketten-service"' . $form . '>' . esc_html__('Drucken', 'taxmod-stock') . '</button>' : '')
+            . '<button type="submit" class="button' . ($service ? '' : ' button-primary') . '" name="booking" value="etiketten-pdf" formtarget="_blank"' . $form . '>' . esc_html__('Als PDF öffnen', 'taxmod-stock') . '</button>';
+
+        return '<div class="alignleft actions">' . DialogMarkup::of(
+            'taxmod-stock-children-labels',
+            esc_html__('Etiketten drucken …', 'taxmod-stock'),
+            esc_html__('Etiketten drucken', 'taxmod-stock'),
+            '<span class="taxmod-dialog-body" style="display:block;padding:.75em 1em;white-space:normal;text-align:left">' . $body . '</span>',
+            $foot,
+            'button taxmod-dialog-open',
+            '',
+            __('Abbrechen', 'taxmod-stock')
+        ) . '</div>';
+    }
+
+    /** «Verschieben nach …» for the ticked Unterorte: the target in a list of every place outside this one's branch. */
+    private function childMoveDialog(int $place): string
+    {
+        $tree   = $this->stock->locationTree();
+        $places = array_diff_key($this->stock->places(), array_flip(array_diff($tree->withAllBelow($place), [$place])));
+        $body   = '<label style="display:block">' . esc_html__('Nach', 'taxmod-stock') . '<br><select name="children_parent" form="' . esc_attr(self::CHILD_FORM) . '" style="width:100%">'
+            . $this->options($places, __('— oberste Ebene —', 'taxmod-stock'), $place) . '</select></label>'
+            . '<p class="description">' . esc_html($this->stock->relocates()
+                ? __('Jeder gewählte Ort zieht mit allem, was darin liegt; eine bewegliche Kiste als Vorgang «Umlagerung».', 'taxmod-stock')
+                : __('Jeder gewählte Ort zieht mit allem, was darin liegt.', 'taxmod-stock')) . '</p>';
+
+        return '<div class="alignleft actions">' . ListPage::dialogAction('taxmod-stock-children-move', __('Verschieben nach …', 'taxmod-stock'), __('Ausgewählte verschieben', 'taxmod-stock'),
+            $body, 'booking', 'orteverschieben', __('Verschieben', 'taxmod-stock'), self::CHILD_FORM) . '</div>';
+    }
+
+    /**
+     * The labels of the ticked places: queued for the print service, or one PDF with a page each. Ends the request.
+     *
+     * @param list<int> $places
+     */
+    private function printPlaceLabels(array $places, int $back, bool $toService): void
+    {
+        $url    = add_query_arg(['page' => self::PAGE, 'tab' => 'lagerstruktur'] + ($back > 0 ? ['ort' => $back] : []), admin_url('admin.php'));
+        $format = class_exists(LabelFormat::class) ? (LabelFormat::shipped()[sanitize_key((string) ($_POST['format'] ?? ''))] ?? null) : null;
+        $tree   = $this->stock->locationTree();
+        $table  = $this->stock->table('location');
+        $labels = [];
+
+        foreach ($places as $place) {
+            if ($table->has($place)) {
+                [$prefix, $id, $title, $subtitle] = $this->placeLabel($place, $tree);
+                $labels[] = LabelContent::of(LabelPrefix::from($prefix), $id, $title, $subtitle);
+            }
+        }
+
+        if ($format === null || $labels === []) {
+            $this->remember('error', $format === null ? __('Etiketten brauchen den Taxonomy Modeller mit Druck und ein bekanntes Format.', 'taxmod-stock') : __('Kein Ort angehakt.', 'taxmod-stock'));
+            wp_safe_redirect($url);
+            exit;
+        }
+
+        if ($toService && PrintService::isSetUp()) {
+            $jobs = new PrintJobs();
+
+            foreach ($labels as $label) {
+                $jobs->queue($format, $label, false);
+            }
+
+            $this->remember('success', sprintf(/* translators: %d: number of labels */ _n('%d Etikett wartet auf den Druckdienst.', '%d Etiketten warten auf den Druckdienst.', count($labels), 'taxmod-stock'), count($labels)));
+            wp_safe_redirect($url);
+            exit;
+        }
+
+        $pdf = LabelDocument::render($format, $labels);
+        nocache_headers();
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: inline; filename="etiketten-' . gmdate('Ymd-His') . '.pdf"');
+        header('Content-Length: ' . (string) strlen($pdf));
+        echo $pdf; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- binary PDF, not HTML.
+        exit;
     }
 
     /**

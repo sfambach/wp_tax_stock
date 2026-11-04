@@ -165,6 +165,15 @@ final class LocationTree
         return $out;
     }
 
+    /** @return list<int> the places right inside it, by name; 0 gives the top level */
+    public function childrenOf(int $id): array
+    {
+        $children = array_values(array_filter(array_keys($this->names), fn (int $place): bool => $place !== $id && $this->parentOf($place) === $id));
+        usort($children, fn (int $a, int $b): int => strnatcasecmp($this->names[$a], $this->names[$b]));
+
+        return $children;
+    }
+
     /** @return list<int> the place and everything inside it */
     public function withAllBelow(int $id): array
     {

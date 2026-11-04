@@ -46,6 +46,16 @@ final class LocationTreeTest extends TestCase
     }
 
     #[Test]
+    public function the_children_of_a_place_are_only_those_right_inside_it_by_name(): void
+    {
+        $tree = new LocationTree([1 => 'Schrank', 2 => 'S10', 3 => 'S2', 4 => 'Tüte', 5 => 'Keller'], [1 => 0, 2 => 1, 3 => 1, 4 => 3, 5 => 0]);
+
+        self::assertSame([3, 2], $tree->childrenOf(1));
+        self::assertSame([5, 1], $tree->childrenOf(0));
+        self::assertSame([], $tree->childrenOf(4));
+    }
+
+    #[Test]
     public function a_loop_does_not_hang(): void
     {
         $tree = new LocationTree([1 => 'A', 2 => 'B'], [1 => 2, 2 => 1]);

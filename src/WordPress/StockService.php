@@ -952,6 +952,45 @@ final class StockService
         return $this->model->write($changes);
     }
 
+    /**
+     * «Verschieben» for the places ticked in a place's list of Unterorte: each is hung under $parent with all it holds, in
+     * one write; a box among them is a Vorgang «Umlagerung» of its own (D-1091). Places already there are left alone.
+     *
+     * @param list<int> $places
+     * @return array<string, mixed>
+     */
+    public function movePlaces(array $places, int $parent, string $today, string $title): array
+    {
+        $tree     = $this->locationTree();
+        $table    = $this->table('location');
+        $rules    = new LocationChanges($this->structure());
+        $flags    = $this->reservedPlaces();
+        $ledger   = $this->ledger();
+        $bound    = $this->boundLots();
+        $relocate = $this->relocates();
+        $bookings = $relocate ? new Bookings($this->structureWithKinds(), $today === '' ? current_time('Y-m-d') : $today) : null;
+        $changes  = [];
+
+        foreach (array_values(array_unique($places)) as $place) {
+            if ($tree->parentOf($place) === $parent && $table->has($place)) {
+                continue;
+            }
+
+            $changes = [...$changes, ...$rules->move($place, $parent, $tree, $table)];
+            $flags->checkHang($place, $parent, $ledger, $bound);
+
+            if ($bookings !== null && $tree->isMovable($place)) {
+                $changes = [...$changes, ...$bookings->relocate($place, $tree->parentOf($place), $parent, $title === '' ? 'Umlagerung' : $title)];
+            }
+        }
+
+        if ($changes === []) {
+            throw StockError::nothingToBook();
+        }
+
+        return $this->model->write($changes);
+    }
+
     /** D-1091: whether the model knows the Vorgang «Umlagerung» (its kind and the field for the box). */
     public function relocates(): bool
     {

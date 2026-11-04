@@ -48,6 +48,9 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
     «Bearbeiten» (the modeller's form), «Verschieben» (the target in the same tree, the place and what lies in it left
     out), «Neuer Unterort» and «Für Produktion reservieren», each in the shared dialog; «+ Neuer Lagerort» above the tree.
     A place dragged onto another (or onto «oberste Ebene») is hung there after a dialog, with everything in it.
+    Below the place, its **Unterorte** (from 0.32.0) in the shared table template with checkboxes and two bulk actions:
+    «Etiketten drucken …» (one label each, as on the place itself; print service or one PDF) and «Verschieben nach …»
+    (each with everything in it, one write; a box as a Vorgang «Umlagerung»).
     A box is a carrier, not stock (D-1091): its move is a Vorgang «Umlagerung» (field «Ladungsträger», two positions
     without a lot, − old place, + new place), listed at the box; no lot is rebooked. Needs `values.kind_relocation` and
     `fields.transaction_carrier` in the structure; without them the box is hung as before, without a Vorgang.

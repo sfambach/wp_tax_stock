@@ -8,6 +8,7 @@ use Taxmod\Core\Printing\FilledLabel;
 use Taxmod\Core\Printing\LabelContent;
 use Taxmod\Core\Printing\LabelDocument;
 use Taxmod\Core\Printing\LabelFormat;
+use Taxmod\Core\Printing\LabelLayout;
 use Taxmod\Core\Printing\LabelPrefix;
 use Taxmod\Core\Printing\LabelTemplate;
 use Taxmod\Core\Renderer\DialogMarkup;
@@ -2273,7 +2274,7 @@ final class StockPage
             $form = (string) apply_filters('taxmod_record_editor', '', $chosen, $back);
 
             return $html . '<h3>' . esc_html($nameOf($chosen)) . ' <span class="description" style="font-weight:normal">· Id: ' . esc_html((string) $chosen) . '</span></h3>'
-                . $this->templatePreview($templates->get($chosen))
+                . $this->templatePreview($chosen, $templates->get($chosen))
                 . ($form === '' ? '<p><a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $chosen], admin_url('admin.php'))) . '">' . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a></p>' : $form)
                 . '<p><a href="' . esc_url($list) . '">' . esc_html__('← alle Etikettenvorlagen', 'taxmod-stock') . '</a></p>';
         }
@@ -2307,12 +2308,15 @@ final class StockPage
     }
 
     /**
-     * The template drawn with example values as a PDF beside the record, and the modeller's label button on the same values as
-     * test print. A layout that cannot be drawn says why instead.
+     * The template drawn as a PDF beside the record, and the modeller's label button on the same values as test print. A layout
+     * that cannot be drawn says why instead.
+     *
+     * D-1154, his word 2026-11-04: «erst schauen ob etikett benutz und dann ersten besten nehmen» — the first place whose type uses
+     * the template; without one the examples written in the layout («ich dachte im jsaon ein feld mit beispiel»).
      *
      * @param array{name: string, format: array{key: string, w: int, h: int, roll: int}, copies: int, layout: string}|null $template
      */
-    private function templatePreview(?array $template): string
+    private function templatePreview(int $id, ?array $template): string
     {
         if ($template === null) {
             return '<div class="notice notice-warning inline"><p>' . esc_html__('Die Vorlage braucht ein Format mit Schlüssel, Breite und Höhe und ein Layout.', 'taxmod-stock') . '</p></div>';
@@ -2322,8 +2326,25 @@ final class StockPage
             return '<div class="notice notice-warning inline"><p>' . esc_html__('Die Vorschau braucht den Taxonomy Modeller mit Etikettenvorlagen.', 'taxmod-stock') . '</p></div>';
         }
 
-        $values = ['bezeichnung' => __('Schublade 1', 'taxmod-stock'), 'kurzzeichen' => 'A1-S1', 'projekt' => __('Beispielprojekt', 'taxmod-stock'), 'ort' => __('Werkstatt › Regal A1', 'taxmod-stock')];
-        $label  = LabelContent::of(LabelPrefix::Place, 12345, $values['bezeichnung'], 'A1-S1 · ' . __('Projekt', 'taxmod-stock') . ': ' . $values['projekt']);
+        $place = $this->firstPlaceWith($id);
+
+        if ($place > 0) {
+            [$prefix, $code, $title, $subtitle, , $own] = $this->placeLabel($place, $this->stock->locationTree());
+            $label  = LabelContent::of(LabelPrefix::from($prefix), $code, $title, $subtitle);
+            $values = (array) ($own['values'] ?? []);
+            $source = sprintf(/* translators: %s: the place shown */ __('Vorschau mit dem Platz «%s».', 'taxmod-stock'), $this->stock->locationTree()->pathOf($place));
+        } else {
+            try {
+                $examples = method_exists(LabelLayout::class, 'examples') ? LabelLayout::fromJson($template['layout'])->examples() : [];
+            } catch (\InvalidArgumentException) {
+                $examples = [];
+            }
+            // The code must stay a code the QR can carry: «O-12345»; an example that is none falls back to it.
+            $parts  = preg_match('/^([OMEK])-(\d+)$/', (string) ($examples['code'] ?? ''), $m) === 1 ? [$m[1], (int) $m[2]] : ['O', 12345];
+            $label  = LabelContent::of(LabelPrefix::from($parts[0]), $parts[1], (string) ($examples['title'] ?? ''), (string) ($examples['subtitle'] ?? ''));
+            $values = array_diff_key($examples, array_flip(['code', 'title', 'subtitle']));
+            $source = __('Kein Platz nutzt diese Vorlage: Vorschau mit den Beispielwerten aus dem Layout («example»).', 'taxmod-stock');
+        }
 
         try {
             $filled = FilledLabel::fromJson((string) json_encode([
@@ -2336,13 +2357,39 @@ final class StockPage
             return '<div class="notice notice-error inline"><p>' . esc_html__('Das Layout lässt sich nicht zeichnen:', 'taxmod-stock') . ' ' . esc_html($e->getMessage()) . '</p></div>';
         }
 
-        $button = (string) apply_filters('taxmod_label_button', '', 'O', 12345, $label->title, $label->subtitle, $template['copies'], $template + ['values' => $values]);
+        [$prefix, $code] = explode('-', $label->code, 2) + ['O', '0'];
+        $button = (string) apply_filters('taxmod_label_button', '', $prefix, (int) $code, $label->title, $label->subtitle, $template['copies'], $template + ['values' => $values]);
         $ratio  = $template['format']['h'] / max(1, $template['format']['w']);
 
         return '<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:12px">'
             . '<iframe title="' . esc_attr__('Vorschau', 'taxmod-stock') . '" src="data:application/pdf;base64,' . esc_attr(base64_encode($filled->render())) . '#toolbar=0&amp;view=Fit" style="width:360px;height:' . esc_attr((string) (int) round(360 * $ratio + 40)) . 'px;border:1px solid #c3c4c7;background:#fff"></iframe>'
-            . '<div><p class="description">' . esc_html__('Vorschau mit Beispielwerten. Felder im Layout: code, title, subtitle, bezeichnung, kurzzeichen, projekt, ort.', 'taxmod-stock') . '</p>'
+            . '<div><p class="description">' . esc_html($source) . ' ' . esc_html__('Felder im Layout: code, title, subtitle, bezeichnung, kurzzeichen, projekt, ort.', 'taxmod-stock') . '</p>'
             . '<div style="text-align:right">' . $button . '</div></div></div>';
+    }
+
+    /** D-1154: the first place (by id) whose place type prints with this template; 0 where none does. */
+    private function firstPlaceWith(int $template): int
+    {
+        $s = $this->stock->structure();
+
+        if (! $s->hasField('location_place_type')) {
+            return 0;
+        }
+
+        $types  = $this->stock->placeTypes();
+        $places = $this->stock->table('location');
+        $ids    = $places->ids();
+        sort($ids);
+
+        foreach ($ids as $place) {
+            $type = (int) $places->first($place, $s->field('location_place_type'));
+
+            if ($type > 0 && $types->labelTemplateOf($type) === $template) {
+                return $place;
+            }
+        }
+
+        return 0;
     }
 
     /** D-1130: «Kopieren» of a kind of place — its name proposed with «(Kopie)», in the shared dialog. */

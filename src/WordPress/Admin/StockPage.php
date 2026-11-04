@@ -1959,7 +1959,7 @@ final class StockPage
      * What a place's label says (D-1032): kind (O fixed, K box), id, its own name, and a second line — «Projekt: …» and, for
      * a fixed place only, where it sits (D-1141: a box moves, so its parent would be wrong tomorrow).
      *
-     * @return array{0: string, 1: int, 2: string, 3: string}
+     * @return array{0: string, 1: int, 2: string, 3: string, 4: int}
      */
     private function placeLabel(int $place, LocationTree $tree): array
     {
@@ -1968,11 +1968,12 @@ final class StockPage
 
         // D-1150, his word 2026-11-04: «nee bezeichnung oben» — the Bezeichnung is the title across the top, the short mark leads the
         // lines beside the QR code.
+        // D-1152, his word 2026-11-04: «bei beweglichen plätzen 2 sonst 1 vorbelegen» — the fifth item is how many to print.
         return [$movable ? 'K' : 'O', $place, $tree->titleOf($place), implode(' · ', array_filter([
             $tree->shortOf($place),
             $project === '' ? '' : __('Projekt', 'taxmod-stock') . ': ' . $project,
             ! $movable && $tree->parentOf($place) > 0 ? $tree->pathOf($tree->parentOf($place)) : '',
-        ]))];
+        ])), $movable ? 2 : 1];
     }
 
     /**
@@ -2050,6 +2051,9 @@ final class StockPage
         $form    = ' form="' . esc_attr(self::CHILD_FORM) . '"';
         $body    = '<label style="display:block;margin-bottom:.5em"><span style="display:block;font-weight:600">' . esc_html__('Format', 'taxmod-stock') . '</span>'
             . '<select name="format"' . $form . '>' . $options . '</select></label>'
+            // D-1152: empty means each place's own number — 2 for a box, 1 otherwise; a number holds for every ticked place.
+            . '<label style="display:block;margin-bottom:.5em"><span style="display:block;font-weight:600">' . esc_html__('Anzahl je Ort', 'taxmod-stock') . '</span>'
+            . '<input type="number" name="copies" min="1" max="50" step="1" placeholder="' . esc_attr__('2 bei beweglichen, sonst 1', 'taxmod-stock') . '"' . $form . ' style="width:14em"></label>'
             . '<span class="description" style="display:block">' . esc_html__('Ein Etikett je angehaktem Ort, beschriftet wie sein eigenes.', 'taxmod-stock')
             . ($service ? '' : ' ' . esc_html__('Kein Druckdienst eingerichtet: die Etiketten öffnen sich als PDF.', 'taxmod-stock')) . '</span>';
         $foot    = ($service ? '<button type="submit" class="button button-primary" name="booking" value="etiketten-service"' . $form . '>' . esc_html__('Drucken', 'taxmod-stock') . '</button>' : '')
@@ -2095,10 +2099,16 @@ final class StockPage
         $table  = $this->stock->table('location');
         $labels = [];
 
+        $asked = absint($_POST['copies'] ?? 0);
+
         foreach ($places as $place) {
             if ($table->has($place)) {
-                [$prefix, $id, $title, $subtitle] = $this->placeLabel($place, $tree);
-                $labels[] = LabelContent::of(LabelPrefix::from($prefix), $id, $title, $subtitle);
+                [$prefix, $id, $title, $subtitle, $copies] = $this->placeLabel($place, $tree);
+                $label = LabelContent::of(LabelPrefix::from($prefix), $id, $title, $subtitle);
+
+                for ($n = 0, $max = min(50, $asked > 0 ? $asked : $copies); $n < $max; $n++) {
+                    $labels[] = $label;
+                }
             }
         }
 

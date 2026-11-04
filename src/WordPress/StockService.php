@@ -829,7 +829,7 @@ final class StockService
         $nodeOf     = $this->model->recordsOf(array_merge([$root], array_keys($categories)), 500);
         $table      = $nodeOf === [] ? $this->table('label_template') : ($this->model->records(array_keys($nodeOf)) ?? $this->table('label_template'));
 
-        return $this->labelTemplates = LabelTemplates::from($s, $table, array_map(static fn (int $node): string => $categories[$node] ?? '', $nodeOf));
+        return $this->labelTemplates = LabelTemplates::from($s, $table, array_map(static fn (int $node): string => $categories[$node] ?? '', $nodeOf), $nodeOf);
     }
 
     /** D-1123: the kinds of place; none while the model has no node for them. */

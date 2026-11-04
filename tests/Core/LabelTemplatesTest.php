@@ -19,7 +19,7 @@ final class LabelTemplatesTest extends TestCase
     {
         $templates = $this->templates();
 
-        self::assertSame(['name' => 'Platz', 'format' => ['key' => 'holder62', 'w' => 62, 'h' => 50, 'roll' => 62], 'copies' => 1, 'layout' => self::LAYOUT, 'category' => ''], $templates->get(90));
+        self::assertSame(['name' => 'Platz', 'format' => ['key' => 'holder62', 'w' => 62, 'h' => 50, 'roll' => 62], 'copies' => 1, 'layout' => self::LAYOUT, 'category' => '', 'node' => 0], $templates->get(90));
         self::assertSame(2, $templates->get(91)['copies']);
         self::assertFalse($templates->has(92), 'a template without a layout cannot print');
         self::assertFalse($templates->has(93), 'a label without a size cannot print');
@@ -36,6 +36,19 @@ final class LabelTemplatesTest extends TestCase
         self::assertSame([null, 1], $templates->forPlace($types, 3, false));
         self::assertSame([null, 2], $templates->forPlace($types, 0, true));
         self::assertSame([null, 1], $templates->forPlace($types, 4, false), 'an unusable template falls back to the fixed label');
+    }
+
+    #[Test]
+    public function the_first_label_of_a_category_is_its_default(): void
+    {
+        $s      = $this->structure();
+        $label  = $s->field('label');
+        $row    = static fn (string $name): array => [$label => [$name], 400 => ['material62'], 401 => ['62'], 402 => ['30'], 405 => ['1'], 406 => [self::LAYOUT]];
+        $labels = LabelTemplates::from($s, new Table([1 => $row('62×50'), 2 => $row('62×30'), 3 => $row('100×62')]), [], [1 => 40, 2 => 40, 3 => 41]);
+
+        self::assertSame(2, $labels->firstIn(40));
+        self::assertSame(3, $labels->firstIn(41));
+        self::assertSame(0, $labels->firstIn(42));
     }
 
     #[Test]

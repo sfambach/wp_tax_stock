@@ -594,6 +594,20 @@ final class StockPage
     }
 
     /** D-997: one thing opened whole — the head fixed, the views as tabs below. */
+    /**
+     * D-1153 step 3, D-1160: «Etikett drucken» for a material — the first label of the category «Materialetiketten», its fields
+     * read by the modeller from the material itself. Without such a label the modeller's fixed material format stands.
+     */
+    private function materialLabel(int $thing, string $label): string
+    {
+        $s         = $this->stock->structure();
+        $templates = $this->stock->labelTemplates();
+        $chosen    = $s->hasNode('label_materials') ? $templates->get($templates->firstIn($s->node('label_materials'))) : null;
+        $template  = $chosen === null ? [] : ['name' => $chosen['name'], 'format' => $chosen['format'], 'layout' => $chosen['layout'], 'record' => $thing];
+
+        return (string) apply_filters('taxmod_label_button', '', 'M', $thing, $label === '' ? '#' . $thing : $label, '', $chosen['copies'] ?? 1, $template);
+    }
+
     private function thingView(int $thing): string
     {
         $s     = $this->stock->structure();
@@ -629,7 +643,7 @@ final class StockPage
             . ($about === '' ? '' : '<p style="margin:0">' . esc_html($about) . '</p>') . $chips . '</div>'
             . '<span style="margin-left:auto;white-space:nowrap"><a class="button button-primary" href="' . esc_url(PurchasePage::reorderUrl($thing)) . '">'
             . esc_html__('Nachbestellen', 'taxmod-stock') . '</a> <a class="button" href="' . esc_url($this->thingUrl($thing, 'bearbeiten')) . '">'
-            . esc_html__('Material bearbeiten', 'taxmod-stock') . '</a> ' . $this->copyDialog($thing) . ' ' . $this->moveDialog($thing, $node) . '</span></div>'
+            . esc_html__('Material bearbeiten', 'taxmod-stock') . '</a> ' . $this->copyDialog($thing) . ' ' . $this->moveDialog($thing, $node) . ' ' . $this->materialLabel($thing, $label) . '</span></div>'
             . '<nav class="nav-tab-wrapper" style="margin-top:0">';
 
         foreach ($titles as $slug => $title) {

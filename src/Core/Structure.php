@@ -32,8 +32,8 @@ final class Structure
         'location_type', 'location_type_part',
         // D-1139: a project's boards, their revisions and the revisions' positions — the parts list of a project box.
         'board', 'board_revision', 'bom_position',
-        // D-1153, D-1159: the labels.
-        'label_template'];
+        // D-1153, D-1159: the labels; D-1160: the category a material prints from.
+        'label_template', 'label_materials'];
 
     /** Fields the module uses when they are there and leaves out when they are not. */
     private const OPTIONAL_FIELDS = [

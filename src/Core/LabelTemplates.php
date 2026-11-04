@@ -19,14 +19,17 @@ namespace TaxmodStock\Core;
 final class LabelTemplates
 {
     /**
-     * @param array<int, array{name: string, format: array{key: string, w: int, h: int, roll: int}, copies: int, layout: string, category: string}> $templates
+     * @param array<int, array{name: string, format: array{key: string, w: int, h: int, roll: int}, copies: int, layout: string, category: string, node: int}> $templates
      */
     public function __construct(private readonly array $templates = [])
     {
     }
 
-    /** @param array<int, string> $categoryOf record id → the name of the category (sub-node of «Etiketten») it stands in */
-    public static function from(Structure $s, Table $labels, array $categoryOf = []): self
+    /**
+     * @param array<int, string> $categoryOf record id → the name of the category (sub-node of «Etiketten») it stands in
+     * @param array<int, int>    $nodeOf     record id → the node it stands in
+     */
+    public static function from(Structure $s, Table $labels, array $categoryOf = [], array $nodeOf = []): self
     {
         $int  = static fn (int $id, string $field): int => $s->hasField($field) ? (int) $labels->first($id, $s->field($field)) : 0;
         $text = static fn (int $id, string $field): string => $s->hasField($field) ? trim((string) $labels->first($id, $s->field($field))) : '';
@@ -47,10 +50,25 @@ final class LabelTemplates
                 'copies' => max(1, $int($id, 'template_copies')),
                 'layout' => $layout,
                 'category' => $categoryOf[$id] ?? '',
+                'node'     => $nodeOf[$id] ?? 0,
             ];
         }
 
         return new self($out);
+    }
+
+    /** D-1160: the first label (by name) of a category; 0 where it holds none that can print. */
+    public function firstIn(int $node): int
+    {
+        $names = [];
+        foreach ($this->templates as $id => $template) {
+            if ($node > 0 && ($template['node'] ?? 0) === $node) {
+                $names[$id] = $template['name'];
+            }
+        }
+        natcasesort($names);
+
+        return (int) (array_key_first($names) ?? 0);
     }
 
     public function has(int $id): bool
@@ -58,7 +76,7 @@ final class LabelTemplates
         return isset($this->templates[$id]);
     }
 
-    /** @return array{name: string, format: array{key: string, w: int, h: int, roll: int}, copies: int, layout: string, category: string}|null */
+    /** @return array{name: string, format: array{key: string, w: int, h: int, roll: int}, copies: int, layout: string, category: string, node: int}|null */
     public function get(int $id): ?array
     {
         return $this->templates[$id] ?? null;
@@ -68,7 +86,7 @@ final class LabelTemplates
      * The label a place of this type gets and how many: the type's own number, else its template's, else 2 for a box and 1
      * otherwise (D-1152). Without a template the modeller's fixed layout and format choice stand.
      *
-     * @return array{0: array{name: string, format: array{key: string, w: int, h: int, roll: int}, copies: int, layout: string, category: string}|null, 1: int}
+     * @return array{0: array{name: string, format: array{key: string, w: int, h: int, roll: int}, copies: int, layout: string, category: string, node: int}|null, 1: int}
      */
     public function forPlace(PlaceTypes $types, int $type, bool $movable): array
     {
@@ -78,7 +96,7 @@ final class LabelTemplates
         return [$template, $copies > 0 ? $copies : ($template['copies'] ?? ($movable ? 2 : 1))];
     }
 
-    /** @return array<int, array{name: string, format: array{key: string, w: int, h: int, roll: int}, copies: int, layout: string, category: string}> */
+    /** @return array<int, array{name: string, format: array{key: string, w: int, h: int, roll: int}, copies: int, layout: string, category: string, node: int}> */
     public function all(): array
     {
         return $this->templates;

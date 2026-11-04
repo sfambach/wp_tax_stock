@@ -43,6 +43,15 @@ final class PlaceTypesTest extends TestCase
     }
 
     #[Test]
+    public function a_unit_name_on_the_line_names_the_places_it_brings(): void
+    {
+        $types = new PlaceTypes([1 => 'IKEA Alex', 2 => 'Schublade Alex'], [], [1 => [[2, 2, 'Schublade']]]);
+
+        self::assertSame(['Schublade 1', 'Schublade 2'], array_column($types->brought(1), 'name'));
+        self::assertSame(['Schublade Alex 1'], array_column((new PlaceTypes([1 => 'A', 2 => 'Schublade Alex'], [], [1 => [[2, 1]]]))->brought(1), 'name'));
+    }
+
+    #[Test]
     public function a_kind_that_holds_itself_is_refused(): void
     {
         $this->expectException(StockError::class);

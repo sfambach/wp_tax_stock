@@ -68,6 +68,8 @@ final class Structure
         'project_boards', 'board_revisions', 'revision_positions', 'position_part', 'position_count',
         // D-1150: a place's short mark (A1-S1), put before its name wherever the place is named.
         'location_short',
+        // D-1151: the unit name a line of a place type's parts gives the places it brings.
+        'part_unit_name',
     ];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];

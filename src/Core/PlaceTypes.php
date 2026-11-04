@@ -21,7 +21,7 @@ final class PlaceTypes
     /**
      * @param array<int, string>                       $names   type id → its name
      * @param array<int, bool>                         $movable type id → whether a place of it moves (a box)
-     * @param array<int, list<array{0: int, 1: int}>>  $parts   type id → [part type, count]
+     * @param array<int, list<array{0: int, 1: int, 2?: string}>> $parts type id → [part type, count, unit name]
      */
     public function __construct(
         private readonly array $names = [],
@@ -47,8 +47,11 @@ final class PlaceTypes
                 $type  = (int) $parts->first((int) $part, $s->field('part_type'));
                 $count = $s->hasField('part_count') ? (int) $parts->first((int) $part, $s->field('part_count')) : 1;
 
+                // D-1151: an optional unit name for the places this line brings; empty, they take the part type's name.
+                $unit = $s->hasField('part_unit_name') ? trim((string) $parts->first((int) $part, $s->field('part_unit_name'))) : '';
+
                 if ($type > 0 && $count > 0) {
-                    $lists[$id][] = [$type, $count];
+                    $lists[$id][] = $unit === '' ? [$type, $count] : [$type, $count, $unit];
                 }
             }
         }
@@ -76,7 +79,7 @@ final class PlaceTypes
         return $this->movable[$type] ?? null;
     }
 
-    /** @return list<array{0: int, 1: int}> [part type, count] */
+    /** @return list<array{0: int, 1: int, 2?: string}> [part type, count, unit name where one is set] */
     public function partsOf(int $type): array
     {
         return $this->parts[$type] ?? [];
@@ -95,9 +98,14 @@ final class PlaceTypes
 
         $out = [];
 
-        foreach ($this->partsOf($type) as [$part, $count]) {
+        foreach ($this->partsOf($type) as $line) {
+            [$part, $count] = $line;
+            // D-1151, his word 2026-11-04: «Schublade Alex 1 … und das Regal heißt schon Alex 1 … Deswegen möchte ich da in der Zeile
+            // optional gerne einen Einheitsnamen … Wenn der nicht gesetzt wird, wird einfach die Platzart genommen.»
+            $unit = $line[2] ?? ($this->names[$part] ?? '#' . $part);
+
             for ($n = 1; $n <= $count; $n++) {
-                $out[] = ['type' => $part, 'name' => ($this->names[$part] ?? '#' . $part) . ' ' . $n, 'below' => $this->brought($part, $depth + 1)];
+                $out[] = ['type' => $part, 'name' => $unit . ' ' . $n, 'below' => $this->brought($part, $depth + 1)];
             }
         }
 

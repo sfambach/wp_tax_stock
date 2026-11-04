@@ -50,6 +50,9 @@ final class StockPage
     public const NOTICE     = 'taxmod_stock_notice';
     private const LAST_LIST = 'taxmod_stock_last_list_';
 
+    /** D-1147: the source name under which the material list's rows draw their lots when opened. */
+    public const DETAILS_MATERIAL = 'stock-material';
+
     private const BACK_TO_LIST = 'materialliste';
     /** Rows per page of the material list (design 20: a list of thousands draws only what is seen). */
     private const PER_PAGE  = 50;
@@ -105,9 +108,9 @@ final class StockPage
         $tab  = sanitize_key((string) ($_GET['tab'] ?? self::TABS[0]));
         $tab  = in_array($tab, self::TABS, true) ? $tab : self::TABS[0];
         $list = $this->listRequest();
-        if (! class_exists(ListPage::class) || ! method_exists(ListPage::class, 'pagination')) {
+        if (! class_exists(ListPage::class) || ! method_exists(ListPage::class, 'lazyDetails')) {
             return '<div class="wrap"><h1>' . esc_html__('Lager', 'taxmod-stock') . '</h1><div class="notice notice-error"><p>'
-                . esc_html__('Die Lagerseite braucht den Taxonomy Modeller ab Version 0.1.101 (Spaltenwahl, Filterzeile, Seiten).', 'taxmod-stock') . '</p></div></div>';
+                . esc_html__('Die Lagerseite braucht den Taxonomy Modeller ab Version 0.1.151 (Suche zuerst, Details beim Aufklappen).', 'taxmod-stock') . '</p></div></div>';
         }
 
         $html = '<div class="wrap">' . ListPage::heading(__('Lager', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . $this->notice();
@@ -357,8 +360,10 @@ final class StockPage
         $view      = ListPage::view($listId, $columns, 'name');
         $groups    = [];
         $rows      = [];
+        // D-1147: nothing is drawn until a search, a filter or a group asks for it, or «Alle anzeigen».
+        $waits     = ListPage::waitsForSearch($view, $group > 0 || $list->filter !== '');
 
-        foreach (array_keys($all) as $id) {
+        foreach ($waits ? [] : array_keys($all) as $id) {
             $node = $things->nodeOf($id);
 
             if ($node !== null) {
@@ -385,23 +390,33 @@ final class StockPage
                     'name' => mb_strtolower((string) preg_replace('/^#\d+( · )?/u', '', $name))]];
         }
 
+        if ($waits) {
+            foreach ($things->nodes() as $node) {
+                $groups[$node] ??= $this->stock->path($node);
+            }
+        }
+
         asort($groups, SORT_NATURAL | SORT_FLAG_CASE);
 
         // The preset filter (with stock, below minimum) stays the page's own; search, column filters and order are the list's.
         $shown   = $view->apply((new StockList('', $list->filter))->apply($rows));
         $visible = $view->visible();
         $open    = $this->stock->viewSettings()->expanded('material');
-        $url     = fn (array $change): string => $this->listUrl('material', $list, $change + ['f' => $view->filters(), 'orderby' => $view->orderBy === 'name' ? '' : $view->orderBy, 'order' => $view->descending ? 'desc' : '']);
+        $url     = fn (array $change): string => $this->listUrl('material', $list, $change + [ListPage::SHOW_ALL => ListPage::showsAll() ? '1' : '', 'f' => $view->filters(), 'orderby' => $view->orderBy === 'name' ? '' : $view->orderBy, 'order' => $view->descending ? 'desc' : '']);
         $html    = $this->tools('material', $list, [
             ['filter', $this->materialFilters(), $list->filter, __('Filter', 'taxmod-stock')],
             ['group', ['' => __('Alle Gruppen', 'taxmod-stock')] + $groups, $group > 0 ? (string) $group : '', __('Gruppe', 'taxmod-stock')],
         ], ['group' => $group > 0 ? (string) $group : '', 'orderby' => $view->orderBy === 'name' ? '' : $view->orderBy, 'order' => $view->descending ? 'desc' : ''],
-            __('Material, Nummer, Gruppe …', 'taxmod-stock'), sprintf(
+            __('Material, Nummer, Gruppe …', 'taxmod-stock'), $waits ? sprintf(
+            /* translators: %d: number of materials */
+            _n('%d Material im Lager', '%d Materialien im Lager', count($all), 'taxmod-stock'),
+            count($all)
+        ) : sprintf(
             /* translators: %d: number of materials */
             _n('%d Material', '%d Materialien', count($shown), 'taxmod-stock'),
             count($shown)
         ), ListPage::filterToggle() . ListPage::columnMenu($listId, $view, $url([])) . $this->bulkTransferDialog());
-        $body    = $shown === [] ? $this->noItems(count($visible)) : '';
+        $body    = $waits ? ListPage::searchPrompt(count($visible), $url([ListPage::SHOW_ALL => '1']), count($all)) : ($shown === [] ? $this->noItems(count($visible)) : '');
 
         // «← Zur Liste» in the material view comes back to exactly this list (design 7.3).
         set_transient(self::LAST_LIST . get_current_user_id(), $url(['paged' => absint($_GET['paged'] ?? 0) > 1 ? (string) absint($_GET['paged']) : '']), DAY_IN_SECONDS);
@@ -428,12 +443,31 @@ final class StockPage
             // moves straight from the row; with more, each lies in the details below with its own «Umbuchen».
             $held  = $this->heldAt($id, $ledger);
             $move  = count($held) === 1 ? $this->transferDialog($id, $held[0][0], $held[0][1], $held[0][2], $places, 0, true) . ' ' : '';
+            // D-1147: the lots are drawn when the row opens, not with the list.
             $body .= ListPage::row(self::BULK_FORM, (string) $id, $cells, $move . '<a class="button button-small" href="' . $link . '">'
-                . esc_html__('Öffnen', 'taxmod-stock') . '</a>', $this->lotList($id, $ledger, count($held) > 1), $open);
+                . esc_html__('Öffnen', 'taxmod-stock') . '</a>', ListPage::lazyDetails(self::DETAILS_MATERIAL, ['thing' => $id]), $open);
         }
 
         return $html . ListPage::table(ListPage::heads($view, $url), $body, ListPage::filterRow(self::FILTER_FORM, $view))
             . ListPage::pagination(count($shown), $paged, self::PER_PAGE, $url);
+    }
+
+    /**
+     * D-1147: a material row's lots, drawn when the row opens. Capability as for the page; the nonce was checked by the
+     * modeller's handler.
+     *
+     * @param array<string, string> $args
+     */
+    public function listDetails(?string $html, string $source, array $args): ?string
+    {
+        if ($source !== self::DETAILS_MATERIAL || ! current_user_can('manage_options')) {
+            return $html;
+        }
+
+        $thing  = absint($args['thing'] ?? 0);
+        $ledger = $this->stock->ledger();
+
+        return $this->lotList($thing, $ledger, count($this->heldAt($thing, $ledger)) > 1);
     }
 
     /**

@@ -83,6 +83,12 @@ final class Things
         return $this->nodes[$thing] ?? null;
     }
 
+    /** @return list<int> the nodes things live in, each once — the groups a list can be narrowed to */
+    public function nodes(): array
+    {
+        return array_values(array_unique($this->nodes));
+    }
+
     public function lagerOf(int $thing): ?int
     {
         return $this->lager[$thing] ?? null;

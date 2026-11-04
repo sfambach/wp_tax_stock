@@ -31,6 +31,9 @@ final class PurchasePage
     private const TABS      = ['nachbestellen', 'bedarf', 'bestellen', 'bestellt', 'verworfen'];
     private const BULK_FORM = 'taxmod-stock-purchase-bulk';
 
+    /** D-1147: the source name under which an order's row draws its positions when opened. */
+    public const DETAILS = 'stock-purchase';
+
     /**
      * D-1027 E6: supplier modules answer a search with offers — `['list' => [offer, …], 'errors' => [merchant => text]]`,
      * an offer being merchant, number, maker, maker_number, description, stock, price, currency, min, mult, url.
@@ -330,7 +333,34 @@ final class PurchasePage
             '<strong>' . esc_html($label === '' ? '#' . $order : $label) . '</strong> <span class="description">#' . esc_html((string) $order) . ($number === '' ? '' : ' · ' . esc_html($number)) . '</span>',
             esc_html($merchant === '' ? '—' : $merchant),
             esc_html($count),
-        ], $buttons, $this->details($tab, $order, $lines, $sourced, $orders, $purchases), $open);
+        ], $buttons, ListPage::lazyDetails(self::DETAILS, ['tab' => $tab, 'order' => $order]), $open);
+    }
+
+    /**
+     * D-1147: an order's positions, drawn when its row opens. Capability as for the page; the nonce was checked by the
+     * modeller's handler.
+     *
+     * @param array<string, string> $args
+     */
+    public function listDetails(?string $html, string $source, array $args): ?string
+    {
+        if ($source !== self::DETAILS || ! current_user_can('manage_options')) {
+            return $html;
+        }
+
+        $s         = $this->stock->structure();
+        $orders    = $this->stock->table('order');
+        $purchases = $this->stock->table('purchase');
+        $tab       = sanitize_key($args['tab'] ?? '');
+        $order     = absint($args['order'] ?? 0);
+
+        if (! in_array($tab, self::TABS, true) || ! $orders->has($order)) {
+            return null;
+        }
+
+        $lines = array_map('intval', $orders->all($order, $s->field('order_lines')));
+
+        return $this->details($tab, $order, $lines, $tab === 'bedarf' ? $this->sourcedFrom($order, $purchases) : [], $orders, $purchases);
     }
 
     /**

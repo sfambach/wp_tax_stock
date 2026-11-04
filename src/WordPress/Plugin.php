@@ -62,6 +62,14 @@ final class Plugin
         add_action('admin_post_' . SettingsPage::ACTION, static fn () => (new SettingsPage())->handle());
         add_action('admin_post_' . LogisticsShell::FULLSCREEN_ACTION, [LogisticsShell::class, 'switchFullscreen']);
         add_filter(self::BOOK_BUILD, [self::class, 'bookBuild'], 10, 2);
+        // D-1147: the rows of the material, purchase and inbound lists draw their details when opened.
+        // The filter's name stands as text, so an older modeller without it does not stop the module.
+        add_filter('taxmod_list_details', static fn (?string $html, string $source, array $args): ?string => match ($source) {
+            StockPage::DETAILS_MATERIAL => (new StockPage())->listDetails($html, $source, $args),
+            PurchasePage::DETAILS       => (new PurchasePage())->listDetails($html, $source, $args),
+            InboundPage::DETAILS        => (new InboundPage())->listDetails($html, $source, $args),
+            default                     => $html,
+        }, 10, 3);
     }
 
     /**

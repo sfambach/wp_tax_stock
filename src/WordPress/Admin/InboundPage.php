@@ -40,6 +40,9 @@ final class InboundPage
     private const FILTER_FORM = 'taxmod-stock-inbound-filter';
     private const BULK_FORM   = 'taxmod-stock-inbound-bulk';
 
+    /** D-1147: the source name under which an order's row draws its purchases when opened. */
+    public const DETAILS = 'stock-inbound';
+
     /** Carrier events shown in a row's details, newest first. */
     private const EVENTS = 5;
 
@@ -309,7 +312,34 @@ final class InboundPage
             $cells[] = esc_html($this->stageName($stage));
         }
 
-        return ListPage::row(self::BULK_FORM, (string) $order->id, $cells, $this->buttons($order, $stage, $counts['booked'], $tab), $this->details($order, $stage, $tab, $open), $open);
+        // D-1147: purchases and carrier events are drawn when the row opens; an arrived order loads its positions itself.
+        $details = $stage === InboundStage::Arrived ? $this->details($order, $stage, $tab, $open) : ListPage::lazyDetails(self::DETAILS, ['order' => $order->id, 'tab' => $tab]);
+
+        return ListPage::row(self::BULK_FORM, (string) $order->id, $cells, $this->buttons($order, $stage, $counts['booked'], $tab), $details, $open);
+    }
+
+    /**
+     * D-1147: an order's purchases and events, drawn when its row opens. Capability as for the page; the nonce was checked
+     * by the modeller's handler.
+     *
+     * @param array<string, string> $args
+     */
+    public function listDetails(?string $html, string $source, array $args): ?string
+    {
+        if ($source !== self::DETAILS || ! current_user_can('manage_options')) {
+            return $html;
+        }
+
+        $order = $this->inbound->orders()[absint($args['order'] ?? 0)] ?? null;
+        $tab   = sanitize_key($args['tab'] ?? '');
+
+        if ($order === null || ! in_array($tab, self::tabSlugs(), true)) {
+            return null;
+        }
+
+        $today = current_time('Y-m-d');
+
+        return $this->details($order, $order->stage($this->inbound->stock()->structure(), $this->inbound->stock()->inboundArchive($today)), $tab, true);
     }
 
     /** Each tracking number with its carrier's last stage, where one answered. */

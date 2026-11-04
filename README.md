@@ -26,7 +26,9 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
     (search or tree, both over the groups of things; D-1011); the choice is written into the purchase's «Modell». Each gets a proposed place
     (D-972). «Zuordnung speichern» keeps the chosen materials without booking anything.
   - **Material** — the things per group in the shared table template, the group's technical data as columns, lots
-    below each row. «Öffnen» shows one thing: a fixed head (title image, Nr, Bezeichnung, Beschreibung, path) and the
+    below each row. From 0.34.0 (D-1147, needs the modeller from 0.1.151) the list waits for a search, a filter or a
+    group before it draws anything; «Alle anzeigen» shows everything, page by page. The lots of a row — like the
+    positions on «Einkauf» and the purchases on «Wareneingang» — are loaded only when the row is opened. «Öffnen» shows one thing: a fixed head (title image, Nr, Bezeichnung, Beschreibung, path) and the
     tabs Technische Daten, Einkauf, Lager (Standard-Lagerort, Mindestbestand, Einzelstück), Bestand (tiles, lots,
     Vorgänge, «Umbuchen», «Ausbuchen») and Verkauf (D-997).
     «Umbuchen» (D-1039, from 0.11.0) books a Vorgang «Umbuchung» with the lines «− old place, + new place», for a whole

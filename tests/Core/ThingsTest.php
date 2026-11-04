@@ -27,6 +27,7 @@ final class ThingsTest extends TestCase
         self::assertSame(43124, $things->lagerOf(43101), 'the oldest Lager record of the thing');
         self::assertNull($things->lagerOf(43102));
         self::assertSame(3640, $things->nodeOf(43101));
+        self::assertSame([3640], $things->nodes(), 'D-1147: each group once, for the group filter of a list that waits for a search');
     }
 
     #[Test]

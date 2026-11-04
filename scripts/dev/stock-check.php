@@ -465,6 +465,14 @@ $kachel = (new TaxmodStock\WordPress\Admin\CockpitPage())->render();
 $_GET  = [];
 $pruefe(str_contains($kachel, '<span class="taxmod-tile-label">Layout</span><span class="taxmod-tile-figure">' . count((new StockService())->places()) . '</span>') && str_contains($kachel, '<span class="taxmod-tile-line">Zuletzt angelegt:</span><span class="taxmod-tile-line">Lager › __Schrank › __Schublade 2 › __Kiste</span><span class="taxmod-tile-line">Lager › __Schrank › __Schublade 2</span>'), 'the Layout tile counts the places and names the newest first');
 
+// D-1167, his word «eine Zeitraumübersicht … Umschalter über den Zeitraum … Tage vor- und zurückwählen»: the day of the
+// receipts above shows them, against the day before, with a chart and the list of what happened.
+$_GET     = ['page' => TaxmodStock\WordPress\Admin\CockpitPage::PAGE, 'tab' => 'period', 'span' => 'day', 'day' => '2026-10-21'];
+$zeitraum = (new TaxmodStock\WordPress\Admin\CockpitPage())->render();
+$_GET     = [];
+$pruefe(! str_contains($zeitraum, 'notice-error') && str_contains($zeitraum, '<span class="taxmod-tile-label">Wareneingang</span>') && str_contains($zeitraum, 'class="taxmod-chart"'), 'Zeitraum: the day of the receipts has its tiles and its chart (D-1167)');
+$pruefe(substr_count($zeitraum, '<td>21.10.2026</td>') >= 2 && str_contains($zeitraum, 'aria-current="true">Day</a>'), 'Zeitraum: the Vorgänge of the day are listed, the span «Day» is marked');
+
 // D-1139, his word «projekt gebinde … haben die ja ein bom und auch evtl einen bestand … ob der übereinstimmt bzw was fehlt».
 $bom = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'create_node', 'ref' => 'proj', 'name' => '__Projekte', 'parent' => $r['stock']],

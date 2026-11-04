@@ -35,6 +35,12 @@ final class CockpitPage
         $area  = sanitize_key((string) ($_GET[self::AREA] ?? ''));
         $group = sanitize_text_field(wp_unslash((string) ($_GET[self::GROUP] ?? '')));
         $found = $area === '' || $area === 'cockpit' ? null : self::areaOf($area);
+
+        // D-1167: the period view is an item of the cockpit area, on the cockpit's own page.
+        if ($found === null && sanitize_key((string) ($_GET['tab'] ?? '')) === PeriodPage::TAB) {
+            return '<div class="wrap">' . ListPage::heading(__('Zeitraum', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . (new PeriodPage($this->inbound->stock()))->render() . '</div>';
+        }
+
         $title = $found === null ? __('Logistik', 'taxmod-stock') : $found['label'] . ($group === '' ? '' : ' › ' . str_replace('/', ' › ', $group));
         $html  = '<div class="wrap">' . ListPage::heading($title, (string) TAXMOD_STOCK_VERSION);
 

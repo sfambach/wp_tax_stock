@@ -15,6 +15,9 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
   is the modeller's shared tile. Below the due tiles the cockpit shows the **key figures** chosen on any node of the model
   (add-on «Kennzahl (Kachel)» in the node's mask: count or sum per month, filter, date field). Concept:
   [`docs/pakete/kacheln/konzept.md`](https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/kacheln/konzept.md).
+- **Zeitraum** (D-1167, needs the modeller from 0.1.165): Logistik › Cockpit › Zeitraum shows one day, month or year —
+  switched and stepped back and forth — with tiles per kind of Vorgang against the period before, a chart of in and out,
+  the Vorgänge of the period, the things moved most, and the model's key figures for the same period.
 - **Page «Wareneingang»** (D-1001), the goods receipt cockpit: every order in one stage, a tab per stage —
   Bestellt → Versendet → Angekommen → Eingebucht. The stage is computed from what the inbox already wrote to the order
   (status, «Eingegangen am», tracking numbers) and the DHL module's last answer (filter `taxmod_dhl_tracking`); nothing

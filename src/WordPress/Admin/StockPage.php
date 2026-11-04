@@ -4,13 +4,11 @@ namespace TaxmodStock\WordPress\Admin;
 
 use Taxmod\Core\Listing\ListColumn;
 use Taxmod\Core\Listing\ListView;
-use Taxmod\Core\Printing\FilledLabel;
 use Taxmod\Core\Printing\LabelContent;
 use Taxmod\Core\Printing\LabelDocument;
 use Taxmod\Core\Printing\LabelFormat;
 use Taxmod\Core\Printing\LabelLayout;
 use Taxmod\Core\Printing\LabelPrefix;
-use Taxmod\Core\Printing\LabelTemplate;
 use Taxmod\Core\Renderer\DialogMarkup;
 use Taxmod\Core\Tile\Tile;
 use Taxmod\Core\Tile\TileTone;
@@ -1992,6 +1990,8 @@ final class StockPage
             'name'   => $template['name'],
             'format' => $template['format'],
             'layout' => $template['layout'],
+            // D-1160: the modeller reads the fields the layout names from the place itself; these fill what it has no field for.
+            'record' => $place,
             'values' => ['bezeichnung' => $tree->titleOf($place), 'kurzzeichen' => $tree->shortOf($place), 'projekt' => $project, 'ort' => $parent],
         ]];
     }
@@ -2129,12 +2129,13 @@ final class StockPage
                 $label = LabelContent::of(LabelPrefix::from($prefix), $id, $title, $subtitle);
                 $own   = $fills ? LabelButton::filled($label, $template) : null;
 
-                for ($n = 0, $max = min(50, $asked > 0 ? $asked : $copies); $n < $max; $n++) {
-                    if ($own === null) {
-                        $labels[] = $label;
-                    } else {
-                        $filled[] = [$label, $own];
-                    }
+                // D-1162: the copies travel together, as one job with that many pages.
+                $count = min(50, $asked > 0 ? $asked : $copies);
+
+                if ($own === null) {
+                    $labels[] = [$label, $count];
+                } else {
+                    $filled[] = [$label, $own, $count];
                 }
             }
         }
@@ -2148,15 +2149,15 @@ final class StockPage
         if ($toService && PrintService::isSetUp()) {
             $jobs = new PrintJobs();
 
-            foreach ($labels as $label) {
-                $jobs->queue($format, $label, false);
+            foreach ($labels as [$label, $count]) {
+                $jobs->queue($format, $label, false, null, $count);
             }
 
-            foreach ($filled as [$label, $own]) {
-                $jobs->queue($own->format, $label, false, $own->toJson());
+            foreach ($filled as [$label, $own, $count]) {
+                $jobs->queue($own->format, $label, false, $own->toJson(), $count);
             }
 
-            $count = count($labels) + count($filled);
+            $count = array_sum(array_column($labels, 1)) + array_sum(array_column($filled, 2));
             $this->remember('success', sprintf(/* translators: %d: number of labels */ _n('%d Etikett wartet auf den Druckdienst.', '%d Etiketten warten auf den Druckdienst.', $count, 'taxmod-stock'), $count));
             wp_safe_redirect($url);
             exit;
@@ -2172,7 +2173,7 @@ final class StockPage
         }
 
         if ($filled !== []) {
-            $pdf = LabelDocument::renderLayout($filled[0][1]->format, $filled[0][1]->layout, array_map(static fn (array $pair): array => $pair[1]->values, $filled));
+            $pdf = LabelDocument::renderLayout($filled[0][1]->format, $filled[0][1]->layout, array_merge(...array_map(static fn (array $one): array => array_fill(0, $one[2], $one[1]->values), $filled)));
             nocache_headers();
             header('Content-Type: application/pdf');
             header('Content-Disposition: inline; filename="etiketten-' . gmdate('Ymd-His') . '.pdf"');
@@ -2181,7 +2182,7 @@ final class StockPage
             exit;
         }
 
-        $pdf = LabelDocument::render($format, $labels);
+        $pdf = LabelDocument::render($format, array_merge(...array_map(static fn (array $one): array => array_fill(0, $one[1], $one[0]), $labels)));
         nocache_headers();
         header('Content-Type: application/pdf');
         header('Content-Disposition: inline; filename="etiketten-' . gmdate('Ymd-His') . '.pdf"');
@@ -2255,33 +2256,34 @@ final class StockPage
     }
 
     /**
-     * D-1153, his word 2026-11-04: «die etiketten bekommen dann einfach eine detailansicht oder» — the label templates in a list;
-     * one opened shows its record in the modeller's editor, a preview drawn from its layout, and the label button as test print.
+     * D-1153, his word 2026-11-04: «die etiketten bekommen dann einfach eine detailansicht oder» — the labels in a list by
+     * category (D-1160); one opened shows its record in the modeller's editor, the modeller's preview and its label button.
      */
     private function labelTemplatesPage(int $chosen): string
     {
         $s    = $this->stock->structure();
-        $html = '<h2>' . esc_html__('Etikettenvorlagen', 'taxmod-stock') . '</h2>';
+        $html = '<h2>' . esc_html__('Etiketten', 'taxmod-stock') . '</h2>';
 
-        if (! $s->hasNode('label_template') || ! $s->hasNode('label_format')) {
-            return $html . '<p class="description">' . esc_html__('Das Modell kennt noch keine Etikettenvorlagen.', 'taxmod-stock') . '</p>';
+        if (! $s->hasNode('label_template')) {
+            return $html . '<p class="description">' . esc_html__('Das Modell kennt noch keine Etiketten.', 'taxmod-stock') . '</p>';
         }
 
-        $records   = $this->stock->table('label_template');
         $templates = $this->stock->labelTemplates();
         $types     = $this->stock->placeTypes();
         $list      = add_query_arg(['page' => self::PAGE, 'tab' => 'etikettenvorlagen'], admin_url('admin.php'));
-        $nameOf    = static fn (int $id): string => (string) ($records->first($id, $s->field('label')) ?? '#' . $id);
+        $nameOf    = static fn (array $t): string => trim($t['category'] . ' · ' . $t['name'], ' ·');
 
-        if ($chosen > 0 && $records->has($chosen)) {
-            $back = add_query_arg('vorlage', $chosen, $list);
-            $form = (string) apply_filters('taxmod_record_editor', '', $chosen, $back);
+        if ($chosen > 0) {
+            $template = $templates->get($chosen);
+            $name     = $template === null ? '#' . $chosen : $nameOf($template);
+            $back     = add_query_arg('vorlage', $chosen, $list);
+            $form     = (string) apply_filters('taxmod_record_editor', '', $chosen, $back);
 
-            return $html . '<div style="text-align:right;margin-bottom:12px">' . $this->copyTemplateDialog($chosen, $nameOf($chosen)) . '</div>'
-                . '<h3>' . esc_html($nameOf($chosen)) . ' <span class="description" style="font-weight:normal">· Id: ' . esc_html((string) $chosen) . '</span></h3>'
-                . $this->templatePreview($chosen, $templates->get($chosen))
+            return $html . '<div style="text-align:right;margin-bottom:12px">' . $this->copyTemplateDialog($chosen, $template['name'] ?? $name) . '</div>'
+                . '<h3>' . esc_html($name) . ' <span class="description" style="font-weight:normal">· Id: ' . esc_html((string) $chosen) . '</span></h3>'
+                . $this->templatePreview($chosen, $template)
                 . ($form === '' ? '<p><a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $chosen], admin_url('admin.php'))) . '">' . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a></p>' : $form)
-                . '<p><a href="' . esc_url($list) . '">' . esc_html__('← alle Etikettenvorlagen', 'taxmod-stock') . '</a></p>';
+                . '<p><a href="' . esc_url($list) . '">' . esc_html__('← alle Etiketten', 'taxmod-stock') . '</a></p>';
         }
 
         $used = [];
@@ -2294,82 +2296,62 @@ final class StockPage
             }
         }
 
-        $body  = '';
-        $names = array_map($nameOf, array_combine($records->ids(), $records->ids()));
-        natcasesort($names);
+        $all = $templates->all();
+        uasort($all, static fn (array $a, array $b): int => strnatcasecmp($nameOf($a), $nameOf($b)));
+        $body = '';
 
-        foreach ($names as $id => $name) {
-            $template = $templates->get($id);
-            $link     = esc_url(add_query_arg('vorlage', $id, $list));
-            $body    .= '<tr><th scope="row" class="check-column"></th>'
-                . '<td><a href="' . $link . '"><strong>' . esc_html($name) . '</strong></a></td>'
-                . '<td>' . esc_html($template === null ? __('unvollständig', 'taxmod-stock') : $template['format']['key'] . ' · ' . $template['format']['w'] . ' × ' . $template['format']['h'] . ' mm') . '</td>'
-                . '<td>' . esc_html($template === null ? '—' : (string) $template['copies']) . '</td>'
+        foreach ($all as $id => $template) {
+            $link  = esc_url(add_query_arg('vorlage', $id, $list));
+            $body .= '<tr><th scope="row" class="check-column"></th>'
+                . '<td>' . esc_html($template['category'] === '' ? '—' : $template['category']) . '</td>'
+                . '<td><a href="' . $link . '"><strong>' . esc_html($template['name']) . '</strong></a></td>'
+                . '<td>' . esc_html($template['format']['w'] . ' × ' . $template['format']['h'] . ' mm · ' . $template['format']['key']) . '</td>'
                 . '<td>' . esc_html(implode(', ', $used[$id] ?? []) ?: '—') . '</td>'
-                . '<td style="text-align:right;white-space:nowrap">' . $this->copyTemplateDialog($id, $name) . ' <a class="button" href="' . $link . '">' . esc_html__('Öffnen', 'taxmod-stock') . '</a></td></tr>';
+                . '<td style="text-align:right;white-space:nowrap">' . $this->copyTemplateDialog($id, $template['name']) . ' <a class="button" href="' . $link . '">' . esc_html__('Öffnen', 'taxmod-stock') . '</a></td></tr>';
         }
 
-        return $html . ListPage::table([[__('Vorlage', 'taxmod-stock'), ''], [__('Format', 'taxmod-stock'), '16em'], [__('Anzahl', 'taxmod-stock'), '6em'], [__('Platzarten', 'taxmod-stock'), '']], $body === '' ? $this->noItems(4) : $body);
+        return $html . ListPage::table([[__('Kategorie', 'taxmod-stock'), '14em'], [__('Etikett', 'taxmod-stock'), ''], [__('Größe', 'taxmod-stock'), '16em'], [__('Platzarten', 'taxmod-stock'), '']], $body === '' ? $this->noItems(4) : $body);
     }
 
     /**
-     * The template drawn as a PDF beside the record, and the modeller's label button on the same values as test print. A layout
-     * that cannot be drawn says why instead.
+     * The modeller's preview of the label (D-1161) beside its record, and its label button as test print.
      *
      * D-1154, his word 2026-11-04: «erst schauen ob etikett benutz und dann ersten besten nehmen» — the first place whose type uses
-     * the template; without one the examples written in the layout («ich dachte im jsaon ein feld mit beispiel»).
+     * the label, read by the modeller from the record (D-1160); without one the examples written in the layout.
      *
-     * @param array{name: string, format: array{key: string, w: int, h: int, roll: int}, copies: int, layout: string}|null $template
+     * @param array{name: string, format: array{key: string, w: int, h: int, roll: int}, copies: int, layout: string, category: string}|null $template
      */
     private function templatePreview(int $id, ?array $template): string
     {
         if ($template === null) {
-            return '<div class="notice notice-warning inline"><p>' . esc_html__('Die Vorlage braucht ein Format mit Schlüssel, Breite und Höhe und ein Layout.', 'taxmod-stock') . '</p></div>';
+            return '<div class="notice notice-warning inline"><p>' . esc_html__('Das Etikett braucht Druckformat, Breite, Höhe und ein Layout.', 'taxmod-stock') . '</p></div>';
         }
 
-        if (! method_exists(LabelButton::class, 'filled') || ! class_exists(FilledLabel::class)) {
-            return '<div class="notice notice-warning inline"><p>' . esc_html__('Die Vorschau braucht den Taxonomy Modeller mit Etikettenvorlagen.', 'taxmod-stock') . '</p></div>';
+        if (! has_filter('taxmod_label_preview')) {
+            return '<div class="notice notice-warning inline"><p>' . esc_html__('Die Vorschau braucht den Taxonomy Modeller ab 0.1.160.', 'taxmod-stock') . '</p></div>';
         }
 
         $place = $this->firstPlaceWith($id);
+        $label = ['name' => $template['name'], 'format' => $template['format'], 'layout' => $template['layout']];
 
         if ($place > 0) {
             [$prefix, $code, $title, $subtitle, , $own] = $this->placeLabel($place, $this->stock->locationTree());
-            $label  = LabelContent::of(LabelPrefix::from($prefix), $code, $title, $subtitle);
-            $values = (array) ($own['values'] ?? []);
-            $source = sprintf(/* translators: %s: the place shown */ __('Vorschau mit dem Platz «%s».', 'taxmod-stock'), $this->stock->locationTree()->pathOf($place));
+            $label += ['values' => ['title' => $title, 'subtitle' => $subtitle] + (array) ($own['values'] ?? []), 'code' => $prefix . '-' . $code];
+            $button = (string) apply_filters('taxmod_label_button', '', $prefix, $code, $title, $subtitle, $template['copies'], $own);
+            $source = '<p class="description">' . esc_html(sprintf(/* translators: %s: the place shown */ __('Platz: %s', 'taxmod-stock'), $this->stock->locationTree()->pathOf($place))) . '</p>';
         } else {
             try {
-                $examples = method_exists(LabelLayout::class, 'examples') ? LabelLayout::fromJson($template['layout'])->examples() : [];
+                $examples = LabelLayout::fromJson($template['layout'])->examples();
             } catch (\InvalidArgumentException) {
                 $examples = [];
             }
-            // The code must stay a code the QR can carry: «O-12345»; an example that is none falls back to it.
-            $parts  = preg_match('/^([OMEK])-(\d+)$/', (string) ($examples['code'] ?? ''), $m) === 1 ? [$m[1], (int) $m[2]] : ['O', 12345];
-            $label  = LabelContent::of(LabelPrefix::from($parts[0]), $parts[1], (string) ($examples['title'] ?? ''), (string) ($examples['subtitle'] ?? ''));
-            $values = array_diff_key($examples, array_flip(['code', 'title', 'subtitle']));
-            $source = __('Kein Platz nutzt diese Vorlage: Vorschau mit den Beispielwerten aus dem Layout («example»).', 'taxmod-stock');
+            $button = (string) apply_filters('taxmod_label_button', '', 'O', 12345, (string) ($examples['title'] ?? $template['name']), (string) ($examples['subtitle'] ?? ''), $template['copies'],
+                ['name' => $template['name'], 'format' => $template['format'], 'layout' => $template['layout'], 'values' => $examples]);
+            $source = '<p class="description">' . esc_html__('Noch keine Platzart nutzt dieses Etikett: Testdruck mit den Beispielwerten.', 'taxmod-stock') . '</p>';
         }
 
-        try {
-            $filled = FilledLabel::fromJson((string) json_encode([
-                'format'   => $template['format'],
-                'layout'   => json_decode($template['layout'], true),
-                'values'   => LabelTemplate::valuesOf($label) + $values,
-                'template' => $template['name'],
-            ]));
-        } catch (\InvalidArgumentException | \JsonException $e) {
-            return '<div class="notice notice-error inline"><p>' . esc_html__('Das Layout lässt sich nicht zeichnen:', 'taxmod-stock') . ' ' . esc_html($e->getMessage()) . '</p></div>';
-        }
-
-        [$prefix, $code] = explode('-', $label->code, 2) + ['O', '0'];
-        $button = (string) apply_filters('taxmod_label_button', '', $prefix, (int) $code, $label->title, $label->subtitle, $template['copies'], $template + ['values' => $values]);
-        $ratio  = $template['format']['h'] / max(1, $template['format']['w']);
-
-        return '<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:12px">'
-            . '<iframe title="' . esc_attr__('Vorschau', 'taxmod-stock') . '" src="data:application/pdf;base64,' . esc_attr(base64_encode($filled->render())) . '#toolbar=0&amp;view=Fit" style="width:360px;height:' . esc_attr((string) (int) round(360 * $ratio + 40)) . 'px;border:1px solid #c3c4c7;background:#fff"></iframe>'
-            . '<div><p class="description">' . esc_html($source) . ' ' . esc_html__('Felder im Layout: code, title, subtitle, bezeichnung, kurzzeichen, projekt, ort.', 'taxmod-stock') . '</p>'
-            . '<div style="text-align:right">' . $button . '</div></div></div>';
+        return '<div style="margin-bottom:12px">' . (string) apply_filters('taxmod_label_preview', '', $label, $place) . $source
+            . ($button === '' ? '' : '<div style="text-align:right">' . $button . '</div>') . '</div>';
     }
 
     /** D-1154: the first place (by id) whose place type prints with this template; 0 where none does. */

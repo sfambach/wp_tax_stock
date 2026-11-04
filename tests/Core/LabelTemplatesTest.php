@@ -9,7 +9,7 @@ use TaxmodStock\Core\PlaceTypes;
 use TaxmodStock\Core\Structure;
 use TaxmodStock\Core\Table;
 
-/** D-1153: label templates as records — a place type names its template, the number of labels falls back in order. */
+/** D-1153, D-1159: labels as records — a place type names its template, the number of labels falls back in order. */
 final class LabelTemplatesTest extends TestCase
 {
     private const LAYOUT = '[{"type":"qr","field":"code","x":2,"y":2,"w":20}]';
@@ -19,10 +19,10 @@ final class LabelTemplatesTest extends TestCase
     {
         $templates = $this->templates();
 
-        self::assertSame(['name' => 'Platz', 'format' => ['key' => 'holder62', 'w' => 62, 'h' => 50, 'roll' => 62], 'copies' => 1, 'layout' => self::LAYOUT], $templates->get(90));
+        self::assertSame(['name' => 'Platz', 'format' => ['key' => 'holder62', 'w' => 62, 'h' => 50, 'roll' => 62], 'copies' => 1, 'layout' => self::LAYOUT, 'category' => ''], $templates->get(90));
         self::assertSame(2, $templates->get(91)['copies']);
         self::assertFalse($templates->has(92), 'a template without a layout cannot print');
-        self::assertFalse($templates->has(93), 'a template without a format cannot print');
+        self::assertFalse($templates->has(93), 'a label without a size cannot print');
     }
 
     #[Test]
@@ -56,22 +56,19 @@ final class LabelTemplatesTest extends TestCase
         $label = $s->field('label');
 
         return LabelTemplates::from($s, new Table([
-            80 => [$label => ['Halter 62 × 50'], 400 => ['holder62'], 401 => ['62'], 402 => ['50'], 403 => ['62']],
-            81 => [$label => ['Rolle 62'], 400 => ['roll62'], 401 => ['100'], 402 => ['62'], 403 => ['62']],
-        ]), new Table([
-            90 => [$label => ['Platz'], 404 => ['80'], 405 => ['1'], 406 => [self::LAYOUT]],
-            91 => [$label => ['Kiste'], 404 => ['81'], 405 => ['2'], 406 => [self::LAYOUT]],
-            92 => [$label => ['Leer'], 404 => ['80'], 405 => ['1']],
-            93 => [$label => ['Ohne Format'], 405 => ['1'], 406 => [self::LAYOUT]],
+            90 => [$label => ['Platz'], 400 => ['holder62'], 401 => ['62'], 402 => ['50'], 403 => ['62'], 405 => ['1'], 406 => [self::LAYOUT]],
+            91 => [$label => ['Kiste groß'], 400 => ['roll62'], 401 => ['100'], 402 => ['62'], 403 => ['62'], 405 => ['2'], 406 => [self::LAYOUT]],
+            92 => [$label => ['Leer'], 400 => ['holder62'], 401 => ['62'], 402 => ['50'], 405 => ['1']],
+            93 => [$label => ['Ohne Größe'], 400 => ['holder62'], 405 => ['1'], 406 => [self::LAYOUT]],
         ]));
     }
 
     private function structure(): Structure
     {
         $raw = Fixture::structure()->toArray();
-        $raw['nodes'] += ['location_type' => 20, 'label_format' => 22, 'label_template' => 23];
-        $raw['fields'] += ['format_key' => 400, 'format_width' => 401, 'format_height' => 402, 'format_roll' => 403,
-            'template_format' => 404, 'template_copies' => 405, 'template_layout' => 406, 'type_label_template' => 410, 'type_label_copies' => 411];
+        $raw['nodes'] += ['location_type' => 20, 'label_template' => 23];
+        $raw['fields'] += ['template_key' => 400, 'template_width' => 401, 'template_height' => 402, 'template_roll' => 403,
+            'template_copies' => 405, 'template_layout' => 406, 'type_label_template' => 410, 'type_label_copies' => 411];
 
         return Structure::fromArray($raw);
     }

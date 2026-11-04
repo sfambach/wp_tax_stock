@@ -810,16 +810,26 @@ final class StockService
         return $this->locationTree = LocationTree::from($s, $places, $this->recordLabels(LocationTree::projectIds($s, $places)), $this->placeTypes());
     }
 
-    /** D-1153: the label templates kept as records; none while the model has no node for them. */
+    /** D-1153, D-1159: the labels kept as records; none while the model has no node for them. */
     public function labelTemplates(): LabelTemplates
     {
         $s = $this->structure();
 
-        if (! $s->hasNode('label_template') || ! $s->hasNode('label_format')) {
+        if (! $s->hasNode('label_template')) {
             return new LabelTemplates();
         }
 
-        return $this->labelTemplates ??= LabelTemplates::from($s, $this->table('label_format'), $this->table('label_template'));
+        if ($this->labelTemplates !== null) {
+            return $this->labelTemplates;
+        }
+
+        // D-1160: the labels stand in categories, the sub-nodes of «Etiketten» — read all of them in one go (CD-7).
+        $root       = $s->node('label_template');
+        $categories = $this->model->children($root);
+        $nodeOf     = $this->model->recordsOf(array_merge([$root], array_keys($categories)), 500);
+        $table      = $nodeOf === [] ? $this->table('label_template') : ($this->model->records(array_keys($nodeOf)) ?? $this->table('label_template'));
+
+        return $this->labelTemplates = LabelTemplates::from($s, $table, array_map(static fn (int $node): string => $categories[$node] ?? '', $nodeOf));
     }
 
     /** D-1123: the kinds of place; none while the model has no node for them. */

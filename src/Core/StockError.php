@@ -275,6 +275,12 @@ final class StockError extends \RuntimeException
         return new self('not_taken_for_build', (string) $thing);
     }
 
+    /** D-1143: a finished thing cancelled beyond what this order brought into stock and is still there. */
+    public static function notProducedForOrder(int $thing): self
+    {
+        return new self('not_produced_for_order', (string) $thing);
+    }
+
     /** A date as the form sends it: Y-m-d. */
     public static function notADate(string $given): self
     {

@@ -35,6 +35,12 @@ final class Plugin
     /** D-1146: the ticked lines of a pick list go into the box. */
     public const BOOK_PICK = 'taxmod_stock_book_pick';
 
+    /** D-1143: the finished things of a build order go into stock. */
+    public const BOOK_OUTPUT = 'taxmod_stock_book_output';
+
+    /** D-1143: a new material for a finished board, in a group of the things' tree. */
+    public const CREATE_THING = 'taxmod_stock_create_thing';
+
     public function boot(): void
     {
         // Checked at runtime rather than with «Requires Plugins»: WordPress matches that header against the folder name, and the
@@ -72,6 +78,8 @@ final class Plugin
         add_filter(self::BOOK_BUILD, [self::class, 'bookBuild'], 10, 2);
         add_filter(self::PLACES_OF, [self::class, 'placesOf'], 10, 2);
         add_filter(self::BOOK_PICK, [self::class, 'bookPick'], 10, 2);
+        add_filter(self::BOOK_OUTPUT, [self::class, 'bookOutput'], 10, 2);
+        add_filter(self::CREATE_THING, [self::class, 'createThing'], 10, 2);
         // D-1147: the rows of the material, purchase and inbound lists draw their details when opened.
         // The filter's name stands as text, so an older modeller without it does not stop the module.
         add_filter('taxmod_list_details', static fn (?string $html, string $source, array $args): ?string => match ($source) {
@@ -116,6 +124,71 @@ final class Plugin
 
         try {
             return (new StockService())->bookBuild(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Fertigung', 'taxmod-stock'))));
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1143 for wp_tax_manufacturing: `apply_filters('taxmod_stock_book_output', null, $args)` brings the finished things of
+     * a build order into stock. `$args`: reference (the order's record), place (where they go), lines (thing → pieces, less
+     * than 0 cancels what this order brought in), title, date (Y-m-d). Answers the Vorgang's id or a WP_Error.
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     the booking as the caller sends it; `mixed`: checked here
+     */
+    public static function bookOutput(mixed $previous, mixed $args): int|\WP_Error
+    {
+        if (is_int($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args  = is_array($args) ? $args : [];
+        $date  = sanitize_text_field((string) ($args['date'] ?? ''));
+        $lines = [];
+
+        foreach (is_array($args['lines'] ?? null) ? $args['lines'] : [] as $thing => $quantity) {
+            if (absint($thing) > 0 && is_numeric($quantity)) {
+                $lines[absint($thing)] = (float) $quantity;
+            }
+        }
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+            return new \WP_Error('taxmod_stock_not_a_date', Messages::of(StockError::notADate($date)));
+        }
+
+        try {
+            return (new StockService())->bookOutput(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Fertigung', 'taxmod-stock'))));
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1143: `apply_filters('taxmod_stock_create_thing', null, ['name' => …, 'group' => node])` creates a material in a
+     * group of the things' tree. Answers its record id or a WP_Error.
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     name and group as the caller sends them; `mixed`: checked here
+     */
+    public static function createThing(mixed $previous, mixed $args): int|\WP_Error
+    {
+        if (is_int($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args = is_array($args) ? $args : [];
+
+        try {
+            return (new StockService())->createThing(sanitize_text_field((string) ($args['name'] ?? '')), absint($args['group'] ?? 0));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }

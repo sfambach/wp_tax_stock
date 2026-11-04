@@ -342,6 +342,47 @@ final class Bookings
     }
 
     /**
+     * D-1143: the finished things of a build order as one Vorgang «Zugang» with the order as its Bezug — new lots at the
+     * place, and cancelled pieces taken back from this order's lots.
+     *
+     * ⚠️ *INFERRED: the kind is the goods receipt without a purchase, like a count; a kind «Fertigung» of its own is not in
+     * the model.*
+     *
+     * @param list<array{thing: int, quantity: float, name: string}> $new
+     * @param list<array{lot: int, place: int, quantity: float}>     $back
+     * @return list<array<string, mixed>>
+     */
+    public function output(array $new, array $back, int $place, int $reference, string $title): array
+    {
+        $s = $this->structure;
+
+        if (! $s->hasField('transaction_reference')) {
+            throw StockError::notConfigured('fields.transaction_reference');
+        }
+
+        $this->start();
+
+        // D-1143: a finished board comes in untested; the test after the receipt (D-1002) frees it.
+        $untested = $s->hasField('lot_condition') && $s->hasValue('condition_untested');
+
+        foreach ($new as $row) {
+            $lot = $this->lot($row['name'], (string) $row['thing'], null, null, '', $place);
+
+            if ($untested) {
+                $this->changes[] = ['op' => 'set_values', 'record' => $lot, 'values' => [(string) $s->field('lot_condition') => (string) $s->value('condition_untested')]];
+            }
+
+            $this->line($row['name'], $lot, self::signed($row['quantity']), null, $place);
+        }
+
+        foreach ($back as $row) {
+            $this->line($title, (string) $row['lot'], self::signed(-$row['quantity']), null, $row['place']);
+        }
+
+        return $this->finish($title, 'kind_receipt', [(string) $s->field('transaction_reference') => (string) $reference]);
+    }
+
+    /**
      * D-1036 for a consumption: a Vorgang «Verbrauch» whose lines put back what each line took, at its place, naming
      * the line it cancels. A reservation the consumption lowered is open again by as much (D-1088).
      *

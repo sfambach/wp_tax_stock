@@ -18,6 +18,7 @@ use TaxmodStock\Core\MaterialCopy;
 use TaxmodStock\Core\NamedCopy;
 use TaxmodStock\Core\LocationTree;
 use TaxmodStock\Core\LabelTemplates;
+use TaxmodStock\Core\OutputPlan;
 use TaxmodStock\Core\PlaceFit;
 use TaxmodStock\Core\PlaceTypes;
 use TaxmodStock\Core\ProjectBill;
@@ -1479,6 +1480,50 @@ final class StockService
     }
 
     /**
+     * D-1143: the finished things of a build order go into stock at $place — thing → pieces, less than 0 takes them back
+     * from what this order brought in. Answers the Vorgang's id.
+     *
+     * @param array<int, float> $lines
+     */
+    public function bookOutput(int $reference, int $place, array $lines, string $today, string $title): int
+    {
+        if ($reference <= 0) {
+            throw StockError::noSubject();
+        }
+
+        if (! $this->table('location')->has($place)) {
+            throw StockError::notALocation($place);
+        }
+
+        $lines = array_filter($lines, static fn (float $q): bool => abs($q) > 1e-9);
+
+        if ($lines === []) {
+            throw StockError::nothingToBook();
+        }
+
+        $this->checkThings(array_keys($lines));
+        $plan   = OutputPlan::rows($lines, $this->producedFor($reference));
+        $labels = $this->recordLabels(array_column($plan['new'], 'thing'));
+        $new    = array_map(static fn (array $r): array => $r + ['name' => $labels[$r['thing']] ?? $title], $plan['new']);
+
+        return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->output($new, $plan['back'], $place, $reference, $title)));
+    }
+
+    /**
+     * D-1143: a new material in a group of the things' tree, by its name — for the finished board a build order brings in.
+     */
+    public function createThing(string $name, int $group): int
+    {
+        $this->checkGroups([new NewThing($group, $name)]);
+        $answer = $this->model->write([
+            ['op' => 'create_record', 'ref' => 'd', 'node' => (string) $group],
+            ['op' => 'set_values', 'record' => '@d', 'values' => [(string) $this->structure()->field('label') => trim($name)]],
+        ]);
+
+        return (int) (((array) ($answer['refs'] ?? []))['d'] ?? 0) ?: throw StockError::nothingToBook();
+    }
+
+    /**
      * D-1146, the pick list of a build order: where the things lie free — not in the box `$except` or below it, not in a
      * reserved area (D-1082), not in a lot a reservation names (D-1083).
      *
@@ -1562,6 +1607,46 @@ final class StockService
         }
 
         throw StockError::nothingToBook();
+    }
+
+    /** @return array<int, array<int, array<int, float>>> thing → lot → place → pieces the receipts naming `$reference` brought in and still lie there */
+    private function producedFor(int $reference): array
+    {
+        $s = $this->structure();
+
+        if (! $s->hasField('transaction_reference')) {
+            return [];
+        }
+
+        $deals  = $this->table('transaction');
+        $lines  = $this->table('line');
+        $ledger = $this->ledger();
+        $lots   = [];
+
+        foreach ($deals->ids() as $deal) {
+            if ((int) $deals->first($deal, $s->field('transaction_reference')) !== $reference || (int) $deals->first($deal, $s->field('transaction_kind')) !== $s->value('kind_receipt')) {
+                continue;
+            }
+
+            foreach ($deals->all($deal, $s->field('transaction_lines')) as $line) {
+                $lots[(int) $lines->first((int) $line, $s->field('line_lot'))] = true;
+            }
+        }
+
+        $stock = $ledger->stockByPlace();
+        $out   = [];
+
+        foreach (array_keys($lots) as $lot) {
+            $thing = $ledger->thingOf($lot);
+
+            foreach ($thing === null ? [] : ($stock[$lot] ?? []) as $place => $quantity) {
+                if ($quantity > 0.0) {
+                    $out[$thing][$lot][$place] = $quantity;
+                }
+            }
+        }
+
+        return $out;
     }
 
     /** @return array<int, array<int, float>> thing → lot → pieces the Vorgänge naming `$reference` took, net of what came back */

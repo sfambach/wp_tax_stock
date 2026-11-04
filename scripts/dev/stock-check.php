@@ -590,6 +590,23 @@ $pick   = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_PICK, null, ['referen
 $pruefe($pick instanceof WP_Error && $pick->get_error_code() === 'taxmod_stock_not_enough_to_pick', 'more than lies free at the place is refused, nothing moved');
 $pruefe(str_contains($html, 'taxmod-stock-drop-lot') && ! str_contains($html, 'taxmod-stock-move-place-'), 'Lagerorte: a lot dropped on a place asks for the Umbuchung; no structure actions here');
 
+// D-1143: the finished board — a material created for it, brought into stock naming the order, cancelled again.
+add_filter(TaxmodStock\WordPress\Plugin::BOOK_OUTPUT, [TaxmodStock\WordPress\Plugin::class, 'bookOutput'], 10, 2);
+add_filter(TaxmodStock\WordPress\Plugin::CREATE_THING, [TaxmodStock\WordPress\Plugin::class, 'createThing'], 10, 2);
+$gruppe  = (int) ((new TaxmodStock\WordPress\ModelGateway())->nodesOf([$bc])[$bc] ?? 0);
+$platine = apply_filters(TaxmodStock\WordPress\Plugin::CREATE_THING, null, ['name' => 'Testkarte bestückt 0.7', 'group' => $gruppe]);
+$pruefe(is_int($platine) && $platine > 0 && isset((new StockService())->tree()[$gruppe]), 'D-1143: a material for the finished board is created in a group of the things' . ($platine instanceof WP_Error ? ': ' . $platine->get_error_message() : ''));
+$platine = is_int($platine) ? $platine : 0;
+$zugang  = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_OUTPUT, null, ['reference' => $auftrag, 'place' => $schrank, 'lines' => [$platine => 2], 'title' => 'Fertigung Testkarte fertig', 'date' => '2026-11-04']);
+$s       = new StockService();
+$pruefe(is_int($zugang) && ($s->presentIn($schrank)[$platine] ?? 0.0) === 2.0 && (int) $s->table('transaction')->first($zugang, $s->structure()->field('transaction_reference')) === $auftrag && (int) $s->table('transaction')->first($zugang, $s->structure()->field('transaction_kind')) === $s->structure()->value('kind_receipt'), 'D-1143: two finished boards come in at the place, one Vorgang «Zugang» naming the order' . ($zugang instanceof WP_Error ? ': ' . $zugang->get_error_message() : ''));
+$neuLos  = array_values(array_filter($s->table('lot')->ids(), static fn (int $l): bool => (int) $s->table('lot')->first($l, $s->structure()->field('lot_thing')) === $platine));
+$pruefe($neuLos !== [] && (! $s->structure()->hasField('lot_condition') || (int) $s->table('lot')->first($neuLos[0], $s->structure()->field('lot_condition')) === $s->structure()->value('condition_untested')), 'D-1143: the finished board comes in untested');
+$storno  = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_OUTPUT, null, ['reference' => $auftrag, 'place' => $schrank, 'lines' => [$platine => -1], 'title' => 'Fertigung Testkarte Storno', 'date' => '2026-11-04']);
+$pruefe(is_int($storno) && ((new StockService())->presentIn($schrank)[$platine] ?? 0.0) === 1.0, 'D-1143: a negative count takes one back from what this order brought in' . ($storno instanceof WP_Error ? ': ' . $storno->get_error_message() : ''));
+$zuviel  = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_OUTPUT, null, ['reference' => $auftrag + 1, 'place' => $schrank, 'lines' => [$platine => -1], 'title' => 'fremd', 'date' => '2026-11-04']);
+$pruefe($zuviel instanceof WP_Error && $zuviel->get_error_code() === 'taxmod_stock_not_produced_for_order', 'D-1143: cancelling what another order brought in is refused');
+
 // D-1027 with D-1097/D-1098: a demand, a source and back, a position removed — the same before and after the switch.
 $offen = static function (StockService $s): array {
     $orders = $s->table('order');

@@ -1841,9 +1841,16 @@ final class StockPage
         // His word 2026-11-03 (D-1122): «lager struktur unter einstellung gleich die einstellungen/details des platzes zeigt nicht
         // den bestand» — the place's own fields open at once; what lies there belongs to «Lagerorte».
         // «projekt steht aber nicht auf dem etikett» (2026-11-03): the second line names the project before the path.
-        $form  = (string) apply_filters('taxmod_record_editor', '', $place, $back);
-        $label = (string) apply_filters('taxmod_label_button', '', $tree->isMovable($place) ? 'K' : 'O', $place,
-            (string) (array_reverse(explode(' › ', $tree->pathOf($place)))[0]), implode(' · ', array_filter([(string) $tree->projectOf($place), $tree->parentOf($place) > 0 ? $tree->pathOf($tree->parentOf($place)) : ''])));
+        // D-1141, his word 2026-11-04: «den übergeordneten ort sollten wir bei beweglichen pläzen nicht andrucken und wenn ein Projekt
+        // zugeordnet ist sollten wir Projekt: dann Projekt name» — a box moves, so its parent would be wrong tomorrow.
+        $form    = (string) apply_filters('taxmod_record_editor', '', $place, $back);
+        $movable = $tree->isMovable($place);
+        $project = (string) $tree->projectOf($place);
+        $label   = (string) apply_filters('taxmod_label_button', '', $movable ? 'K' : 'O', $place,
+            (string) (array_reverse(explode(' › ', $tree->pathOf($place)))[0]), implode(' · ', array_filter([
+                $project === '' ? '' : __('Projekt', 'taxmod-stock') . ': ' . $project,
+                ! $movable && $tree->parentOf($place) > 0 ? $tree->pathOf($tree->parentOf($place)) : '',
+            ])));
         $facts = [
             [__('Beweglich (Kiste, Karton)', 'taxmod-stock'), $tree->isMovable($place) ? __('ja', 'taxmod-stock') : __('nein', 'taxmod-stock')],
             [__('Unterorte', 'taxmod-stock'), (string) (count($below) - 1)],

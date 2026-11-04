@@ -80,7 +80,7 @@ foreach ($navigation->areas() as $area) {
 
 $pruefe($outside === [], 'no item leaves the logistics navigation' . ($outside === [] ? '' : ': ' . implode('; ', $outside)));
 $settings = array_values(array_filter($navigation->areas(), static fn (array $area): bool => $area['key'] === 'settings'))[0]['items'] ?? [];
-$pruefe(array_slice(array_column($settings, 'key'), 0, 4) === ['basics', 'structure', 'place-types', 'module-__navcheck-dhl'] && array_filter(array_slice(array_column($settings, 'key'), 4), static fn (string $key): bool => ! str_starts_with($key, 'module-')) === [], 'Einstellungen: Grundeinstellungen, Lagerstruktur › Layout and Platzarten (D-1129), then the module (' . implode(', ', array_column($settings, 'key')) . ')');
+$pruefe(array_slice(array_column($settings, 'key'), 0, 4) === ['basics', 'structure', 'place-types', 'module-__navcheck-dhl'] && array_filter(array_slice(array_column($settings, 'key'), 4), static fn (string $key): bool => ! str_starts_with($key, 'module-') && $key !== 'label-templates') === [], 'Einstellungen: Grundeinstellungen, Lagerstruktur › Layout and Platzarten (D-1129), then the module (' . implode(', ', array_column($settings, 'key')) . ')');
 $pruefe(($settings[1]['path'] ?? []) === ['Lagerstruktur'] && ($settings[2]['path'] ?? []) === ['Lagerstruktur'] && ($settings[2]['tab'] ?? '') === 'platzarten', 'Layout and Platzarten stand in the group «Lagerstruktur»');
 $pruefe(($settings[0]['page'] ?? '') === SettingsPage::PAGE, 'Grundeinstellungen is a page of the stock interface, not the modeller\'s Configuration');
 $pruefe(($settings[3]['label'] ?? '') === 'DHL 2', 'the module keeps its menu label, without markup');
@@ -97,6 +97,8 @@ $areas = LogisticsShell::navigation()->areas();
 $einstellungen = array_values(array_filter($areas, static fn (array $area): bool => $area['key'] === 'settings'))[0]['items'] ?? [];
 $druck = array_values(array_filter($einstellungen, static fn (array $item): bool => ($item['module'] ?? '') === '__navcheck-print'))[0] ?? null;
 $pruefe($druck !== null && ($druck['path'] ?? []) === ['Druck'] && ! in_array('print', array_column($areas, 'key'), true), 'a page announced with area «print» stands under Einstellungen › Druck, not in an area of its own');
+$vorlagen = array_values(array_filter($einstellungen, static fn (array $item): bool => $item['key'] === 'label-templates'))[0] ?? null;
+$pruefe(($vorlagen['path'] ?? []) === ['Druck'] && ($vorlagen['tab'] ?? '') === 'etikettenvorlagen' && ($vorlagen['page'] ?? '') === StockPage::PAGE, 'D-1153: Einstellungen › Druck › Etikettenvorlagen opens the Lager tab of the templates');
 $fertigung = array_values(array_filter($areas, static fn (array $area): bool => $area['key'] === 'production'))[0]['items'] ?? [];
 $pruefe(array_column($fertigung, 'key') === ['project-boxes', 'module-__navcheck-production'], 'D-1142: a page announced with area «production» stands under Fertigung, after Projekt-Gebinde');
 $_GET = ['page' => ModulePage::PAGE, 'module' => '__navcheck-deep'];

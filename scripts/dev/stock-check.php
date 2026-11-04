@@ -569,6 +569,17 @@ $zuviel  = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_BUILD, null, ['refer
 $pruefe($zuviel instanceof WP_Error && $zuviel->get_error_code() === 'taxmod_stock_not_enough_for_build' && (new StockService())->ledger()->stockOf($bc) === $vorher, 'more than lies in the box is refused, nothing booked');
 $mehr    = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_BUILD, null, ['reference' => $auftrag, 'place' => $schrank, 'lines' => [$bc => -1], 'title' => 'nichts entnommen', 'date' => '2026-11-04']);
 $pruefe($mehr instanceof WP_Error && $mehr->get_error_code() === 'taxmod_stock_not_taken_for_build', 'giving back more than the order took is refused');
+// D-1146, his choice «Pickliste am Bildschirm + Druck, abgehakte Zeilen ins Gebinde umbuchen»: read where it lies free, move it in.
+add_filter(TaxmodStock\WordPress\Plugin::PLACES_OF, [TaxmodStock\WordPress\Plugin::class, 'placesOf'], 10, 2);
+add_filter(TaxmodStock\WordPress\Plugin::BOOK_PICK, [TaxmodStock\WordPress\Plugin::class, 'bookPick'], 10, 2);
+$frei   = apply_filters(TaxmodStock\WordPress\Plugin::PLACES_OF, null, ['things' => [$r['t1'], $bc], 'except' => $schrank]);
+$von    = is_array($frei) ? (int) array_key_first($frei[$r['t1']] ?? []) : 0;
+$pruefe(is_array($frei) && $von > 0 && ! isset($frei[$bc][$kiste]) && ! in_array($von, (new StockService())->locationTree()->withAllBelow($schrank), true), 'the pick list reads where a part lies free, never inside the box');
+$pick   = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_PICK, null, ['reference' => $auftrag, 'place' => $schrank, 'lines' => [['thing' => $r['t1'], 'from' => $von, 'qty' => 1]], 'title' => 'Pickliste Testkarte', 'date' => '2026-11-04']);
+$s      = new StockService();
+$pruefe(is_int($pick) && ($s->presentIn($schrank)[$r['t1']] ?? 0.0) === 1.0 && (int) $s->table('transaction')->first($pick, $s->structure()->field('transaction_kind')) === $s->structure()->value('kind_transfer') && (int) $s->table('transaction')->first($pick, $s->structure()->field('transaction_reference')) === $auftrag, 'a ticked line moves into the box as an Umbuchung naming the order' . ($pick instanceof WP_Error ? ': ' . $pick->get_error_message() : ''));
+$pick   = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_PICK, null, ['reference' => $auftrag, 'place' => $schrank, 'lines' => [['thing' => $r['t1'], 'from' => $von, 'qty' => 999]], 'title' => 'zu viel', 'date' => '2026-11-04']);
+$pruefe($pick instanceof WP_Error && $pick->get_error_code() === 'taxmod_stock_not_enough_to_pick', 'more than lies free at the place is refused, nothing moved');
 $pruefe(str_contains($html, 'taxmod-stock-drop-lot') && ! str_contains($html, 'taxmod-stock-move-place-'), 'Lagerorte: a lot dropped on a place asks for the Umbuchung; no structure actions here');
 
 // D-1027 with D-1097/D-1098: a demand, a source and back, a position removed — the same before and after the switch.

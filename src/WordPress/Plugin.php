@@ -29,6 +29,12 @@ final class Plugin
     /** D-1146: the filter the manufacturing module books a build's consumption through. */
     public const BOOK_BUILD = 'taxmod_stock_book_build';
 
+    /** D-1146: the pick list reads where the things lie free, outside the order's box. */
+    public const PLACES_OF = 'taxmod_stock_places_of';
+
+    /** D-1146: the ticked lines of a pick list go into the box. */
+    public const BOOK_PICK = 'taxmod_stock_book_pick';
+
     public function boot(): void
     {
         // Checked at runtime rather than with «Requires Plugins»: WordPress matches that header against the folder name, and the
@@ -63,6 +69,8 @@ final class Plugin
         add_action('admin_post_' . SettingsPage::ACTION, static fn () => (new SettingsPage())->handle());
         add_action('admin_post_' . LogisticsShell::FULLSCREEN_ACTION, [LogisticsShell::class, 'switchFullscreen']);
         add_filter(self::BOOK_BUILD, [self::class, 'bookBuild'], 10, 2);
+        add_filter(self::PLACES_OF, [self::class, 'placesOf'], 10, 2);
+        add_filter(self::BOOK_PICK, [self::class, 'bookPick'], 10, 2);
         // D-1147: the rows of the material, purchase and inbound lists draw their details when opened.
         // The filter's name stands as text, so an older modeller without it does not stop the module.
         add_filter('taxmod_list_details', static fn (?string $html, string $source, array $args): ?string => match ($source) {
@@ -131,6 +139,76 @@ final class Plugin
             \Taxmod\WordPress\Persistence\WriteLock::around('stock', $work);
         } catch (\Taxmod\Core\Exception\ConcurrentChange $e) {
             wp_die(esc_html($e->getMessage()), esc_html__('Gerade wird gebucht', 'taxmod-stock'), ['response' => 409, 'back_link' => true]);
+        }
+    }
+
+    /**
+     * D-1146: `apply_filters('taxmod_stock_places_of', null, ['things' => [ids], 'except' => box])` answers thing → place →
+     * pieces lying free (no reserved area, no lot a reservation names), outside the box and its places.
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     the request as the caller sends it; `mixed`: checked here
+     * @return array<int, array<int, float>>|\WP_Error
+     */
+    public static function placesOf(mixed $previous, mixed $args): array|\WP_Error
+    {
+        if (is_array($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args = is_array($args) ? $args : [];
+
+        try {
+            return (new StockService())->freeStockByPlace(array_values(array_filter(array_map('absint', is_array($args['things'] ?? null) ? $args['things'] : []))), absint($args['except'] ?? 0));
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1146: `apply_filters('taxmod_stock_book_pick', null, ['reference' => order, 'place' => box, 'lines' => [['thing' =>
+     * id, 'from' => place, 'qty' => pieces], …], 'title' => …, 'date' => Y-m-d])` moves them into the box as one Umbuchung
+     * naming the order; answers the Vorgang's id or a WP_Error.
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     the booking as the caller sends it; `mixed`: checked here
+     */
+    public static function bookPick(mixed $previous, mixed $args): int|\WP_Error
+    {
+        if (is_int($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args  = is_array($args) ? $args : [];
+        $date  = sanitize_text_field((string) ($args['date'] ?? ''));
+        $lines = [];
+
+        foreach (is_array($args['lines'] ?? null) ? $args['lines'] : [] as $line) {
+            if (is_array($line) && absint($line['thing'] ?? 0) > 0 && absint($line['from'] ?? 0) > 0 && is_numeric($line['qty'] ?? null) && (float) $line['qty'] > 0) {
+                $lines[] = ['thing' => absint($line['thing']), 'from' => absint($line['from']), 'quantity' => (float) $line['qty']];
+            }
+        }
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+            return new \WP_Error('taxmod_stock_not_a_date', Messages::of(StockError::notADate($date)));
+        }
+
+        if ($lines === []) {
+            return new \WP_Error('taxmod_stock_nothing_to_book', Messages::of(StockError::nothingToBook()));
+        }
+
+        try {
+            return (new StockService())->bookPick(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Fertigung', 'taxmod-stock'))));
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
     }
 

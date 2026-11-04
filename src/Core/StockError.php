@@ -263,6 +263,12 @@ final class StockError extends \RuntimeException
         return new self('not_enough_for_build', (string) $thing);
     }
 
+    /** D-1146: a pick takes only what lies free at the place it names; the detail is «thing@place». */
+    public static function notEnoughToPick(int $thing, int $place): self
+    {
+        return new self('not_enough_to_pick', $thing . '@' . $place);
+    }
+
     /** D-1146: a build gives back at most what it took; the detail is the thing. */
     public static function notTakenForBuild(int $thing): self
     {

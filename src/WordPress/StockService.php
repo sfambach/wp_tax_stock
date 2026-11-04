@@ -1405,8 +1405,86 @@ final class StockService
 
         $this->checkThings(array_keys(array_filter($lines, static fn (float $q): bool => $q > 0.0)));
         $rows   = BuildPlan::rows($this->ledger(), $place, $this->locationTree()->withAllBelow($place), $lines, $this->takenFor($reference));
-        $answer = $this->model->write((new Bookings($this->structureWithKinds(), $today))->build($rows, $reference, $title));
+        return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->build($rows, $reference, $title)));
+    }
 
+    /**
+     * D-1146, the pick list of a build order: where the things lie free — not in the box `$except` or below it, not in a
+     * reserved area (D-1082), not in a lot a reservation names (D-1083).
+     *
+     * @param list<int> $things
+     * @return array<int, array<int, float>> thing → place → pieces, only more than nothing
+     */
+    public function freeStockByPlace(array $things, int $except = 0): array
+    {
+        $wanted   = array_flip($things);
+        $skip     = $except > 0 ? array_flip($this->locationTree()->withAllBelow($except)) : [];
+        $ledger   = $this->ledger();
+        $reserved = $this->reservedPlaces();
+        $bound    = $this->boundLots();
+        $out      = [];
+
+        foreach ($ledger->stockByPlace() as $lot => $at) {
+            $thing = $ledger->thingOf($lot);
+
+            if ($thing === null || ! isset($wanted[$thing]) || isset($bound[$lot])) {
+                continue;
+            }
+
+            foreach ($at as $place => $quantity) {
+                if (! isset($skip[$place]) && $reserved->reservingPlaceOf($place) === null) {
+                    $out[$thing][$place] = ($out[$thing][$place] ?? 0.0) + $quantity;
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * D-1146: the picked lines go into the box, one Umbuchung naming the order; at each place the oldest free lot first.
+     *
+     * @param list<array{thing: int, from: int, quantity: float}> $lines
+     * @return int the Vorgang
+     */
+    public function bookPick(int $reference, int $box, array $lines, string $today, string $title): int
+    {
+        if ($reference <= 0) {
+            throw StockError::noSubject();
+        }
+
+        if (! $this->table('location')->has($box)) {
+            throw StockError::notALocation($box);
+        }
+
+        $ledger = $this->ledger();
+        $bound  = $this->boundLots();
+        $rows   = [];
+
+        foreach ($lines as $line) {
+            $left = $line['quantity'];
+
+            foreach ($ledger->lotsOf($line['thing']) as $lot) {
+                $there = isset($bound[$lot]) ? 0.0 : $ledger->restAt($lot, $line['from']);
+
+                if ($left > 0.000001 && $there > 0.000001) {
+                    $part   = min($there, $left);
+                    $rows[] = new TransferRow($lot, $line['from'], $box, rtrim(rtrim(number_format($part, 6, '.', ''), '0'), '.'));
+                    $left  -= $part;
+                }
+            }
+
+            if ($left > 0.000001) {
+                throw StockError::notEnoughToPick($line['thing'], $line['from']);
+            }
+        }
+
+        return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $bound, $reference)));
+    }
+
+    /** @param array<string, mixed> $answer the modeller's answer to a booking @return int the Vorgang it created */
+    private function dealOf(array $answer): int
+    {
         foreach ((array) ($answer['refs'] ?? []) as $ref => $id) {
             if (preg_match('/^v\d+$/', (string) $ref) === 1) {
                 return (int) $id;

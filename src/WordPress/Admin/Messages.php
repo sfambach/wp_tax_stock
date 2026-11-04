@@ -58,6 +58,8 @@ final class Messages
             'lot_already_used'          => sprintf(__('Bestandsposten #%s wurde seit dem Wareneingang verbraucht oder gezählt — der Wareneingang bleibt.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id of the thing */
             'not_enough_for_build'      => sprintf(__('Material #%s liegt nicht in der benötigten Menge im Gebinde — nichts gebucht.', 'taxmod-stock'), $error->detail),
+            /* translators: %s: thing@place */
+            'not_enough_to_pick'        => sprintf(__('%s: Am genannten Ort liegt nicht so viel freies Material — nichts umgebucht.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id of the thing */
             'not_taken_for_build'       => sprintf(__('Von Material #%s hat dieser Auftrag nicht so viel entnommen, wie zurückgegeben werden soll — nichts gebucht.', 'taxmod-stock'), $error->detail),
             'no_tracking_number'        => __('Keine Sendungsnummer eingegeben.', 'taxmod-stock'),

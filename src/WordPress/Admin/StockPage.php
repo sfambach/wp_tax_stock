@@ -157,7 +157,7 @@ final class StockPage
 
         $kind  = sanitize_key((string) ($_POST['booking'] ?? ''));
         // D-1058: the row buttons carry their purchase in the value, «nichteinlagern-<id>» and «einlagern-<id>».
-        $rowPurchase = preg_match('/^(nichteinlagern|einlagern|umhaengen|reservieren|freigeben|ortkopieren|artkopieren)-(\d+)$/', $kind, $m) === 1 ? (int) $m[2] : 0;
+        $rowPurchase = preg_match('/^(nichteinlagern|einlagern|umhaengen|reservieren|freigeben|ortkopieren|artkopieren|vorlagekopieren)-(\d+)$/', $kind, $m) === 1 ? (int) $m[2] : 0;
         $kind        = $rowPurchase > 0 ? $m[1] : $kind;
         $today = current_time('Y-m-d');
         // The goods receipt sends «thing» as a list (one per purchase); only the other forms send one thing.
@@ -239,6 +239,7 @@ final class StockPage
                     absint($_POST['place_type'] ?? 0)
                 ),
                 'platzart'     => $this->stock->createPlaceType(sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? '')))),
+                'vorlagekopieren' => $copy = $this->stock->copyLabelTemplate($rowPurchase, sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? '')))),
                 'artkopieren'  => $copy = $this->stock->copyPlaceType($rowPurchase, sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? '')))),
                 // D-1130: «Kopieren» — the copy's id is what the page goes back to.
                 'ortkopieren'  => $copy = $this->stock->copyPlace($rowPurchase, sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? ''))), ! empty($_POST['below'])),
@@ -265,6 +266,7 @@ final class StockPage
                 'reservieren'    => __('Reserviert: der verfügbare Bestand sinkt, der Bestand bleibt.', 'taxmod-stock'),
                 'ort'            => __('Lagerort angelegt.', 'taxmod-stock'),
                 'platzart'       => __('Platzart angelegt; die weiteren Felder stehen jetzt zum Ausfüllen da.', 'taxmod-stock'),
+                'vorlagekopieren' => __('Kopiert: die neue Vorlage trägt Format, Layout und Anzahl der alten; die Platzarten bleiben bei der alten.', 'taxmod-stock'),
                 'artkopieren'    => __('Kopiert: die neue Platzart trägt Felder und Teile der alten; die Plätze bleiben bei der alten.', 'taxmod-stock'),
                 'ortkopieren'    => __('Kopiert: der neue Ort trägt die Felder des alten, aber nichts von dem, was dort liegt.', 'taxmod-stock'),
                 'kopieren'       => __('Kopiert: das neue Material trägt Daten und Lagersicht des alten, aber keinen Bestand; Bestellnummern bitte neu eintragen.', 'taxmod-stock'),
@@ -290,6 +292,7 @@ final class StockPage
                 'wareneingang', 'aufteilen', 'zuordnen', 'nichteinlagern', 'einlagern' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
                 'platzart'     => ['platzarten', array_filter(['typ' => (int) (((array) ($result['refs'] ?? []))['art'] ?? 0)])],
                 'artkopieren'  => ['platzarten', array_filter(['typ' => $copy])],
+                'vorlagekopieren' => ['etikettenvorlagen', array_filter(['vorlage' => $copy])],
                 'umhaengen', 'orteverschieben', 'ort', 'reservieren', 'freigeben' => ['lagerstruktur', []],
                 default        => ['material', $thing > 0 ? ['thing' => $thing, 'view' => 'bestand'] : []],
             };
@@ -299,6 +302,7 @@ final class StockPage
                 'wareneingang', 'zuordnen', 'nichteinlagern', 'einlagern' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
                 'platzart'          => ['platzarten', []],
                 'artkopieren'       => ['platzarten', array_filter(['typ' => $rowPurchase])],
+                'vorlagekopieren'   => ['etikettenvorlagen', array_filter(['vorlage' => $rowPurchase])],
                 'umhaengen', 'orteverschieben', 'ort', 'reservieren', 'freigeben' => ['lagerstruktur', []],
                 'aufteilen'         => ['wareneingang', ['order' => absint($_POST['order'] ?? 0), 'split' => absint($_POST['purchase'] ?? 0)]],
                 'lager', 'umbuchen', 'storno', 'verbrauchstorno' => ['material', ['thing' => $thing, 'view' => $kind === 'lager' ? 'lager' : 'bestand']],
@@ -2273,7 +2277,8 @@ final class StockPage
             $back = add_query_arg('vorlage', $chosen, $list);
             $form = (string) apply_filters('taxmod_record_editor', '', $chosen, $back);
 
-            return $html . '<h3>' . esc_html($nameOf($chosen)) . ' <span class="description" style="font-weight:normal">· Id: ' . esc_html((string) $chosen) . '</span></h3>'
+            return $html . '<div style="text-align:right;margin-bottom:12px">' . $this->copyTemplateDialog($chosen, $nameOf($chosen)) . '</div>'
+                . '<h3>' . esc_html($nameOf($chosen)) . ' <span class="description" style="font-weight:normal">· Id: ' . esc_html((string) $chosen) . '</span></h3>'
                 . $this->templatePreview($chosen, $templates->get($chosen))
                 . ($form === '' ? '<p><a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $chosen], admin_url('admin.php'))) . '">' . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a></p>' : $form)
                 . '<p><a href="' . esc_url($list) . '">' . esc_html__('← alle Etikettenvorlagen', 'taxmod-stock') . '</a></p>';
@@ -2301,7 +2306,7 @@ final class StockPage
                 . '<td>' . esc_html($template === null ? __('unvollständig', 'taxmod-stock') : $template['format']['key'] . ' · ' . $template['format']['w'] . ' × ' . $template['format']['h'] . ' mm') . '</td>'
                 . '<td>' . esc_html($template === null ? '—' : (string) $template['copies']) . '</td>'
                 . '<td>' . esc_html(implode(', ', $used[$id] ?? []) ?: '—') . '</td>'
-                . '<td style="text-align:right;white-space:nowrap"><a class="button" href="' . $link . '">' . esc_html__('Öffnen', 'taxmod-stock') . '</a></td></tr>';
+                . '<td style="text-align:right;white-space:nowrap">' . $this->copyTemplateDialog($id, $name) . ' <a class="button" href="' . $link . '">' . esc_html__('Öffnen', 'taxmod-stock') . '</a></td></tr>';
         }
 
         return $html . ListPage::table([[__('Vorlage', 'taxmod-stock'), ''], [__('Format', 'taxmod-stock'), '16em'], [__('Anzahl', 'taxmod-stock'), '6em'], [__('Platzarten', 'taxmod-stock'), '']], $body === '' ? $this->noItems(4) : $body);
@@ -2390,6 +2395,22 @@ final class StockPage
         }
 
         return 0;
+    }
+
+    /** D-1130: «Kopieren» of a label template — its name proposed with «(Kopie)», in the shared dialog. */
+    private function copyTemplateDialog(int $template, string $name): string
+    {
+        if (! method_exists(ListPage::class, 'dialogAction')) {
+            return '';
+        }
+
+        $body = '<label style="display:block">' . esc_html__('Name', 'taxmod-stock') . '<br><input type="text" name="name" value="'
+            . esc_attr(sprintf(/* translators: %s: the name of the original template */ __('%s (Kopie)', 'taxmod-stock'), $name)) . '" style="width:100%" required></label>'
+            . '<p class="description">' . esc_html__('Die Kopie trägt Format, Layout und Anzahl dieser Vorlage. Platzarten, die sie nutzen, bleiben bei der alten.', 'taxmod-stock') . '</p>';
+
+        return $this->formStart('etikettenvorlagen')
+            . ListPage::dialogAction('taxmod-stock-copy-template-' . $template, __('Kopieren', 'taxmod-stock'), __('Etikettenvorlage kopieren', 'taxmod-stock'), $body, 'booking', 'vorlagekopieren-' . $template, __('Kopieren', 'taxmod-stock'))
+            . '</form>';
     }
 
     /** D-1130: «Kopieren» of a kind of place — its name proposed with «(Kopie)», in the shared dialog. */

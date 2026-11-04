@@ -15,6 +15,7 @@ use TaxmodStock\Core\NewThing;
 use TaxmodStock\Core\Purchasing;
 use TaxmodStock\Core\LocationChanges;
 use TaxmodStock\Core\MaterialCopy;
+use TaxmodStock\Core\NamedCopy;
 use TaxmodStock\Core\LocationTree;
 use TaxmodStock\Core\LabelTemplates;
 use TaxmodStock\Core\PlaceTypes;
@@ -863,6 +864,22 @@ final class StockService
     public function copyPlaceType(int $type, string $name): int
     {
         $answer = $this->model->write((new LocationChanges($this->structure()))->copyType($type, $name, $this->placeTypes()));
+
+        return (int) ($answer['refs']['kopie'] ?? 0);
+    }
+
+    /**
+     * D-1130: «Kopieren» of a label template — layout and copies come along, the format stays the one it points at.
+     *
+     * @return int the copy
+     */
+    public function copyLabelTemplate(int $template, string $name): int
+    {
+        if (! $this->structure()->hasNode('label_template') || ! $this->table('label_template')->has($template)) {
+            throw StockError::nothingToBook();
+        }
+
+        $answer = $this->model->write((new NamedCopy($this->structure()))->of($template, $name));
 
         return (int) ($answer['refs']['kopie'] ?? 0);
     }

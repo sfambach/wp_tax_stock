@@ -7,6 +7,7 @@ use PHPUnit\Framework\TestCase;
 use TaxmodStock\Core\LocationChanges;
 use TaxmodStock\Core\LocationTree;
 use TaxmodStock\Core\MaterialCopy;
+use TaxmodStock\Core\NamedCopy;
 use TaxmodStock\Core\PlaceTypes;
 use TaxmodStock\Core\SourceRow;
 use TaxmodStock\Core\StockError;
@@ -105,6 +106,20 @@ final class CopyTest extends TestCase
 
         $this->expectException(StockError::class);
         (new LocationChanges($s))->copyType(21, 'X', new PlaceTypes([20 => 'Alex']));
+    }
+
+    #[Test]
+    public function any_named_record_is_copied_under_its_new_name(): void
+    {
+        $s = Fixture::structure();
+
+        self::assertSame([
+            ['op' => 'duplicate_record', 'ref' => 'kopie', 'record' => '30'],
+            ['op' => 'set_values', 'record' => '@kopie', 'values' => [(string) $s->field('label') => 'Halter 62 × 50 (Kopie)']],
+        ], (new NamedCopy($s))->of(30, 'Halter 62 × 50 (Kopie)'));
+
+        $this->expectException(StockError::class);
+        (new NamedCopy($s))->of(30, '  ');
     }
 
     private function tree(): LocationTree

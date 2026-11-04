@@ -152,20 +152,11 @@ final class LocationChanges
      */
     public function copyType(int $type, string $name, PlaceTypes $types): array
     {
-        $name = trim($name);
-
-        if ($name === '') {
-            throw StockError::placeWithoutName();
-        }
-
         if (! $types->has($type)) {
             throw StockError::notALocation($type);
         }
 
-        return [
-            ['op' => 'duplicate_record', 'ref' => 'kopie', 'record' => (string) $type],
-            ['op' => 'set_values', 'record' => '@kopie', 'values' => [(string) $this->structure->field('label') => $name]],
-        ];
+        return (new NamedCopy($this->structure))->of($type, $name);
     }
 
     /**

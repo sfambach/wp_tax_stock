@@ -31,7 +31,9 @@ final class Structure
         // D-1123: the kinds of place and the parts a kind brings along.
         'location_type', 'location_type_part',
         // D-1139: a project's boards, their revisions and the revisions' positions — the parts list of a project box.
-        'board', 'board_revision', 'bom_position'];
+        'board', 'board_revision', 'bom_position',
+        // D-1153: label formats and label templates.
+        'label_format', 'label_template'];
 
     /** Fields the module uses when they are there and leaves out when they are not. */
     private const OPTIONAL_FIELDS = [
@@ -70,6 +72,9 @@ final class Structure
         'location_short',
         // D-1151: the unit name a line of a place type's parts gives the places it brings.
         'part_unit_name',
+        // D-1153: label formats and templates as records; a place type names its template and how many labels.
+        'format_key', 'format_width', 'format_height', 'format_roll', 'template_format', 'template_copies', 'template_layout',
+        'type_label_template', 'type_label_copies',
     ];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];

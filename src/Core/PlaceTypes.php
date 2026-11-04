@@ -22,22 +22,27 @@ final class PlaceTypes
      * @param array<int, string>                       $names   type id → its name
      * @param array<int, bool>                         $movable type id → whether a place of it moves (a box)
      * @param array<int, list<array{0: int, 1: int, 2?: string}>> $parts type id → [part type, count, unit name]
+     * @param array<int, array{0: int, 1: int}>        $labels  type id → [label template, copies]; 0 where none is set
      */
     public function __construct(
         private readonly array $names = [],
         private readonly array $movable = [],
         private readonly array $parts = [],
+        private readonly array $labels = [],
     ) {
     }
 
     public static function from(Structure $s, Table $types, Table $parts): self
     {
-        $names = $movable = $lists = [];
+        $names = $movable = $lists = $labels = [];
+        $int   = static fn (int $id, string $field): int => $s->hasField($field) ? max(0, (int) $types->first($id, $s->field($field))) : 0;
 
         foreach ($types->ids() as $id) {
             $names[$id]   = (string) ($types->first($id, $s->field('label')) ?? '#' . $id);
             $movable[$id] = $s->hasField('type_movable') && $types->first($id, $s->field('type_movable')) === '1';
             $lists[$id]   = [];
+            // D-1153: the label a place of this kind gets, and how many of it.
+            $labels[$id]  = [$int($id, 'type_label_template'), $int($id, 'type_label_copies')];
 
             if (! $s->hasField('type_parts') || ! $s->hasField('part_type')) {
                 continue;
@@ -56,7 +61,7 @@ final class PlaceTypes
             }
         }
 
-        return new self($names, $movable, $lists);
+        return new self($names, $movable, $lists, $labels);
     }
 
     public function has(int $type): bool
@@ -77,6 +82,18 @@ final class PlaceTypes
     public function isMovable(int $type): ?bool
     {
         return $this->movable[$type] ?? null;
+    }
+
+    /** D-1153: the label template of a type, 0 where none is set. */
+    public function labelTemplateOf(int $type): int
+    {
+        return $this->labels[$type][0] ?? 0;
+    }
+
+    /** D-1153: how many labels a place of this type gets, 0 where the type leaves it to its template. */
+    public function labelCopiesOf(int $type): int
+    {
+        return $this->labels[$type][1] ?? 0;
     }
 
     /** @return list<array{0: int, 1: int, 2?: string}> [part type, count, unit name where one is set] */

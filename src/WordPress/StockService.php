@@ -16,6 +16,7 @@ use TaxmodStock\Core\Purchasing;
 use TaxmodStock\Core\LocationChanges;
 use TaxmodStock\Core\MaterialCopy;
 use TaxmodStock\Core\LocationTree;
+use TaxmodStock\Core\LabelTemplates;
 use TaxmodStock\Core\PlaceTypes;
 use TaxmodStock\Core\ProjectBill;
 use TaxmodStock\Core\NotStocked;
@@ -85,6 +86,8 @@ final class StockService
     private ?LocationTree $locationTree = null;
 
     private ?PlaceTypes $placeTypes = null;
+
+    private ?LabelTemplates $labelTemplates = null;
 
     /** @var list<string>|null D-1097: the position lists the model holds as compositions, read once */
     private ?array $composed = null;
@@ -804,6 +807,18 @@ final class StockService
         $places = $this->table('location');
 
         return $this->locationTree = LocationTree::from($s, $places, $this->recordLabels(LocationTree::projectIds($s, $places)), $this->placeTypes());
+    }
+
+    /** D-1153: the label templates kept as records; none while the model has no node for them. */
+    public function labelTemplates(): LabelTemplates
+    {
+        $s = $this->structure();
+
+        if (! $s->hasNode('label_template') || ! $s->hasNode('label_format')) {
+            return new LabelTemplates();
+        }
+
+        return $this->labelTemplates ??= LabelTemplates::from($s, $this->table('label_format'), $this->table('label_template'));
     }
 
     /** D-1123: the kinds of place; none while the model has no node for them. */

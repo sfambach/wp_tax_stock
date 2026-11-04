@@ -92,6 +92,7 @@ final class Messages
             /* translators: %s: record id */
             'not_a_reservation'         => sprintf(__('#%s ist keine Reservierung.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id of the lot */
+            'loss_too_large'            => sprintf(__('Posten #%s hat nicht so viel Rest — mehr kann nicht verloren gegangen sein.', 'taxmod-stock'), $error->detail),
             'not_enough_free'           => sprintf(__('Posten #%s hat nicht so viel frei — ein Teil liegt in einem reservierten Bereich oder ist schon reserviert.', 'taxmod-stock'), $error->detail),
             'no_subject'                => __('Kein gültiger Bezug: ein Projekt oder ein Verkauf.', 'taxmod-stock'),
             /* translators: %s: what was typed */

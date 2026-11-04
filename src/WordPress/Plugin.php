@@ -41,6 +41,15 @@ final class Plugin
     /** D-1143: a new material for a finished board, in a group of the things' tree. */
     public const CREATE_THING = 'taxmod_stock_create_thing';
 
+    /** D-1168: the lots a resend can take its goods from, lot → «Material · Datum · Rest». */
+    public const LOSS_LOTS = 'taxmod_stock_loss_lots';
+
+    /** D-1168: the goods sent a second time leave as a loss — a Vorgang «Verbrauch» naming the sale. */
+    public const BOOK_LOSS = 'taxmod_stock_book_loss';
+
+    /** D-1168: taking the resend back cancels that loss (D-1036). */
+    public const CANCEL_LOSS = 'taxmod_stock_cancel_loss';
+
     public function boot(): void
     {
         // Checked at runtime rather than with «Requires Plugins»: WordPress matches that header against the folder name, and the
@@ -80,6 +89,9 @@ final class Plugin
         add_filter(self::BOOK_PICK, [self::class, 'bookPick'], 10, 2);
         add_filter(self::BOOK_OUTPUT, [self::class, 'bookOutput'], 10, 2);
         add_filter(self::CREATE_THING, [self::class, 'createThing'], 10, 2);
+        add_filter(self::LOSS_LOTS, [self::class, 'lossLots']);
+        add_filter(self::BOOK_LOSS, [self::class, 'bookLoss'], 10, 2);
+        add_filter(self::CANCEL_LOSS, [self::class, 'cancelLoss'], 10, 2);
         // D-1147: the rows of the material, purchase and inbound lists draw their details when opened.
         // The filter's name stands as text, so an older modeller without it does not stop the module.
         add_filter('taxmod_list_details', static fn (?string $html, string $source, array $args): ?string => match ($source) {
@@ -251,6 +263,94 @@ final class Plugin
      * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
      * @param mixed $args     the booking as the caller sends it; `mixed`: checked here
      */
+    /**
+     * D-1168: `apply_filters('taxmod_stock_loss_lots', [])` answers lot → «Material · Datum · Rest n», lots with a rest only.
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @return array<int, string>
+     */
+    public static function lossLots(mixed $previous): array
+    {
+        if (is_array($previous) && $previous !== []) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return [];
+        }
+
+        try {
+            return (new StockService())->lotChoices();
+        } catch (StockError) {
+            return [];
+        }
+    }
+
+    /**
+     * D-1168: `apply_filters('taxmod_stock_book_loss', null, ['sale' => id, 'lot' => id, 'quantity' => '1', 'reason' => '…',
+     * 'date' => 'Y-m-d', 'title' => '…'])` books the goods sent again as a consumption with the sale as Bezug and the reason
+     * as Grund; answers the Vorgang's id or a WP_Error.
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     the booking as the caller sends it; `mixed`: checked here
+     */
+    public static function bookLoss(mixed $previous, mixed $args): int|\WP_Error
+    {
+        if (is_int($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args = is_array($args) ? $args : [];
+        $date = sanitize_text_field((string) ($args['date'] ?? ''));
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+            return new \WP_Error('taxmod_stock_not_a_date', Messages::of(StockError::notADate($date)));
+        }
+
+        try {
+            return (new StockService())->bookLoss(
+                absint($args['lot'] ?? 0),
+                sanitize_text_field((string) ($args['quantity'] ?? '')),
+                absint($args['sale'] ?? 0),
+                sanitize_text_field((string) ($args['reason'] ?? '')),
+                $date,
+                sanitize_text_field((string) ($args['title'] ?? __('Verlust', 'taxmod-stock')))
+            );
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1168: `apply_filters('taxmod_stock_cancel_loss', null, ['deal' => id, 'who' => name])` cancels a loss booked
+     * through `taxmod_stock_book_loss` (D-1036: a Storno, nothing is deleted); answers the Storno's id or a WP_Error.
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     `mixed`: checked here
+     */
+    public static function cancelLoss(mixed $previous, mixed $args): int|\WP_Error
+    {
+        if (is_int($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args = is_array($args) ? $args : [];
+
+        try {
+            return (new StockService())->cancelLoss(absint($args['deal'] ?? 0), current_time('Y-m-d H:i:s'), sanitize_text_field((string) ($args['who'] ?? wp_get_current_user()->display_name)));
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
     public static function bookPick(mixed $previous, mixed $args): int|\WP_Error
     {
         if (is_int($previous) || $previous instanceof \WP_Error) {

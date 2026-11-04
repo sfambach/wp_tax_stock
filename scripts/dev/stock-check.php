@@ -130,6 +130,8 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     $field('k_bedarf', '@pur', 'Bedarf', '@ord', 'aggregation', '0..1'),
     $field('v_bezug', '@vg', 'Bezug', 402, 'aggregation', '0..1'),
     $field('p_ding', '@vp', 'Material', 402, 'aggregation', '0..1'),
+    // D-1036: a line that cancels another one — the Storno of a resend's loss (D-1168).
+    $field('p_storno', '@vp', 'Storniert', '@vp', 'aggregation', '0..1'),
     ['op' => 'create_record', 'ref' => 'lager', 'node' => '@lo'],
     ['op' => 'set_values', 'record' => '@lager', 'values' => ['@label' => 'Lager']],
     ['op' => 'create_record', 'ref' => 'platz', 'node' => '@lo'],
@@ -188,7 +190,7 @@ $struktur = [
         'label' => $r['label'], 'lager_thing' => $r['m_ding'], 'lager_single' => $r['m_einz'], 'lager_min' => $r['m_min'],
         'lot_thing' => $r['l_mat'], 'lot_purchase' => $r['l_kauf'], 'lot_location' => $r['l_lo'], 'lot_value' => $r['l_wert'], 'lot_date' => $r['l_dat'],
         'transaction_kind' => $r['v_art'], 'transaction_date' => $r['v_dat'], 'transaction_order' => $r['v_best'], 'transaction_source' => $r['v_quel'], 'transaction_lines' => $r['v_pos'],
-        'line_lot' => $r['p_lot'], 'line_quantity' => $r['p_menge'], 'line_counted' => $r['p_gez'], 'line_location' => $r['p_lo'],
+        'line_lot' => $r['p_lot'], 'line_quantity' => $r['p_menge'], 'line_counted' => $r['p_gez'], 'line_location' => $r['p_lo'], 'line_reverses' => $r['p_storno'],
         'location_parent' => $r['lo_vater'], 'location_movable' => $r['lo_beweg'], 'transaction_carrier' => $r['v_traeger'],
         'order_status' => $r['o_stat'], 'order_lines' => $r['o_pos'],
         'purchase_quantity' => $r['k_anz'], 'purchase_undetermined' => $r['k_offen'],
@@ -606,6 +608,29 @@ $storno  = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_OUTPUT, null, ['refe
 $pruefe(is_int($storno) && ((new StockService())->presentIn($schrank)[$platine] ?? 0.0) === 1.0, 'D-1143: a negative count takes one back from what this order brought in' . ($storno instanceof WP_Error ? ': ' . $storno->get_error_message() : ''));
 $zuviel  = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_OUTPUT, null, ['reference' => $auftrag + 1, 'place' => $schrank, 'lines' => [$platine => -1], 'title' => 'fremd', 'date' => '2026-11-04']);
 $pruefe($zuviel instanceof WP_Error && $zuviel->get_error_code() === 'taxmod_stock_not_produced_for_order', 'D-1143: cancelling what another order brought in is refused');
+
+// D-1168, his word «das ist dann ein verlust»: the goods of a resend leave as a consumption naming its Bezug, and come back with the Storno.
+add_filter(TaxmodStock\WordPress\Plugin::LOSS_LOTS, [TaxmodStock\WordPress\Plugin::class, 'lossLots']);
+add_filter(TaxmodStock\WordPress\Plugin::BOOK_LOSS, [TaxmodStock\WordPress\Plugin::class, 'bookLoss'], 10, 2);
+add_filter(TaxmodStock\WordPress\Plugin::CANCEL_LOSS, [TaxmodStock\WordPress\Plugin::class, 'cancelLoss'], 10, 2);
+$s       = new StockService();
+$lose    = apply_filters(TaxmodStock\WordPress\Plugin::LOSS_LOTS, []);
+$losLot  = (int) (array_values(array_filter(array_keys($lose), static fn (int $lot): bool => $s->ledger()->thingOf($lot) === $r['t1']))[0] ?? 0);
+$pruefe($losLot > 0 && str_contains((string) $lose[$losLot], ' · '), 'a resend offers the lots with a rest, named by material, date and rest');
+$vorher  = $s->ledger()->stockOf($r['t1']);
+$verlust = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_LOSS, null, ['sale' => $auftrag, 'lot' => $losLot, 'quantity' => '1', 'reason' => 'Verlust: Ersatzversand', 'date' => '2026-11-04', 'title' => 'Verlust Ersatzversand']);
+$s       = new StockService();
+$pruefe(is_int($verlust) && $s->ledger()->stockOf($r['t1']) === $vorher - 1.0
+    && (int) $s->table('transaction')->first($verlust, $s->structure()->field('transaction_kind')) === $s->structure()->value('kind_consumption')
+    && (int) $s->table('transaction')->first($verlust, $s->structure()->field('transaction_reference')) === $auftrag
+    && (! $s->structure()->hasField('description') || (string) $s->table('transaction')->first($verlust, $s->structure()->field('description')) === 'Verlust: Ersatzversand'), 'the goods sent again leave as one Vorgang «Verbrauch» with the Bezug and the Grund «Verlust»' . ($verlust instanceof WP_Error ? ': ' . $verlust->get_error_message() : ''));
+$storno  = is_int($verlust) ? apply_filters(TaxmodStock\WordPress\Plugin::CANCEL_LOSS, null, ['deal' => $verlust, 'who' => 'check']) : null;
+$pruefe(is_int($storno) && (new StockService())->ledger()->stockOf($r['t1']) === $vorher, 'taking the resend back cancels the loss: the piece is in stock again' . ($storno instanceof WP_Error ? ': ' . $storno->get_error_message() : ''));
+$davor   = (new StockService())->ledger()->stockOf($r['t1']);
+$zuviel  = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_LOSS, null, ['sale' => $auftrag, 'lot' => $losLot, 'quantity' => '999', 'reason' => 'x', 'date' => '2026-11-04']);
+$pruefe($zuviel instanceof WP_Error && (new StockService())->ledger()->stockOf($r['t1']) === $davor, 'a loss larger than the lot is refused, nothing booked');
+$keinLot = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_LOSS, null, ['sale' => $auftrag, 'lot' => 0, 'quantity' => '1', 'reason' => 'x', 'date' => '2026-11-04']);
+$pruefe($keinLot instanceof WP_Error, 'a loss without a lot is refused');
 
 // D-1027 with D-1097/D-1098: a demand, a source and back, a position removed — the same before and after the switch.
 $offen = static function (StockService $s): array {

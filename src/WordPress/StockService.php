@@ -1699,6 +1699,64 @@ final class StockService
     }
 
     /**
+     * D-1168: the lots that still hold something, as a resend offers them — «Material · Datum · Rest n».
+     *
+     * @return array<int, string>
+     */
+    public function lotChoices(): array
+    {
+        $ledger = $this->ledger();
+        $labels = $this->things()->all();
+        $lots   = $this->table('lot');
+        $date   = $this->structure()->field('lot_date');
+        $out    = [];
+
+        foreach (array_intersect_key($labels, array_flip($ledger->things())) as $thing => $label) {
+            foreach ($ledger->lotsOf($thing) as $lot) {
+                $rest = $ledger->restOf($lot);
+
+                if ($rest > 0.0) {
+                    $out[$lot] = $label . ' · ' . substr((string) $lots->first($lot, $date), 0, 10) . ' · ' . __('Rest', 'taxmod-stock') . ' ' . rtrim(rtrim(number_format($rest, 3, ',', ''), '0'), ',');
+                }
+            }
+        }
+
+        asort($out, SORT_NATURAL | SORT_FLAG_CASE);
+
+        return $out;
+    }
+
+    /**
+     * D-1168: goods sent a second time are a loss — a consumption from `$lot` with the sale as its Bezug (when the
+     * structure knows sales) and the reason as its Grund. The same checks as any consumption (D-1088).
+     */
+    public function bookLoss(int $lot, string $quantity, int $sale, string $reason, string $today, string $title): int
+    {
+        $ledger = $this->ledger();
+        $thing  = $ledger->thingOf($lot);
+
+        if ($thing === null || $thing <= 0) {
+            throw StockError::noLot(0);
+        }
+
+        // The piece went out: more than the lot holds cannot have gone.
+        if ((float) \TaxmodStock\Core\Quantity::positive($quantity) > $ledger->restOf($lot)) {
+            throw StockError::lossTooLarge($lot);
+        }
+
+        $known   = array_merge(...array_map('array_keys', array_values($this->purposes())));
+        $purpose = $sale > 0 && in_array($sale, $known, true) ? Purpose::subject($sale) : Purpose::none();
+
+        return $this->dealOf($this->bookConsumption($thing, $lot, $quantity, $purpose, $today, $title, null, $reason));
+    }
+
+    /** D-1168: the Storno of a loss booked by {@see bookLoss()}. */
+    public function cancelLoss(int $deal, string $now, string $who): int
+    {
+        return $this->dealOf($this->cancelConsumption($deal, $now, $who));
+    }
+
+    /**
      * D-1036 for a consumption: the goods come back where they were taken; who and when stand in the Storno.
      *
      * @return array<string, mixed>

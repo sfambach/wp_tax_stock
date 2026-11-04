@@ -2782,7 +2782,8 @@ final class StockPage
      */
     private static function consumptionReasons(): array
     {
-        return [__('Reparatur', 'taxmod-stock')];
+        // D-1168: goods sent a second time leave as a loss.
+        return [__('Reparatur', 'taxmod-stock'), __('Verlust', 'taxmod-stock')];
     }
 
     /**

@@ -246,6 +246,12 @@ final class StockError extends \RuntimeException
     }
 
     /** D-1083: a lot gives a reservation only what lies free of it. */
+    /** D-1168: a resend's loss larger than the rest of its lot. */
+    public static function lossTooLarge(int $lot): self
+    {
+        return new self('loss_too_large', (string) $lot);
+    }
+
     public static function notEnoughFree(int $lot): self
     {
         return new self('not_enough_free', (string) $lot);

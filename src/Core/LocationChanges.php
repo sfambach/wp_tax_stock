@@ -145,6 +145,30 @@ final class LocationChanges
     }
 
     /**
+     * D-1130: «Kopieren» of a kind of place — all its fields and its own copy of each part line (a part is owned, D-1012);
+     * the places of that kind stay with the original.
+     *
+     * @return list<array<string, mixed>> the copy answers the ref «kopie»
+     */
+    public function copyType(int $type, string $name, PlaceTypes $types): array
+    {
+        $name = trim($name);
+
+        if ($name === '') {
+            throw StockError::placeWithoutName();
+        }
+
+        if (! $types->has($type)) {
+            throw StockError::notALocation($type);
+        }
+
+        return [
+            ['op' => 'duplicate_record', 'ref' => 'kopie', 'record' => (string) $type],
+            ['op' => 'set_values', 'record' => '@kopie', 'values' => [(string) $this->structure->field('label') => $name]],
+        ];
+    }
+
+    /**
      * D-1082: the flag «reserviert für Produktion» set or taken off. Checks on what lies there are the caller's
      * ({@see ReservedPlaces::checkFlag()}); taking it off frees the area — the boundary asks first.
      *

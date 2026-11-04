@@ -840,6 +840,18 @@ final class StockService
         ]);
     }
 
+    /**
+     * D-1130: «Kopieren» of a kind of place, under its new name.
+     *
+     * @return int the copy
+     */
+    public function copyPlaceType(int $type, string $name): int
+    {
+        $answer = $this->model->write((new LocationChanges($this->structure()))->copyType($type, $name, $this->placeTypes()));
+
+        return (int) ($answer['refs']['kopie'] ?? 0);
+    }
+
     /** @return array<int, string> every place by its path and project, in tree order — what a place chooser offers */
     public function places(): array
     {

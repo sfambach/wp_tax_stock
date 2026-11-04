@@ -11,6 +11,10 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
 - **The thing is the material (D-995).** A record in the tree under `Model` is the material; its record id is the
   material number. Lager, lots, purchases and sales are own records pointing to it.
 - **No menu of its own** (D-1028, D-1085): the Taxmod menu shows Modeller, Logistik, maintenance and Configuration; everything of the stock and of the connection modules opens behind «Logistik».
+- **Tiles** (D-1149, needs the modeller from 0.1.153): every tile — the cockpit, the area overviews, a material's Bestand —
+  is the modeller's shared tile. Below the due tiles the cockpit shows the **key figures** chosen on any node of the model
+  (add-on «Kennzahl (Kachel)» in the node's mask: count or sum per month, filter, date field). Concept:
+  [`docs/pakete/kacheln/konzept.md`](https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/kacheln/konzept.md).
 - **Page «Wareneingang»** (D-1001), the goods receipt cockpit: every order in one stage, a tab per stage —
   Bestellt → Versendet → Angekommen → Eingebucht. The stage is computed from what the inbox already wrote to the order
   (status, «Eingegangen am», tracking numbers) and the DHL module's last answer (filter `taxmod_dhl_tracking`); nothing

@@ -3,6 +3,7 @@
 namespace TaxmodStock\WordPress\Admin;
 
 use Taxmod\WordPress\Admin\ListPage;
+use Taxmod\WordPress\Admin\Tiles;
 use TaxmodStock\Core\InboundOrder;
 use TaxmodStock\Core\InboundStage;
 use TaxmodStock\Core\StockError;
@@ -38,7 +39,8 @@ final class CockpitPage
         $html  = '<div class="wrap">' . ListPage::heading($title, (string) TAXMOD_STOCK_VERSION);
 
         try {
-            $html .= $found === null ? $this->tiles($this->dueTiles()) : $this->tiles($this->overviewTiles($found, $group));
+            // *The cockpit adds the key figures chosen on any node of the model (D-1149); an overview keeps to its items.*
+            $html .= $found === null ? $this->tiles($this->dueTiles()) . Tiles::metricsGrid() : $this->tiles($this->overviewTiles($found, $group));
         } catch (StockError $e) {
             $html .= '<div class="notice notice-error"><p>' . esc_html(Messages::of($e)) . '</p></div>';
         }
@@ -156,27 +158,21 @@ final class CockpitPage
         return $tiles;
     }
 
-    /** @param list<array{0: string, 1: int|null, 2: string, 3?: list<string>}> $tiles label, count (null: none), address, last created */
+    /**
+     * The modeller's shared tiles (D-1149): a count of 0 is the shrunk empty tile, the last created stand as lines.
+     *
+     * @param list<array{0: string, 1: int|null, 2: string, 3?: list<string>}> $tiles label, count (null: none), address, last created
+     */
     private function tiles(array $tiles): string
     {
-        $html = '<div class="taxmod-tiles">';
+        $shared = [];
 
         foreach ($tiles as $tile) {
             [$label, $count, $url] = $tile;
             $latest                = $tile[3] ?? [];
-            $html .= '<a class="taxmod-tile' . ($count === 0 ? ' is-empty' : '') . '" href="' . esc_url($url) . '">'
-                . ($count === null ? '' : '<span class="taxmod-tile-count">' . esc_html(number_format_i18n($count)) . '</span>')
-                . '<span class="taxmod-tile-label">' . esc_html($label) . '</span>'
-                . ($latest === [] ? '' : '<span class="taxmod-tile-latest">' . esc_html__('Zuletzt angelegt:', 'taxmod-stock') . '<br>'
-                    . implode('<br>', array_map('esc_html', $latest)) . '</span>')
-                . '</a>';
+            $shared[]              = Tiles::counted($label, $count, $url, $latest === [] ? [] : [__('Zuletzt angelegt:', 'taxmod-stock'), ...$latest]);
         }
 
-        return '<style>.taxmod-tiles{display:flex;flex-wrap:wrap;gap:12px;margin-top:16px}'
-            . '.taxmod-tile{display:flex;flex-direction:column;min-width:160px;padding:12px 16px;background:#fff;border:1px solid #c3c4c7;border-left:4px solid #2271b1;text-decoration:none;color:#1d2327}'
-            . '.taxmod-tile:focus{box-shadow:0 0 0 2px #2271b1;outline:none}.taxmod-tile-count{font-size:28px;font-weight:600;line-height:1.2}'
-            . '.taxmod-tile.is-empty{border-left-color:#c3c4c7;color:#646970}.taxmod-tile.is-empty .taxmod-tile-count{font-size:20px}'
-            . '.taxmod-tile-latest{margin-top:8px;font-size:12px;color:#646970;max-width:260px}</style>'
-            . $html . '</div>';
+        return Tiles::grid($shared);
     }
 }

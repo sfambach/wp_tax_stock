@@ -9,7 +9,10 @@ use Taxmod\Core\Printing\LabelDocument;
 use Taxmod\Core\Printing\LabelFormat;
 use Taxmod\Core\Printing\LabelPrefix;
 use Taxmod\Core\Renderer\DialogMarkup;
+use Taxmod\Core\Tile\Tile;
+use Taxmod\Core\Tile\TileTone;
 use Taxmod\WordPress\Admin\ListPage;
+use Taxmod\WordPress\Admin\Tiles;
 use Taxmod\WordPress\Printing\PrintJobs;
 use Taxmod\WordPress\Printing\PrintService;
 use Taxmod\WordPress\Printing\PrintTab;
@@ -893,15 +896,17 @@ final class StockPage
             $rows .= '<tr><th scope="row" class="check-column"></th><td></td><td colspan="6"><details><summary>' . esc_html__('Vorgänge', 'taxmod-stock') . '</summary>' . ($moves[$lot] ?? '—') . '</details></td></tr>';
         }
 
-        $tile = static fn (string $label, string $value, string $tone): string => '<div style="flex:1;background:' . $tone . ';border-radius:6px;padding:10px 14px"><div style="color:#50575e">' . esc_html($label) . '</div><div style="font-size:1.6em;font-weight:600">' . esc_html($value) . '</div></div>';
+        // *The modeller's shared tiles (D-1149): nothing reserved is the shrunk tile, a stock below its minimum the red one.*
+        $tile = static fn (string $label, string $value, TileTone $tone = TileTone::Normal): Tile => new Tile($label, '', $value, [], $tone);
+        $low  = $min !== null && $stock < (float) $min;
 
-        return '<div style="display:flex;gap:12px;margin-bottom:16px">'
-            . $tile(__('Menge', 'taxmod-stock'), $this->number($stock), '#edfaef')
-            . $tile(__('Reserviert', 'taxmod-stock'), $this->number($held), $held > 0.0 ? '#fcf0e3' : '#f6f7f7')
-            . $tile(__('Verfügbar', 'taxmod-stock'), $this->number($stock - $held), '#edfaef')
-            . $tile(__('Wert', 'taxmod-stock'), $this->number($worth), '#edfaef')
-            . $tile(__('Mindestbestand', 'taxmod-stock'), $min === null ? '—' : $min . ' ' . ($stock < (float) $min ? '✗' : '✓'), '#f6f7f7')
-            . '</div>'
+        return Tiles::grid([
+            $tile(__('Menge', 'taxmod-stock'), $this->number($stock)),
+            $tile(__('Reserviert', 'taxmod-stock'), $this->number($held), $held > 0.0 ? TileTone::Normal : TileTone::Empty),
+            $tile(__('Verfügbar', 'taxmod-stock'), $this->number($stock - $held)),
+            $tile(__('Wert', 'taxmod-stock'), $this->number($worth)),
+            $tile(__('Mindestbestand', 'taxmod-stock'), $min === null ? '—' : $min . ' ' . ($low ? '✗' : '✓'), $min === null ? TileTone::Empty : ($low ? TileTone::Alert : TileTone::Normal)),
+        ])
             . $this->reservedOf($thing, $ledger, $flags)
             . ($rows === '' ? '<p>' . esc_html__('Kein Bestandsposten.', 'taxmod-stock') . '</p>' : ListPage::table([
                 [__('Posten', 'taxmod-stock'), '6em'], [__('Ort', 'taxmod-stock'), ''], [__('Menge', 'taxmod-stock'), '6em'], [__('Wert je Stück', 'taxmod-stock'), '8em'],

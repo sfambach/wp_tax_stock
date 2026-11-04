@@ -108,13 +108,13 @@ $uebersicht = LogisticsShell::wrap(CockpitPage::PAGE, (new CockpitPage())->rende
 $pruefe(str_contains($uebersicht, 'taxmod-shell-area is-open"><a href="' . esc_url(CockpitPage::overviewUrl('stock')) . '">Bestand</a>') && substr_count($uebersicht, 'taxmod-tile-label"') === 5 && str_contains($uebersicht, '<span class="taxmod-tile-label">Lagerorte</span>'), 'Bestand opens an overview with a tile for each of its five items, the area open in the navigation');
 $_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'settings'];
 $uebersicht = (new CockpitPage())->render();
-$pruefe(str_contains($uebersicht, esc_url(CockpitPage::overviewUrl('settings', 'Lagerstruktur'))) && substr_count($uebersicht, '>Lagerstruktur</span>') === 1, 'a group (Lagerstruktur) is one tile that opens its own overview');
+$pruefe(str_contains($uebersicht, esc_attr(CockpitPage::overviewUrl('settings', 'Lagerstruktur'))) && substr_count($uebersicht, '>Lagerstruktur</span>') === 1, 'a group (Lagerstruktur) is one tile that opens its own overview');
 $_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'settings', CockpitPage::GROUP => 'Lagerstruktur'];
 $uebersicht = (new CockpitPage())->render();
 $pruefe(str_contains($uebersicht, '>Layout</span>') && str_contains($uebersicht, '>Platzarten</span>') && ! str_contains($uebersicht, '>Grundeinstellungen</span>'), 'the group overview shows only its own items');
 $nav = LogisticsShell::wrap(CockpitPage::PAGE, $uebersicht);
 $pruefe(str_contains($nav, 'taxmod-shell-group is-open"><a href="' . esc_url(CockpitPage::overviewUrl('settings', 'Lagerstruktur')) . '" style="padding-left:24px" class="is-current"'), 'D-1134: the group\'s overview opens the group in the navigation, its sub-items shown');
-$pruefe(substr_count($uebersicht, 'class="taxmod-tile-count"') === 2, 'D-1134: Layout and Platzarten show how many there are');
+$pruefe(substr_count($uebersicht, 'class="taxmod-tile-figure"') === 2, 'D-1134: Layout and Platzarten show how many there are');
 $_GET = ['page' => CockpitPage::PAGE];
 $pruefe(str_contains((new CockpitPage())->render(), 'Angekommen, einbuchen'), 'the cockpit itself still shows what is due');
 $_GET = [];

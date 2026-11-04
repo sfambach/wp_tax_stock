@@ -454,7 +454,7 @@ try {
 $_GET  = ['page' => TaxmodStock\WordPress\Admin\CockpitPage::PAGE, TaxmodStock\WordPress\Admin\CockpitPage::AREA => 'settings', TaxmodStock\WordPress\Admin\CockpitPage::GROUP => 'Lagerstruktur'];
 $kachel = (new TaxmodStock\WordPress\Admin\CockpitPage())->render();
 $_GET  = [];
-$pruefe(str_contains($kachel, '<span class="taxmod-tile-count">' . count((new StockService())->places()) . '</span><span class="taxmod-tile-label">Layout</span>') && str_contains($kachel, 'Zuletzt angelegt:<br>Lager › __Schrank › __Schublade 2 › __Kiste<br>Lager › __Schrank › __Schublade 2<br>'), 'the Layout tile counts the places and names the newest first');
+$pruefe(str_contains($kachel, '<span class="taxmod-tile-label">Layout</span><span class="taxmod-tile-figure">' . count((new StockService())->places()) . '</span>') && str_contains($kachel, '<span class="taxmod-tile-line">Zuletzt angelegt:</span><span class="taxmod-tile-line">Lager › __Schrank › __Schublade 2 › __Kiste</span><span class="taxmod-tile-line">Lager › __Schrank › __Schublade 2</span>'), 'the Layout tile counts the places and names the newest first');
 
 // D-1139, his word «projekt gebinde … haben die ja ein bom und auch evtl einen bestand … ob der übereinstimmt bzw was fehlt».
 $bom = wp_get_ability('taxmod/apply')->execute(['changes' => [

@@ -38,9 +38,10 @@ final class Plugin
 
     public function bootWhenModellerIsThere(): void
     {
-        if (! class_exists(\Taxmod\WordPress\Plugin::class)) {
+        // *The shared tiles (D-1149) came with the modeller 0.1.153; an older one is named rather than failing on a page.*
+        if (! class_exists(\Taxmod\WordPress\Plugin::class) || ! class_exists(\Taxmod\WordPress\Admin\Tiles::class)) {
             add_action('admin_notices', static function (): void {
-                echo '<div class="notice notice-error"><p>' . esc_html__('Taxmod Stock braucht den aktiven Taxonomy Modeller.', 'taxmod-stock') . '</p></div>';
+                echo '<div class="notice notice-error"><p>' . esc_html__('Taxmod Stock braucht den aktiven Taxonomy Modeller ab 0.1.153.', 'taxmod-stock') . '</p></div>';
             });
 
             return;

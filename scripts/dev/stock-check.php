@@ -50,6 +50,7 @@ use TaxmodStock\Core\ReceiptChoice;
 use TaxmodStock\Core\Purpose;
 use TaxmodStock\Core\SplitRow;
 use TaxmodStock\Core\StockError;
+use Taxmod\WordPress\Admin\ListPage;
 use TaxmodStock\WordPress\Admin\LogisticsShell;
 use TaxmodStock\WordPress\Admin\StockPage;
 use TaxmodStock\WordPress\StockService;
@@ -321,19 +322,27 @@ $pruefe($ledger->restAt($lot, $r['platz']) === 1.0 && (new StockService())->tabl
 
 // The page renders its tabs from the same data.
 foreach (['material' => '>' . $r['lm'] . '</a></td>', 'inventur' => 'Material suchen', 'wareneingang' => 'Bestellung 1', 'verbrauch' => 'Rest 25'] as $tab => $erwartet) {
-    $_GET = ['page' => StockPage::PAGE, 'tab' => $tab, 'order' => $r['best']];
+    // D-1147: the material list waits for a search; «Alle anzeigen» draws it all.
+    $_GET = ['page' => StockPage::PAGE, 'tab' => $tab, 'order' => $r['best']] + ($tab === 'material' ? [ListPage::SHOW_ALL => '1'] : []);
     $html = (new StockPage())->render();
     $pruefe(str_contains($html, $erwartet) && ! str_contains($html, 'notice-error'), "tab «{$tab}» shows «{$erwartet}»");
 }
 
-// His wish 2026-11-03: «Umbuchen» already in the material list — here the lot lies at two places, so each gets its own
-// in the row's details, and the dialog leads back to the list.
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'material'];
 $html = (new StockPage())->render();
+$pruefe(! str_contains($html, '>' . $r['lm'] . '</a></td>') && str_contains($html, ListPage::SHOW_ALL . '=1') && ! str_contains($html, 'notice-error'), 'D-1147: without a search the material list draws no row and offers «Alle anzeigen»');
+
+// His wish 2026-11-03: «Umbuchen» already in the material list — here the lot lies at two places, so each gets its own
+// in the row's details, and the dialog leads back to the list.
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'material', ListPage::SHOW_ALL => '1'];
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'taxmod-list-lazy') && str_contains($html, 'data-source="' . StockPage::DETAILS_MATERIAL . '"'), 'D-1147: a material row loads its lots when opened');
+$liste = $html;
+$html  = (string) (new StockPage())->listDetails(null, StockPage::DETAILS_MATERIAL, ['thing' => (string) $r['lm']]);
 $pruefe(str_contains($html, 'taxmod-stock-transfer-' . $lot . '-' . $r['platz'] . '-list') && str_contains($html, 'name="return_tab" value="materialliste"'), '«Umbuchen» sits in the material list for each place of a lot and returns to the list');
 
 // His wish 2026-11-03: «3 material wählen alle umbuchen nach» — all of each ticked material to one place, one Vorgang.
-$pruefe(str_contains($html, 'value="sammelumbuchen" form="taxmod-stock-bulk"') && str_contains($html, 'name="bulk" id="taxmod-stock-bulk-action"'), 'the material list has «Umbuchen nach …» joining the bulk form');
+$pruefe(str_contains($liste, 'value="sammelumbuchen" form="taxmod-stock-bulk"') && str_contains($liste, 'name="bulk" id="taxmod-stock-bulk-action"'), 'the material list has «Umbuchen nach …» joining the bulk form');
 (new StockService())->moveThings([$r['lm']], $von, '2026-11-02', 'Sammelumbuchung');
 $ledger = (new StockService())->ledger();
 $pruefe($ledger->restAt($lot, $von) === $ledger->restOf($lot) && $ledger->restAt($lot, $r['platz']) === 0.0, '«Umbuchen nach …» moves all of a material from every place to the one chosen');
@@ -370,7 +379,7 @@ $pruefe(str_contains($html, 'Bestellung 1') && str_contains($html, 'tr class="ta
 (new TaxmodStock\WordPress\Admin\SettingsPage())->save(['taxmod_stock_views_sent' => '1', 'taxmod_stock_views' => ['material' => '1']]);
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'tr class="taxmod-list-details" hidden') && ! str_contains($html, 'tr class="taxmod-list-details"><td') && ! str_contains($html, 'name="purchases[]"'), 'with «Gleich aufgeklappt» off the purchases stay folded and unloaded');
-$_GET = ['page' => StockPage::PAGE, 'tab' => 'material'];
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'material', ListPage::SHOW_ALL => '1'];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'tr class="taxmod-list-details"><td') && ! str_contains($html, 'tr class="taxmod-list-details" hidden'), 'with «Gleich aufgeklappt» on for Material the lots stand open');
 delete_option(StockService::VIEWS);

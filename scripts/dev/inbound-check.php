@@ -239,12 +239,20 @@ $pruefe(str_contains((new InboundPage())->render(), 'Amazon-Historie 2004'), 'it
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'all'];
 $pruefe(! str_contains((new InboundPage())->render(), 'Amazon-Historie 2004'), '«Alle» shows what is not archived');
 
+// D-1147: a row's details load when opened; the check asks for them as the page would, one order at a time.
+$details = static fn (string $tab): string => implode('', array_map(
+    static fn (int $id): string => (string) (new InboundPage())->listDetails(null, InboundPage::DETAILS, ['order' => (string) $id, 'tab' => $tab]),
+    array_keys((new InboundService())->orders())
+));
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'booked'];
 $html = (new InboundPage())->render();
+$pruefe(str_contains($html, 'taxmod-list-lazy') && str_contains($html, 'data-source="' . InboundPage::DETAILS . '"'), 'D-1147: «Eingebucht» draws its rows, their details load when opened');
+$html .= $details('booked');
 $pruefe(str_contains($html, 'Ladegerät') && str_contains($html, 'thing=' . $r['et4000']) && str_contains($html, 'view=bestand'), '«Eingebucht» shows where each purchase went, linked to its material');
 
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'shipped'];
 $html = (new InboundPage())->render();
+$html .= $details('shipped');
 $pruefe(str_contains($html, 'Unterwegs') && ! str_contains($html, '>Bestellt</strong>'), 'the tab «Versendet» shows only its orders');
 $pruefe(str_contains($html, '00340434AA') && str_contains($html, 'unterwegs') && str_contains($html, 'Köln'), 'it shows the number, DHL\'s stage and its last event');
 $pruefe($asked === 0, 'drawing the page never asks DHL');

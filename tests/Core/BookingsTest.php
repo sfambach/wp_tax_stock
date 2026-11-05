@@ -9,6 +9,7 @@ use TaxmodStock\Core\Purpose;
 use TaxmodStock\Core\InventoryRow;
 use TaxmodStock\Core\LagerInput;
 use TaxmodStock\Core\NewThing;
+use TaxmodStock\Core\Pack;
 use TaxmodStock\Core\ReceiptChoice;
 use TaxmodStock\Core\SourceRow;
 use TaxmodStock\Core\SplitRow;
@@ -67,6 +68,20 @@ final class BookingsTest extends TestCase
         self::assertSame([], array_filter($changes, static fn (array $c): bool => $c['op'] === 'create_record' && $c['node'] === $s->node('line')));
         self::assertSame('@l1', $deal[(string) $s->field('transaction_lines')]['p2'][(string) $s->field('line_lot')]);
         self::assertSame('70', $deal[(string) $s->field('transaction_order')]);
+    }
+
+    #[Test]
+    public function a_receipt_of_packs_books_the_pieces_at_the_price_of_one_piece(): void
+    {
+        $s                    = Fixture::structure();
+        [$orders, $purchases] = $this->order(['0', '0']);
+        $money                = new Table([80 => [$s->field('money_amount') => ['4'], $s->field('money_unit') => ['208']]]);
+        $values               = $this->valuesByNode((new Bookings($s, '2026-11-05'))->receipt(70, [72 => ReceiptChoice::keep()], $orders, $purchases, $money, [], 'WE', [43101 => new Pack('Leiste', 40)]));
+        $lot                  = $values[$s->node('lot')];
+
+        self::assertSame('200', $values[$s->node('line')][(string) $s->field('line_quantity')], 'D-1178: 5 strips of 40 are 200 pins');
+        self::assertSame('0.1', $lot[(string) $s->field('lot_value')]['neu'][(string) $s->field('money_amount')], 'the price of one pin');
+        self::assertSame([5, 12.0], (new Pack('Leiste', 40))->split(212.0));
     }
 
     #[Test]

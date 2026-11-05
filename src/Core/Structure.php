@@ -82,6 +82,8 @@ final class Structure
         'type_outer', 'type_inner', 'dimension_length', 'dimension_width', 'dimension_height',
         // D-1169: a place type chooses its fit calculation and its message.
         'type_fit_rule', 'type_fit_level',
+        // D-1178: a material handled in packs — the pack's name, how many pieces it holds, and the pieces lost per cut.
+        'lager_pack_name', 'lager_pack_content', 'lager_cut_loss',
     ];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];

@@ -22,6 +22,7 @@ use TaxmodStock\Core\FitLevel;
 use TaxmodStock\Core\GroupStock;
 use TaxmodStock\Core\InventoryRow;
 use TaxmodStock\Core\LagerInput;
+use TaxmodStock\Core\Pack;
 use TaxmodStock\Core\SourceRow;
 use TaxmodStock\Core\NewThing;
 use TaxmodStock\Core\LocationStock;
@@ -396,6 +397,8 @@ final class StockPage
         // D-1147: nothing is drawn until a search, a filter or a group asks for it, or «Alle anzeigen».
         $waits     = $branch ? $group === 0 : ListPage::waitsForSearch($view, $group > 0 || $list->filter !== '');
 
+        $packs = $waits ? [] : $this->stock->packsOf(array_keys($all));
+
         foreach ($waits ? [] : array_keys($all) as $id) {
             $node = $things->nodeOf($id);
 
@@ -420,7 +423,7 @@ final class StockPage
             $rows[] = ['id' => $id, 'name' => $name, 'stock' => $stock, 'low' => $min !== null && $stock < (float) $min, 'words' => [],
                 // Optional fields (Structure::OPTIONAL_FIELDS): a model without a base unit has none to group by.
                 'unit' => $record === null || ! $s->hasField('lager_unit') ? '' : $lager->first($record, $s->field('lager_unit')) . '/' . ($s->hasField('lager_prefix') ? $lager->first($record, $s->field('lager_prefix')) : ''),
-                'cells' => $cells + ['stock' => $this->number($stock), 'min' => $min === null ? '' : (string) $min],
+                'cells' => $cells + ['stock' => $this->number($stock) . (isset($packs[$id]) ? ' ' . $this->inPacks($packs[$id], $stock) : ''), 'min' => $min === null ? '' : (string) $min],
                 'sort'  => ['nr' => $id, 'stock' => $stock, 'min' => $min === null ? -1.0 : (float) $min,
                     'name' => mb_strtolower((string) preg_replace('/^#\d+( · )?/u', '', $name))]];
         }
@@ -3346,6 +3349,15 @@ final class StockPage
     private function number(float $value): string
     {
         return rtrim(rtrim(number_format($value, 3, ',', '.'), '0'), ',');
+    }
+
+    /** D-1178, his word «3 Leisten + 12 Pins»: the stock in whole packs and the rest. */
+    private function inPacks(Pack $pack, float $pieces): string
+    {
+        [$packs, $rest] = $pack->split($pieces);
+
+        /* translators: 1: whole packs, 2: name of the pack, 3: pieces left over */
+        return sprintf(__('(%1$d × %2$s + %3$s)', 'taxmod-stock'), $packs, $pack->name === '' ? __('Packung', 'taxmod-stock') : $pack->name, $this->number($rest));
     }
 
     private function remember(string $type, string $text): void

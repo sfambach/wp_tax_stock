@@ -68,9 +68,10 @@ final class Bookings
      *
      * @param array<int, ReceiptChoice> $choices  purchase record id → its thing
      * @param array<int, true>          $received purchases some lot already names
+     * @param array<int, Pack>          $packs    D-1178: thing → its pack; a purchase of such a thing counts packs
      * @return list<array<string, mixed>>
      */
-    public function receipt(int $order, array $choices, Table $orders, Table $purchases, Table $money, array $received, string $title): array
+    public function receipt(int $order, array $choices, Table $orders, Table $purchases, Table $money, array $received, string $title, array $packs = []): array
     {
         $s       = $this->structure;
         $inOrder = array_map('intval', $orders->all($order, $s->field('order_lines')));
@@ -98,7 +99,22 @@ final class Bookings
             $thing    = $this->thingFor($purchase, $choice, $purchases);
             $count    = $purchases->first($purchase, $s->field('purchase_quantity'));
             $quantity = $count === null || (int) $count < 1 ? '1' : (string) (int) $count;
-            $lot      = $this->lot($name, $thing, (string) $purchase, $this->priceOf($purchase, $purchases, $money), '', $choice->location);
+            $price    = $this->priceOf($purchase, $purchases, $money);
+
+            // D-1178: «Der Wareneingang bucht ganze Leisten» — packs bought, pieces in stock, the price per piece.
+            $pack = $packs[(int) $thing] ?? null;
+
+            if ($pack !== null && ctype_digit($thing)) {
+                $quantity = (string) ((int) $quantity * $pack->content);
+                $part     = $price === null ? null : (array) array_values($price)[0];
+                $amount   = $part === null ? null : ($part[(string) $s->field('money_amount')] ?? null);
+
+                if ($part !== null && is_numeric($amount)) {
+                    $price = ['neu' => [(string) $s->field('money_amount') => self::signed((float) $amount / $pack->content)] + $part];
+                }
+            }
+
+            $lot = $this->lot($name, $thing, (string) $purchase, $price, '', $choice->location);
 
             $this->line($name, $lot, $quantity, null);
         }

@@ -19,6 +19,7 @@ use TaxmodStock\Core\NamedCopy;
 use TaxmodStock\Core\LocationTree;
 use TaxmodStock\Core\LabelTemplates;
 use TaxmodStock\Core\OutputPlan;
+use TaxmodStock\Core\Pack;
 use TaxmodStock\Core\FitLevel;
 use TaxmodStock\Core\PlaceFit;
 use TaxmodStock\Core\PlaceTypes;
@@ -770,7 +771,8 @@ final class StockService
             $this->table('money'),
             // D-1058: a purchase closed without stock counts as done for the order's status.
             Ledger::receivedPurchases($s, $this->table('lot')) + NotStocked::purchases($s, $this->table('purchase')),
-            $title
+            $title,
+            $this->packsOf(array_values(array_filter(array_map(fn (int $purchase, ReceiptChoice $c): ?int => $c->keep ? (int) $this->table('purchase')->first($purchase, $s->field('purchase_model')) : $c->thing, array_keys($choices), $choices))))
         );
 
         $result = $this->model->write($changes);
@@ -837,6 +839,35 @@ final class StockService
         $table      = $nodeOf === [] ? $this->table('label_template') : ($this->model->records(array_keys($nodeOf)) ?? $this->table('label_template'));
 
         return $this->labelTemplates = LabelTemplates::from($s, $table, array_map(static fn (int $node): string => $categories[$node] ?? '', $nodeOf), $nodeOf);
+    }
+
+    /**
+     * D-1178: the packs of the things handled in packs; the others are left out.
+     *
+     * @param list<int> $things
+     * @return array<int, Pack>
+     */
+    public function packsOf(array $things): array
+    {
+        $s = $this->structure();
+
+        if (! $s->hasField('lager_pack_content')) {
+            return [];
+        }
+
+        $known = $this->things();
+        $lager = $this->table('lager');
+        $out   = [];
+
+        foreach (array_unique($things) as $thing) {
+            $pack = Pack::of($s, $lager, $known->lagerOf($thing));
+
+            if ($pack !== null) {
+                $out[$thing] = $pack;
+            }
+        }
+
+        return $out;
     }
 
     /** D-1123: the kinds of place; none while the model has no node for them. */

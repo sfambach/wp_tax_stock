@@ -3,6 +3,7 @@
 namespace TaxmodStock\WordPress\Admin;
 
 use TaxmodStock\Core\Navigation;
+use TaxmodStock\Core\ReturnPath;
 
 /**
  * The frame of the stock interface (D-1029, D-1053, D-1085): its own navigation on the left, along the flow of goods, with each page's
@@ -17,6 +18,20 @@ final class LogisticsShell
 
     /** User meta: '1' when the user works in full screen. */
     private const FULLSCREEN_META = 'taxmod_stock_fullscreen';
+
+    /**
+     * D-1179, the convention for every module: a link that jumps elsewhere carries where it comes from — path and query of
+     * the current page in {@see FROM}, its name in {@see FROM_LABEL} — and the frame offers «← Zurück zu …» until the user is
+     * back there or takes the navigation.
+     */
+    public const FROM       = 'taxmod_from';
+    public const FROM_LABEL = 'taxmod_from_label';
+
+    /** Set on the navigation's own links: whoever takes the menu starts afresh, the way back is dropped. */
+    public const VIA_MENU = 'taxmod_nav';
+
+    /** User meta: the stack of origins (D-1179). */
+    private const RETURN_META = 'taxmod_stock_return_path';
 
     public static function isFullscreen(): bool
     {
@@ -133,7 +148,57 @@ final class LogisticsShell
         return self::style() . (self::isFullscreen() ? self::fullscreenStyle() : '') . '<div class="taxmod-shell' . ($side === '' ? '' : ' has-side') . '">'
             . '<div class="taxmod-shell-column"><nav class="taxmod-shell-nav" aria-label="' . esc_attr__('Logistik', 'taxmod-stock') . '">'
             . self::menu($navigation, $active) . '</nav>' . ($side === '' ? '' : '<div class="taxmod-shell-side">' . $side . '</div>')
-            . '</div><div class="taxmod-shell-main">' . $html . '</div></div>';
+            . '</div><div class="taxmod-shell-main">' . self::backLink() . $html . '</div></div>';
+    }
+
+    /**
+     * A link to `$url` that remembers the current page as its origin (D-1179).
+     */
+    public static function withOrigin(string $url, string $label): string
+    {
+        return add_query_arg([self::FROM => rawurlencode(self::here()), self::FROM_LABEL => rawurlencode($label)], $url);
+    }
+
+    /** D-1179: the way back for this request, kept per user; '' when there is none. */
+    private static function backLink(): string
+    {
+        $user   = get_current_user_id();
+        $stored = get_user_meta($user, self::RETURN_META, true);
+        $path   = isset($_GET[self::VIA_MENU]) ? ReturnPath::empty() : ReturnPath::fromStored($stored)->arrive(self::here(), self::origin());
+
+        if ($path->toStored() !== (is_array($stored) ? $stored : [])) {
+            update_user_meta($user, self::RETURN_META, $path->toStored());
+        }
+
+        $top = $path->top();
+
+        return $top === null ? '' : '<p class="taxmod-shell-back"><a href="' . esc_url($top['url']) . '">&larr; '
+            . esc_html(sprintf(__('Zurück zu %s', 'taxmod-stock'), $top['label'])) . '</a></p>';
+    }
+
+    /** Path and query of this request, without the arguments of D-1179. */
+    private static function here(): string
+    {
+        return remove_query_arg([self::FROM, self::FROM_LABEL, self::VIA_MENU], wp_unslash((string) ($_SERVER['REQUEST_URI'] ?? '')));
+    }
+
+    /**
+     * The origin the request names; only a page of this admin counts, anything else is ignored.
+     *
+     * @return array{url: string, label: string}|null
+     */
+    private static function origin(): ?array
+    {
+        $url   = esc_url_raw(wp_unslash((string) ($_GET[self::FROM] ?? '')));
+        $admin = (string) wp_parse_url(admin_url(), PHP_URL_PATH);
+
+        if ($url === '' || $admin === '' || ! str_starts_with($url, $admin)) {
+            return null;
+        }
+
+        $label = mb_substr(sanitize_text_field(wp_unslash((string) ($_GET[self::FROM_LABEL] ?? ''))), 0, 120);
+
+        return ['url' => $url, 'label' => $label === '' ? __('vorherige Seite', 'taxmod-stock') : $label];
     }
 
     /** @param array{area: string, item: string, group?: string} $active `group`: the open group's path, joined by «/» */
@@ -147,7 +212,7 @@ final class LogisticsShell
             $here  = $area['key'] === $active['area'];
             // D-1128: the area itself opens its overview with a tile per item; the cockpit is that overview already.
             $link  = $area['key'] === 'cockpit' ? self::url($area['items'][0]) : CockpitPage::overviewUrl($area['key']);
-            $html .= '<li class="taxmod-shell-area' . ($here ? ' is-open' : '') . '"><a href="' . esc_url($link) . '">' . esc_html($area['label']) . '</a>';
+            $html .= '<li class="taxmod-shell-area' . ($here ? ' is-open' : '') . '"><a href="' . esc_url(add_query_arg(self::VIA_MENU, '1', $link)) . '">' . esc_html($area['label']) . '</a>';
 
             if ($here || count($area['items']) > 1) {
                 $html .= self::items($area['items'], 0, $here ? $active['item'] : '', $area['key'], $here ? (string) ($active['group'] ?? '') : '');
@@ -179,7 +244,7 @@ final class LogisticsShell
             $path = array_values($item['path'] ?? []);
 
             if (count($path) <= $depth) {
-                $html .= '<li><a href="' . esc_url(self::url($item)) . '" style="padding-left:' . (24 + 12 * $depth) . 'px"'
+                $html .= '<li><a href="' . esc_url(add_query_arg(self::VIA_MENU, '1', self::url($item))) . '" style="padding-left:' . (24 + 12 * $depth) . 'px"'
                     . ($item['key'] === $current ? ' class="is-current" aria-current="page"' : '') . '>' . esc_html($item['label']) . '</a></li>';
                 continue;
             }
@@ -194,7 +259,7 @@ final class LogisticsShell
             $groupPath = implode('/', array_slice($path, 0, $depth + 1));
             $open      = in_array($current, array_column($members, 'key'), true) || $openGroup === $groupPath || str_starts_with($openGroup, $groupPath . '/');
             // D-1128: a group opens its own overview, like an area.
-            $html .= '<li class="taxmod-shell-group' . ($open ? ' is-open' : '') . '"><a href="' . esc_url($area === '' ? self::url($members[0]) : CockpitPage::overviewUrl($area, $groupPath)) . '" style="padding-left:' . (24 + 12 * $depth) . 'px"'
+            $html .= '<li class="taxmod-shell-group' . ($open ? ' is-open' : '') . '"><a href="' . esc_url(add_query_arg(self::VIA_MENU, '1', $area === '' ? self::url($members[0]) : CockpitPage::overviewUrl($area, $groupPath))) . '" style="padding-left:' . (24 + 12 * $depth) . 'px"'
                 . ($openGroup === $groupPath ? ' class="is-current" aria-current="page"' : '') . '>'
                 . esc_html($group) . '</a>' . self::items($members, $depth + 1, $current, $area, $openGroup) . '</li>';
         }
@@ -237,6 +302,7 @@ final class LogisticsShell
             . '.taxmod-shell-nav a:focus{box-shadow:0 0 0 2px #2271b1;outline:none}'
             . '.taxmod-shell-mode{margin:10px 12px 0;padding-top:8px;border-top:1px solid #dcdcde}.taxmod-shell-mode+.taxmod-shell-mode{border-top:0;padding-top:0;margin-top:4px}'
             . '.taxmod-shell-main{overflow-x:auto}.taxmod-shell-main>.wrap{margin-top:0}'
+            . '.taxmod-shell-back{margin:0 0 6px}.taxmod-shell-back a{text-decoration:none;font-weight:600}'
             // The narrower column leaves fixed layout too little room for a header without a width.
             . '.taxmod-shell-main .wp-list-table{table-layout:auto}'
             . self::sideStyle()

@@ -1883,6 +1883,44 @@ final class StockService
     }
 
     /**
+     * D-1181: «Umbuchen» of a line standing for several lots of the same data at one place — the quantity from them, oldest
+     * lot first, as one Vorgang «Umbuchung».
+     *
+     * @param list<int> $lots
+     * @return array<string, mixed>
+     */
+    public function moveLots(array $lots, int $from, int $location, string $quantity, string $today, string $title): array
+    {
+        if (! $this->table('location')->has($location)) {
+            throw StockError::notALocation($location);
+        }
+
+        $ledger = $this->ledger();
+        $left   = (float) str_replace(',', '.', $quantity);
+        $rows   = [];
+        sort($lots);
+
+        foreach ($lots as $lot) {
+            if (! $this->table('lot')->has($lot)) {
+                throw StockError::noLot($lot);
+            }
+
+            $take = min($left, $ledger->restAt($lot, $from));
+
+            if ($take > 0.0) {
+                $rows[] = new TransferRow($lot, $from, $location, rtrim(rtrim(number_format($take, 6, '.', ''), '0'), '.'));
+                $left  -= $take;
+            }
+        }
+
+        if ($rows === [] || $left > 1e-9) {
+            throw StockError::nothingToBook();
+        }
+
+        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $this->boundLots()));
+    }
+
+    /**
      * «Umbuchen nach …» for several materials at once (his wish 2026-11-03: «3 material wählen alle umbuchen nach»): all
      * of each one, every lot from every place it lies at, to one place — one Vorgang «Umbuchung», one write.
      *

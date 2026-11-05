@@ -189,7 +189,14 @@ final class StockPage
                     $today,
                     $this->title(__('Umbuchung', 'taxmod-stock'), $today)
                 ),
-                'umbuchen'     => $this->stock->moveLot(
+                'umbuchen'     => isset($_POST['lots']) && str_contains((string) $_POST['lots'], ',') ? $this->stock->moveLots(
+                    array_values(array_filter(array_map('absint', explode(',', sanitize_text_field(wp_unslash((string) $_POST['lots'])))))),
+                    absint($_POST['from'] ?? 0),
+                    absint($_POST['location'] ?? 0),
+                    sanitize_text_field(wp_unslash((string) ($_POST['quantity'] ?? ''))),
+                    $today,
+                    $this->title(__('Umbuchung', 'taxmod-stock'), $today)
+                ) : $this->stock->moveLot(
                     absint($_POST['lot'] ?? 0),
                     absint($_POST['from'] ?? 0),
                     absint($_POST['location'] ?? 0),
@@ -415,7 +422,7 @@ final class StockPage
             $stock  = $ledger->stockOf($id);
             $name   = $things->word($id);
             // His word 2026-11-05: «bei mehreren positionen den platz in der zusammenfassung weg lassen».
-            $cells  = ['nr' => (string) $id, 'name' => $name, 'group' => $node === null ? '' : $groups[$node], 'places' => count($this->heldAt($id, $ledger)) > 1 ? '' : $this->placesOf($id, $ledger)];
+            $cells  = ['nr' => (string) $id, 'name' => $name, 'group' => $node === null ? '' : $groups[$node], 'places' => count(array_unique(array_column($this->heldAt($id, $ledger), 1))) > 1 ? '' : $this->placesOf($id, $ledger)];
 
             foreach (array_keys($technical) as $relation) {
                 $cells['f' . $relation] = implode(', ', (array) $data?->all($id, $relation));
@@ -627,6 +634,7 @@ final class StockPage
         $lots   = $this->stock->table('lot');
         $money  = $this->stock->table('money');
         $places = $this->stock->places();
+        $lines  = [];
         $html   = '';
 
         foreach ($ledger->lotsOf($thing) as $lot) {
@@ -644,12 +652,23 @@ final class StockPage
                 continue;
             }
 
+            // D-1181, his word «verschmilzt es solange die daten gleich sind» — «können wir so bauen»: lots of the same data
+            // at the same place stand as one line; the lots themselves stay apart.
+            $condition = $s->hasField('lot_condition') ? (string) $lots->first($lot, $s->field('lot_condition')) : '';
+
             foreach ($at as $place => $quantity) {
-                $html .= '<li>' . $date . ' · ' . esc_html__('Rest', 'taxmod-stock') . ' ' . esc_html($this->number($quantity)) . $origin
-                    . ' · ' . esc_html($places[$place] ?? '#' . $place)
-                    . ($withTransfer ? ' ' . $this->transferDialog($thing, $lot, (int) $place, $quantity, $places, 0, true) : '')
-                    . '</li>';
+                $key = $place . '|' . $date . '|' . $origin . '|' . $condition;
+                $lines[$key] ??= ['place' => (int) $place, 'text' => $date . ' · %s' . $origin, 'quantity' => 0.0, 'lots' => []];
+                $lines[$key]['quantity'] += $quantity;
+                $lines[$key]['lots'][]    = $lot;
             }
+        }
+
+        foreach ($lines as $line) {
+            $html .= '<li>' . sprintf($line['text'], esc_html__('Rest', 'taxmod-stock') . ' ' . esc_html($this->number($line['quantity'])))
+                . ' · ' . esc_html($places[$line['place']] ?? '#' . $line['place'])
+                . ($withTransfer ? ' ' . $this->transferDialog($thing, $line['lots'][0], $line['place'], $line['quantity'], $places, 0, true, $line['lots']) : '')
+                . '</li>';
         }
 
         return $html === '' ? '—' : '<ul style="margin:0">' . $html . '</ul>';
@@ -1026,13 +1045,15 @@ final class StockPage
      *
      * @param array<int, string> $places
      */
-    private function transferDialog(int $thing, int $lot, int $from, float $quantity, array $places, int $returnPlace = 0, bool $toList = false): string
+    private function transferDialog(int $thing, int $lot, int $from, float $quantity, array $places, int $returnPlace = 0, bool $toList = false, array $merged = []): string
     {
         if (! method_exists(ListPage::class, 'dialogAction')) {
             return '';
         }
 
         $body = '<input type="hidden" name="thing" value="' . esc_attr((string) $thing) . '"><input type="hidden" name="lot" value="' . esc_attr((string) $lot) . '">'
+            // D-1181: a line standing for several lots of the same data moves from them oldest first.
+            . (count($merged) > 1 ? '<input type="hidden" name="lots" value="' . esc_attr(implode(',', array_map('intval', $merged))) . '">' : '')
             . '<input type="hidden" name="from" value="' . esc_attr((string) $from) . '">'
             . '<label style="display:block">' . esc_html__('Menge', 'taxmod-stock') . '<br><input type="text" inputmode="decimal" name="quantity" style="width:7em" value="' . esc_attr(str_replace(',', '.', rtrim(rtrim(number_format($quantity, 3, '.', ''), '0'), '.'))) . '"></label>'
             . '<label style="display:block;margin-top:.5em">' . esc_html__('Nach', 'taxmod-stock') . '<br><select name="location" style="width:100%">' . $this->options(array_diff_key($places, [$from => true]), '') . '</select></label>'

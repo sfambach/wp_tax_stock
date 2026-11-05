@@ -710,6 +710,15 @@ unset($alt['nodes']['lager'], $alt['fields']['lot_thing'], $alt['fields']['lager
 update_option(StockService::OPTION, $alt);
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'material'];
 $pruefe(! str_contains((new StockPage())->render(), 'notice-error') && (new StockService())->ledger()->stockOf($r['lm']) === 5.0, 'an old structure keeps working');
+update_option(StockService::OPTION, $struktur);
+// D-1181, his word «verschmilzt es solange die daten gleich sind»: two lots of the same data at one place stand as one line.
+(new StockService())->bookInventory([new TaxmodStock\Core\InventoryRow($r['lm'], null, 'Zählung', '2', null, ''), new TaxmodStock\Core\InventoryRow($r['lm'], null, 'Zählung', '2', null, '')], '2026-11-05', 'Inventur');
+$html = (string) (new StockPage())->listDetails(null, StockPage::DETAILS_MATERIAL, ['thing' => (string) $r['lm']]);
+$pruefe(preg_match_all('/<li>2026-11-05 · Rest 4 · Inventur/', $html) === 1 && str_contains($html, 'name="lots" value="'), 'D-1181: two lots of the same data at one place are one line with one «Umbuchen» for both');
+preg_match('/name="lots" value="([0-9,]+)"><input type="hidden" name="from" value="(\d+)"/', $html, $paar);
+(new StockService())->moveLots(array_map('intval', explode(',', $paar[1] ?? '')), (int) ($paar[2] ?? 0), $r['platz'], '3', '2026-11-05', 'Umbuchung');
+$ledger = (new StockService())->ledger();
+$pruefe(array_sum(array_map(static fn (string $l): float => $ledger->restAt((int) $l, $r['platz']), explode(',', $paar[1] ?? '0'))) === 3.0, 'D-1181: «Umbuchen» of that line moves from both lots, oldest first');
 
 // D-1158: without sizes on the kinds of place nothing is said — the warning never stands in the way of a move.
 $ohneMass = $ort('Passt-Regal', 0);

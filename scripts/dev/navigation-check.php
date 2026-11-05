@@ -99,6 +99,9 @@ $druck = array_values(array_filter($einstellungen, static fn (array $item): bool
 $pruefe($druck !== null && ($druck['path'] ?? []) === ['Druck'] && ! in_array('print', array_column($areas, 'key'), true), 'a page announced with area «print» stands under Einstellungen › Druck, not in an area of its own');
 $vorlagen = array_values(array_filter($einstellungen, static fn (array $item): bool => $item['key'] === 'label-templates'))[0] ?? null;
 $pruefe(($vorlagen['path'] ?? []) === ['Druck'] && ($vorlagen['label'] ?? '') === 'Etiketten' && ($vorlagen['tab'] ?? '') === 'etikettenvorlagen' && ($vorlagen['page'] ?? '') === StockPage::PAGE, 'D-1165: Druck › Etiketten opens the Lager tab of the templates');
+$bestand = array_values(array_filter($areas, static fn (array $area): bool => $area['key'] === 'stock'))[0]['items'] ?? [];
+$platz   = array_values(array_filter($bestand, static fn (array $item): bool => $item['key'] === 'places'))[0] ?? null;
+$pruefe(($platz['label'] ?? '') === 'Platzbestand' && ($platz['tab'] ?? '') === 'lagerorte', 'Bestand › Platzbestand opens what lies at a place (renamed from «Lagerorte», his word 2026-11-05)');
 $fertigung = array_values(array_filter($areas, static fn (array $area): bool => $area['key'] === 'production'))[0]['items'] ?? [];
 $pruefe(array_column($fertigung, 'key') === ['project-boxes', 'module-__navcheck-production'], 'D-1142: a page announced with area «production» stands under Fertigung, after Projekt-Gebinde');
 $_GET = ['page' => ModulePage::PAGE, 'module' => '__navcheck-deep'];
@@ -107,7 +110,7 @@ $pruefe(substr_count($tief, 'taxmod-shell-group is-open') === 2 && str_contains(
 // D-1128, his word «auf dem hauptknoten eine übersicht zu bekommen mit abstprung»: an area and a group open an overview of tiles.
 $_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'stock'];
 $uebersicht = LogisticsShell::wrap(CockpitPage::PAGE, (new CockpitPage())->render());
-$pruefe(str_contains($uebersicht, 'taxmod-shell-area is-open"><a href="' . esc_url(CockpitPage::overviewUrl('stock')) . '">Bestand</a>') && substr_count($uebersicht, 'taxmod-tile-label"') === 5 && str_contains($uebersicht, '<span class="taxmod-tile-label">Lagerorte</span>'), 'Bestand opens an overview with a tile for each of its five items, the area open in the navigation');
+$pruefe(str_contains($uebersicht, 'taxmod-shell-area is-open"><a href="' . esc_url(CockpitPage::overviewUrl('stock')) . '">Bestand</a>') && substr_count($uebersicht, 'taxmod-tile-label"') === 5 && str_contains($uebersicht, '<span class="taxmod-tile-label">Platzbestand</span>'), 'Bestand opens an overview with a tile for each of its five items, the area open in the navigation');
 $_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'settings'];
 $uebersicht = (new CockpitPage())->render();
 $pruefe(str_contains($uebersicht, esc_attr(CockpitPage::overviewUrl('settings', 'Lagerstruktur'))) && substr_count($uebersicht, '>Lagerstruktur</span>') === 1, 'a group (Lagerstruktur) is one tile that opens its own overview');

@@ -67,7 +67,7 @@ final class LogisticsShell
                 $item('count', __('Inventur', 'taxmod-stock'), StockPage::PAGE, 'inventur'),
                 $item('use', __('Verbrauch', 'taxmod-stock'), StockPage::PAGE, 'verbrauch'),
                 $item('reservations', __('Reservierungen', 'taxmod-stock'), StockPage::PAGE, 'reservierungen'),
-                $item('places', __('Lagerorte', 'taxmod-stock'), StockPage::PAGE, 'lagerorte'),
+                $item('places', __('Platzbestand', 'taxmod-stock'), StockPage::PAGE, 'lagerorte'),
             ]],
             // D-957 names «Fertigung» among the module's areas; D-1139 is its first page.
             ['key' => 'production', 'label' => __('Fertigung', 'taxmod-stock'), 'items' => [

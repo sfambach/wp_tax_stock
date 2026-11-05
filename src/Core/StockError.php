@@ -287,6 +287,12 @@ final class StockError extends \RuntimeException
         return new self('not_produced_for_order', (string) $thing);
     }
 
+    /** D-1169: the place says «Verhindern», and what should go in does not fit; the detail is the place. */
+    public static function doesNotFit(int $place): self
+    {
+        return new self('does_not_fit', (string) $place);
+    }
+
     /** A date as the form sends it: Y-m-d. */
     public static function notADate(string $given): self
     {

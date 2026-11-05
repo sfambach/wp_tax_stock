@@ -80,6 +80,8 @@ final class Structure
         'type_label_template', 'type_label_copies',
         // D-1158: a place type's outer and inner size, and the three sides of a Dimension.
         'type_outer', 'type_inner', 'dimension_length', 'dimension_width', 'dimension_height',
+        // D-1169: a place type chooses its fit calculation and its message.
+        'type_fit_rule', 'type_fit_level',
     ];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];
@@ -92,6 +94,8 @@ final class Structure
         'kind_transfer', 'kind_reservation',
         // D-1091: a box moved with its content, no lot rebooked.
         'kind_relocation',
+        // D-1169: a place type's fit calculation and how loudly a misfit is said.
+        'fit_volume', 'fit_sides', 'fit_none', 'level_info', 'level_warning', 'level_error',
     ];
 
     /**

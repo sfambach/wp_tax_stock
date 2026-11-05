@@ -62,6 +62,7 @@ final class Messages
             'not_enough_to_pick'        => sprintf(__('%s: Am genannten Ort liegt nicht so viel freies Material — nichts umgebucht.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id of the thing */
             'not_taken_for_build'       => sprintf(__('Von Material #%s hat dieser Auftrag nicht so viel entnommen, wie zurückgegeben werden soll — nichts gebucht.', 'taxmod-stock'), $error->detail),
+            'does_not_fit'              => __('Passt nicht: die Außenabmessung ist größer als die Innenabmessung des Ortes, und seine Platzart meldet das als «Fehler» — nichts geändert.', 'taxmod-stock'),
             'not_produced_for_order'    => sprintf(__('Von Material #%s hat dieser Auftrag nicht so viel eingelagert, wie storniert werden soll — nichts gebucht.', 'taxmod-stock'), $error->detail),
             'no_tracking_number'        => __('Keine Sendungsnummer eingegeben.', 'taxmod-stock'),
             /* translators: %s: role of the order field, e.g. received_at */

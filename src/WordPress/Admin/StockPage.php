@@ -18,6 +18,7 @@ use Taxmod\WordPress\Printing\LabelButton;
 use Taxmod\WordPress\Printing\PrintJobs;
 use Taxmod\WordPress\Printing\PrintService;
 use Taxmod\WordPress\Printing\PrintTab;
+use TaxmodStock\Core\FitLevel;
 use TaxmodStock\Core\InventoryRow;
 use TaxmodStock\Core\LagerInput;
 use TaxmodStock\Core\SourceRow;
@@ -288,7 +289,8 @@ final class StockPage
             };
 
             if ($misfits !== []) {
-                $this->remember('warning', __('Erledigt, aber Vorsicht: die Außenabmessung passt nicht in die Innenabmessung des Ortes darüber.', 'taxmod-stock'));
+                $info = $this->stock->fitLevelOf(absint($kind === 'ort' ? ($_POST['new_parent'] ?? 0) : ($kind === 'umhaengen' ? (((array) ($_POST['parent'] ?? []))[$rowPurchase] ?? 0) : ($_POST['children_parent'] ?? 0)))) === FitLevel::Info;
+                $this->remember($info ? 'info' : 'warning', __('Erledigt, aber: die Außenabmessung passt nicht in die Innenabmessung des Ortes darüber (Passberechnung seiner Platzart).', 'taxmod-stock'));
             }
 
             $open = $kind === 'zuordnen' ? (int) array_key_first(array_filter(array_map('absint', (array) ($_POST['newgroup'] ?? [])))) : 0;
@@ -3188,7 +3190,7 @@ final class StockPage
             ['inventur', __('Inventur', 'taxmod-stock')],
             ['verbrauch', __('Verbrauch', 'taxmod-stock')],
             ['reservierungen', __('Reservierungen', 'taxmod-stock')],
-            ['lagerorte', __('Lagerorte', 'taxmod-stock')],
+            ['lagerorte', __('Platzbestand', 'taxmod-stock')],
         ], $active, fn (string $slug): string => $this->listUrl($slug, $slug === $active ? $list : new StockList(), []));
     }
 

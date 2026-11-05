@@ -19,6 +19,7 @@ use TaxmodStock\Core\NamedCopy;
 use TaxmodStock\Core\LocationTree;
 use TaxmodStock\Core\LabelTemplates;
 use TaxmodStock\Core\OutputPlan;
+use TaxmodStock\Core\FitLevel;
 use TaxmodStock\Core\PlaceFit;
 use TaxmodStock\Core\PlaceTypes;
 use TaxmodStock\Core\ProjectBill;
@@ -847,45 +848,69 @@ final class StockService
     }
 
     /**
-     * D-1158: the places of $places whose kind does not fit into the kind of $parent — outer size against inner size.
-     * Only a warning: a place without sizes, or one in other units, is left out.
+     * D-1158, D-1169: the places of $places whose kind does not fit into the kind of $parent, by the calculation that kind
+     * chooses. A place without sizes, or one in other units, is left out.
      *
      * @param list<int> $places
      * @return list<int>
      */
     public function misfits(array $places, int $parent): array
     {
-        $s = $this->structure();
-
-        if ($parent <= 0 || ! $s->hasNode('location_type') || ! $s->hasNode('dimension') || ! $s->hasField('location_place_type')) {
-            return [];
-        }
-
-        $locations = $this->table('location');
-        $typeOf    = static fn (int $place): int => (int) $locations->first($place, $s->field('location_place_type'));
-        $into      = $typeOf($parent);
+        $into = $this->typeOfPlace($parent);
 
         if ($into <= 0) {
             return [];
         }
 
-        $fit = PlaceFit::from($s, $this->table('location_type'), $this->table('dimension'), $this->table('money'));
+        $fit = $this->placeFit();
 
-        return array_values(array_filter($places, static fn (int $place): bool => $fit->fits($typeOf($place), $into) === false));
+        return array_values(array_filter($places, fn (int $place): bool => $fit->fits($this->typeOfPlace($place), $into) === false));
     }
 
-    /** D-1158: whether a new place of $type fits into $parent; null where nothing can be said. */
+    /** D-1158, D-1169: whether a new place of $type fits into $parent; null where nothing can be said. */
     public function fitsNew(int $type, int $parent): ?bool
+    {
+        $into = $this->typeOfPlace($parent);
+
+        return $type <= 0 || $into <= 0 ? null : $this->placeFit()->fits($type, $into);
+    }
+
+    /** D-1169: how loudly the kind of $parent says that something does not fit. */
+    public function fitLevelOf(int $parent): FitLevel
+    {
+        $into = $this->typeOfPlace($parent);
+
+        return $into > 0 ? $this->placeFit()->levelOf($into) : FitLevel::Warning;
+    }
+
+    /** D-1169: refuses before anything is written when the kind of $parent says «Fehler» and something does not fit. */
+    private function guardFit(array $places, int $type, int $parent): void
+    {
+        if ($this->typeOfPlace($parent) <= 0 || $this->fitLevelOf($parent) !== FitLevel::Error) {
+            return;
+        }
+
+        if ($type > 0 ? $this->fitsNew($type, $parent) === false : $this->misfits($places, $parent) !== []) {
+            throw StockError::doesNotFit($parent);
+        }
+    }
+
+    private function typeOfPlace(int $place): int
     {
         $s = $this->structure();
 
-        if ($type <= 0 || $parent <= 0 || ! $s->hasNode('location_type') || ! $s->hasNode('dimension') || ! $s->hasField('location_place_type')) {
-            return null;
+        if ($place <= 0 || ! $s->hasNode('location_type') || ! $s->hasNode('dimension') || ! $s->hasField('location_place_type')) {
+            return 0;
         }
 
-        $into = (int) $this->table('location')->first($parent, $s->field('location_place_type'));
+        return (int) $this->table('location')->first($place, $s->field('location_place_type'));
+    }
 
-        return $into <= 0 ? null : PlaceFit::from($s, $this->table('location_type'), $this->table('dimension'), $this->table('money'))->fits($type, $into);
+    private function placeFit(): PlaceFit
+    {
+        $s = $this->structure();
+
+        return PlaceFit::from($s, $this->table('location_type'), $this->table('dimension'), $this->table('money'));
     }
 
     /**
@@ -998,6 +1023,8 @@ final class StockService
     /** @return array<string, mixed> the modeller's answer */
     public function createPlace(string $name, int $parent, bool $movable, int $project, bool $reserved = false, int $type = 0): array
     {
+        $this->guardFit([], $type, $parent);
+
         return $this->model->write((new LocationChanges($this->structure()))->create($name, $parent, $movable, $project, $this->locationTree(), $this->table('location'), $reserved, $type, $this->placeTypes()));
     }
 
@@ -1039,6 +1066,7 @@ final class StockService
      */
     public function movePlace(int $place, int $parent, string $today = '', string $title = ''): array
     {
+        $this->guardFit([$place], 0, $parent);
         $tree    = $this->locationTree();
         $changes = (new LocationChanges($this->structure()))->move($place, $parent, $tree, $this->table('location'));
         $this->reservedPlaces()->checkHang($place, $parent, $this->ledger(), $this->boundLots());
@@ -1060,6 +1088,7 @@ final class StockService
      */
     public function movePlaces(array $places, int $parent, string $today, string $title): array
     {
+        $this->guardFit($places, 0, $parent);
         $tree     = $this->locationTree();
         $table    = $this->table('location');
         $rules    = new LocationChanges($this->structure());

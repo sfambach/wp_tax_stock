@@ -254,7 +254,7 @@ $details = static function (string $tab): string {
 };
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'booked'];
 $html = (new InboundPage())->render();
-$pruefe(! str_contains($html, 'taxmod-list-toggle') && str_contains($html, 'order=' . $r['o5']), '«Eingebucht» lists its orders without opening rows, each linked to its own view');
+$pruefe(! str_contains($html, 'button taxmod-list-toggle') && ! str_contains($html, 'Expand all') && str_contains($html, 'order=' . $r['o5']), '«Eingebucht» lists its orders without opening rows, each linked to its own view');
 $html .= $details('booked');
 $pruefe(str_contains($html, 'Ladegerät') && str_contains($html, 'thing=' . $r['et4000']) && str_contains($html, 'view=bestand'), '«Eingebucht» shows where each purchase went, linked to its material');
 

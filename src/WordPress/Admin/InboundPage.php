@@ -292,7 +292,7 @@ final class InboundPage
             /* translators: %d: number of orders */
             _n('%d Bestellung', '%d Bestellungen', $count, 'taxmod-stock'),
             $count
-        ), ListPage::filters(self::FILTER_FORM, [['filter', ['' => __('Alle Bestellungen', 'taxmod-stock'), self::OVERDUE => __('Überfällig', 'taxmod-stock')], $filter, __('Filter', 'taxmod-stock')]]));
+        ), ListPage::filters(self::FILTER_FORM, [['filter', ['' => __('Alle Bestellungen', 'taxmod-stock'), self::OVERDUE => __('Überfällig', 'taxmod-stock')], $filter, __('Filter', 'taxmod-stock')]]), false);
 
         // The shared bar posts its choice as «action», which admin-post routes on: the handler's name goes in its place,
         // the choice travels as «bulk».

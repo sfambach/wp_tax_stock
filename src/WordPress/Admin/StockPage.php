@@ -220,7 +220,8 @@ final class StockPage
                     absint($_POST['order'] ?? 0),
                     $this->receiptChoices(),
                     $today,
-                    $this->title(__('Wareneingang', 'taxmod-stock'), $today)
+                    $this->title(__('Wareneingang', 'taxmod-stock'), $today),
+                    $this->receiptQuantities()
                 ),
                 'aufteilen'    => $this->stock->splitPurchase(absint($_POST['order'] ?? 0), absint($_POST['purchase'] ?? 0), $this->splitRows()),
                 'nichteinlagern' => $this->stock->closeWithoutStock(
@@ -253,7 +254,7 @@ final class StockPage
                 // D-1130: «Kopieren» — the copy's id is what the page goes back to.
                 'ortkopieren'  => $copy = $this->stock->copyPlace($rowPurchase, sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? ''))), ! empty($_POST['below'])),
                 'kopieren'     => $copy = $this->stock->copyThing($thing),
-                'zuordnen'     => $this->stock->assignPurchases(absint($_POST['order'] ?? 0), $this->assignedThings(), $this->assignedPlaces(), $this->newThings()),
+                'zuordnen'     => $this->stock->assignPurchases(absint($_POST['order'] ?? 0), $this->assignedThings(), $this->assignedPlaces(), $this->newThings(), $this->receiptQuantities()),
                 'verbrauch'    => $this->stock->bookConsumption(
                     $thing,
                     absint($_POST['lot'] ?? 0) ?: null,
@@ -1771,12 +1772,14 @@ final class StockPage
         $places = $this->stock->places();
         $where  = $this->stock->receiptLocations($plan);
         $closing = $this->stock->canCloseWithoutStock();
+        $bought  = $this->stock->table('purchase');
+        $amount  = $this->stock->structure()->field('purchase_quantity');
         $html  = $this->formStart('wareneingang') . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
             . ($back === '' ? '' : '<input type="hidden" name="back" value="' . esc_attr($back) . '">')
             // ⚠️ *Enter in a reason field must book, not close the first row: the browser presses the first submit button.*
             . '<button type="submit" name="booking" value="wareneingang" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px"></button>'
             . ($closing ? '<datalist id="taxmod-stock-reasons">' . implode('', array_map(static fn (string $r): string => '<option value="' . esc_attr($r) . '">', self::notStockedReasons())) . '</datalist>' : '')
-            . '<p>' . esc_html__('Je Kauf das Material: vorgeschlagen ist das «Modell» des Kaufs; «Zurücksetzen» (Pfeil) gibt die Suche frei; «Neues Material» (oder eine Gruppe in der Suche) legt ein neues Material in der Gruppe an. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seiner Gruppe; Gebrauchtware aus einem Zweig mit Test nach dem Wareneingang geht an den «Lagerort für Test», wenn einer eingestellt ist. Der Materialtext öffnet das Material wie der Knopf «Material».', 'taxmod-stock') . '</p>'
+            . '<p>' . esc_html__('Je Kauf das Material: vorgeschlagen ist das «Modell» des Kaufs; «Zurücksetzen» (Pfeil) gibt die Suche frei; «Neues Material» (oder eine Gruppe in der Suche) legt ein neues Material in der Gruppe an. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seiner Gruppe; Gebrauchtware aus einem Zweig mit Test nach dem Wareneingang geht an den «Lagerort für Test», wenn einer eingestellt ist. Der Materialtext öffnet das Material wie der Knopf «Material». Die Menge ist die gekaufte Anzahl (bei Ware in Packungen: Packungen); geändert wird sie beim Buchen oder Speichern in den Kauf geschrieben.', 'taxmod-stock') . '</p>'
             . '<div class="tablenav top"><div class="tablenav-pages one-page"><span class="displaying-num">' . esc_html(sprintf(
                 /* translators: %d: number of purchases */
                 _n('%d Kauf', '%d Käufe', count($plan), 'taxmod-stock'),
@@ -1784,10 +1787,10 @@ final class StockPage
             )) . '</span></div><br class="clear"></div>';
         $head  = '<tr><td class="manage-column column-cb check-column"><input type="checkbox" aria-label="' . esc_attr__('Alle wählen', 'taxmod-stock') . '"></td>'
             . '<th scope="col" class="manage-column" style="width:28%">' . esc_html__('Kauf', 'taxmod-stock') . '</th><th scope="col" class="manage-column" style="width:28%">' . esc_html__('Material', 'taxmod-stock')
-            . '</th><th scope="col" class="manage-column">' . esc_html__('Lagerort', 'taxmod-stock') . '</th>'
+            . '</th><th scope="col" class="manage-column" style="width:6em">' . esc_html__('Menge', 'taxmod-stock') . '</th><th scope="col" class="manage-column">' . esc_html__('Lagerort', 'taxmod-stock') . '</th>'
             // His word 2026-11-01: «buttons immer nach rechts».
             . '<th scope="col" class="manage-column" style="width:10em;text-align:right">' . esc_html__('Aktionen', 'taxmod-stock') . '</th></tr>';
-        $html .= '<table class="wp-list-table widefat fixed striped table-view-list"><thead>' . $head . '</thead><tbody>' . ($plan === [] ? $this->noItems(4) : '');
+        $html .= '<table class="wp-list-table widefat fixed striped table-view-list"><thead>' . $head . '</thead><tbody>' . ($plan === [] ? $this->noItems(5) : '');
         $actions = static fn (string $buttons): string => '<td style="text-align:right">' . $buttons . '</td>';
         $groups  = null;
 
@@ -1795,6 +1798,7 @@ final class StockPage
             $lock     = $row['lock'];
             $model    = $row['model'];
             $select   = 'taxmod-stock-choice-' . $purchase;
+            $quantity = (string) $bought->first($purchase, $amount);
             $html    .= '<tr><th scope="row" class="check-column"><input type="checkbox" name="purchases[]" value="' . esc_attr((string) $purchase) . '"'
                 . ($lock === null && $model !== null ? ' checked' : '') . ($lock === null ? '' : ' disabled') . '></th>'
                 . '<td>' . esc_html($labels[$purchase] ?? '#' . $purchase) . ($lock === null ? '' : ' <em>(' . esc_html(Messages::lockReason($lock)) . ')</em>')
@@ -1813,6 +1817,7 @@ final class StockPage
                     default => '',
                 };
                 $html .= '<td>' . ($model === null ? esc_html('—') : $this->materialLink($purchase, $model, '#' . $model . ' · ' . ($models[$model] ?? ''))) . '</td>'
+                    . '<td>' . esc_html($quantity) . '</td>'
                     . '<td>' . ($lock === 'not_stocked' ? esc_html($this->stock->notStockedReason($purchase)) : '') . '</td>'
                     . $actions(($model === null ? '' : $this->materialDialog($purchase, $model)) . $split . ' ' . $again) . '</tr>';
                 continue;
@@ -1821,6 +1826,8 @@ final class StockPage
             // The modeller's own record chooser on the purchase's «Modell» (his word 2026-10-28: «eigentlich haben wir doch den tax chooser»).
             $html .= '<td><input type="hidden" name="model[' . esc_attr((string) $purchase) . ']" value="' . esc_attr((string) ($model ?? '')) . '">'
                 . $this->recordPicker('thing[' . $purchase . ']', $model, $model === null ? '' : ($models[$model] ?? '#' . $model), $purchase) . '</td>'
+                // His wish 2026-11-05: «Menge 1, geliefert wurden 40» — the quantity is corrected here, not in the purchase.
+                . '<td><input type="number" min="1" step="1" style="width:5em" name="quantity[' . esc_attr((string) $purchase) . ']" value="' . esc_attr($quantity) . '"></td>'
                 . '<td><select name="location[' . esc_attr((string) $purchase) . ']">' . $this->options($places, '—', $where[$purchase] ?? 0) . '</select></td>'
                 . $actions(($model === null ? $this->newThingDialog($purchase, $groups ??= $this->groupOptions()) : $this->materialDialog($purchase, $model)) . ($closing ? $this->closeControls($purchase) : '')) . '</tr>';
         }
@@ -2899,6 +2906,20 @@ final class StockPage
                 $model !== 0 && $thing === $model   => ReceiptChoice::keep(),
                 default                             => ReceiptChoice::existing($thing),
             })->at(absint($places[$purchase] ?? 0) ?: null);
+        }
+
+        return $out;
+    }
+
+    /** @return array<int, string> purchase id → the quantity typed in its row; the service checks it */
+    private function receiptQuantities(): array
+    {
+        $out = [];
+
+        foreach ((array) ($_POST['quantity'] ?? []) as $purchase => $typed) {
+            if (absint($purchase) > 0 && is_scalar($typed)) {
+                $out[absint($purchase)] = sanitize_text_field(wp_unslash((string) $typed));
+            }
         }
 
         return $out;

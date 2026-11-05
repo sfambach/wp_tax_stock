@@ -283,12 +283,25 @@ $pruefe(($orte[$r['kaufC']] ?? 0) === $r['platz'], 'the receipt proposes the pla
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'name="location[' . $r['kaufC'] . ']"') && str_contains($html, 'value="' . $r['platz'] . '" selected'), 'the receipt form shows the proposed place, changeable');
 
-$antwort = $s->bookReceipt($r['best2'], [$r['kaufC'] => ReceiptChoice::keep()->at($orte[$r['kaufC']]), $r['kaufD'] => ReceiptChoice::create(new NewThing($r['teile'], 'MPSA56 neu'))], '2026-10-21', 'WE 2');
+// His wish 2026-11-05: «Menge 1, geliefert wurden 40» — the quantity is typed in the row and written to the purchase.
+$pruefe(str_contains($html, 'name="quantity[' . $r['kaufD'] . ']" value="2"'), 'each open receipt row holds the purchase quantity, editable');
+(new StockService())->assignPurchases($r['best2'], [], [], [], [$r['kaufD'] => '4']);
+$pruefe((new StockService())->table('purchase')->first($r['kaufD'], $r['k_anz']) === '4', '«Zuordnung speichern» writes a changed quantity into the purchase');
+
+try {
+    (new StockService())->assignPurchases($r['best2'], [], [], [], [$r['kaufD'] => '0']);
+    $pruefe(false, 'a quantity below 1 is refused');
+} catch (StockError $e) {
+    $pruefe($e->reason === 'not_a_quantity' && (new StockService())->table('purchase')->first($r['kaufD'], $r['k_anz']) === '4', 'a quantity below 1 is refused, nothing written');
+}
+
+$antwort = (new StockService())->bookReceipt($r['best2'], [$r['kaufC'] => ReceiptChoice::keep()->at($orte[$r['kaufC']]), $r['kaufD'] => ReceiptChoice::create(new NewThing($r['teile'], 'MPSA56 neu'))], '2026-10-21', 'WE 2', [$r['kaufD'] => '2']);
 $s       = new StockService();
 $neu     = (int) (array_values(array_filter($antwort['refs'], static fn ($v, $k): bool => preg_match('/^d\d+$/', (string) $k) === 1, ARRAY_FILTER_USE_BOTH))[0] ?? 0);
 $pruefe($neu > 0 && $s->tableOf($r['teile'])->first($neu, $r['label']) === 'MPSA56 neu', 'the new thing is created in the chosen group with its name');
 $pruefe($s->table('purchase')->first($r['kaufD'], $r['k_mod']) === (string) $neu, 'the receipt writes the new thing into the purchase\'s Modell');
 $pruefe($s->ledger()->stockOf($r['t1']) === 3.0 && $s->ledger()->stockOf($neu) === 2.0, 'both purchases are in stock');
+$pruefe($s->table('purchase')->first($r['kaufD'], $r['k_anz']) === '2', 'the quantity typed at the receipt is written and counted in the same step');
 $pruefe($s->table('order')->first($r['best2'], $r['o_stat']) === (string) $r['s_ganz'], 'the order is received');
 $platz = $s->table('lot');
 $pruefe(array_filter($s->ledger()->lotsOf($r['t1']), static fn (int $l): bool => $platz->first($l, $r['l_lo']) === (string) $r['platz']) !== [], 'the lot lies at the chosen place');

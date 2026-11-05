@@ -41,4 +41,13 @@ final class Table
     {
         return $this->records[$recordId] ?? [];
     }
+
+    /** The same records with one value replaced — what a booking reads when it writes that value in the same step. */
+    public function with(int $recordId, int $relationId, string $value): self
+    {
+        $records                         = $this->records;
+        $records[$recordId][$relationId] = [$value];
+
+        return new self($records);
+    }
 }

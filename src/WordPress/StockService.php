@@ -749,7 +749,7 @@ final class StockService
      * @param array<int, ReceiptChoice> $choices purchase id → its thing
      * @return array<string, mixed>
      */
-    public function bookReceipt(int $order, array $choices, string $today, string $title): array
+    public function bookReceipt(int $order, array $choices, string $today, string $title, array $quantities = []): array
     {
         $s      = $this->structure();
         $places = $this->table('location');
@@ -763,17 +763,21 @@ final class StockService
         $this->checkThings(array_values(array_filter(array_map(static fn (ReceiptChoice $c): ?int => $c->thing, $choices))));
         $this->checkGroups(array_values(array_filter(array_map(static fn (ReceiptChoice $c): ?NewThing => $c->new, $choices))));
 
-        $changes = (new Bookings($this->structureWithKinds(), $today))->receipt(
+        // His wish 2026-11-05: «Menge 1, geliefert wurden 40» — a quantity corrected in the receipt is written to the purchase
+        // in the same step, and the receipt counts it.
+        [$fix, $purchases] = $this->quantityChanges($quantities, array_map('intval', $this->table('order')->all($order, $s->field('order_lines'))));
+
+        $changes = [...$fix, ...(new Bookings($this->structureWithKinds(), $today))->receipt(
             $order,
             $choices,
             $this->table('order'),
-            $this->table('purchase'),
+            $purchases,
             $this->table('money'),
             // D-1058: a purchase closed without stock counts as done for the order's status.
             Ledger::receivedPurchases($s, $this->table('lot')) + NotStocked::purchases($s, $this->table('purchase')),
             $title,
             $this->packsOf(array_values(array_filter(array_map(fn (int $purchase, ReceiptChoice $c): ?int => $c->keep ? (int) $this->table('purchase')->first($purchase, $s->field('purchase_model')) : $c->thing, array_keys($choices), $choices))))
-        );
+        )];
 
         $result = $this->model->write($changes);
         // Booked: the lot holds the place now, the plan has done its work.
@@ -1348,16 +1352,54 @@ final class StockService
      * @param array<int, NewThing> $new purchase id → a new material in a group, from its dialog (D-1062, D-1069)
      * @return array<string, mixed> the modeller's answer; nothing written when nothing changed
      */
-    public function assignPurchases(int $order, array $things, array $places = [], array $new = []): array
+    public function assignPurchases(int $order, array $things, array $places = [], array $new = [], array $quantities = []): array
     {
         $this->checkThings(array_values(array_filter($things)));
         $things = $new + $things;
 
         $this->checkGroups(array_values(array_filter($things, static fn (int|NewThing $t): bool => $t instanceof NewThing)));
-        $changes = (new Bookings($this->structureWithKinds(), current_time('Y-m-d')))->assign($order, $things, $this->table('order'), $this->table('purchase'));
+        $inOrder = array_map('intval', $this->table('order')->all($order, $this->structure()->field('order_lines')));
+        $changes = [...$this->quantityChanges($quantities, $inOrder)[0], ...(new Bookings($this->structureWithKinds(), current_time('Y-m-d')))->assign($order, $things, $this->table('order'), $this->table('purchase'))];
         $this->planPlaces($places);
 
         return $changes === [] ? ['applied' => []] : $this->model->write($changes);
+    }
+
+    /**
+     * The purchase quantities typed in the receipt that differ from the stored ones: their writes, and the purchases as the
+     * booking should read them. Only purchases of $within count; a quantity below 1 is refused.
+     *
+     * @param array<int, string> $quantities purchase → typed quantity
+     * @param list<int>          $within
+     * @return array{0: list<array<string, mixed>>, 1: Table}
+     */
+    private function quantityChanges(array $quantities, array $within): array
+    {
+        $s         = $this->structure();
+        $purchases = $this->table('purchase');
+        $changes   = [];
+        $allowed   = array_flip($within);
+
+        foreach ($quantities as $purchase => $typed) {
+            $typed = trim($typed);
+
+            if ($typed === '' || ! isset($allowed[$purchase])) {
+                continue;
+            }
+
+            if (! ctype_digit($typed) || (int) $typed < 1) {
+                throw StockError::notAQuantity($typed);
+            }
+
+            if ((string) (int) $purchases->first($purchase, $s->field('purchase_quantity')) === $typed) {
+                continue;
+            }
+
+            $changes[] = ['op' => 'set_values', 'record' => (string) $purchase, 'values' => [(string) $s->field('purchase_quantity') => $typed]];
+            $purchases = $purchases->with($purchase, $s->field('purchase_quantity'), $typed);
+        }
+
+        return [$changes, $purchases];
     }
 
     /**

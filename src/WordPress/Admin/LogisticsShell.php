@@ -93,7 +93,7 @@ final class LogisticsShell
                 ...self::modules('production'),
             ]],
             ['key' => 'outbound', 'label' => __('Warenausgang', 'taxmod-stock'), 'items' => self::modules('outbound')],
-            // D-1183, his word 2026-11-05: «kontakt ast in logistik menü einbauen» — firms, suppliers, manufacturers, persons.
+            // D-1184, his word 2026-11-05: «kontakt ast in logistik menü einbauen» — firms, suppliers, manufacturers, persons.
             ['key' => 'contacts', 'label' => __('Kontakte', 'taxmod-stock'), 'items' => [
                 $item('contacts', __('Alle Kontakte', 'taxmod-stock'), ContactsPage::PAGE),
             ]],

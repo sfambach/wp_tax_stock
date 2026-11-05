@@ -3,7 +3,7 @@
 namespace TaxmodStock\Core;
 
 /**
- * D-1183: the contacts of the model's contact branch as one list — every record of the chosen node and the nodes below it, with its
+ * D-1184: the contacts of the model's contact branch as one list — every record of the chosen node and the nodes below it, with its
  * group and how many sources of the stock name it.
  *
  * ```mermaid
@@ -15,7 +15,7 @@ namespace TaxmodStock\Core;
  *
  * The tree comes from one read; hidden nodes are left out with everything below them.
  *
- * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/NewConcept/90-decision-log.md D-1183
+ * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/NewConcept/90-decision-log.md D-1184
  */
 final class Contacts
 {

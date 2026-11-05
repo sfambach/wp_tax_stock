@@ -8,7 +8,7 @@ use TaxmodStock\Core\StockError;
 use TaxmodStock\WordPress\StockService;
 
 /**
- * Logistik › Kontakte (D-1183): the contact branch of the model — firms, suppliers, manufacturers, persons — as the modeller's tree on
+ * Logistik › Kontakte (D-1184): the contact branch of the model — firms, suppliers, manufacturers, persons — as the modeller's tree on
  * the left and its contacts in the shared list on the right; a contact opens in the modeller's record editor.
  *
  * ```mermaid
@@ -18,7 +18,7 @@ use TaxmodStock\WordPress\StockService;
  *   L -->|"+ Neuer Kontakt"| N["Name → anlegen"] -->|Rückgängig| L
  * ```
  *
- * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/NewConcept/90-decision-log.md D-1183
+ * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/NewConcept/90-decision-log.md D-1184
  */
 final class ContactsPage
 {

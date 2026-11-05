@@ -36,7 +36,7 @@ final class Structure
         'label_template', 'label_materials',
         // D-1158: the Dimension node behind a place type's outer and inner size.
         'dimension',
-        // D-1183: the contact branch (firms, suppliers, manufacturers, persons) shown under Logistik › Kontakte.
+        // D-1184: the contact branch (firms, suppliers, manufacturers, persons) shown under Logistik › Kontakte.
         'contact'];
 
     /** Fields the module uses when they are there and leaves out when they are not. */
@@ -74,7 +74,7 @@ final class Structure
         'project_boards', 'board_revisions', 'revision_positions', 'position_part', 'position_count',
         // D-1150: a place's short mark (A1-S1), put before its name wherever the place is named.
         'location_short',
-        // D-1183: a person's first name, put before the name in the contact list.
+        // D-1184: a person's first name, put before the name in the contact list.
         'contact_first_name',
         // D-1151: the unit name a line of a place type's parts gives the places it brings.
         'part_unit_name',

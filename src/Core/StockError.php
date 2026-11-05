@@ -36,19 +36,19 @@ final class StockError extends \RuntimeException
         return new self('place_without_name', '');
     }
 
-    /** D-1183: a new contact needs a name. */
+    /** D-1184: a new contact needs a name. */
     public static function contactWithoutName(): self
     {
         return new self('contact_without_name', '');
     }
 
-    /** D-1183: the node is not in the contact branch. */
+    /** D-1184: the node is not in the contact branch. */
     public static function notAContactGroup(int $nodeId): self
     {
         return new self('not_a_contact_group', (string) $nodeId);
     }
 
-    /** D-1183: only the contact just created by this user can be taken back. */
+    /** D-1184: only the contact just created by this user can be taken back. */
     public static function contactNotUndoable(int $recordId): self
     {
         return new self('contact_not_undoable', (string) $recordId);

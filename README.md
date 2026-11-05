@@ -87,7 +87,7 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
   [`docs/pakete/lager/einkauf.md`](https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/lager/einkauf.md).
 - **Tab «Lager» on Configuration** — only the technical part: the ids of the Stock nodes and fields, pasted as JSON.
   `structure-live.json` holds those of fambach.net; a structure pasted before 0.2.0 still reads.
-- **Logistik → Kontakte** (D-1183) — the model's contact branch (Organisation with Hersteller/Lieferant, Person): the node
+- **Logistik → Kontakte** (D-1184) — the model's contact branch (Organisation with Hersteller/Lieferant, Person): the node
   tree on the left, the contacts of the chosen node and every node below it in the shared list on the right (Nr., Name,
   Gruppe, Bezugsquellen); a row opens to the materials whose sources name it, «Bearbeiten» opens the modeller's record
   editor, «+ Neuer Kontakt» creates one in the chosen node by its name (a person's first name too) and can be taken back

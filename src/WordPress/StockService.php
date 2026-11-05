@@ -1488,7 +1488,7 @@ final class StockService
         return $out;
     }
 
-    /** D-1183: the root of the contact branch — its own node, or the firms' node on a structure that does not name it. */
+    /** D-1184: the root of the contact branch — its own node, or the firms' node on a structure that does not name it. */
     public function contactRoot(): int
     {
         $s = $this->structure();
@@ -1497,7 +1497,7 @@ final class StockService
     }
 
     /**
-     * D-1183: the contact branch, one read-tree.
+     * D-1184: the contact branch, one read-tree.
      *
      * @return array<int, array{name: string, parent: int, class: string, hidden: bool}>
      */
@@ -1509,7 +1509,7 @@ final class StockService
     }
 
     /**
-     * D-1183: the contacts under `$node` with the number of stock sources naming each — one read per node and one of the sources (CD-7).
+     * D-1184: the contacts under `$node` with the number of stock sources naming each — one read per node and one of the sources (CD-7).
      *
      * @return list<array{id: int, name: string, node: int, group: string, sources: int}>
      */
@@ -1539,7 +1539,7 @@ final class StockService
     }
 
     /**
-     * D-1183: contact → how many sources («Bezugsquellen») of the stock name it.
+     * D-1184: contact → how many sources («Bezugsquellen») of the stock name it.
      *
      * @return array<int, int>
      */
@@ -1566,7 +1566,7 @@ final class StockService
     }
 
     /**
-     * D-1183: the materials whose sources name this contact, thing → name, for the row's details.
+     * D-1184: the materials whose sources name this contact, thing → name, for the row's details.
      *
      * @return array<int, string>
      */
@@ -1605,7 +1605,7 @@ final class StockService
     }
 
     /**
-     * D-1183: a new contact in a node of the contact branch, by its name (and a person's first name); the rest is filled in the editor.
+     * D-1184: a new contact in a node of the contact branch, by its name (and a person's first name); the rest is filled in the editor.
      *
      * @return int the new record
      */
@@ -1636,7 +1636,7 @@ final class StockService
         return (int) ($answer['refs']['kontakt'] ?? 0);
     }
 
-    /** D-1183: whether the node's contacts carry a first name (a person). */
+    /** D-1184: whether the node's contacts carry a first name (a person). */
     public function hasContactFirstName(int $node): bool
     {
         $s = $this->structure();
@@ -1645,7 +1645,7 @@ final class StockService
     }
 
     /**
-     * D-1010 for D-1183: the contact just created is taken back again.
+     * D-1010 for D-1184: the contact just created is taken back again.
      *
      * @return array<string, mixed> the modeller's answer
      */

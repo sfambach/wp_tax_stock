@@ -430,7 +430,7 @@ final class Plugin
             add_submenu_page(self::PARENT, __('Einkauf', 'taxmod-stock'), __('Einkauf', 'taxmod-stock'), 'manage_options', PurchasePage::PAGE, $page(PurchasePage::PAGE, static fn (): string => (new PurchasePage())->render())),
             add_submenu_page(self::PARENT, __('Wareneingang', 'taxmod-stock'), __('Wareneingang', 'taxmod-stock'), 'manage_options', self::MENU, $page(self::MENU, static fn (): string => (new InboundPage())->render())),
             add_submenu_page(self::PARENT, __('Lager', 'taxmod-stock'), __('Lager', 'taxmod-stock'), 'manage_options', StockPage::PAGE, $page(StockPage::PAGE, static fn (): array => (new StockPage())->parts())),
-            // D-1183: Logistik › Kontakte, the model's contact branch.
+            // D-1184: Logistik › Kontakte, the model's contact branch.
             add_submenu_page(self::PARENT, __('Kontakte', 'taxmod-stock'), __('Kontakte', 'taxmod-stock'), 'manage_options', ContactsPage::PAGE, $page(ContactsPage::PAGE, static fn (): array => (new ContactsPage())->render())),
             // D-1085: Logistik › Einstellungen › Grundeinstellungen, inside the navigation.
             add_submenu_page(self::PARENT, __('Grundeinstellungen', 'taxmod-stock'), __('Grundeinstellungen', 'taxmod-stock'), 'manage_options', SettingsPage::PAGE, $page(SettingsPage::PAGE, static fn (): string => (new SettingsPage())->render())),

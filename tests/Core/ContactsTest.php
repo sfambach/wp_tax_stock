@@ -6,7 +6,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use TaxmodStock\Core\Contacts;
 
-/** D-1183: Logistik › Kontakte — the contacts of a node of the contact branch and every node below it. */
+/** D-1184: Logistik › Kontakte — the contacts of a node of the contact branch and every node below it. */
 final class ContactsTest extends TestCase
 {
     /** @return array<int, array{name: string, parent: int, hidden: bool}> */

@@ -414,7 +414,8 @@ final class StockPage
             $min    = $record === null ? null : $lager->first($record, $s->field('lager_min'));
             $stock  = $ledger->stockOf($id);
             $name   = $things->word($id);
-            $cells  = ['nr' => (string) $id, 'name' => $name, 'group' => $node === null ? '' : $groups[$node], 'places' => $this->placesOf($id, $ledger)];
+            // His word 2026-11-05: «bei mehreren positionen den platz in der zusammenfassung weg lassen».
+            $cells  = ['nr' => (string) $id, 'name' => $name, 'group' => $node === null ? '' : $groups[$node], 'places' => count($this->heldAt($id, $ledger)) > 1 ? '' : $this->placesOf($id, $ledger)];
 
             foreach (array_keys($technical) as $relation) {
                 $cells['f' . $relation] = implode(', ', (array) $data?->all($id, $relation));
@@ -616,7 +617,10 @@ final class StockPage
         return implode('; ', $out);
     }
 
-    /** The lots of a thing, one line each: date, rest, price, origin, place. */
+    /**
+     * The positions of a thing, one line each: date, quantity, price, origin, place — a lot lying at two places is two
+     * positions, each with its own «Umbuchen» (his word 2026-11-05: «das müssten zwei positonen … des geleichen materials sein»).
+     */
     private function lotList(int $thing, \TaxmodStock\Core\Ledger $ledger, bool $withTransfer = false): string
     {
         $s      = $this->stock->structure();
@@ -629,19 +633,23 @@ final class StockPage
             $value    = $lots->first($lot, $s->field('lot_value'));
             $amount   = $value === null ? null : $money->first((int) $value, $s->field('money_amount'));
             $purchase = $lots->first($lot, $s->field('lot_purchase'));
-            $place    = implode(', ', array_map(static fn (int $p): string => $places[$p] ?? '#' . $p, array_keys(array_filter($ledger->placesOf($lot), static fn (float $q): bool => $q > 0.0))));
+            $origin   = ($amount === null ? '' : ' · ' . esc_html($amount) . ' ' . esc_html__('je Stück', 'taxmod-stock'))
+                . ($purchase === null ? ' · ' . esc_html__('Inventur', 'taxmod-stock') : ' · ' . esc_html__('Kauf', 'taxmod-stock') . ' #' . esc_html($purchase));
+            $date     = esc_html(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10));
+            $at       = array_filter($ledger->placesOf($lot), static fn (float $q): bool => $q > 0.0);
 
-            $html .= '<li>' . esc_html(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10))
-                . ' · ' . esc_html__('Rest', 'taxmod-stock') . ' ' . esc_html($this->number($ledger->restOf($lot)))
-                . ($amount === null ? '' : ' · ' . esc_html($amount) . ' ' . esc_html__('je Stück', 'taxmod-stock'))
-                . ($purchase === null ? ' · ' . esc_html__('Inventur', 'taxmod-stock') : ' · ' . esc_html__('Kauf', 'taxmod-stock') . ' #' . esc_html($purchase))
-                . ($place === '' ? '' : ' · ' . esc_html($place));
+            if ($at === []) {
+                $html .= '<li>' . $date . ' · ' . esc_html__('Rest', 'taxmod-stock') . ' ' . esc_html($this->number($ledger->restOf($lot))) . $origin . '</li>';
 
-            foreach ($withTransfer ? array_filter($ledger->placesOf($lot), static fn (float $q): bool => $q > 0.0) : [] as $at => $quantity) {
-                $html .= ' ' . $this->transferDialog($thing, $lot, $at, $quantity, $places, 0, true);
+                continue;
             }
 
-            $html .= '</li>';
+            foreach ($at as $place => $quantity) {
+                $html .= '<li>' . $date . ' · ' . esc_html__('Rest', 'taxmod-stock') . ' ' . esc_html($this->number($quantity)) . $origin
+                    . ' · ' . esc_html($places[$place] ?? '#' . $place)
+                    . ($withTransfer ? ' ' . $this->transferDialog($thing, $lot, (int) $place, $quantity, $places, 0, true) : '')
+                    . '</li>';
+            }
         }
 
         return $html === '' ? '—' : '<ul style="margin:0">' . $html . '</ul>';

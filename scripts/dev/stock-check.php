@@ -342,6 +342,8 @@ $pruefe(str_contains($html, 'taxmod-list-lazy') && str_contains($html, 'data-sou
 $liste = $html;
 $html  = (string) (new StockPage())->listDetails(null, StockPage::DETAILS_MATERIAL, ['thing' => (string) $r['lm']]);
 $pruefe(str_contains($html, 'taxmod-stock-transfer-' . $lot . '-' . $r['platz'] . '-list') && str_contains($html, 'name="return_tab" value="materialliste"'), '«Umbuchen» sits in the material list for each place of a lot and returns to the list');
+// His word 2026-11-05: «das müssten zwei positonen … sein», «bei mehreren positionen den platz in der zusammenfassung weg lassen».
+$pruefe(substr_count($html, '<li>') === 2 && preg_match_all('/<li>[^<]*· Rest 1 /', $html) === 1 && substr_count($html, 'taxmod-dialog-open') === 2, 'a lot at two places is two positions, each with its own quantity and «Umbuchen»');
 
 // His wish 2026-11-03: «3 material wählen alle umbuchen nach» — all of each ticked material to one place, one Vorgang.
 $pruefe(str_contains($liste, 'value="sammelumbuchen" form="taxmod-stock-bulk"') && str_contains($liste, 'name="bulk" id="taxmod-stock-bulk-action"'), 'the material list has «Umbuchen nach …» joining the bulk form');

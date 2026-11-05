@@ -94,12 +94,11 @@ final class Plugin
         add_filter(self::LOSS_LOTS, [self::class, 'lossLots']);
         add_filter(self::BOOK_LOSS, [self::class, 'bookLoss'], 10, 2);
         add_filter(self::CANCEL_LOSS, [self::class, 'cancelLoss'], 10, 2);
-        // D-1147: the rows of the material, purchase and inbound lists draw their details when opened.
+        // D-1147: the rows of the material and purchase lists draw their details when opened.
         // The filter's name stands as text, so an older modeller without it does not stop the module.
         add_filter('taxmod_list_details', static fn (?string $html, string $source, array $args): ?string => match ($source) {
             StockPage::DETAILS_MATERIAL => (new StockPage())->listDetails($html, $source, $args),
             PurchasePage::DETAILS       => (new PurchasePage())->listDetails($html, $source, $args),
-            InboundPage::DETAILS        => (new InboundPage())->listDetails($html, $source, $args),
             ContactsPage::DETAILS       => (new ContactsPage())->listDetails($html, $source, $args),
             default                     => $html,
         }, 10, 3);

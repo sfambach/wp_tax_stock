@@ -239,14 +239,22 @@ $pruefe(str_contains((new InboundPage())->render(), 'Amazon-Historie 2004'), 'it
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'all'];
 $pruefe(! str_contains((new InboundPage())->render(), 'Amazon-Historie 2004'), '«Alle» shows what is not archived');
 
-// D-1147: a row's details load when opened; the check asks for them as the page would, one order at a time.
-$details = static fn (string $tab): string => implode('', array_map(
-    static fn (int $id): string => (string) (new InboundPage())->listDetails(null, InboundPage::DETAILS, ['order' => (string) $id, 'tab' => $tab]),
-    array_keys((new InboundService())->orders())
-));
+// His word 2026-11-05: no rows to open any more — a click on an order opens its own view with its purchases.
+$details = static function (string $tab): string {
+    $html = '';
+
+    foreach (array_keys((new InboundService())->orders()) as $id) {
+        $_GET = ['page' => InboundPage::PAGE, 'tab' => $tab, 'order' => $id];
+        $html .= (new InboundPage())->render();
+    }
+
+    $_GET = ['page' => InboundPage::PAGE, 'tab' => $tab];
+
+    return $html;
+};
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'booked'];
 $html = (new InboundPage())->render();
-$pruefe(str_contains($html, 'taxmod-list-lazy') && str_contains($html, 'data-source="' . InboundPage::DETAILS . '"'), 'D-1147: «Eingebucht» draws its rows, their details load when opened');
+$pruefe(! str_contains($html, 'taxmod-list-toggle') && str_contains($html, 'order=' . $r['o5']), '«Eingebucht» lists its orders without opening rows, each linked to its own view');
 $html .= $details('booked');
 $pruefe(str_contains($html, 'Ladegerät') && str_contains($html, 'thing=' . $r['et4000']) && str_contains($html, 'view=bestand'), '«Eingebucht» shows where each purchase went, linked to its material');
 
@@ -257,9 +265,11 @@ $pruefe(str_contains($html, 'Unterwegs') && ! str_contains($html, '>Bestellt</st
 $pruefe(str_contains($html, '00340434AA') && str_contains($html, 'unterwegs') && str_contains($html, 'Köln'), 'it shows the number, DHL\'s stage and its last event');
 $pruefe($asked === 0, 'drawing the page never asks DHL');
 
+$_GET = ['page' => InboundPage::PAGE, 'tab' => 'arrived', 'order' => $r['o4']];
+$html = (new InboundPage())->render();
+$pruefe(str_contains($html, 'data-back="' . InboundPage::BACK . '"') && str_contains($html, 'data-order="' . $r['o4'] . '"') && str_contains($html, 'Zurück zu «Angekommen»'), 'the view of an arrived order holds the Lager booking form, returning here');
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'arrived'];
 $html = (new InboundPage())->render();
-$pruefe(str_contains($html, 'data-back="' . InboundPage::BACK . '"') && str_contains($html, 'data-order="' . $r['o4'] . '"'), '«Angekommen» holds the Lager booking form, returning here');
 $pruefe(str_contains($html, '1 unbestimmt'), 'it counts the purchases not yet determined (R1)');
 
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'ordered', 'filter' => 'overdue', 's' => 'retro'];

@@ -111,7 +111,7 @@ $pruefe(substr_count($tief, 'taxmod-shell-group is-open') === 2 && str_contains(
 // D-1128, his word «auf dem hauptknoten eine übersicht zu bekommen mit abstprung»: an area and a group open an overview of tiles.
 $_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'stock'];
 $uebersicht = LogisticsShell::wrap(CockpitPage::PAGE, (new CockpitPage())->render());
-$pruefe(str_contains($uebersicht, 'taxmod-shell-area is-open"><a href="' . esc_url(CockpitPage::overviewUrl('stock')) . '">Bestand</a>') && substr_count($uebersicht, 'taxmod-tile-label"') === 6 && str_contains($uebersicht, '<span class="taxmod-tile-label">Platzbestand</span>'), 'Bestand opens an overview with a tile for each of its six items, the area open in the navigation');
+$pruefe(str_contains($uebersicht, 'taxmod-shell-area is-open"><a href="' . esc_url(add_query_arg(LogisticsShell::VIA_MENU, '1', CockpitPage::overviewUrl('stock'))) . '">Bestand</a>') && substr_count($uebersicht, 'taxmod-tile-label"') === 6 && str_contains($uebersicht, '<span class="taxmod-tile-label">Platzbestand</span>'), 'Bestand opens an overview with a tile for each of its six items, the area open in the navigation');
 $_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'settings'];
 $uebersicht = (new CockpitPage())->render();
 $pruefe(str_contains($uebersicht, esc_attr(CockpitPage::overviewUrl('settings', 'Lagerstruktur'))) && substr_count($uebersicht, '>Lagerstruktur</span>') === 1, 'a group (Lagerstruktur) is one tile that opens its own overview');
@@ -119,7 +119,7 @@ $_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'settings', CockpitPa
 $uebersicht = (new CockpitPage())->render();
 $pruefe(str_contains($uebersicht, '>Layout</span>') && str_contains($uebersicht, '>Platzarten</span>') && ! str_contains($uebersicht, '>Grundeinstellungen</span>'), 'the group overview shows only its own items');
 $nav = LogisticsShell::wrap(CockpitPage::PAGE, $uebersicht);
-$pruefe(str_contains($nav, 'taxmod-shell-group is-open"><a href="' . esc_url(CockpitPage::overviewUrl('settings', 'Lagerstruktur')) . '" style="padding-left:24px" class="is-current"'), 'D-1134: the group\'s overview opens the group in the navigation, its sub-items shown');
+$pruefe(str_contains($nav, 'taxmod-shell-group is-open"><a href="' . esc_url(add_query_arg(LogisticsShell::VIA_MENU, '1', CockpitPage::overviewUrl('settings', 'Lagerstruktur'))) . '" style="padding-left:24px" class="is-current"'), 'D-1134: the group\'s overview opens the group in the navigation, its sub-items shown');
 $pruefe(substr_count($uebersicht, 'class="taxmod-tile-figure"') === 2, 'D-1134: Layout and Platzarten show how many there are');
 // D-1167: «Zeitraum» is the second item of the cockpit and marks itself when open.
 $_GET = ['page' => CockpitPage::PAGE, 'tab' => 'period'];

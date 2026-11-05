@@ -1407,6 +1407,45 @@ final class StockService
     }
 
     /**
+     * D-1182: the firms as the modeller's record tree — every node under «Firma» with its depth and its own firms, for the tree chooser
+     * with «New here …». Hidden nodes are left out.
+     *
+     * @return list<array{depth: int, name: string, records: array<int, string>, node: int}>
+     */
+    public function firmTree(): array
+    {
+        $s = $this->structure();
+
+        if (! $s->hasNode('firm')) {
+            return [];
+        }
+
+        $name  = $s->hasField('firm_name') ? $s->field('firm_name') : $s->field('label');
+        $tiefe = [];
+        $out   = [];
+
+        foreach ($this->model->tree($s->node('firm')) as $node => $row) {
+            $tiefe[$node] = isset($tiefe[$row['parent']]) ? $tiefe[$row['parent']] + 1 : 0;
+
+            if ($row['hidden']) {
+                continue;
+            }
+
+            $table   = $this->tableOf($node);
+            $records = [];
+
+            foreach ($table->ids() as $id) {
+                $records[$id] = (string) ($table->first($id, $name) ?? '#' . $id);
+            }
+
+            asort($records, SORT_NATURAL | SORT_FLAG_CASE);
+            $out[] = ['depth' => $tiefe[$node], 'name' => $row['name'], 'records' => $records, 'node' => (int) $node];
+        }
+
+        return $out;
+    }
+
+    /**
      * D-1019: the units and the prefixes a base unit is made of, each one read-tree; hidden ones left out.
      *
      * @return array{units: array<int, string>, prefixes: array<int, string>}

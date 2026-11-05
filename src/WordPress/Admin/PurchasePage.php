@@ -476,21 +476,9 @@ final class PurchasePage
     {
         $sources = $thing > 0 ? $this->stock->sourcesOf($this->stock->things()->lagerOf($thing)) : [];
         $first   = $sources[0] ?? null;
-        $options = '<option value="">' . esc_html__('— Firma —', 'taxmod-stock') . '</option>';
-
-        foreach ($this->stock->firms() as $group => $names) {
-            $options .= '<optgroup label="' . esc_attr($group) . '">';
-
-            foreach ($names as $id => $name) {
-                $options .= '<option value="' . esc_attr((string) $id) . '"' . selected($first?->firm, $id, false) . '>' . esc_html($name) . '</option>';
-            }
-
-            $options .= '</optgroup>';
-        }
-
         return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">' . $this->hidden('source', 'bedarf')
             . '<input type="hidden" name="order" value="' . esc_attr((string) $demand) . '"><input type="hidden" name="purchase" value="' . esc_attr((string) $purchase) . '">'
-            . '<select name="firm" style="max-width:12em">' . $options . '</select>'
+            . FirmChoice::field('firm', $this->stock->firmTree(), $first?->firm)
             . '<input type="text" name="merchant" placeholder="' . esc_attr__('oder Händler', 'taxmod-stock') . '" style="width:8em">'
             . '<input type="text" name="number" placeholder="' . esc_attr__('Art.-Nr.', 'taxmod-stock') . '" style="width:8em" value="' . esc_attr($first->number ?? '') . '">'
             . '<input type="text" inputmode="decimal" name="price" placeholder="' . esc_attr__('€/Stück', 'taxmod-stock') . '" style="width:6em">'

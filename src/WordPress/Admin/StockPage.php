@@ -951,7 +951,7 @@ final class StockPage
             return '';
         }
 
-        $firms = $this->stock->firms();
+        $firms = $this->stock->firmTree();
         $rows  = [...$this->stock->sourcesOf($record), new SourceRow(null, null, ''), new SourceRow(null, null, '')];
         $html  = '<h3>' . esc_html__('Bezugsquellen', 'taxmod-stock') . '</h3>'
             . '<p class="description">' . esc_html__('Wo es das Material gibt: Hersteller oder Händler und seine Nummer. Eine geleerte Zeile wird entfernt.', 'taxmod-stock') . '</p>'
@@ -959,20 +959,8 @@ final class StockPage
             . esc_html__('Nummer', 'taxmod-stock') . '</th>' . ($s->hasField('source_content') ? '<th>' . esc_html__('Packungsinhalt', 'taxmod-stock') . '</th>' : '') . '</tr></thead><tbody>';
 
         foreach ($rows as $i => $row) {
-            $options = '<option value="">—</option>';
-
-            foreach ($firms as $group => $names) {
-                $options .= '<optgroup label="' . esc_attr($group) . '">';
-
-                foreach ($names as $id => $name) {
-                    $options .= '<option value="' . esc_attr((string) $id) . '"' . selected($row->firm, $id, false) . '>' . esc_html($name) . '</option>';
-                }
-
-                $options .= '</optgroup>';
-            }
-
             $html .= '<tr><td>' . ($row->part === null ? '' : '<input type="hidden" name="sources[' . $i . '][part]" value="' . esc_attr((string) $row->part) . '">')
-                . '<select name="sources[' . $i . '][firm]">' . $options . '</select></td>'
+                . FirmChoice::field('sources[' . $i . '][firm]', $firms, $row->firm) . '</td>'
                 . '<td><input type="text" class="regular-text" name="sources[' . $i . '][number]" value="' . esc_attr($row->number) . '"></td>'
                 . ($s->hasField('source_content') ? '<td><input type="text" inputmode="decimal" style="width:7em" name="sources[' . $i . '][content]" value="' . esc_attr($row->content) . '" title="'
                     . esc_attr__('Wie viel eine Packung enthält, in der Basiseinheit', 'taxmod-stock') . '"></td>' : '') . '</tr>';

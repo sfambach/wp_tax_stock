@@ -64,6 +64,8 @@ final class LogisticsShell
             ]],
             ['key' => 'stock', 'label' => __('Bestand', 'taxmod-stock'), 'items' => [
                 $item('material', __('Material', 'taxmod-stock'), StockPage::PAGE, 'material'),
+                // D-1174: a node of the material tree is a group; its stock holds every group below it.
+                $item('group-stock', __('Gruppenbestand', 'taxmod-stock'), StockPage::PAGE, 'gruppenbestand'),
                 $item('count', __('Inventur', 'taxmod-stock'), StockPage::PAGE, 'inventur'),
                 $item('use', __('Verbrauch', 'taxmod-stock'), StockPage::PAGE, 'verbrauch'),
                 $item('reservations', __('Reservierungen', 'taxmod-stock'), StockPage::PAGE, 'reservierungen'),

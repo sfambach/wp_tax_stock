@@ -66,6 +66,11 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
     A box is a carrier, not stock (D-1091): its move is a Vorgang «Umlagerung» (field «Ladungsträger», two positions
     without a lot, − old place, + new place), listed at the box; no lot is rebooked. Needs `values.kind_relocation` and
     `fields.transaction_carrier` in the structure; without them the box is hung as before, without a Vorgang.
+  - **Gruppenbestand** (D-1174, from 0.47.0, needs the modeller from 0.1.167 for the fixed tree; before that a choice list) —
+    a node of the material tree is a **material group**. The material tree stands on the left; a click on a group shows,
+    on the right, every material in it and in the groups below it, in the material list's table (Nr, Material, Gruppe,
+    Lagerort, Bestand, Mindestbestand; checkboxes, bulk «Umbuchen», filter, lots loaded when a row opens), with tiles above:
+    materials, with stock, below minimum, total quantity (left out when the materials count in different units).
   - **Inventur** — counted stock without a purchase, on an existing thing or a new one in a group.
   - **Verbrauch** — take a quantity from a lot; the oldest lot with a rest is proposed.
 - **Page «Einkauf»** (D-1027), purchasing in three steps: a **demand** without a supplier (an order

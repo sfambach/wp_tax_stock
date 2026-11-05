@@ -19,6 +19,7 @@ use Taxmod\WordPress\Printing\PrintJobs;
 use Taxmod\WordPress\Printing\PrintService;
 use Taxmod\WordPress\Printing\PrintTab;
 use TaxmodStock\Core\FitLevel;
+use TaxmodStock\Core\GroupStock;
 use TaxmodStock\Core\InventoryRow;
 use TaxmodStock\Core\LagerInput;
 use TaxmodStock\Core\SourceRow;
@@ -63,7 +64,7 @@ final class StockPage
     /** Rows per page of the material list (design 20: a list of thousands draws only what is seen). */
     private const PER_PAGE  = 50;
     private const ROWS      = 6;
-    private const TABS      = ['wareneingang', 'material', 'inventur', 'verbrauch', 'reservierungen', 'lagerorte', 'lagerstruktur', 'platzarten', 'etikettenvorlagen', 'fertigung'];
+    private const TABS      = ['wareneingang', 'material', 'gruppenbestand', 'inventur', 'verbrauch', 'reservierungen', 'lagerorte', 'lagerstruktur', 'platzarten', 'etikettenvorlagen', 'fertigung'];
     private const VIEWS     = ['daten', 'bearbeiten', 'einkauf', 'lager', 'bestand', 'verkauf'];
     private const FILTER_FORM = 'taxmod-stock-filter';
     private const BULK_FORM   = 'taxmod-stock-bulk';
@@ -126,6 +127,7 @@ final class StockPage
             // The tabs are the menu group «Bestand»; Einbuchen (Eingang) and the structure (Einstellungen, D-1085) stand alone.
             $html .= (in_array($tab, ['wareneingang', 'lagerstruktur', 'platzarten', 'etikettenvorlagen', 'fertigung'], true) ? '' : '<div class="taxmod-stock-pagetabs">' . $this->tabBar($tab, $list) . '</div>') . match ($tab) {
                 'material'  => $thing > 0 ? $this->thingView($thing) : $this->materialList($list),
+                'gruppenbestand' => $this->groupStock($list),
                 'inventur'  => $this->inventoryForm(),
                 'verbrauch' => $this->consumptionForm($thing, absint($_GET['lot'] ?? 0), absint($_GET['place'] ?? 0)),
                 'lagerorte' => $this->locationSplit(false),
@@ -356,8 +358,9 @@ final class StockPage
      * D-997: the things the stock knows as one list; a group chosen adds the columns of its technical data, and a
      * row's details are its lots.
      */
-    private function materialList(StockList $list): string
+    private function materialList(StockList $list, bool $branch = false): string
     {
+        $tab    = $branch ? 'gruppenbestand' : 'material';
         $s      = $this->stock->structure();
         $things = $this->stock->things();
         $all    = $things->all();
@@ -369,8 +372,10 @@ final class StockPage
             return '<p>' . esc_html__('Noch kein Material. Eine Inventur oder ein Wareneingang bringt das erste.', 'taxmod-stock') . '</p>';
         }
 
-        $technical = $group > 0 ? $this->technicalColumns($group) : [];
-        $data      = $group > 0 ? $this->stock->tableOf($group) : null;
+        // D-1174: on «Gruppenbestand» the group holds the groups below it; their technical data differ, so no such columns.
+        $within    = $branch && $group > 0 ? GroupStock::branch($this->stock->groupParents(), $group) : [];
+        $technical = $group > 0 && ! $branch ? $this->technicalColumns($group) : [];
+        $data      = $technical !== [] ? $this->stock->tableOf($group) : null;
         $columns   = [new ListColumn('nr', __('Nr.', 'taxmod-stock'), fixed: true, width: '6em'), new ListColumn('name', __('Material', 'taxmod-stock'), fixed: true),
             new ListColumn('group', __('Gruppe', 'taxmod-stock'))];
         // D-1030: where it lies, by path and project — so a search for a project finds the parts in its box.
@@ -384,12 +389,12 @@ final class StockPage
 
         $columns[] = new ListColumn('stock', __('Bestand', 'taxmod-stock'), width: '7em');
         $columns[] = new ListColumn('min', __('Mindestbestand', 'taxmod-stock'), width: '9em');
-        $listId    = 'stock-material' . ($group > 0 ? '-' . $group : '');
+        $listId    = ($branch ? 'stock-groupstock' : 'stock-material') . ($group > 0 ? '-' . $group : '');
         $view      = ListPage::view($listId, $columns, 'name');
         $groups    = [];
         $rows      = [];
         // D-1147: nothing is drawn until a search, a filter or a group asks for it, or «Alle anzeigen».
-        $waits     = ListPage::waitsForSearch($view, $group > 0 || $list->filter !== '');
+        $waits     = $branch ? $group === 0 : ListPage::waitsForSearch($view, $group > 0 || $list->filter !== '');
 
         foreach ($waits ? [] : array_keys($all) as $id) {
             $node = $things->nodeOf($id);
@@ -398,7 +403,7 @@ final class StockPage
                 $groups[$node] ??= $this->stock->path($node);
             }
 
-            if ($group > 0 && $node !== $group) {
+            if ($branch ? ! isset($within[$node ?? 0]) : $group > 0 && $node !== $group) {
                 continue;
             }
 
@@ -413,6 +418,7 @@ final class StockPage
             }
 
             $rows[] = ['id' => $id, 'name' => $name, 'stock' => $stock, 'low' => $min !== null && $stock < (float) $min, 'words' => [],
+                'unit' => $record === null ? '' : $lager->first($record, $s->field('lager_unit')) . '/' . $lager->first($record, $s->field('lager_prefix')),
                 'cells' => $cells + ['stock' => $this->number($stock), 'min' => $min === null ? '' : (string) $min],
                 'sort'  => ['nr' => $id, 'stock' => $stock, 'min' => $min === null ? -1.0 : (float) $min,
                     'name' => mb_strtolower((string) preg_replace('/^#\d+( · )?/u', '', $name))]];
@@ -430,10 +436,10 @@ final class StockPage
         $shown   = $view->apply((new StockList('', $list->filter))->apply($rows));
         $visible = $view->visible();
         $open    = $this->stock->viewSettings()->expanded('material');
-        $url     = fn (array $change): string => $this->listUrl('material', $list, $change + [ListPage::SHOW_ALL => ListPage::showsAll() ? '1' : '', 'f' => $view->filters(), 'orderby' => $view->orderBy === 'name' ? '' : $view->orderBy, 'order' => $view->descending ? 'desc' : '']);
-        $html    = $this->tools('material', $list, [
+        $url     = fn (array $change): string => $this->listUrl($tab, $list, $change + [ListPage::SHOW_ALL => ListPage::showsAll() ? '1' : '', 'f' => $view->filters(), 'orderby' => $view->orderBy === 'name' ? '' : $view->orderBy, 'order' => $view->descending ? 'desc' : '']);
+        $html    = ($branch ? $this->groupTotals($rows) : '') . $this->tools($tab, $list, [
             ['filter', $this->materialFilters(), $list->filter, __('Filter', 'taxmod-stock')],
-            ['group', ['' => __('Alle Gruppen', 'taxmod-stock')] + $groups, $group > 0 ? (string) $group : '', __('Gruppe', 'taxmod-stock')],
+            ...($branch ? [] : [['group', ['' => __('Alle Gruppen', 'taxmod-stock')] + $groups, $group > 0 ? (string) $group : '', __('Gruppe', 'taxmod-stock')]]),
         ], ['group' => $group > 0 ? (string) $group : '', 'orderby' => $view->orderBy === 'name' ? '' : $view->orderBy, 'order' => $view->descending ? 'desc' : ''],
             __('Material, Nummer, Gruppe …', 'taxmod-stock'), $waits ? sprintf(
             /* translators: %d: number of materials */
@@ -444,7 +450,9 @@ final class StockPage
             _n('%d Material', '%d Materialien', count($shown), 'taxmod-stock'),
             count($shown)
         ), ListPage::filterToggle() . ListPage::columnMenu($listId, $view, $url([])) . $this->bulkTransferDialog());
-        $body    = $waits ? ListPage::searchPrompt(count($visible), $url([ListPage::SHOW_ALL => '1']), count($all)) : ($shown === [] ? $this->noItems(count($visible)) : '');
+        $body    = $waits ? ($branch ? '<tr class="no-items"><td class="colspanchange" colspan="' . esc_attr((string) (count($visible) + 2)) . '">'
+            . esc_html__('Links eine Materialgruppe wählen: angezeigt wird alles darin und in den Gruppen darunter.', 'taxmod-stock') . '</td></tr>'
+            : ListPage::searchPrompt(count($visible), $url([ListPage::SHOW_ALL => '1']), count($all))) : ($shown === [] ? $this->noItems(count($visible)) : '');
 
         // «← Zur Liste» in the material view comes back to exactly this list (design 7.3).
         set_transient(self::LAST_LIST . get_current_user_id(), $url(['paged' => absint($_GET['paged'] ?? 0) > 1 ? (string) absint($_GET['paged']) : '']), DAY_IN_SECONDS);
@@ -478,6 +486,54 @@ final class StockPage
 
         return $html . ListPage::table(ListPage::heads($view, $url), $body, ListPage::filterRow(self::FILTER_FORM, $view))
             . ListPage::pagination(count($shown), $paged, self::PER_PAGE, $url);
+    }
+
+    /**
+     * D-1174, his word 2026-11-05: «gruppen bestand auswahl aus material tax baum knoten wird alles angezeigt unter dem knoten» —
+     * the material tree on the left (the modeller's node tree, fixed on the page), on the right everything in the chosen group
+     * and the groups below it, in the material list's table with its lots opened lazily.
+     */
+    private function groupStock(StockList $list): string
+    {
+        $group  = absint($_GET['group'] ?? 0);
+        $group  = isset($this->stock->tree()[$group]) ? $group : 0;
+        $pick   = add_query_arg(['page' => self::PAGE, 'tab' => 'gruppenbestand', 'group' => '{id}'], admin_url('admin.php'));
+        // The fixed tree needs the modeller from 0.1.167; before that the groups stand in a choice list.
+        $inline = version_compare((string) \Taxmod\WordPress\Plugin::VERSION, '0.1.167', '>=');
+        $tree   = $inline ? $this->stock->groupChooser('taxmod_stock_group', $group, '', $pick) : '';
+
+        $this->side = '<div class="taxmod-stock-places"><div class="taxmod-stock-places-head"><p class="taxmod-shell-title">'
+            . esc_html__('Materialgruppen', 'taxmod-stock') . '</p></div>'
+            . ($tree !== '' ? $tree : '<form method="get" action="' . esc_url(admin_url('admin.php')) . '">'
+                . '<input type="hidden" name="page" value="' . esc_attr(self::PAGE) . '"><input type="hidden" name="tab" value="gruppenbestand">'
+                . '<select name="group" style="width:100%" onchange="this.form.submit()">' . $this->groupOptions($group) . '</select></form>')
+            . '</div>' . $this->placeTreeScript();
+
+        return ($group > 0 ? '<h2>' . esc_html($this->stock->path($group)) . '</h2>' : '') . $this->materialList($list, true);
+    }
+
+    /**
+     * D-1174: what the group's rows add up to, as the modeller's shared tiles. The quantity is left out when the materials count
+     * in different units.
+     *
+     * @param list<array{stock: float, low: bool, unit: string}> $rows
+     */
+    private function groupTotals(array $rows): string
+    {
+        if ($rows === []) {
+            return '';
+        }
+
+        $totals = GroupStock::totals($rows);
+        $tile   = static fn (string $label, string $value, TileTone $tone = TileTone::Normal): Tile => new Tile($label, '', $value, [], $tone);
+
+        return Tiles::grid([
+            $tile(__('Materialien', 'taxmod-stock'), (string) $totals['materials']),
+            $tile(__('Mit Bestand', 'taxmod-stock'), (string) $totals['inStock'], $totals['inStock'] > 0 ? TileTone::Normal : TileTone::Empty),
+            $tile(__('Unter Mindestbestand', 'taxmod-stock'), (string) $totals['low'], $totals['low'] > 0 ? TileTone::Alert : TileTone::Empty),
+            $tile(__('Menge gesamt', 'taxmod-stock'), $totals['quantity'] === null ? __('gemischte Einheiten', 'taxmod-stock') : $this->number($totals['quantity']),
+                $totals['quantity'] === null ? TileTone::Empty : TileTone::Normal),
+        ]);
     }
 
     /**
@@ -3187,6 +3243,7 @@ final class StockPage
     {
         return ListPage::tabs([
             ['material', __('Material', 'taxmod-stock'), count($this->stock->things()->all())],
+            ['gruppenbestand', __('Gruppenbestand', 'taxmod-stock')],
             ['inventur', __('Inventur', 'taxmod-stock')],
             ['verbrauch', __('Verbrauch', 'taxmod-stock')],
             ['reservierungen', __('Reservierungen', 'taxmod-stock')],
@@ -3220,7 +3277,7 @@ final class StockPage
             'filter'  => $list->filter,
             'orderby' => $list->orderBy === 'name' ? '' : $list->orderBy,
             'order'   => $list->descending ? 'desc' : '',
-            'group'   => $tab === 'material' ? sanitize_key((string) ($_GET['group'] ?? '')) : '',
+            'group'   => in_array($tab, ['material', 'gruppenbestand'], true) ? sanitize_key((string) ($_GET['group'] ?? '')) : '',
         ]);
 
         return admin_url('admin.php?' . http_build_query(array_filter(array_merge($query, $change)), '', '&'));

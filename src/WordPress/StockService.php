@@ -332,9 +332,10 @@ final class StockService
 
     /**
      * D-1075: the modeller's node chooser over the groups of things — its root, and the branches that hold no material
-     * (the Lager's own branch, and those he names) left out with everything under them.
+     * (the Lager's own branch, and those he names) left out with everything under them. With `$pickUrl` it is the tree
+     * fixed on the page (D-1174).
      */
-    public function groupChooser(string $name, int $preselected = 0, string $form = ''): string
+    public function groupChooser(string $name, int $preselected = 0, string $form = '', string $pickUrl = ''): string
     {
         $s    = $this->structure();
         $root = $this->model->fields($s->node('lager'))[$s->field('lager_thing')]['target'] ?? 0;
@@ -357,7 +358,10 @@ final class StockService
             'unpickable'  => [$root],
             'preselected' => $preselected,
             'form'        => $form,
-        ], static fn (mixed $v): bool => $v !== '' && $v !== 0 && $v !== []) + ['name' => $name, 'root' => $root]);
+            // D-1174: with a pick address the tree stands on the page and a click opens it, «{id}» for the group.
+            'inline'      => $pickUrl !== '',
+            'pick_url'    => $pickUrl,
+        ], static fn (mixed $v): bool => $v !== '' && $v !== 0 && $v !== [] && $v !== false) + ['name' => $name, 'root' => $root]);
     }
 
     /**

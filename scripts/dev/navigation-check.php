@@ -102,6 +102,7 @@ $pruefe(($vorlagen['path'] ?? []) === ['Druck'] && ($vorlagen['label'] ?? '') ==
 $bestand = array_values(array_filter($areas, static fn (array $area): bool => $area['key'] === 'stock'))[0]['items'] ?? [];
 $platz   = array_values(array_filter($bestand, static fn (array $item): bool => $item['key'] === 'places'))[0] ?? null;
 $pruefe(($platz['label'] ?? '') === 'Platzbestand' && ($platz['tab'] ?? '') === 'lagerorte', 'Bestand › Platzbestand opens what lies at a place (renamed from «Lagerorte», his word 2026-11-05)');
+$pruefe(array_slice(array_column($bestand, 'key'), 0, 2) === ['material', 'group-stock'] && ($bestand[1]['tab'] ?? '') === 'gruppenbestand', 'D-1174: Bestand › Gruppenbestand stands after Material');
 $fertigung = array_values(array_filter($areas, static fn (array $area): bool => $area['key'] === 'production'))[0]['items'] ?? [];
 $pruefe(array_column($fertigung, 'key') === ['project-boxes', 'module-__navcheck-production'], 'D-1142: a page announced with area «production» stands under Fertigung, after Projekt-Gebinde');
 $_GET = ['page' => ModulePage::PAGE, 'module' => '__navcheck-deep'];

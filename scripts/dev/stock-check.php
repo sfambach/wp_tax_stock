@@ -366,6 +366,14 @@ $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'group' => (string) $r[
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'value="' . $r['teile'] . '" selected') && str_contains($html, 'LM2930T-5.0') && ! str_contains($html, 'notice-error'), 'the list filters by group');
 
+// D-1174: «Gruppenbestand» — nothing until a group is picked in the tree; then everything in it and below it, with the totals.
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'gruppenbestand'];
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'Materialgruppen') && str_contains($html, 'Links eine Materialgruppe wählen') && ! str_contains($html, 'LM2930T-5.0</a>') && ! str_contains($html, 'notice-error'), 'D-1174: «Gruppenbestand» waits for a group from the tree');
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'gruppenbestand', 'group' => (string) $r['teile']];
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'LM2930T-5.0') && str_contains($html, 'Menge gesamt') && str_contains($html, 'data-source="' . StockPage::DETAILS_MATERIAL . '"') && ! str_contains($html, 'notice-error'), 'D-1174: a group shows its materials, the totals as tiles and lots loaded when a row opens');
+
 // Laid out as the eBay shipping page (2026-10-25): «Wareneingang» first and default, list tables with search, filter and sorting.
 $_GET = ['page' => StockPage::PAGE];
 $html = (new StockPage())->render();

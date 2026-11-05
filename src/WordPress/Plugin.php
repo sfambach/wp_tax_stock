@@ -5,6 +5,7 @@ namespace TaxmodStock\WordPress;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\TestSettings;
 use TaxmodStock\WordPress\Admin\CockpitPage;
+use TaxmodStock\WordPress\Admin\ContactsPage;
 use TaxmodStock\WordPress\Admin\InboundPage;
 use TaxmodStock\WordPress\Admin\LogisticsShell;
 use TaxmodStock\WordPress\Admin\Messages;
@@ -82,6 +83,7 @@ final class Plugin
         add_action('admin_post_' . StockPage::THING_BRANCH, static fn () => (new StockPage())->thingBranch());
         add_action('admin_post_' . InboundPage::ACTION, static fn () => self::serially(static fn () => (new InboundPage())->handle()));
         add_action('admin_post_' . PurchasePage::ACTION, static fn () => self::serially(static fn () => (new PurchasePage())->handle()));
+        add_action('admin_post_' . ContactsPage::ACTION, static fn () => (new ContactsPage())->handle());
         add_action('admin_post_' . SettingsPage::ACTION, static fn () => (new SettingsPage())->handle());
         add_action('admin_post_' . LogisticsShell::FULLSCREEN_ACTION, [LogisticsShell::class, 'switchFullscreen']);
         add_filter(self::BOOK_BUILD, [self::class, 'bookBuild'], 10, 2);
@@ -98,6 +100,7 @@ final class Plugin
             StockPage::DETAILS_MATERIAL => (new StockPage())->listDetails($html, $source, $args),
             PurchasePage::DETAILS       => (new PurchasePage())->listDetails($html, $source, $args),
             InboundPage::DETAILS        => (new InboundPage())->listDetails($html, $source, $args),
+            ContactsPage::DETAILS       => (new ContactsPage())->listDetails($html, $source, $args),
             default                     => $html,
         }, 10, 3);
     }
@@ -427,6 +430,8 @@ final class Plugin
             add_submenu_page(self::PARENT, __('Einkauf', 'taxmod-stock'), __('Einkauf', 'taxmod-stock'), 'manage_options', PurchasePage::PAGE, $page(PurchasePage::PAGE, static fn (): string => (new PurchasePage())->render())),
             add_submenu_page(self::PARENT, __('Wareneingang', 'taxmod-stock'), __('Wareneingang', 'taxmod-stock'), 'manage_options', self::MENU, $page(self::MENU, static fn (): string => (new InboundPage())->render())),
             add_submenu_page(self::PARENT, __('Lager', 'taxmod-stock'), __('Lager', 'taxmod-stock'), 'manage_options', StockPage::PAGE, $page(StockPage::PAGE, static fn (): array => (new StockPage())->parts())),
+            // D-1183: Logistik › Kontakte, the model's contact branch.
+            add_submenu_page(self::PARENT, __('Kontakte', 'taxmod-stock'), __('Kontakte', 'taxmod-stock'), 'manage_options', ContactsPage::PAGE, $page(ContactsPage::PAGE, static fn (): array => (new ContactsPage())->render())),
             // D-1085: Logistik › Einstellungen › Grundeinstellungen, inside the navigation.
             add_submenu_page(self::PARENT, __('Grundeinstellungen', 'taxmod-stock'), __('Grundeinstellungen', 'taxmod-stock'), 'manage_options', SettingsPage::PAGE, $page(SettingsPage::PAGE, static fn (): string => (new SettingsPage())->render())),
         ];
@@ -450,7 +455,7 @@ final class Plugin
         // Removed only when the menu is drawn: WordPress checks access to a page against the submenu, so removing them here
         // would lock the pages. D-1085: the modules' entries go too — the menu keeps Modeller, Logistik, maintenance, Configuration.
         add_action('admin_head', static function (): void {
-            foreach ([self::MENU, StockPage::PAGE, PurchasePage::PAGE, SettingsPage::PAGE, ModulePage::PAGE, ...ModulePage::menuEntries()] as $hidden) {
+            foreach ([self::MENU, StockPage::PAGE, PurchasePage::PAGE, SettingsPage::PAGE, ContactsPage::PAGE, ModulePage::PAGE, ...ModulePage::menuEntries()] as $hidden) {
                 remove_submenu_page(self::PARENT, $hidden);
             }
         });
@@ -458,7 +463,7 @@ final class Plugin
         // The modeller's forms (record editor, choosers, dialogs) on a logistics page need its stylesheet in the head: enqueued late,
         // from inside the filter, it came too late, and a chosen project showed its hidden search field beside it (2026-11-03).
         add_action('admin_enqueue_scripts', static function (): void {
-            if (in_array(sanitize_key((string) ($_GET['page'] ?? '')), [self::MENU, CockpitPage::PAGE, StockPage::PAGE, PurchasePage::PAGE, SettingsPage::PAGE, ModulePage::PAGE, InboundPage::PAGE], true)) {
+            if (in_array(sanitize_key((string) ($_GET['page'] ?? '')), [self::MENU, CockpitPage::PAGE, StockPage::PAGE, PurchasePage::PAGE, SettingsPage::PAGE, ModulePage::PAGE, InboundPage::PAGE, ContactsPage::PAGE], true)) {
                 do_action('taxmod_enqueue_admin_style');
             }
         });

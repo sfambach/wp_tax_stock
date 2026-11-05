@@ -28,6 +28,11 @@ final class Messages
             'not_stocked_without_reason' => sprintf(__('Kauf #%s: Bitte einen Grund angeben, warum er nicht eingelagert wird.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id of the purchase */
             'not_closed_without_stock'  => sprintf(__('Kauf #%s ist nicht als «nicht eingelagert» abgeschlossen.', 'taxmod-stock'), $error->detail),
+            'contact_without_name'      => __('Ein neuer Kontakt braucht einen Namen.', 'taxmod-stock'),
+            /* translators: %s: node id */
+            'not_a_contact_group'       => sprintf(__('Knoten %s liegt nicht im Kontakt-Ast.', 'taxmod-stock'), $error->detail),
+            /* translators: %s: record id */
+            'contact_not_undoable'      => sprintf(__('Kontakt %s kann nicht mehr zurückgenommen werden; im Taxonomy Modeller entfernen.', 'taxmod-stock'), $error->detail),
             'place_without_name'        => __('Ein neuer Lagerort braucht einen Namen.', 'taxmod-stock'),
             /* translators: %s: record id of the place */
             'place_type_loop'           => sprintf(__('Platzart #%s enthält sich über ihre Teile selbst.', 'taxmod-stock'), $error->detail),

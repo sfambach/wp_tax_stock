@@ -35,7 +35,9 @@ final class Structure
         // D-1153, D-1159: the labels; D-1160: the category a material prints from.
         'label_template', 'label_materials',
         // D-1158: the Dimension node behind a place type's outer and inner size.
-        'dimension'];
+        'dimension',
+        // D-1183: the contact branch (firms, suppliers, manufacturers, persons) shown under Logistik › Kontakte.
+        'contact'];
 
     /** Fields the module uses when they are there and leaves out when they are not. */
     private const OPTIONAL_FIELDS = [
@@ -72,6 +74,8 @@ final class Structure
         'project_boards', 'board_revisions', 'revision_positions', 'position_part', 'position_count',
         // D-1150: a place's short mark (A1-S1), put before its name wherever the place is named.
         'location_short',
+        // D-1183: a person's first name, put before the name in the contact list.
+        'contact_first_name',
         // D-1151: the unit name a line of a place type's parts gives the places it brings.
         'part_unit_name',
         // D-1153: label formats and templates as records; a place type names its template and how many labels.

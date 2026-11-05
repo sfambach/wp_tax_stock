@@ -2,6 +2,7 @@
 
 namespace TaxmodStock\WordPress;
 
+use TaxmodStock\Core\Contacts;
 use TaxmodStock\Core\Bookings;
 use TaxmodStock\Core\BuildPlan;
 use TaxmodStock\Core\InboundArchive;
@@ -1485,6 +1486,172 @@ final class StockService
         }
 
         return $out;
+    }
+
+    /** D-1183: the root of the contact branch — its own node, or the firms' node on a structure that does not name it. */
+    public function contactRoot(): int
+    {
+        $s = $this->structure();
+
+        return $s->hasNode('contact') ? $s->node('contact') : ($s->hasNode('firm') ? $s->node('firm') : 0);
+    }
+
+    /**
+     * D-1183: the contact branch, one read-tree.
+     *
+     * @return array<int, array{name: string, parent: int, class: string, hidden: bool}>
+     */
+    public function contactTree(): array
+    {
+        $root = $this->contactRoot();
+
+        return $root > 0 ? $this->model->tree($root) : [];
+    }
+
+    /**
+     * D-1183: the contacts under `$node` with the number of stock sources naming each — one read per node and one of the sources (CD-7).
+     *
+     * @return list<array{id: int, name: string, node: int, group: string, sources: int}>
+     */
+    public function contacts(int $node, string $search = ''): array
+    {
+        $s    = $this->structure();
+        $tree = $this->contactTree();
+        $root = $this->contactRoot();
+
+        if (! isset($tree[$node])) {
+            return [];
+        }
+
+        $name    = $s->hasField('firm_name') ? $s->field('firm_name') : $s->field('label');
+        $first   = $s->hasField('contact_first_name') ? $s->field('contact_first_name') : 0;
+        $records = [];
+
+        foreach (array_keys(Contacts::branch($tree, $node)) as $at) {
+            $table = $this->tableOf($at);
+
+            foreach ($table->ids() as $id) {
+                $records[$at][$id] = Contacts::displayName((string) ($table->first($id, $name) ?? ''), $first > 0 ? (string) ($table->first($id, $first) ?? '') : '', $id);
+            }
+        }
+
+        return Contacts::rows($tree, $root, $node, $records, $this->sourceCounts(), $search);
+    }
+
+    /**
+     * D-1183: contact → how many sources («Bezugsquellen») of the stock name it.
+     *
+     * @return array<int, int>
+     */
+    private function sourceCounts(): array
+    {
+        $s = $this->structure();
+
+        if (! $s->hasNode('source') || ! $s->hasField('source_firm')) {
+            return [];
+        }
+
+        $parts = $this->table('source');
+        $out   = [];
+
+        foreach ($parts->ids() as $part) {
+            $firm = (int) ($parts->first($part, $s->field('source_firm')) ?? 0);
+
+            if ($firm > 0) {
+                $out[$firm] = ($out[$firm] ?? 0) + 1;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * D-1183: the materials whose sources name this contact, thing → name, for the row's details.
+     *
+     * @return array<int, string>
+     */
+    public function suppliedBy(int $contact): array
+    {
+        $s = $this->structure();
+
+        if (! $s->hasNode('source') || ! $s->hasField('source_firm') || ! $s->hasField('lager_sources')) {
+            return [];
+        }
+
+        $parts = $this->table('source');
+        $lager = $this->table('lager');
+        $mine  = [];
+
+        foreach ($parts->ids() as $part) {
+            if ((int) ($parts->first($part, $s->field('source_firm')) ?? 0) === $contact) {
+                $mine[$part] = true;
+            }
+        }
+
+        $things = [];
+
+        foreach ($mine === [] ? [] : $lager->ids() as $record) {
+            foreach ($lager->all($record, $s->field('lager_sources')) as $part) {
+                if (isset($mine[(int) $part]) && ($thing = (int) ($lager->first($record, $s->field('lager_thing')) ?? 0)) > 0) {
+                    $things[] = $thing;
+                }
+            }
+        }
+
+        $names = $this->recordLabels(array_values(array_unique($things)));
+        asort($names, SORT_NATURAL | SORT_FLAG_CASE);
+
+        return $names;
+    }
+
+    /**
+     * D-1183: a new contact in a node of the contact branch, by its name (and a person's first name); the rest is filled in the editor.
+     *
+     * @return int the new record
+     */
+    public function createContact(int $node, string $name, string $firstName = ''): int
+    {
+        $s    = $this->structure();
+        $name = trim($name);
+
+        if ($name === '' || ! $s->hasField('firm_name')) {
+            throw StockError::contactWithoutName();
+        }
+
+        if (Contacts::branch($this->contactTree(), $node) === [] || $node === $this->contactRoot()) {
+            throw StockError::notAContactGroup($node);
+        }
+
+        $values = [(string) $s->field('firm_name') => $name];
+
+        if (trim($firstName) !== '' && $this->hasContactFirstName($node)) {
+            $values[(string) $s->field('contact_first_name')] = trim($firstName);
+        }
+
+        $answer = $this->model->write([
+            ['op' => 'create_record', 'ref' => 'kontakt', 'node' => (string) $node],
+            ['op' => 'set_values', 'record' => '@kontakt', 'values' => $values],
+        ]);
+
+        return (int) ($answer['refs']['kontakt'] ?? 0);
+    }
+
+    /** D-1183: whether the node's contacts carry a first name (a person). */
+    public function hasContactFirstName(int $node): bool
+    {
+        $s = $this->structure();
+
+        return $s->hasField('contact_first_name') && isset($this->model->fields($node)[$s->field('contact_first_name')]);
+    }
+
+    /**
+     * D-1010 for D-1183: the contact just created is taken back again.
+     *
+     * @return array<string, mixed> the modeller's answer
+     */
+    public function removeContact(int $record): array
+    {
+        return $this->model->write([['op' => 'remove_record', 'record' => $record]]);
     }
 
     /**

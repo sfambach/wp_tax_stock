@@ -352,7 +352,7 @@ final class Bookings
      * @param list<array{lot: int, place: int, quantity: float}>     $back
      * @return list<array<string, mixed>>
      */
-    public function output(array $new, array $back, int $place, int $reference, string $title): array
+    public function output(array $new, array $back, int $place, int $reference, string $title, bool $tested = false): array
     {
         $s = $this->structure;
 
@@ -363,13 +363,16 @@ final class Bookings
         $this->start();
 
         // D-1143: a finished board comes in untested; the test after the receipt (D-1002) frees it.
-        $untested = $s->hasField('lot_condition') && $s->hasValue('condition_untested');
+        // D-1177, his word «prüfung ist pflicht»: one tested in the manufacturing comes in as «funktioniert», tested today.
+        $condition = $tested ? 'test_ok' : 'condition_untested';
+        $untested  = $s->hasField('lot_condition') && $s->hasValue($condition);
 
         foreach ($new as $row) {
             $lot = $this->lot($row['name'], (string) $row['thing'], null, null, '', $place);
 
             if ($untested) {
-                $this->changes[] = ['op' => 'set_values', 'record' => $lot, 'values' => [(string) $s->field('lot_condition') => (string) $s->value('condition_untested')]];
+                $this->changes[] = ['op' => 'set_values', 'record' => $lot, 'values' => [(string) $s->field('lot_condition') => (string) $s->value($condition)]
+                    + ($tested && $s->hasField('lot_tested_on') ? [(string) $s->field('lot_tested_on') => $this->today] : [])];
             }
 
             $this->line($row['name'], $lot, self::signed($row['quantity']), null, $place);

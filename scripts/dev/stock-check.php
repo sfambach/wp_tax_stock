@@ -614,6 +614,10 @@ $neuLos  = array_values(array_filter($s->table('lot')->ids(), static fn (int $l)
 $pruefe($neuLos !== [] && (! $s->structure()->hasField('lot_condition') || (int) $s->table('lot')->first($neuLos[0], $s->structure()->field('lot_condition')) === $s->structure()->value('condition_untested')), 'D-1143: the finished board comes in untested');
 $storno  = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_OUTPUT, null, ['reference' => $auftrag, 'place' => $schrank, 'lines' => [$platine => -1], 'title' => 'Fertigung Testkarte Storno', 'date' => '2026-11-04']);
 $pruefe(is_int($storno) && ((new StockService())->presentIn($schrank)[$platine] ?? 0.0) === 1.0, 'D-1143: a negative count takes one back from what this order brought in' . ($storno instanceof WP_Error ? ': ' . $storno->get_error_message() : ''));
+$geprueft = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_OUTPUT, null, ['reference' => $auftrag, 'place' => $schrank, 'lines' => [$platine => 1], 'title' => 'Fertigung geprüft', 'date' => '2026-11-05', 'tested' => true]);
+$s        = new StockService();
+$geprLos  = max(array_values(array_filter($s->table('lot')->ids(), static fn (int $l): bool => (int) $s->table('lot')->first($l, $s->structure()->field('lot_thing')) === $platine)) ?: [0]);
+$pruefe(is_int($geprueft) && (! $s->structure()->hasField('lot_condition') || ! $s->structure()->hasValue('test_ok') || (int) $s->table('lot')->first($geprLos, $s->structure()->field('lot_condition')) === $s->structure()->value('test_ok')), 'D-1177: a board tested in the manufacturing comes in as «funktioniert»' . ($geprueft instanceof WP_Error ? ': ' . $geprueft->get_error_message() : ''));
 $zuviel  = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_OUTPUT, null, ['reference' => $auftrag + 1, 'place' => $schrank, 'lines' => [$platine => -1], 'title' => 'fremd', 'date' => '2026-11-04']);
 $pruefe($zuviel instanceof WP_Error && $zuviel->get_error_code() === 'taxmod_stock_not_produced_for_order', 'D-1143: cancelling what another order brought in is refused');
 

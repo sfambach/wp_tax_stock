@@ -418,7 +418,8 @@ final class StockPage
             }
 
             $rows[] = ['id' => $id, 'name' => $name, 'stock' => $stock, 'low' => $min !== null && $stock < (float) $min, 'words' => [],
-                'unit' => $record === null ? '' : $lager->first($record, $s->field('lager_unit')) . '/' . $lager->first($record, $s->field('lager_prefix')),
+                // Optional fields (Structure::OPTIONAL_FIELDS): a model without a base unit has none to group by.
+                'unit' => $record === null || ! $s->hasField('lager_unit') ? '' : $lager->first($record, $s->field('lager_unit')) . '/' . ($s->hasField('lager_prefix') ? $lager->first($record, $s->field('lager_prefix')) : ''),
                 'cells' => $cells + ['stock' => $this->number($stock), 'min' => $min === null ? '' : (string) $min],
                 'sort'  => ['nr' => $id, 'stock' => $stock, 'min' => $min === null ? -1.0 : (float) $min,
                     'name' => mb_strtolower((string) preg_replace('/^#\d+( · )?/u', '', $name))]];

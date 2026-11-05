@@ -144,7 +144,8 @@ final class Plugin
     /**
      * D-1143 for wp_tax_manufacturing: `apply_filters('taxmod_stock_book_output', null, $args)` brings the finished things of
      * a build order into stock. `$args`: reference (the order's record), place (where they go), lines (thing → pieces, less
-     * than 0 cancels what this order brought in), title, date (Y-m-d). Answers the Vorgang's id or a WP_Error.
+     * than 0 cancels what this order brought in), title, date (Y-m-d), tested (true: tested in the manufacturing, D-1177).
+     * Answers the Vorgang's id or a WP_Error.
      *
      * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
      * @param mixed $args     the booking as the caller sends it; `mixed`: checked here
@@ -174,7 +175,7 @@ final class Plugin
         }
 
         try {
-            return (new StockService())->bookOutput(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Fertigung', 'taxmod-stock'))));
+            return (new StockService())->bookOutput(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Fertigung', 'taxmod-stock'))), ($args['tested'] ?? false) === true);
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }

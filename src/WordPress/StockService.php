@@ -1518,7 +1518,7 @@ final class StockService
      *
      * @param array<int, float> $lines
      */
-    public function bookOutput(int $reference, int $place, array $lines, string $today, string $title): int
+    public function bookOutput(int $reference, int $place, array $lines, string $today, string $title, bool $tested = false): int
     {
         if ($reference <= 0) {
             throw StockError::noSubject();
@@ -1539,7 +1539,7 @@ final class StockService
         $labels = $this->recordLabels(array_column($plan['new'], 'thing'));
         $new    = array_map(static fn (array $r): array => $r + ['name' => $labels[$r['thing']] ?? $title], $plan['new']);
 
-        return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->output($new, $plan['back'], $place, $reference, $title)));
+        return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->output($new, $plan['back'], $place, $reference, $title, $tested)));
     }
 
     /**

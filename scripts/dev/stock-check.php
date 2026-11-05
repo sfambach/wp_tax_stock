@@ -47,6 +47,7 @@ use TaxmodStock\Core\InventoryRow;
 use TaxmodStock\Core\LagerInput;
 use TaxmodStock\Core\NewThing;
 use TaxmodStock\Core\ReceiptChoice;
+use TaxmodStock\Core\ReceiptReversal;
 use TaxmodStock\Core\Purpose;
 use TaxmodStock\Core\SplitRow;
 use TaxmodStock\Core\StockError;
@@ -750,6 +751,21 @@ $pruefe((new StockService())->structure()->node('lager') === 149000110147, 'an i
 (new TaxmodStock\WordPress\Admin\SettingsPage())->save(['taxmod_stock_branch' => [['node' => '500', 'location' => '7'], ['node' => '', 'location' => '3'], ['node' => '501', 'location' => '']], 'taxmod_stock_unreferenced' => '9']);
 $orte = (new StockService())->locationSettings();
 $pruefe($orte->branches === [500 => 7] && $orte->unreferenced === 9, 'Grundeinstellungen store branch → place rows, half-filled rows are dropped (D-972, D-1085)');
+
+// His report 2026-11-05: «zurückbuchen … nicht möglich» on a card only moved — an Umbuchung does not keep the receipt.
+update_option(StockService::OPTION, $struktur);
+$s      = new StockService();
+$von    = $s->structure();
+$zwei   = array_values(array_filter($s->table('lot')->ids(), static fn (int $l): bool => in_array((int) $s->table('lot')->first($l, $von->field('lot_purchase')), [$r['kaufC'], $r['kaufD']], true)));
+$dLot   = array_values(array_filter($zwei, static fn (int $l): bool => (int) $s->table('lot')->first($l, $von->field('lot_purchase')) === $r['kaufD']))[0] ?? 0;
+$dOrt   = (int) $s->table('lot')->first($dLot, $von->field('lot_location'));
+$s->moveLots([$dLot], $dOrt, $dOrt === $r['platz'] ? $r['lager'] : $r['platz'], '1', '2026-11-05', 'Umbuchung vor Zurück');
+$zeilen = static fn (StockService $x): array => array_values(array_filter($x->table('line')->ids(), static fn (int $l): bool => in_array((int) $x->table('line')->first($l, $r['p_lot']), $zwei, true)));
+$vorher = $zeilen(new StockService());
+$x      = new StockService();
+$x->write((new ReceiptReversal($x->structureWithKinds()))->reverse($r['best2'], $x->table('order'), $x->table('lot'), $x->table('line'), $x->table('transaction')));
+$nach   = new StockService();
+$pruefe(count($vorher) === 8 && $zeilen($nach) === [] && array_filter($zwei, static fn (int $l): bool => $nach->table('lot')->has($l)) === [], 'a receipt whose lot was only moved goes back, its Umbuchung lines with it');
 
 echo $fehler === 0 ? "all green ({$kind})\n" : "{$fehler} red ({$kind})\n";
 exit($fehler === 0 ? 0 : 1);

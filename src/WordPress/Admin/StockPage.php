@@ -21,6 +21,7 @@ use Taxmod\WordPress\Printing\PrintTab;
 use TaxmodStock\Core\FitLevel;
 use TaxmodStock\Core\GroupStock;
 use TaxmodStock\Core\InventoryRow;
+use TaxmodStock\Core\LabelTemplates;
 use TaxmodStock\Core\LagerInput;
 use TaxmodStock\Core\Pack;
 use TaxmodStock\Core\SourceRow;
@@ -700,7 +701,7 @@ final class StockPage
         $s         = $this->stock->structure();
         $templates = $this->stock->labelTemplates();
         $chosen    = $s->hasNode('label_materials') ? $templates->get($templates->firstIn($s->node('label_materials'))) : null;
-        $template  = $chosen === null ? [] : ['name' => $chosen['name'], 'format' => $chosen['format'], 'layout' => $chosen['layout'], 'record' => $thing];
+        $template  = $chosen === null ? [] : LabelTemplates::forButton($chosen, ['record' => $thing]);
 
         return (string) apply_filters('taxmod_label_button', '', 'M', $thing, $label === '' ? '#' . $thing : $label, '', $chosen['copies'] ?? 1, $template);
     }
@@ -2080,14 +2081,11 @@ final class StockPage
             $tree->shortOf($place),
             $project === '' ? '' : __('Projekt', 'taxmod-stock') . ': ' . $project,
             $parent,
-        ])), $copies, $template === null ? [] : [
-            'name'   => $template['name'],
-            'format' => $template['format'],
-            'layout' => $template['layout'],
+        ])), $copies, $template === null ? [] : LabelTemplates::forButton($template, [
             // D-1160: the modeller reads the fields the layout names from the place itself; these fill what it has no field for.
             'record' => $place,
             'values' => ['bezeichnung' => $tree->titleOf($place), 'kurzzeichen' => $tree->shortOf($place), 'projekt' => $project, 'ort' => $parent],
-        ]];
+        ])];
     }
 
     /**
@@ -2426,7 +2424,7 @@ final class StockPage
         }
 
         $place = $this->firstPlaceWith($id);
-        $label = ['name' => $template['name'], 'format' => $template['format'], 'layout' => $template['layout']];
+        $label = LabelTemplates::forButton($template);
 
         if ($place > 0) {
             [$prefix, $code, $title, $subtitle, , $own] = $this->placeLabel($place, $this->stock->locationTree());
@@ -2440,7 +2438,7 @@ final class StockPage
                 $examples = [];
             }
             $button = (string) apply_filters('taxmod_label_button', '', 'O', 12345, (string) ($examples['title'] ?? $template['name']), (string) ($examples['subtitle'] ?? ''), $template['copies'],
-                ['name' => $template['name'], 'format' => $template['format'], 'layout' => $template['layout'], 'values' => $examples]);
+                LabelTemplates::forButton($template, ['values' => $examples]));
             $source = '<p class="description">' . esc_html__('Noch keine Platzart nutzt dieses Etikett: Testdruck mit den Beispielwerten.', 'taxmod-stock') . '</p>';
         }
 

@@ -52,6 +52,22 @@ final class LabelTemplatesTest extends TestCase
     }
 
     #[Test]
+    public function a_label_brings_the_printer_it_names(): void
+    {
+        $s        = $this->structure();
+        $label    = $s->field('label');
+        $row      = static fn (int $printer): array => [$label => ['40×30'], 400 => ['phomemo40x30'], 401 => ['40'], 402 => ['30'], 403 => ['40'], 405 => ['1'], 406 => [self::LAYOUT], 420 => [(string) $printer], 421 => ['PageSize=w40h30']];
+        $printers = new Table([70 => [$label => ['Phomemo M22L'], 430 => ['Phomemo_M220L'], 431 => ['0'], 432 => ['21'], 433 => ['38']], 71 => [$label => ['Ohne Warteschlange']]]);
+        $labels   = LabelTemplates::from($s, new Table([1 => $row(70), 2 => $row(71), 3 => $row(0)]), [], [], $printers);
+
+        self::assertSame(['queue' => 'Phomemo_M220L', 'options' => 'PageSize=w40h30', 'turn' => false, 'name' => 'Phomemo M22L', 'offset' => 21, 'line' => 38], $labels->get(1)['printer']);
+        self::assertArrayNotHasKey('printer', $labels->get(2), 'a printer without a queue leaves the choice to the print service');
+        self::assertArrayNotHasKey('printer', $labels->get(3));
+        self::assertSame(['name' => '40×30', 'format' => $labels->get(1)['format'], 'layout' => self::LAYOUT, 'printer' => $labels->get(1)['printer'], 'record' => 5], LabelTemplates::forButton($labels->get(1), ['record' => 5]));
+        self::assertArrayNotHasKey('printer', LabelTemplates::forButton($labels->get(3)));
+    }
+
+    #[Test]
     public function a_place_type_reads_its_template_and_number(): void
     {
         $s     = $this->structure();
@@ -81,7 +97,8 @@ final class LabelTemplatesTest extends TestCase
         $raw = Fixture::structure()->toArray();
         $raw['nodes'] += ['location_type' => 20, 'label_template' => 23];
         $raw['fields'] += ['template_key' => 400, 'template_width' => 401, 'template_height' => 402, 'template_roll' => 403,
-            'template_copies' => 405, 'template_layout' => 406, 'type_label_template' => 410, 'type_label_copies' => 411];
+            'template_copies' => 405, 'template_layout' => 406, 'type_label_template' => 410, 'type_label_copies' => 411,
+            'template_printer' => 420, 'template_options' => 421, 'printer_queue' => 430, 'printer_turns' => 431, 'printer_offset' => 432, 'printer_line' => 433];
 
         return Structure::fromArray($raw);
     }

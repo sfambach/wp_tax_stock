@@ -11,7 +11,8 @@ namespace TaxmodStock\Core;
  *
  * ```mermaid
  * flowchart LR
- *   PA["Platzart"] -- "Etikett" --> E["Etikett: Druckformat, Breite, Höhe, Rolle, Anzahl, Layout"]
+ *   PA["Platzart"] -- "Etikett" --> E["Etikett: Druckformat, Breite, Höhe, Rolle, Anzahl, Layout, Druckoptionen"]
+ *   E -- "Drucker (D-1190)" --> D["Drucker: Warteschlange, Etikett drehen"]
  * ```
  *
  * @see wp-taxonomy-modeler docs/NewConcept/90-decision-log.md D-1159
@@ -28,8 +29,9 @@ final class LabelTemplates
     /**
      * @param array<int, string> $categoryOf record id → the name of the category (sub-node of «Etiketten») it stands in
      * @param array<int, int>    $nodeOf     record id → the node it stands in
+     * @param Table|null         $printers   D-1190: the records of «Drucker», read once beside the labels
      */
-    public static function from(Structure $s, Table $labels, array $categoryOf = [], array $nodeOf = []): self
+    public static function from(Structure $s, Table $labels, array $categoryOf = [], array $nodeOf = [], ?Table $printers = null): self
     {
         $int  = static fn (int $id, string $field): int => $s->hasField($field) ? (int) $labels->first($id, $s->field($field)) : 0;
         $text = static fn (int $id, string $field): string => $s->hasField($field) ? trim((string) $labels->first($id, $s->field($field))) : '';
@@ -51,10 +53,49 @@ final class LabelTemplates
                 'layout' => $layout,
                 'category' => $categoryOf[$id] ?? '',
                 'node'     => $nodeOf[$id] ?? 0,
-            ];
+            ] + self::printerOf($s, $printers, $int($id, 'template_printer'), $text($id, 'template_options'));
         }
 
         return new self($out);
+    }
+
+    /**
+     * D-1190: the printer a label names, as the modeller's label dialog takes it; nothing where it names none or the printer has
+     * no queue — the print service then chooses by roll width as before.
+     *
+     * @return array{printer?: array{queue: string, options: string, turn: bool, name: string, offset: int, line: int}}
+     */
+    private static function printerOf(Structure $s, ?Table $printers, int $printer, string $options): array
+    {
+        if ($printers === null || $printer <= 0 || ! $s->hasField('printer_queue') || ! $printers->has($printer)) {
+            return [];
+        }
+        $queue = trim((string) $printers->first($printer, $s->field('printer_queue')));
+        if ($queue === '') {
+            return [];
+        }
+
+        return ['printer' => [
+            'queue'   => $queue,
+            'options' => $options,
+            'turn'    => $s->hasField('printer_turns') && $printers->first($printer, $s->field('printer_turns')) === '1',
+            'name'    => trim((string) ($printers->first($printer, $s->field('label')) ?? '')),
+            'offset'  => $s->hasField('printer_offset') ? (int) $printers->first($printer, $s->field('printer_offset')) : 0,
+            'line'    => $s->hasField('printer_line') ? (int) $printers->first($printer, $s->field('printer_line')) : 0,
+        ]];
+    }
+
+    /**
+     * What the modeller's label button takes of a label (D-1153, D-1190): name, size, layout and, where it names one, its printer.
+     *
+     * @param array{name: string, format: array{key: string, w: int, h: int, roll: int}, layout: string, printer?: array<string, mixed>} $template
+     * @param array<string, mixed> $more record, values …
+     * @return array<string, mixed>
+     */
+    public static function forButton(array $template, array $more = []): array
+    {
+        return ['name' => $template['name'], 'format' => $template['format'], 'layout' => $template['layout']]
+            + (isset($template['printer']) ? ['printer' => $template['printer']] : []) + $more;
     }
 
     /** D-1160: the first label (by name) of a category; 0 where it holds none that can print. */

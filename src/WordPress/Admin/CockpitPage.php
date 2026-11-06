@@ -133,8 +133,23 @@ final class CockpitPage
         return [count($names), array_values(array_slice($names, 0, self::LATEST, true))];
     }
 
-    /** @return array<string, int> orders per inbound stage, by the stage's tab */
+    /**
+     * Kept by the modeller until a record changes (D-1198); the day is part of what is counted, because the archive moves
+     * with it.
+     *
+     * @return array<string, int> orders per inbound stage, by the stage's tab
+     */
     private function stageCounts(): array
+    {
+        if (! method_exists(Tiles::class, 'cachedCounts')) {
+            return $this->countStages();
+        }
+
+        return Tiles::cachedCounts(Tiles::MODEL, 'stock.inbound.stages.' . current_time('Y-m-d'), fn (): array => $this->countStages());
+    }
+
+    /** @return array<string, int> */
+    private function countStages(): array
     {
         $s       = $this->inbound->stock()->structure();
         $archive = $this->inbound->stock()->inboundArchive(current_time('Y-m-d'));

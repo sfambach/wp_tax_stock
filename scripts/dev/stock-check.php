@@ -383,6 +383,10 @@ $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => $r['lm'], 'v
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'tab=gruppenbestand&#038;group=' . $r['teile'] . '"') || str_contains($html, 'tab=gruppenbestand&amp;group=' . $r['teile'] . '"'), 'each group of the head path links to its «Gruppenbestand» (2026-11-06)');
 
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'material'];
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, '<option value="">--</option>') && str_contains($html, 'data-taxmod-ask="taxmod-stock-bulk-transfer"') && str_contains($html, 'taxmod-bulk-asks'), 'D-1202: «Umbuchen nach …» stands in the one bulk choice, its dialog opens from there');
+
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'group' => (string) $r['teile']];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'value="' . $r['teile'] . '" selected') && str_contains($html, 'LM2930T-5.0') && ! str_contains($html, 'notice-error'), 'the list filters by group');

@@ -467,7 +467,7 @@ final class StockPage
             /* translators: %d: number of materials */
             _n('%d Material', '%d Materialien', count($shown), 'taxmod-stock'),
             count($shown)
-        ), ListPage::filterToggle() . ListPage::columnMenu($listId, $view, $url([])) . $this->bulkTransferDialog());
+        ), ListPage::filterToggle() . ListPage::columnMenu($listId, $view, $url([])), $this->bulkTransferAsk());
         $body    = $waits ? ($branch ? '<tr class="no-items"><td class="colspanchange" colspan="' . esc_attr((string) (count($visible) + 2)) . '">'
             . esc_html__('Links eine Materialgruppe wählen: angezeigt wird alles darin und in den Gruppen darunter.', 'taxmod-stock') . '</td></tr>'
             : ListPage::searchPrompt(count($visible), $url([ListPage::SHOW_ALL => '1']), count($all))) : ($shown === [] ? $this->noItems(count($visible)) : '');
@@ -1078,18 +1078,22 @@ final class StockPage
             . '</form>';
     }
 
-    /** «Umbuchen nach …» for the rows ticked: the target in the shared dialog; the fields join the bulk form. */
-    private function bulkTransferDialog(): string
+    /**
+     * «Umbuchen nach …» for the rows ticked: the target in the shared dialog; the fields join the bulk form.
+     *
+     * @return array<string, array{0: string, 1: string}>
+     */
+    private function bulkTransferAsk(): array
     {
         if (! method_exists(ListPage::class, 'dialogAction')) {
-            return '';
+            return [];
         }
 
         $body = '<label style="display:block">' . esc_html__('Nach', 'taxmod-stock') . '<br>' . $this->stock->placeChooser('location', 0, self::BULK_FORM) . '</label>'
             . '<input type="hidden" name="return_tab" value="' . esc_attr(self::BACK_TO_LIST) . '" form="' . esc_attr(self::BULK_FORM) . '">'
             . '<p class="description">' . esc_html__('Bucht alles von den angehakten Materialien, jeden Posten von jedem Ort, an den gewählten Ort um: ein Vorgang «Umbuchung», «Stornieren» bei den Vorgängen nimmt ihn zurück.', 'taxmod-stock') . '</p>';
 
-        return '<div class="alignleft actions">' . ListPage::dialogAction('taxmod-stock-bulk-transfer', __('Umbuchen nach …', 'taxmod-stock'), __('Ausgewählte umbuchen', 'taxmod-stock'), $body, 'booking', 'sammelumbuchen', __('Umbuchen', 'taxmod-stock'), self::BULK_FORM) . '</div>';
+        return ['taxmod-stock-bulk-transfer' => [__('Umbuchen nach …', 'taxmod-stock'), '<div class="alignleft actions">' . ListPage::dialogAction('taxmod-stock-bulk-transfer', __('Umbuchen nach …', 'taxmod-stock'), __('Ausgewählte umbuchen', 'taxmod-stock'), $body, 'booking', 'sammelumbuchen', __('Umbuchen', 'taxmod-stock'), self::BULK_FORM) . '</div>']];
     }
 
     /**
@@ -2176,7 +2180,7 @@ final class StockPage
             ['name="action" id="' . self::CHILD_FORM . '-action"', '</form>'],
             ['name="bulk" id="' . self::CHILD_FORM . '-action"', '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
                 . '<input type="hidden" name="return_tab" value="lagerstruktur"><input type="hidden" name="return_ort" value="' . esc_attr((string) $place) . '"></form>'],
-            ListPage::bulkBar(self::CHILD_FORM, self::ACTION, [], $count, $this->childLabelDialog() . $this->childMoveDialog($place))
+            self::bulkBar(self::CHILD_FORM, $count, '', $this->childLabelDialog() + $this->childMoveDialog($place))
         );
 
         return '<h3 style="margin-top:1.5em">' . esc_html__('Unterorte', 'taxmod-stock') . '</h3>' . $bar
@@ -2194,10 +2198,11 @@ final class StockPage
     }
 
     /** «Etiketten drucken …» for the ticked Unterorte: the format, then the print service or one PDF with a page per label. */
-    private function childLabelDialog(): string
+    /** @return array<string, array{0: string, 1: string}> */
+    private function childLabelDialog(): array
     {
         if (! class_exists(LabelFormat::class) || ! class_exists(DialogMarkup::class)) {
-            return '';
+            return [];
         }
 
         $options = '';
@@ -2219,7 +2224,7 @@ final class StockPage
         $foot    = ($service ? '<button type="submit" class="button button-primary" name="booking" value="etiketten-service"' . $form . '>' . esc_html__('Drucken', 'taxmod-stock') . '</button>' : '')
             . '<button type="submit" class="button' . ($service ? '' : ' button-primary') . '" name="booking" value="etiketten-pdf" formtarget="_blank"' . $form . '>' . esc_html__('Als PDF öffnen', 'taxmod-stock') . '</button>';
 
-        return '<div class="alignleft actions">' . DialogMarkup::of(
+        return ['taxmod-stock-children-labels' => [__('Etiketten drucken …', 'taxmod-stock'), '<div class="alignleft actions">' . DialogMarkup::of(
             'taxmod-stock-children-labels',
             esc_html__('Etiketten drucken …', 'taxmod-stock'),
             esc_html__('Etiketten drucken', 'taxmod-stock'),
@@ -2228,11 +2233,12 @@ final class StockPage
             'button taxmod-dialog-open',
             '',
             __('Abbrechen', 'taxmod-stock')
-        ) . '</div>';
+        ) . '</div>']];
     }
 
     /** «Verschieben nach …» for the ticked Unterorte: the target in a list of every place outside this one's branch. */
-    private function childMoveDialog(int $place): string
+    /** @return array<string, array{0: string, 1: string}> */
+    private function childMoveDialog(int $place): array
     {
         $tree   = $this->stock->locationTree();
         $below  = array_values(array_filter(array_diff($tree->withAllBelow($place), [$place]), static fn (int $p): bool => $tree->parentOf($p) === $place));
@@ -2242,8 +2248,8 @@ final class StockPage
                 ? __('Jeder gewählte Ort zieht mit allem, was darin liegt; eine bewegliche Kiste als Vorgang «Umlagerung».', 'taxmod-stock')
                 : __('Jeder gewählte Ort zieht mit allem, was darin liegt.', 'taxmod-stock')) . '</p>';
 
-        return '<div class="alignleft actions">' . ListPage::dialogAction('taxmod-stock-children-move', __('Verschieben nach …', 'taxmod-stock'), __('Ausgewählte verschieben', 'taxmod-stock'),
-            $body, 'booking', 'orteverschieben', __('Verschieben', 'taxmod-stock'), self::CHILD_FORM) . '</div>';
+        return ['taxmod-stock-children-move' => [__('Verschieben nach …', 'taxmod-stock'), '<div class="alignleft actions">' . ListPage::dialogAction('taxmod-stock-children-move', __('Verschieben nach …', 'taxmod-stock'), __('Ausgewählte verschieben', 'taxmod-stock'),
+            $body, 'booking', 'orteverschieben', __('Verschieben', 'taxmod-stock'), self::CHILD_FORM) . '</div>']];
     }
 
     /**
@@ -3438,7 +3444,7 @@ final class StockPage
      * @param list<array{0: string, 1: array<string, string>, 2: string, 3: string}> $filters
      * @param array<string, string>                                                $keep    query values the search keeps
      */
-    private function tools(string $tab, StockList $list, array $filters, array $keep, string $placeholder, string $count, string $more = ''): string
+    private function tools(string $tab, StockList $list, array $filters, array $keep, string $placeholder, string $count, string $more = '', array $asking = []): string
     {
         $hidden = array_filter(array_merge([
             'page'    => self::PAGE,
@@ -3452,10 +3458,25 @@ final class StockPage
         $bar = str_replace(
             ['name="action" id="' . self::BULK_FORM . '-action"', '</form>'],
             ['name="bulk" id="' . self::BULK_FORM . '-action"', '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"></form>'],
-            ListPage::bulkBar(self::BULK_FORM, self::ACTION, [], $count, ListPage::filters(self::FILTER_FORM, $filters) . $more)
+            self::bulkBar(self::BULK_FORM, $count, ListPage::filters(self::FILTER_FORM, $filters) . $more, $asking)
         );
 
         return ListPage::searchBox(self::FILTER_FORM, $list->search, $placeholder, $hidden, __('Suchen', 'taxmod-stock')) . $bar;
+    }
+
+    /**
+     * The shared bulk bar with every action of the list in its choice (D-1202); a modeller before 0.1.190 draws the dialogs'
+     * own buttons beside it instead.
+     *
+     * @param array<string, array{0: string, 1: string}> $asking
+     */
+    private static function bulkBar(string $form, string $count, string $beside, array $asking): string
+    {
+        if ((new \ReflectionMethod(ListPage::class, 'bulkBar'))->getNumberOfParameters() >= 7) {
+            return ListPage::bulkBar($form, self::ACTION, [], $count, $beside, true, $asking);
+        }
+
+        return ListPage::bulkBar($form, self::ACTION, [], $count, implode('', array_column($asking, 1)) . $beside);
     }
 
     /** @return array<string, string> */

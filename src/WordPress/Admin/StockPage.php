@@ -116,11 +116,6 @@ final class StockPage
         $tab  = sanitize_key((string) ($_GET['tab'] ?? self::TABS[0]));
         $tab  = in_array($tab, self::TABS, true) ? $tab : self::TABS[0];
         $list = $this->listRequest();
-        if (! class_exists(ListPage::class) || ! method_exists(ListPage::class, 'lazyDetails')) {
-            return '<div class="wrap"><h1>' . esc_html__('Lager', 'taxmod-stock') . '</h1><div class="notice notice-error"><p>'
-                . esc_html__('Die Lagerseite braucht den Taxonomy Modeller ab Version 0.1.151 (Suche zuerst, Details beim Aufklappen).', 'taxmod-stock') . '</p></div></div>';
-        }
-
         $html = '<div class="wrap">' . ListPage::heading(__('Lager', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . $this->notice();
 
         try {

@@ -61,11 +61,6 @@ final class PurchasePage
 
     public function render(): string
     {
-        if (! class_exists(ListPage::class) || ! method_exists(ListPage::class, 'tabs')) {
-            return '<div class="wrap"><h1>' . esc_html__('Einkauf', 'taxmod-stock') . '</h1><div class="notice notice-error"><p>'
-                . esc_html__('Die Seite braucht den Taxonomy Modeller ab Version 0.1.65 (gemeinsame Listenseite).', 'taxmod-stock') . '</p></div></div>';
-        }
-
         $html = '<div class="wrap">' . ListPage::heading(__('Einkauf', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . $this->notice();
 
         try {

@@ -843,10 +843,31 @@ final class StockService
         $nodeOf     = $this->model->recordsOf(array_merge([$root], array_keys($categories)), 500);
         $table      = $nodeOf === [] ? $this->table('label_template') : ($this->model->records(array_keys($nodeOf)) ?? $this->table('label_template'));
 
-        // D-1191: the printers, one read; each label goes to the one of its roll.
+        // D-1191, D-1192: the printers and the rolls, one read each; a label goes to a printer whose loaded roll allows it.
         $printers = $s->hasNode('label_printer') ? $this->table('label_printer') : null;
+        $rolls    = $s->hasNode('label_roll') ? $this->table('label_roll') : null;
 
-        return $this->labelTemplates = LabelTemplates::from($s, $table, array_map(static fn (int $node): string => $categories[$node] ?? '', $nodeOf), $nodeOf, $printers);
+        return $this->labelTemplates = LabelTemplates::from($s, $table, array_map(static fn (int $node): string => $categories[$node] ?? '', $nodeOf), $nodeOf, $printers, $rolls);
+    }
+
+    /** @return array<int, string> D-1192: every roll by its name — what «Rolle wechseln» offers */
+    public function rolls(): array
+    {
+        return $this->structure()->hasNode('label_roll') ? $this->labels('label_roll') : [];
+    }
+
+    /**
+     * D-1192, his word 2026-11-06: «rolle wechseln funktion fragt ab welche neue rolle eingelegt wurde» — the printer now holds
+     * that roll; one write, undone by changing back.
+     */
+    public function changeRoll(int $printer, int $roll): void
+    {
+        $s = $this->structure();
+        if (! $s->hasNode('label_printer') || ! $s->hasField('printer_loaded_roll') || ! $this->table('label_printer')->has($printer) || ! isset($this->rolls()[$roll])) {
+            throw StockError::nothingToBook();
+        }
+
+        $this->model->write([['op' => 'set_values', 'record' => (string) $printer, 'values' => [(string) $s->field('printer_loaded_roll') => (string) $roll]]]);
     }
 
     /**

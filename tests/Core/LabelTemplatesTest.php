@@ -52,25 +52,51 @@ final class LabelTemplatesTest extends TestCase
     }
 
     #[Test]
-    public function a_label_prints_on_the_printer_of_its_roll(): void
+    public function a_label_starts_on_the_first_printer_whose_loaded_roll_allows_it(): void
     {
-        $s        = $this->structure();
-        $label    = $s->field('label');
-        $row      = static fn (string $name, int $w, int $h, int $roll): array => [$label => [$name], 400 => ['k'], 401 => [(string) $w], 402 => [(string) $h], 403 => [(string) $roll], 405 => ['1'], 406 => [self::LAYOUT]];
-        $printers = new Table([
-            70 => [$label => ['Phomemo M22L'], 430 => ['Phomemo_M220L'], 434 => ['40'], 431 => ['0'], 437 => ['*=w{B}h{H}'], 432 => ['21'], 433 => ['38']],
-            71 => [$label => ['QL-810W'], 430 => ['QL-810W_take'], 434 => ['62'], 431 => ['1'], 436 => ['orientation-requested=4'], 437 => ['62x30=BrL053E01E3D0F6']],
-            72 => [$label => ['A zweiter 62er ohne Warteschlange'], 434 => ['62']],
-            73 => [$label => ['Z noch ein 62er'], 430 => ['QL-810W_other'], 434 => ['62']],
-        ]);
-        $labels   = LabelTemplates::from($s, new Table([1 => $row('40×30', 40, 30, 40), 2 => $row('62×30', 62, 30, 62), 3 => $row('102×62', 102, 62, 102)]), [], [], $printers);
+        $labels = $this->withPrinters();
 
         self::assertSame(['queue' => 'Phomemo_M220L', 'roll' => 40, 'turn' => false, 'options' => '', 'turn_options' => '', 'sizes' => '*=w{B}h{H}', 'offset' => 21, 'line' => 38, 'name' => 'Phomemo M22L'], $labels->get(1)['printer']);
-        self::assertSame('QL-810W_take', $labels->get(2)['printer']['queue'], 'the first by name that has a queue');
+        self::assertSame('QL-810W_take', $labels->get(2)['printer']['queue'], 'the first by name that has a queue and a roll');
         self::assertTrue($labels->get(2)['printer']['turn']);
-        self::assertArrayNotHasKey('printer', $labels->get(3), 'no printer holds that roll: the print service chooses as before');
+        self::assertArrayNotHasKey('printer', $labels->get(3), 'no loaded roll allows it: the print service chooses as before');
         self::assertSame(['name' => '40×30', 'format' => $labels->get(1)['format'], 'layout' => self::LAYOUT, 'printer' => $labels->get(1)['printer'], 'record' => 5], LabelTemplates::forButton($labels->get(1), ['record' => 5]));
-        self::assertArrayNotHasKey('printer', LabelTemplates::forButton($labels->get(3)));
+    }
+
+    #[Test]
+    public function the_dialog_offers_the_labels_of_the_category_and_every_printer_with_what_its_roll_allows(): void
+    {
+        $labels = $this->withPrinters();
+        $dialog = $labels->dialog(2, ['record' => 5]);
+
+        self::assertSame(2, $dialog['chosen']);
+        self::assertSame([1, 2, 3], array_keys($dialog['choices']), 'the whole category, by name');
+        self::assertSame(5, $dialog['choices'][3]['record']);
+        self::assertArrayNotHasKey('printer', $dialog['choices'][1], 'the printer is chosen in the dialog, not carried by a choice');
+        self::assertSame([70, 71], array_keys($dialog['printers']));
+        self::assertSame([1], $dialog['printers'][70]['allows']);
+        self::assertSame('40×30 gestanzt', $dialog['printers'][70]['roll_name']);
+        self::assertSame(1, $labels->firstIn(40), 'a label a printer can print goes first');
+        self::assertSame([], $labels->dialog(99));
+    }
+
+    private function withPrinters(): LabelTemplates
+    {
+        $s      = $this->structure();
+        $label  = $s->field('label');
+        $row    = static fn (string $name, int $w, int $h, int $roll): array => [$label => [$name], 400 => ['k'], 401 => [(string) $w], 402 => [(string) $h], 403 => [(string) $roll], 405 => ['1'], 406 => [self::LAYOUT]];
+        $rolls  = new Table([
+            80 => [$label => ['40×30 gestanzt'], 440 => ['40'], 441 => ['1']],
+            81 => [$label => ['62 mm endlos'], 440 => ['62'], 441 => ['2']],
+        ]);
+        $printers = new Table([
+            70 => [$label => ['Phomemo M22L'], 430 => ['Phomemo_M220L'], 438 => ['80'], 431 => ['0'], 437 => ['*=w{B}h{H}'], 432 => ['21'], 433 => ['38']],
+            71 => [$label => ['QL-810W'], 430 => ['QL-810W_take'], 438 => ['81'], 431 => ['1'], 436 => ['orientation-requested=4'], 437 => ['62x30=BrL053E01E3D0F6']],
+            72 => [$label => ['A ohne Warteschlange'], 438 => ['81']],
+            73 => [$label => ['Z ohne Rolle'], 430 => ['QL-1100']],
+        ]);
+
+        return LabelTemplates::from($s, new Table([1 => $row('40×30', 40, 30, 40), 2 => $row('62×30', 62, 30, 62), 3 => $row('102×62', 102, 62, 102)]), [], [1 => 40, 2 => 40, 3 => 40], $printers, $rolls);
     }
 
     #[Test]
@@ -104,8 +130,8 @@ final class LabelTemplatesTest extends TestCase
         $raw['nodes'] += ['location_type' => 20, 'label_template' => 23];
         $raw['fields'] += ['template_key' => 400, 'template_width' => 401, 'template_height' => 402, 'template_roll' => 403,
             'template_copies' => 405, 'template_layout' => 406, 'type_label_template' => 410, 'type_label_copies' => 411,
-            'printer_queue' => 430, 'printer_turns' => 431, 'printer_offset' => 432, 'printer_line' => 433, 'printer_roll' => 434,
-            'printer_options' => 435, 'printer_turn_options' => 436, 'printer_sizes' => 437];
+            'printer_queue' => 430, 'printer_turns' => 431, 'printer_offset' => 432, 'printer_line' => 433,
+            'printer_options' => 435, 'printer_turn_options' => 436, 'printer_sizes' => 437, 'printer_loaded_roll' => 438, 'roll_width' => 440, 'roll_labels' => 441];
 
         return Structure::fromArray($raw);
     }

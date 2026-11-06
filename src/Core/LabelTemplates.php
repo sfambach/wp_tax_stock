@@ -22,7 +22,10 @@ final class LabelTemplates
     /**
      * @param array<int, array{name: string, format: array{key: string, w: int, h: int, roll: int}, copies: int, layout: string, category: string, node: int}> $templates
      */
-    public function __construct(private readonly array $templates = [])
+    /**
+     * @param array<int, array<string, mixed>> $printers D-1192: printer id ⇒ what the label dialog takes, with `allows` (label ids)
+     */
+    public function __construct(private readonly array $templates = [], private readonly array $printers = [])
     {
     }
 
@@ -30,13 +33,14 @@ final class LabelTemplates
      * @param array<int, string> $categoryOf record id → the name of the category (sub-node of «Etiketten») it stands in
      * @param array<int, int>    $nodeOf     record id → the node it stands in
      * @param Table|null         $printers   D-1191: the records of «Drucker», read once beside the labels
+     * @param Table|null         $rolls      D-1192: the records of «Rollen» — a printer holds one, a roll allows its labels
      */
-    public static function from(Structure $s, Table $labels, array $categoryOf = [], array $nodeOf = [], ?Table $printers = null): self
+    public static function from(Structure $s, Table $labels, array $categoryOf = [], array $nodeOf = [], ?Table $printers = null, ?Table $rolls = null): self
     {
         $int  = static fn (int $id, string $field): int => $s->hasField($field) ? (int) $labels->first($id, $s->field($field)) : 0;
         $text = static fn (int $id, string $field): string => $s->hasField($field) ? trim((string) $labels->first($id, $s->field($field))) : '';
         $out  = [];
-        $byRoll = self::printersByRoll($s, $printers);
+        $all    = self::printers($s, $printers, $rolls);
 
         foreach ($labels->ids() as $id) {
             $key    = $text($id, 'template_key');
@@ -54,50 +58,96 @@ final class LabelTemplates
                 'layout' => $layout,
                 'category' => $categoryOf[$id] ?? '',
                 'node'     => $nodeOf[$id] ?? 0,
-            ] + (isset($byRoll[$int($id, 'template_roll')]) ? ['printer' => $byRoll[$int($id, 'template_roll')]] : []);
+            ];
+            // D-1192: the first printer (by name) whose loaded roll allows this label is the one the dialog starts with.
+            foreach ($all as $printer) {
+                if (in_array($id, $printer['allows'], true)) {
+                    $out[$id]['printer'] = array_diff_key($printer, ['allows' => 1, 'roll_name' => 1]);
+                    break;
+                }
+            }
         }
 
-        return new self($out);
+        return new self($out, $all);
     }
 
     /**
-     * D-1191: the printer of each roll width, as the modeller's label dialog takes it — the first by name where two hold the same
-     * roll; a printer without a queue or a roll is left out, and its labels go to the print service's own choice as before.
+     * D-1191, D-1192: every printer with a queue and a loaded roll, by name — its settings as the modeller's label dialog takes
+     * them, the width of the roll it holds, and the labels that roll allows.
      *
-     * @return array<int, array{queue: string, roll: int, turn: bool, options: string, turn_options: string, sizes: string, offset: int, line: int, name: string}>
+     * @return array<int, array{queue: string, roll: int, turn: bool, options: string, turn_options: string, sizes: string, offset: int, line: int, name: string, roll_name: string, allows: list<int>}>
      */
-    private static function printersByRoll(Structure $s, ?Table $printers): array
+    private static function printers(Structure $s, ?Table $printers, ?Table $rolls): array
     {
-        if ($printers === null || ! $s->hasField('printer_queue') || ! $s->hasField('printer_roll')) {
+        if ($printers === null || $rolls === null || ! $s->hasField('printer_queue') || ! $s->hasField('printer_loaded_roll') || ! $s->hasField('roll_labels')) {
             return [];
         }
-        $text = static fn (int $id, string $field): string => $s->hasField($field) ? trim((string) $printers->first($id, $s->field($field))) : '';
-        $all  = [];
+        $text = static fn (Table $t, int $id, string $field): string => $s->hasField($field) ? trim((string) $t->first($id, $s->field($field))) : '';
+        $out  = [];
         foreach ($printers->ids() as $id) {
-            $queue = $text($id, 'printer_queue');
-            $roll  = (int) $text($id, 'printer_roll');
-            if ($queue === '' || $roll <= 0) {
+            $queue = $text($printers, $id, 'printer_queue');
+            $roll  = (int) $text($printers, $id, 'printer_loaded_roll');
+            if ($queue === '' || $roll <= 0 || ! $rolls->has($roll)) {
                 continue;
             }
-            $all[$id] = [
+            $out[$id] = [
                 'queue'        => $queue,
-                'roll'         => $roll,
-                'turn'         => $text($id, 'printer_turns') === '1',
-                'options'      => $text($id, 'printer_options'),
-                'turn_options' => $text($id, 'printer_turn_options'),
-                'sizes'        => $text($id, 'printer_sizes'),
-                'offset'       => (int) $text($id, 'printer_offset'),
-                'line'         => (int) $text($id, 'printer_line'),
+                'roll'         => (int) $text($rolls, $roll, 'roll_width'),
+                'turn'         => $text($printers, $id, 'printer_turns') === '1',
+                'options'      => $text($printers, $id, 'printer_options'),
+                'turn_options' => $text($printers, $id, 'printer_turn_options'),
+                'sizes'        => $text($printers, $id, 'printer_sizes'),
+                'offset'       => (int) $text($printers, $id, 'printer_offset'),
+                'line'         => (int) $text($printers, $id, 'printer_line'),
                 'name'         => trim((string) ($printers->first($id, $s->field('label')) ?? '')),
+                'roll_name'    => trim((string) ($rolls->first($roll, $s->field('label')) ?? '')),
+                'allows'       => array_values(array_map('intval', $rolls->all($roll, $s->field('roll_labels')))),
             ];
         }
-        uasort($all, static fn (array $a, array $b): int => strnatcasecmp($a['name'], $b['name']));
-        $out = [];
-        foreach ($all as $printer) {
-            $out[$printer['roll']] ??= $printer;
-        }
+        uasort($out, static fn (array $a, array $b): int => strnatcasecmp($a['name'], $b['name']));
 
         return $out;
+    }
+
+    /**
+     * D-1192: the label dialog for a label of this category — the chosen label first, the others of its category to choose from,
+     * and every printer with the labels its loaded roll allows; `$more` (record, values) goes with each label.
+     *
+     * @param array<string, mixed> $more
+     * @return array<string, mixed>
+     */
+    public function dialog(int $chosen, array $more = []): array
+    {
+        $template = $this->templates[$chosen] ?? null;
+        if ($template === null) {
+            return [];
+        }
+        $choices = [];
+        foreach ($this->inNode((int) ($template['node'] ?? 0)) ?: [$chosen] as $id) {
+            $choices[$id] = self::forButton(array_diff_key($this->templates[$id], ['printer' => 1]), $more);
+        }
+
+        return self::forButton($template, $more) + ['choices' => $choices, 'chosen' => $chosen, 'printers' => $this->printers];
+    }
+
+    /** @return list<int> the labels of one category, by name; none for 0 */
+    private function inNode(int $node): array
+    {
+        $names = [];
+        foreach ($this->templates as $id => $template) {
+            if ($node > 0 && ($template['node'] ?? 0) === $node) {
+                $names[$id] = $template['name'];
+            }
+        }
+        natcasesort($names);
+
+        return array_keys($names);
+    }
+
+    /** @return array<int, array<string, mixed>> D-1192: the printers, for the list under Druck › Drucker */
+    public function printerList(): array
+    {
+        return $this->printers;
     }
 
     /**
@@ -113,18 +163,20 @@ final class LabelTemplates
             + (isset($template['printer']) ? ['printer' => $template['printer']] : []) + $more;
     }
 
-    /** D-1160: the first label (by name) of a category; 0 where it holds none that can print. */
+    /**
+     * D-1160: the first label (by name) of a category; 0 where it holds none that can print. D-1192: a label some printer's loaded
+     * roll allows goes before one none does.
+     */
     public function firstIn(int $node): int
     {
-        $names = [];
-        foreach ($this->templates as $id => $template) {
-            if ($node > 0 && ($template['node'] ?? 0) === $node) {
-                $names[$id] = $template['name'];
+        $ids = $this->inNode($node);
+        foreach ($ids as $id) {
+            if (isset($this->templates[$id]['printer'])) {
+                return $id;
             }
         }
-        natcasesort($names);
 
-        return (int) (array_key_first($names) ?? 0);
+        return $ids[0] ?? 0;
     }
 
     public function has(int $id): bool

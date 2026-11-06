@@ -66,7 +66,7 @@ final class StockPage
     /** Rows per page of the material list (design 20: a list of thousands draws only what is seen). */
     private const PER_PAGE  = 50;
     private const ROWS      = 6;
-    private const TABS      = ['wareneingang', 'material', 'gruppenbestand', 'inventur', 'verbrauch', 'reservierungen', 'lagerorte', 'lagerstruktur', 'platzarten', 'etikettenvorlagen', 'fertigung'];
+    private const TABS      = ['wareneingang', 'material', 'gruppenbestand', 'inventur', 'verbrauch', 'reservierungen', 'lagerorte', 'lagerstruktur', 'platzarten', 'etikettenvorlagen', 'drucker', 'fertigung'];
     private const VIEWS     = ['daten', 'bearbeiten', 'einkauf', 'lager', 'bestand', 'verkauf'];
     private const FILTER_FORM = 'taxmod-stock-filter';
     private const BULK_FORM   = 'taxmod-stock-bulk';
@@ -122,7 +122,7 @@ final class StockPage
         try {
             $thing = absint($_GET['thing'] ?? 0);
             // The tabs are the menu group «Bestand»; Einbuchen (Eingang) and the structure (Einstellungen, D-1085) stand alone.
-            $html .= (in_array($tab, ['wareneingang', 'lagerstruktur', 'platzarten', 'etikettenvorlagen', 'fertigung'], true) ? '' : '<div class="taxmod-stock-pagetabs">' . $this->tabBar($tab, $list) . '</div>') . match ($tab) {
+            $html .= (in_array($tab, ['wareneingang', 'lagerstruktur', 'platzarten', 'etikettenvorlagen', 'drucker', 'fertigung'], true) ? '' : '<div class="taxmod-stock-pagetabs">' . $this->tabBar($tab, $list) . '</div>') . match ($tab) {
                 'material'  => $thing > 0 ? $this->thingView($thing) : $this->materialList($list),
                 'gruppenbestand' => $this->groupStock($list),
                 'inventur'  => $this->inventoryForm(),
@@ -132,6 +132,7 @@ final class StockPage
                 'lagerstruktur' => $this->locationSplit(true),
                 'platzarten' => $this->placeTypesPage(absint($_GET['typ'] ?? 0)),
                 'etikettenvorlagen' => $this->labelTemplatesPage(absint($_GET['vorlage'] ?? 0)),
+                'drucker'   => $this->printersPage(),
                 'fertigung' => $this->projectBoxList(),
                 default     => absint($_GET['split'] ?? 0) > 0
                     ? $this->splitForm(absint($_GET['order'] ?? 0), absint($_GET['split']), sanitize_key((string) ($_GET['back'] ?? '')))
@@ -155,7 +156,7 @@ final class StockPage
 
         $kind  = sanitize_key((string) ($_POST['booking'] ?? ''));
         // D-1058: the row buttons carry their purchase in the value, «nichteinlagern-<id>» and «einlagern-<id>».
-        $rowPurchase = preg_match('/^(nichteinlagern|einlagern|umhaengen|reservieren|freigeben|ortkopieren|artkopieren|vorlagekopieren)-(\d+)$/', $kind, $m) === 1 ? (int) $m[2] : 0;
+        $rowPurchase = preg_match('/^(nichteinlagern|einlagern|umhaengen|reservieren|freigeben|ortkopieren|artkopieren|vorlagekopieren|rollewechseln)-(\d+)$/', $kind, $m) === 1 ? (int) $m[2] : 0;
         $kind        = $rowPurchase > 0 ? $m[1] : $kind;
         $today = current_time('Y-m-d');
         // The goods receipt sends «thing» as a list (one per purchase); only the other forms send one thing.
@@ -245,6 +246,7 @@ final class StockPage
                     absint($_POST['place_type'] ?? 0)
                 ),
                 'platzart'     => $this->stock->createPlaceType(sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? '')))),
+                'rollewechseln' => $this->stock->changeRoll($rowPurchase, absint($_POST['roll'] ?? 0)),
                 'vorlagekopieren' => $copy = $this->stock->copyLabelTemplate($rowPurchase, sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? '')))),
                 'artkopieren'  => $copy = $this->stock->copyPlaceType($rowPurchase, sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? '')))),
                 // D-1130: «Kopieren» — the copy's id is what the page goes back to.
@@ -272,6 +274,7 @@ final class StockPage
                 'reservieren'    => __('Reserviert: der verfügbare Bestand sinkt, der Bestand bleibt.', 'taxmod-stock'),
                 'ort'            => __('Lagerort angelegt.', 'taxmod-stock'),
                 'platzart'       => __('Platzart angelegt; die weiteren Felder stehen jetzt zum Ausfüllen da.', 'taxmod-stock'),
+                'rollewechseln'  => __('Rolle gewechselt: der Drucker druckt jetzt die Etiketten der neuen Rolle. Zurück geht es mit «Rolle wechseln».', 'taxmod-stock'),
                 'vorlagekopieren' => __('Kopiert: die neue Vorlage trägt Format, Layout und Anzahl der alten; die Platzarten bleiben bei der alten.', 'taxmod-stock'),
                 'artkopieren'    => __('Kopiert: die neue Platzart trägt Felder und Teile der alten; die Plätze bleiben bei der alten.', 'taxmod-stock'),
                 'ortkopieren'    => __('Kopiert: der neue Ort trägt die Felder des alten, aber nichts von dem, was dort liegt.', 'taxmod-stock'),
@@ -312,6 +315,7 @@ final class StockPage
                 'platzart'     => ['platzarten', array_filter(['typ' => (int) (((array) ($result['refs'] ?? []))['art'] ?? 0)])],
                 'artkopieren'  => ['platzarten', array_filter(['typ' => $copy])],
                 'vorlagekopieren' => ['etikettenvorlagen', array_filter(['vorlage' => $copy])],
+                'rollewechseln' => ['drucker', []],
                 'umhaengen', 'orteverschieben', 'ort', 'reservieren', 'freigeben' => ['lagerstruktur', []],
                 default        => ['material', $thing > 0 ? ['thing' => $thing, 'view' => 'bestand'] : []],
             };
@@ -322,6 +326,7 @@ final class StockPage
                 'platzart'          => ['platzarten', []],
                 'artkopieren'       => ['platzarten', array_filter(['typ' => $rowPurchase])],
                 'vorlagekopieren'   => ['etikettenvorlagen', array_filter(['vorlage' => $rowPurchase])],
+                'rollewechseln'     => ['drucker', []],
                 'umhaengen', 'orteverschieben', 'ort', 'reservieren', 'freigeben' => ['lagerstruktur', []],
                 'aufteilen'         => ['wareneingang', ['order' => absint($_POST['order'] ?? 0), 'split' => absint($_POST['purchase'] ?? 0)]],
                 'lager', 'umbuchen', 'storno', 'verbrauchstorno' => ['material', ['thing' => $thing, 'view' => $kind === 'lager' ? 'lager' : 'bestand']],
@@ -701,7 +706,7 @@ final class StockPage
         $s         = $this->stock->structure();
         $templates = $this->stock->labelTemplates();
         $chosen    = $s->hasNode('label_materials') ? $templates->get($templates->firstIn($s->node('label_materials'))) : null;
-        $template  = $chosen === null ? [] : LabelTemplates::forButton($chosen, ['record' => $thing]);
+        $template  = $chosen === null ? [] : $templates->dialog($templates->firstIn($s->node('label_materials')), ['record' => $thing]);
 
         return (string) apply_filters('taxmod_label_button', '', 'M', $thing, $label === '' ? '#' . $thing : $label, '', $chosen['copies'] ?? 1, $template);
     }
@@ -2081,7 +2086,7 @@ final class StockPage
             $tree->shortOf($place),
             $project === '' ? '' : __('Projekt', 'taxmod-stock') . ': ' . $project,
             $parent,
-        ])), $copies, $template === null ? [] : LabelTemplates::forButton($template, [
+        ])), $copies, $template === null ? [] : $this->stock->labelTemplates()->dialog($this->stock->placeTypes()->labelTemplateOf($type), [
             // D-1160: the modeller reads the fields the layout names from the place itself; these fill what it has no field for.
             'record' => $place,
             'values' => ['bezeichnung' => $tree->titleOf($place), 'kurzzeichen' => $tree->shortOf($place), 'projekt' => $project, 'ort' => $parent],
@@ -2438,7 +2443,7 @@ final class StockPage
                 $examples = [];
             }
             $button = (string) apply_filters('taxmod_label_button', '', 'O', 12345, (string) ($examples['title'] ?? $template['name']), (string) ($examples['subtitle'] ?? ''), $template['copies'],
-                LabelTemplates::forButton($template, ['values' => $examples]));
+                $this->stock->labelTemplates()->dialog($id, ['values' => $examples]));
             $source = '<p class="description">' . esc_html__('Noch keine Platzart nutzt dieses Etikett: Testdruck mit den Beispielwerten.', 'taxmod-stock') . '</p>';
         }
 
@@ -2484,6 +2489,71 @@ final class StockPage
 
         return $this->formStart('etikettenvorlagen')
             . ListPage::dialogAction('taxmod-stock-copy-template-' . $template, __('Kopieren', 'taxmod-stock'), __('Etikettenvorlage kopieren', 'taxmod-stock'), $body, 'booking', 'vorlagekopieren-' . $template, __('Kopieren', 'taxmod-stock'))
+            . '</form>';
+    }
+
+    /**
+     * D-1192: the printers under Druck — the roll each holds and the labels it allows, «Rolle wechseln» in the shared dialog, each
+     * printer and roll opened in the record editor.
+     */
+    private function printersPage(): string
+    {
+        $s    = $this->stock->structure();
+        $html = '<h2>' . esc_html__('Drucker', 'taxmod-stock') . '</h2>';
+
+        if (! $s->hasNode('label_printer') || ! $s->hasNode('label_roll')) {
+            return $html . '<p class="description">' . esc_html__('Das Modell kennt noch keine Drucker und Rollen.', 'taxmod-stock') . '</p>';
+        }
+
+        $templates = $this->stock->labelTemplates();
+        $active    = $templates->printerList();
+        $rolls     = $this->stock->rolls();
+        $open      = static fn (int $record): string => esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $record], admin_url('admin.php')));
+        $body      = '';
+
+        foreach ($this->stock->labels('label_printer') as $id => $name) {
+            $printer = $active[$id] ?? null;
+            $allowed = $printer === null ? [] : array_map(static fn (int $t): string => (string) ($templates->get($t)['name'] ?? '#' . $t), $printer['allows']);
+            $body   .= '<tr><th scope="row" class="check-column"></th>'
+                . '<td><a href="' . $open($id) . '"><strong>' . esc_html($name) . '</strong></a></td>'
+                . '<td>' . esc_html($printer === null ? __('— (Warteschlange oder Rolle fehlt)', 'taxmod-stock') : $printer['queue']) . '</td>'
+                . '<td>' . esc_html($printer['roll_name'] ?? '—') . '</td>'
+                . '<td>' . esc_html(implode(', ', array_unique($allowed)) ?: '—') . '</td>'
+                . '<td style="text-align:right;white-space:nowrap">' . $this->changeRollDialog($id, $name, $rolls) . ' <a class="button" href="' . $open($id) . '">' . esc_html__('Öffnen', 'taxmod-stock') . '</a></td></tr>';
+        }
+
+        $rollBody = '';
+        foreach ($rolls as $id => $name) {
+            $rollBody .= '<tr><th scope="row" class="check-column"></th><td><a href="' . $open($id) . '"><strong>' . esc_html($name) . '</strong></a></td>'
+                . '<td style="text-align:right"><a class="button" href="' . $open($id) . '">' . esc_html__('Öffnen', 'taxmod-stock') . '</a></td></tr>';
+        }
+
+        return $html . ListPage::table([[__('Drucker', 'taxmod-stock'), '14em'], [__('Warteschlange', 'taxmod-stock'), '12em'], [__('Eingelegte Rolle', 'taxmod-stock'), '14em'], [__('Erlaubte Etiketten', 'taxmod-stock'), '']], $body === '' ? $this->noItems(4) : $body)
+            . '<h2>' . esc_html__('Rollen', 'taxmod-stock') . '</h2>'
+            . '<p class="description">' . esc_html__('Eine Rolle nennt ihre Breite und die Etiketten, die auf ihr gedruckt werden dürfen.', 'taxmod-stock') . '</p>'
+            . ListPage::table([[__('Rolle', 'taxmod-stock'), '']], $rollBody === '' ? $this->noItems(1) : $rollBody);
+    }
+
+    /**
+     * D-1192: «Rolle wechseln» in the shared dialog — which roll is in the printer now.
+     *
+     * @param array<int, string> $rolls
+     */
+    private function changeRollDialog(int $printer, string $name, array $rolls): string
+    {
+        if (! method_exists(ListPage::class, 'dialogAction') || $rolls === []) {
+            return '';
+        }
+        $current = (int) $this->stock->table('label_printer')->first($printer, $this->stock->structure()->field('printer_loaded_roll'));
+        $options = '';
+        foreach ($rolls as $id => $roll) {
+            $options .= '<option value="' . (int) $id . '"' . selected($id, $current, false) . '>' . esc_html($roll) . '</option>';
+        }
+        $body = '<label style="display:block">' . esc_html__('Welche Rolle ist jetzt eingelegt?', 'taxmod-stock') . '<br><select name="roll" style="width:100%">' . $options . '</select></label>'
+            . '<p class="description">' . esc_html(sprintf(/* translators: %s: printer */ __('%s druckt danach nur die Etiketten, die diese Rolle erlaubt.', 'taxmod-stock'), $name)) . '</p>';
+
+        return $this->formStart('drucker')
+            . ListPage::dialogAction('taxmod-stock-change-roll-' . $printer, __('Rolle wechseln', 'taxmod-stock'), __('Rolle wechseln', 'taxmod-stock'), $body, 'booking', 'rollewechseln-' . $printer, __('Übernehmen', 'taxmod-stock'))
             . '</form>';
     }
 

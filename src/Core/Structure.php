@@ -35,7 +35,7 @@ final class Structure
         // D-1153, D-1159: the labels; D-1160: the category a material prints from.
         'label_template', 'label_materials',
         // D-1190, D-1191: the printers, next to the labels.
-        'label_printer',
+        'label_printer', 'label_roll',
         // D-1158: the Dimension node behind a place type's outer and inner size.
         'dimension',
         // D-1184: the contact branch (firms, suppliers, manufacturers, persons) shown under Logistik › Kontakte.
@@ -86,8 +86,10 @@ final class Structure
         'type_label_template', 'type_label_copies',
         // D-1191: every print setting is the printer's — its queue, the roll it holds, whether it turns roll-wide labels, its
         // options, the options for a turned label, the CUPS name of each size, and where its lines start (D-1190).
-        'printer_queue', 'printer_roll', 'printer_turns', 'printer_options', 'printer_turn_options', 'printer_sizes',
+        'printer_queue', 'printer_turns', 'printer_options', 'printer_turn_options', 'printer_sizes',
         'printer_offset', 'printer_line',
+        // D-1192: the roll a printer holds, and a roll's width and the labels it allows.
+        'printer_loaded_roll', 'roll_width', 'roll_labels',
         // D-1158: a place type's outer and inner size, and the three sides of a Dimension.
         'type_outer', 'type_inner', 'dimension_length', 'dimension_width', 'dimension_height',
         // D-1169: a place type chooses its fit calculation and its message.

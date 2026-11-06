@@ -1003,6 +1003,63 @@ final class StockService
         return (int) ($answer['refs']['kopie'] ?? 0);
     }
 
+    /**
+     * D-1186, A4: the one way to choose a place — the modeller's record chooser over the place tree, with its search; a plain
+     * select only while the model has no tree of places or the modeller offers no chooser. Empty means «none» (or the top level).
+     *
+     * @param list<int> $exclude places left out with everything under them
+     */
+    public function placeChooser(string $name, int $chosen = 0, string $form = '', array $exclude = []): string
+    {
+        try {
+            $s = $this->structure();
+            $this->places();
+        } catch (StockError) {
+            return '<select name="' . esc_attr($name) . '" disabled><option value="">—</option></select>';
+        }
+
+        if ($s->hasField('location_parent')) {
+            $choice = (string) apply_filters('taxmod_record_chooser', '', array_filter([
+                'name'         => $name,
+                'node'         => $s->node('location'),
+                'parent_field' => $s->field('location_parent'),
+                'label_field'  => $this->placeWords(),
+                'exclude'      => $exclude,
+                'preselected'  => $chosen,
+                'form'         => $form,
+            ], static fn (mixed $v): bool => $v !== '' && $v !== 0 && $v !== []));
+
+            if ($choice !== '') {
+                return $choice;
+            }
+        }
+
+        $html   = '<select name="' . esc_attr($name) . '"' . ($form === '' ? '' : ' form="' . esc_attr($form) . '"') . '><option value="">—</option>';
+        $hidden = [];
+
+        foreach ($exclude as $place) {
+            $hidden = [...$hidden, ...$this->locationTree()->withAllBelow($place)];
+        }
+
+        foreach (array_diff_key($this->places(), array_flip($hidden)) as $id => $label) {
+            $html .= '<option value="' . esc_attr((string) $id) . '"' . selected($chosen, $id, false) . '>' . esc_html($label) . '</option>';
+        }
+
+        return $html . '</select>';
+    }
+
+    /**
+     * D-1150: the fields that name a place in the modeller's tree — its short mark, then its Bezeichnung.
+     *
+     * @return int|list<int>
+     */
+    public function placeWords(): int|array
+    {
+        $s = $this->structure();
+
+        return $s->hasField('location_short') ? [$s->field('location_short'), $s->field('label')] : $s->field('label');
+    }
+
     /** @return array<int, string> every place by its path and project, in tree order — what a place chooser offers */
     public function places(): array
     {

@@ -916,7 +916,7 @@ final class StockPage
             . '<table class="form-table" role="presentation"><tbody>';
 
         if ($s->hasField('lager_location')) {
-            $html .= '<tr><th>' . esc_html__('Standard-Lagerort', 'taxmod-stock') . '</th><td><select name="location">' . $this->options($this->stock->places(), '—', (int) $value('lager_location')) . '</select></td></tr>';
+            $html .= '<tr><th>' . esc_html__('Standard-Lagerort', 'taxmod-stock') . '</th><td>' . $this->stock->placeChooser('location', (int) $value('lager_location')) . '</td></tr>';
         }
 
         $html .= '<tr><th>' . esc_html__('Mindestbestand', 'taxmod-stock') . '</th><td><input type="number" min="0" name="minimum" style="width:8em" value="' . esc_attr($value('lager_min')) . '"></td></tr>'
@@ -1040,7 +1040,7 @@ final class StockPage
             . (count($merged) > 1 ? '<input type="hidden" name="lots" value="' . esc_attr(implode(',', array_map('intval', $merged))) . '">' : '')
             . '<input type="hidden" name="from" value="' . esc_attr((string) $from) . '">'
             . '<label style="display:block">' . esc_html__('Menge', 'taxmod-stock') . '<br><input type="text" inputmode="decimal" name="quantity" style="width:7em" value="' . esc_attr(str_replace(',', '.', rtrim(rtrim(number_format($quantity, 3, '.', ''), '0'), '.'))) . '"></label>'
-            . '<label style="display:block;margin-top:.5em">' . esc_html__('Nach', 'taxmod-stock') . '<br><select name="location" style="width:100%">' . $this->options(array_diff_key($places, [$from => true]), '') . '</select></label>'
+            . '<label style="display:block;margin-top:.5em">' . esc_html__('Nach', 'taxmod-stock') . '<br>' . $this->stock->placeChooser('location', 0, '', [$from]) . '</label>'
             . '<p class="description">' . esc_html__('Bucht die Menge vom bisherigen Ort ab und am neuen zu, als Vorgang «Umbuchung». Weniger als alles teilt den Posten auf zwei Orte; «Stornieren» bei den Vorgängen nimmt es zurück.', 'taxmod-stock') . '</p>';
 
         return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'
@@ -1058,8 +1058,7 @@ final class StockPage
             return '';
         }
 
-        $body = '<label style="display:block">' . esc_html__('Nach', 'taxmod-stock') . '<br><select name="location" form="' . esc_attr(self::BULK_FORM) . '" style="width:100%" required>'
-            . $this->options($this->stock->places(), '') . '</select></label>'
+        $body = '<label style="display:block">' . esc_html__('Nach', 'taxmod-stock') . '<br>' . $this->stock->placeChooser('location', 0, self::BULK_FORM) . '</label>'
             . '<input type="hidden" name="return_tab" value="' . esc_attr(self::BACK_TO_LIST) . '" form="' . esc_attr(self::BULK_FORM) . '">'
             . '<p class="description">' . esc_html__('Bucht alles von den angehakten Materialien, jeden Posten von jedem Ort, an den gewählten Ort um: ein Vorgang «Umbuchung», «Stornieren» bei den Vorgängen nimmt ihn zurück.', 'taxmod-stock') . '</p>';
 
@@ -1429,7 +1428,7 @@ final class StockPage
 
         for ($i = 0; $i < self::ROWS; $i++) {
             $html .= '<tr><td>' . $this->thingField('rows[' . $i . '][thing]', 'taxmod-stock-split-' . $i, null) . '</td>'
-                . '<td><select name="rows[' . $i . '][group]" style="max-width:18em">' . $groups . '</select></td>'
+                . '<td>' . ($this->stock->groupChooser('rows[' . $i . '][group]') ?: '<select name="rows[' . $i . '][group]">' . $groups . '</select>') . '</td>'
                 . '<td><input type="text" name="rows[' . $i . '][name]"></td>'
                 . '<td><input type="number" min="1" name="rows[' . $i . '][quantity]" style="width:5em"></td>'
                 . '<td><input type="text" inputmode="decimal" name="rows[' . $i . '][price]" style="width:6em"></td></tr>';
@@ -1484,7 +1483,7 @@ final class StockPage
 
         for ($i = 0; $i < self::ROWS; $i++) {
             $html .= '<tr><td>' . $this->thingField('rows[' . $i . '][thing]', 'taxmod-stock-thing-' . $i, null) . '</td>'
-                . '<td><select name="rows[' . $i . '][group]" style="max-width:18em">' . $groups . '</select></td>'
+                . '<td>' . ($this->stock->groupChooser('rows[' . $i . '][group]') ?: '<select name="rows[' . $i . '][group]">' . $groups . '</select>') . '</td>'
                 . '<td><input type="text" name="rows[' . $i . '][name]"></td>'
                 . '<td><input type="text" inputmode="decimal" name="rows[' . $i . '][quantity]" style="width:6em"></td>'
                 . '<td><input type="text" inputmode="decimal" name="rows[' . $i . '][value]" style="width:6em"></td>'
@@ -1764,7 +1763,6 @@ final class StockPage
         $labels = $this->stock->labels('purchase');
         $about  = $this->purchaseAbout(array_keys($plan));
         $models = $this->stock->recordLabels(array_values(array_filter(array_column($plan, 'model'))));
-        $places = $this->stock->places();
         $where  = $this->stock->receiptLocations($plan);
         $closing = $this->stock->canCloseWithoutStock();
         $bought  = $this->stock->table('purchase');
@@ -1823,7 +1821,7 @@ final class StockPage
                 . $this->recordPicker('thing[' . $purchase . ']', $model, $model === null ? '' : ($models[$model] ?? '#' . $model), $purchase) . '</td>'
                 // His wish 2026-11-05: «Menge 1, geliefert wurden 40» — the quantity is corrected here, not in the purchase.
                 . '<td><input type="number" min="1" step="1" style="width:5em" name="quantity[' . esc_attr((string) $purchase) . ']" value="' . esc_attr($quantity) . '"></td>'
-                . '<td><select name="location[' . esc_attr((string) $purchase) . ']">' . $this->options($places, '—', $where[$purchase] ?? 0) . '</select></td>'
+                . '<td>' . $this->stock->placeChooser('location[' . $purchase . ']', $where[$purchase] ?? 0) . '</td>'
                 . $actions(($model === null ? $this->newThingDialog($purchase, $groups ??= $this->groupOptions()) : $this->materialDialog($purchase, $model)) . ($closing ? $this->closeControls($purchase) : '')) . '</tr>';
         }
 
@@ -1842,7 +1840,6 @@ final class StockPage
         $tree   = $this->stock->locationTree();
         $things = $this->stock->things()->all();
         $rows   = LocationStock::of($s, $this->stock->table('lot'), $this->stock->ledger(), $this->stock->places());
-        $places = $this->stock->places();
         $flags  = $this->stock->reservedPlaces();
         $body   = '';
 
@@ -1855,7 +1852,7 @@ final class StockPage
                 . $this->reservedMark($place, $flags);
             $project = $tree->projectOf($place);
             $extra   = $edit
-                ? '<select name="parent[' . esc_attr((string) $place) . ']">' . $this->options(array_diff_key($places, array_flip($tree->withAllBelow($place))), __('— oberste Ebene —', 'taxmod-stock'), $tree->parentOf($place)) . '</select> '
+                ? $this->stock->placeChooser('parent[' . $place . ']', $tree->parentOf($place), '', [$place]) . ' '
                     . '<button type="submit" class="button button-small" name="booking" value="umhaengen-' . esc_attr((string) $place) . '">' . esc_html__('Umhängen', 'taxmod-stock') . '</button> '
                     . '<a class="button button-small" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $place], admin_url('admin.php')) . '#taxmod-preview-edit') . '">' . esc_html__('Bearbeiten', 'taxmod-stock') . '</a> '
                     . $this->reserveDialog($place, $flags->isFlagged($place), $all)
@@ -1897,7 +1894,7 @@ final class StockPage
             . $table
             . '<h2>' . esc_html__('Neuer Lagerort', 'taxmod-stock') . '</h2><p>'
             . '<label>' . esc_html__('Name', 'taxmod-stock') . ' <input type="text" name="name" style="width:14em"></label> '
-            . '<label>' . esc_html__('liegt in', 'taxmod-stock') . ' <select name="new_parent">' . $this->options($places, __('— oberste Ebene —', 'taxmod-stock')) . '</select></label> '
+            . '<label>' . esc_html__('liegt in', 'taxmod-stock') . ' ' . $this->stock->placeChooser('new_parent') . ' <span class="description">' . esc_html__('leer: oberste Ebene', 'taxmod-stock') . '</span></label> '
             . '<label><input type="checkbox" name="movable" value="1"> ' . esc_html__('beweglich (Kiste, Karton)', 'taxmod-stock') . '</label> '
             . ($s->hasField('location_reserved') ? '<label><input type="checkbox" name="reserved" value="1"> ' . esc_html__('reserviert für Produktion', 'taxmod-stock') . '</label> ' : '')
             . ($projects === [] ? '' : '<label>' . esc_html__('Projekt', 'taxmod-stock') . ' <select name="project">' . $this->options($projects, '—') . '</select></label> ')
@@ -1982,23 +1979,13 @@ final class StockPage
             'name'         => 'taxmod_stock_place',
             'node'         => $s->node('location'),
             'parent_field' => $s->field('location_parent'),
-            'label_field'  => $this->placeWords($s),
+            'label_field'  => $this->stock->placeWords(),
             'preselected'  => $chosen > 0 ? $chosen : null,
             'inline'       => true,
             'pick_url'     => add_query_arg(['page' => self::PAGE, 'tab' => $tab, 'ort' => '{id}'], admin_url('admin.php')),
             'drag'         => true,
             'suffix'       => $suffix,
         ]);
-    }
-
-    /**
-     * D-1150: the fields that name a place in the modeller's tree — its short mark, then its Bezeichnung.
-     *
-     * @return int|list<int>
-     */
-    private function placeWords(\TaxmodStock\Core\Structure $s): int|array
-    {
-        return $s->hasField('location_short') ? [$s->field('location_short'), $s->field('label')] : $s->field('label');
     }
 
     /** The head of the right side: the place's name, where it lies and its marks. */
@@ -2202,9 +2189,9 @@ final class StockPage
     private function childMoveDialog(int $place): string
     {
         $tree   = $this->stock->locationTree();
-        $places = array_diff_key($this->stock->places(), array_flip(array_diff($tree->withAllBelow($place), [$place])));
-        $body   = '<label style="display:block">' . esc_html__('Nach', 'taxmod-stock') . '<br><select name="children_parent" form="' . esc_attr(self::CHILD_FORM) . '" style="width:100%">'
-            . $this->options($places, __('— oberste Ebene —', 'taxmod-stock'), $place) . '</select></label>'
+        $below  = array_values(array_filter(array_diff($tree->withAllBelow($place), [$place]), static fn (int $p): bool => $tree->parentOf($p) === $place));
+        $body   = '<label style="display:block">' . esc_html__('Nach', 'taxmod-stock') . '<br>' . $this->stock->placeChooser('children_parent', $place, self::CHILD_FORM, $below)
+            . ' <span class="description">' . esc_html__('leer: oberste Ebene', 'taxmod-stock') . '</span></label>'
             . '<p class="description">' . esc_html($this->stock->relocates()
                 ? __('Jeder gewählte Ort zieht mit allem, was darin liegt; eine bewegliche Kiste als Vorgang «Umlagerung».', 'taxmod-stock')
                 : __('Jeder gewählte Ort zieht mit allem, was darin liegt.', 'taxmod-stock')) . '</p>';
@@ -2671,7 +2658,7 @@ final class StockPage
             'name'         => $name,
             'node'         => $s->node('location'),
             'parent_field' => $s->field('location_parent'),
-            'label_field'  => $this->placeWords($s),
+            'label_field'  => $this->stock->placeWords(),
             'exclude'      => [$place],
             'preselected'  => $parent > 0 ? $parent : null,
             'inline'       => true,

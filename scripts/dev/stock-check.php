@@ -282,7 +282,8 @@ update_option(StockService::LOCATIONS, ['branches' => [$r['teile'] => $r['platz'
 $orte = (new StockService())->receiptLocations($plan);
 $pruefe(($orte[$r['kaufC']] ?? 0) === $r['platz'], 'the receipt proposes the place mapped to the branch the Modell lies in');
 $html = (new StockPage())->render();
-$pruefe(str_contains($html, 'name="location[' . $r['kaufC'] . ']"') && str_contains($html, 'value="' . $r['platz'] . '" selected'), 'the receipt form shows the proposed place, changeable');
+// D-1186, A4 (his word 2026-11-06 «sollte tree chooser mit suche sein»): the place is chosen in the modeller's tree with search.
+$pruefe(str_contains($html, 'name="location[' . $r['kaufC'] . ']" value="' . $r['platz'] . '" checked') && str_contains($html, 'taxmod-tree-filter'), 'the receipt form shows the proposed place in the tree chooser with search, changeable');
 
 // His wish 2026-11-05: «Menge 1, geliefert wurden 40» — the quantity is typed in the row and written to the purchase.
 $pruefe(str_contains($html, 'name="quantity[' . $r['kaufD'] . ']" value="2"'), 'each open receipt row holds the purchase quantity, editable');
@@ -357,7 +358,7 @@ $liste = $html;
 $html  = (string) (new StockPage())->listDetails(null, StockPage::DETAILS_MATERIAL, ['thing' => (string) $r['lm']]);
 $pruefe(str_contains($html, 'taxmod-stock-transfer-' . $lot . '-' . $r['platz'] . '-list') && str_contains($html, 'name="return_tab" value="materialliste"'), '«Umbuchen» sits in the material list for each place of a lot and returns to the list');
 // His word 2026-11-05: «das müssten zwei positonen … sein», «bei mehreren positionen den platz in der zusammenfassung weg lassen».
-$pruefe(substr_count($html, '<li>') === 2 && preg_match_all('/<li>[^<]*· Rest 1 /', $html) === 1 && substr_count($html, 'taxmod-dialog-open') === 2, 'a lot at two places is two positions, each with its own quantity and «Umbuchen»');
+$pruefe(substr_count($html, '<li>') === 2 && preg_match_all('/<li>[^<]*· Rest 1 /', $html) === 1 && substr_count($html, 'taxmod-dialog-open" for="taxmod-stock-transfer-') === 2, 'a lot at two places is two positions, each with its own quantity and «Umbuchen»');
 
 // His wish 2026-11-03: «3 material wählen alle umbuchen nach» — all of each ticked material to one place, one Vorgang.
 $pruefe(str_contains($liste, 'value="sammelumbuchen" form="taxmod-stock-bulk"') && str_contains($liste, 'name="bulk" id="taxmod-stock-bulk-action"'), 'the material list has «Umbuchen nach …» joining the bulk form');

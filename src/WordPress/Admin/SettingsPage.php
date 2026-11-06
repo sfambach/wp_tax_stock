@@ -79,14 +79,13 @@ final class SettingsPage
     {
         try {
             $stock    = new StockService();
-            $places   = $stock->places();
             $branches = $stock->branches();
         } catch (StockError $e) {
             return '<h2>' . esc_html__('Einlagerung nach Typ', 'taxmod-stock') . '</h2><p>' . esc_html(Messages::of($e)) . '</p>';
         }
 
         $settings = $stock->locationSettings();
-        $select   = static fn (string $name, ?int $chosen): string => self::placeSelect($name, $chosen, $places);
+        $select   = static fn (string $name, ?int $chosen): string => $stock->placeChooser($name, (int) $chosen);
 
         $html = '<h2>' . esc_html__('Einlagerung nach Typ', 'taxmod-stock') . '</h2>'
             . '<p>' . esc_html__('Der Wareneingang schlägt den Standard-Lagerort des Materials vor, sonst den Ort des Zweigs unter Model, in dem das Material des Kaufs liegt (der nächste eingetragene Zweig gewinnt), sonst den Standard-Ort der Struktur.', 'taxmod-stock') . '</p>'
@@ -104,22 +103,6 @@ final class SettingsPage
 
         return $html . '<tr><td colspan="2"><strong>' . esc_html__('ohne Material', 'taxmod-stock') . '</strong></td><td>'
             . $select('taxmod_stock_unreferenced', $settings->unreferenced) . '</td></tr></tbody></table>';
-    }
-
-    /**
-     * The one chooser of a place on this page: every place, «—» for none.
-     *
-     * @param array<int, string> $places place id → its name
-     */
-    private static function placeSelect(string $name, ?int $chosen, array $places): string
-    {
-        $html = '<select name="' . esc_attr($name) . '"><option value="">—</option>';
-
-        foreach ($places as $id => $label) {
-            $html .= '<option value="' . esc_attr((string) $id) . '"' . selected($chosen, $id, false) . '>' . esc_html($label) . '</option>';
-        }
-
-        return $html . '</select>';
     }
 
     /** The branches under `Model` that hold no material: left out of the material search, the tree and the groups. */
@@ -160,12 +143,6 @@ final class SettingsPage
             $tree = [];
         }
 
-        try {
-            $places = $stock->places();
-        } catch (StockError) {
-            $places = [];
-        }
-
         $html = '<h2>' . esc_html__('Test nach dem Wareneingang', 'taxmod-stock') . '</h2>'
             . '<p>' . esc_html__('Bestandsposten aus diesen Zweigen (mit allem darunter) stehen nach dem Wareneingang unter Logistik › Wareneingang › Zu testen, egal von welcher Plattform; Neuware nicht. Eine leere Zeile fügt einen Zweig hinzu, eine geleerte entfernt ihn.', 'taxmod-stock') . '</p>'
             . '<p><label>' . esc_html__('Wareneingang ab', 'taxmod-stock') . ' <input type="date" name="taxmod_stock_inbound_since" value="' . esc_attr($stock->inboundSince()) . '"></label> '
@@ -173,7 +150,7 @@ final class SettingsPage
             . '<p><label>' . esc_html__('Archivieren nach', 'taxmod-stock') . ' <input type="number" min="1" name="taxmod_stock_inbound_archive_days" value="' . esc_attr((string) $stock->inboundArchiveDays()) . '" style="width:6em"> ' . esc_html__('Tagen', 'taxmod-stock') . '</label> '
             . '<span class="description">' . esc_html__('Eingebuchte Bestellungen wandern so viele Tage nach «Eingegangen am» unter «Archiviert».', 'taxmod-stock') . '</span></p>'
             // D-1111: an ordinary place the setting names, never a name in code.
-            . '<p><label>' . esc_html__('Lagerort für Test', 'taxmod-stock') . ' ' . self::placeSelect('taxmod_stock_test_place', $settings->place, $places) . '</label> '
+            . '<p><label>' . esc_html__('Lagerort für Test', 'taxmod-stock') . ' ' . $stock->placeChooser('taxmod_stock_test_place', (int) $settings->place) . '</label> '
             . '<span class="description">' . esc_html__('Der Wareneingang schlägt diesen Ort für Gebrauchtware aus den Zweigen unten vor (nicht für Neuware); leer: der übliche Vorschlag.', 'taxmod-stock') . '</span></p>'
             . '<input type="hidden" name="taxmod_stock_tests_sent" value="1">'
             . '<table class="widefat striped" style="max-width:40em"><thead><tr><th>' . esc_html__('Zweig (Knoten-Id)', 'taxmod-stock') . '</th><th>' . esc_html__('Name', 'taxmod-stock') . '</th></tr></thead><tbody>';

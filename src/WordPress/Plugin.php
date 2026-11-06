@@ -58,7 +58,7 @@ final class Plugin
         add_action('plugins_loaded', [$this, 'bootWhenModellerIsThere']);
     }
 
-    /** The modeller's answer whether admin-post.php or admin-ajax.php serve this request; an older modeller wires always (D-1186). */
+    /** The modeller's answer whether admin-post.php or admin-ajax.php serve this request; an older modeller wires always (D-1187). */
     private static function handlesAdminActions(): bool
     {
         return ! method_exists(\Taxmod\WordPress\Plugin::class, 'handlesAdminActions') || \Taxmod\WordPress\Plugin::handlesAdminActions();
@@ -77,7 +77,7 @@ final class Plugin
         }
 
         add_filter('taxmod_config_tabs', [SettingsTab::class, 'register']);
-        // On admin_init and rest_api_init, where settings are saved: on init it compiled the stock service on every page view (D-1186).
+        // On admin_init and rest_api_init, where settings are saved: on init it compiled the stock service on every page view (D-1187).
         add_action('admin_init', [$this, 'registerSettings']);
         add_action('rest_api_init', [$this, 'registerSettings']);
         // After the modeller (priority 10) has created its menu.

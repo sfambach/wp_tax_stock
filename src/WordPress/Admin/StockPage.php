@@ -498,7 +498,10 @@ final class StockPage
             $held  = $this->heldAt($id, $ledger);
             $move  = count($held) === 1 ? $this->transferDialog($id, $held[0][0], $held[0][1], $held[0][2], $places, 0, true) . ' ' : '';
             // D-1147: the lots are drawn when the row opens, not with the list.
-            $body .= ListPage::row(self::BULK_FORM, (string) $id, $cells, $move . '<a class="button button-small" href="' . $link . '">'
+            // His wish 2026-11-06: «druck button pro positon» — the material label from the row; the modeller reads the
+            // material's own words when it prints, so the rows cost no query each.
+            $print = $this->materialLabel($id, (string) ($row['cells']['name'] ?? ''));
+            $body .= ListPage::row(self::BULK_FORM, (string) $id, $cells, $move . ($print === '' ? '' : $print . ' ') . '<a class="button button-small" href="' . $link . '">'
                 . esc_html__('Öffnen', 'taxmod-stock') . '</a>', ListPage::lazyDetails(self::DETAILS_MATERIAL, ['thing' => $id]), $open);
         }
 

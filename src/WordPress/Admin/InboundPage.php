@@ -152,18 +152,24 @@ final class InboundPage
             $tabs[] = [self::TEST, __('Zu testen', 'taxmod-stock'), count($toTest)];
         }
 
+        // D-1197: the stages are the process and drawn as arrows; «Zu testen», «Archiviert» and «Alle» stand beside it.
         // D-1008: «Archiviert» after the working tabs; «Alle» is everything not archived.
         $archived = $counts[InboundStage::Archived->value] ?? 0;
         $tabs[]   = [InboundStage::Archived->value, $this->stageName(InboundStage::Archived), $archived];
         $tabs[]   = [self::ALL, __('Alle', 'taxmod-stock'), count($orders) - $archived];
 
+        $steps = count(InboundStage::tabs());
+        $url   = static fn (string $slug): string => self::url(['tab' => $slug]);
+        // The arrows came with the modeller 0.1.186; an older one draws plain tabs.
+        $bar   = method_exists(ListPage::class, 'steps') ? ListPage::steps(array_slice($tabs, 0, $steps), $tab, $url, array_slice($tabs, $steps)) : ListPage::tabs($tabs, $tab, $url);
+
         if ($tab === self::TEST) {
-            return ListPage::tabs($tabs, $tab, static fn (string $slug): string => self::url(['tab' => $slug])) . $this->testList($toTest);
+            return $bar . $this->testList($toTest);
         }
 
         // His word 2026-11-05: «man klickt auf das item und bekommt eine teilview des listeneintrags mit den postionen».
         if ($open > 0 && isset($orders[$open])) {
-            return ListPage::tabs($tabs, $tab, static fn (string $slug): string => self::url(['tab' => $slug]))
+            return $bar
                 . $this->detailView($orders[$open], $stages[$open], $labels[$open] ?? '#' . $open, $today, $tab);
         }
 
@@ -190,7 +196,7 @@ final class InboundPage
         // Newest order first; one without a date at the end.
         uasort($shown, static fn (InboundOrder $a, InboundOrder $b): int => strcmp((string) $b->orderedOn, (string) $a->orderedOn) ?: $b->id <=> $a->id);
 
-        $html = ListPage::tabs($tabs, $tab, static fn (string $slug): string => self::url(['tab' => $slug]))
+        $html = $bar
             . ListPage::searchBox(self::FILTER_FORM, $search, __('Bestellung, Händler, Sendungsnummer …', 'taxmod-stock'), ['page' => self::PAGE, 'tab' => $tab], __('Suchen', 'taxmod-stock'))
             . $this->bulkBar($tab, $filter, count($shown));
         $rows = '';

@@ -1219,6 +1219,39 @@ final class StockService
         return ProjectBill::present($this->ledger(), $this->locationTree()->withAllBelow($place));
     }
 
+    /**
+     * D-1199: the names of what lies on each place and on every place in it, for its label — the materials and the categories
+     * they stand in. One ledger, one read for the nodes and one per node for the names, however many places (CD-7).
+     *
+     * @param list<int> $places
+     * @return array<int, array{categories: list<string>, materials: list<string>}>
+     */
+    public function placeContents(array $places): array
+    {
+        $ledger = $this->ledger();
+        $tree   = $this->locationTree();
+        $byPlace = [];
+
+        foreach ($places as $place) {
+            $byPlace[$place] = array_keys(array_filter(ProjectBill::present($ledger, $tree->withAllBelow($place)), static fn (float $pieces): bool => $pieces > 0));
+        }
+
+        $things = array_values(array_unique(array_merge([], ...array_values($byPlace))));
+        $nodes  = $things === [] ? [] : $this->nodesOf($things);
+        $names  = $things === [] ? [] : $this->recordLabels($things, $nodes);
+        $model  = $things === [] ? [] : $this->tree();
+        $out    = [];
+
+        foreach ($byPlace as $place => $ids) {
+            $out[$place] = [
+                'categories' => array_values(array_unique(array_map(static fn (int $thing): string => (string) ($model[$nodes[$thing] ?? 0]['name'] ?? ''), $ids))),
+                'materials'  => array_values(array_map(static fn (int $thing): string => $names[$thing] ?? '', $ids)),
+            ];
+        }
+
+        return $out;
+    }
+
     /** @return array<int, string> the projects a box can belong to; empty while the structure names no project node */
     public function projects(): array
     {

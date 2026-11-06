@@ -84,6 +84,9 @@ final class StockPage
     /** What {@see parts()} puts beside the navigation; filled while the page is drawn. */
     private string $side = '';
 
+    /** @var array<int, array{categories: list<string>, materials: list<string>}> D-1199: what lies on a place, read once per request */
+    private array $contents = [];
+
     public function __construct(private readonly StockService $stock = new StockService())
     {
     }
@@ -2071,6 +2074,23 @@ final class StockPage
      *
      * @return array{0: string, 1: int, 2: string, 3: string, 4: int, 5: array<string, mixed>}
      */
+    /**
+     * D-1199: what lies on these places, read once for all of them and kept for the request.
+     *
+     * @param list<int> $places
+     * @return array<int, array{categories: list<string>, materials: list<string>}>
+     */
+    private function contentsOf(array $places): array
+    {
+        $missing = array_values(array_diff($places, array_keys($this->contents)));
+
+        if ($missing !== []) {
+            $this->contents += $this->stock->placeContents($missing);
+        }
+
+        return $this->contents;
+    }
+
     private function placeLabel(int $place, LocationTree $tree): array
     {
         $movable = $tree->isMovable($place);
@@ -2093,7 +2113,7 @@ final class StockPage
             // D-1160: the modeller reads the fields the layout names from the place itself; these fill what it has no field for.
             'record' => $place,
             'values' => ['bezeichnung' => $tree->titleOf($place), 'kurzzeichen' => $tree->shortOf($place), 'projekt' => $project, 'ort' => $parent],
-        ])];
+        ], $this->contentsOf([$place])[$place])];
     }
 
     /**
@@ -2116,6 +2136,8 @@ final class StockPage
         $table = $this->stock->table('location');
         $flags = $this->stock->reservedPlaces();
         $body  = '';
+
+        $this->contentsOf($children);
 
         foreach ($children as $child) {
             $below = $tree->withAllBelow($child);
@@ -2222,6 +2244,7 @@ final class StockPage
         $asked  = absint($_POST['copies'] ?? 0);
         // D-1153: a place whose type names a template prints from it; the chosen format holds for the rest.
         $fills  = method_exists(LabelButton::class, 'filled');
+        $this->contentsOf(array_values(array_filter($places, [$table, 'has'])));
 
         foreach ($places as $place) {
             if ($table->has($place)) {

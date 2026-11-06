@@ -90,6 +90,8 @@ final class Structure
         'printer_offset', 'printer_line',
         // D-1192: the roll a printer holds, and a roll's width and the labels it allows.
         'printer_loaded_roll', 'roll_width', 'roll_labels',
+        // D-1199: what a place label prints about what lies there.
+        'template_contents',
         // D-1158: a place type's outer and inner size, and the three sides of a Dimension.
         'type_outer', 'type_inner', 'dimension_length', 'dimension_width', 'dimension_height',
         // D-1169: a place type chooses its fit calculation and its message.
@@ -102,6 +104,8 @@ final class Structure
 
     /** D-1001: draft and cancelled orders stand in no stage of the goods receipt cockpit. */
     private const OPTIONAL_VALUES = [
+        // D-1199: the choices of «Etiketteninhalte» that print something.
+        'contents_categories', 'contents_materials',
         'currency_default', 'status_draft', 'status_cancelled', 'status_ordered',
         'test_ok', 'test_partial', 'test_maintenance', 'test_defect', 'condition_new', 'condition_untested',
         // D-1039 «Umbuchung», D-1083 «Reservierung»: kinds of Vorgang.

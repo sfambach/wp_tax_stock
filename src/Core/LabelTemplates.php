@@ -58,6 +58,8 @@ final class LabelTemplates
                 'layout' => $layout,
                 'category' => $categoryOf[$id] ?? '',
                 'node'     => $nodeOf[$id] ?? 0,
+                // D-1199: what the label prints about the place's content, a choice of «Etiketteninhalte».
+                'contents' => self::contentsOf($s, $int($id, 'template_contents')),
             ];
             // D-1192: the first printer (by name) whose loaded roll allows this label is the one the dialog starts with.
             foreach ($all as $printer) {
@@ -69,6 +71,15 @@ final class LabelTemplates
         }
 
         return new self($out, $all);
+    }
+
+    private static function contentsOf(Structure $s, int $choice): string
+    {
+        return match (true) {
+            $choice > 0 && $s->hasValue('contents_categories') && $choice === $s->value('contents_categories') => LabelContents::CATEGORIES,
+            $choice > 0 && $s->hasValue('contents_materials') && $choice === $s->value('contents_materials')   => LabelContents::MATERIALS,
+            default                                                                                          => LabelContents::NOTHING,
+        };
     }
 
     /**
@@ -113,10 +124,13 @@ final class LabelTemplates
      * D-1192: the label dialog for a label of this category — the chosen label first, the others of its category to choose from,
      * and every printer with the labels its loaded roll allows; `$more` (record, values) goes with each label.
      *
+     * D-1199: `$contents` holds the names of what lies on the place; each label takes the ones its choice asks for.
+     *
      * @param array<string, mixed> $more
+     * @param array{categories?: list<string>, materials?: list<string>} $contents
      * @return array<string, mixed>
      */
-    public function dialog(int $chosen, array $more = []): array
+    public function dialog(int $chosen, array $more = [], array $contents = []): array
     {
         $template = $this->templates[$chosen] ?? null;
         if ($template === null) {
@@ -124,10 +138,28 @@ final class LabelTemplates
         }
         $choices = [];
         foreach ($this->inNode((int) ($template['node'] ?? 0)) ?: [$chosen] as $id) {
-            $choices[$id] = self::forButton(array_diff_key($this->templates[$id], ['printer' => 1]), $more);
+            $choices[$id] = self::forButton(array_diff_key($this->templates[$id], ['printer' => 1]), self::withContents($this->templates[$id], $more, $contents));
         }
 
-        return self::forButton($template, $more) + ['choices' => $choices, 'chosen' => $chosen, 'printers' => $this->printers];
+        return self::forButton($template, self::withContents($template, $more, $contents)) + ['choices' => $choices, 'chosen' => $chosen, 'printers' => $this->printers];
+    }
+
+    /**
+     * @param array<string, mixed> $template
+     * @param array<string, mixed> $more
+     * @param array{categories?: list<string>, materials?: list<string>} $contents
+     * @return array<string, mixed>
+     */
+    private static function withContents(array $template, array $more, array $contents): array
+    {
+        $kind = (string) ($template['contents'] ?? LabelContents::NOTHING);
+        if ($kind === LabelContents::NOTHING || ! isset($contents[$kind])) {
+            return $more;
+        }
+        $more['values'] = (is_array($more['values'] ?? null) ? $more['values'] : [])
+            + [LabelContents::FIELD => LabelContents::line($contents[$kind], LabelContents::maxOf((string) $template['layout']))];
+
+        return $more;
     }
 
     /** @return list<int> the labels of one category, by name; none for 0 */

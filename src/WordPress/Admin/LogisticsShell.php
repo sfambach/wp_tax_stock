@@ -99,7 +99,6 @@ final class LogisticsShell
             // D-1184, his word 2026-11-05: «kontakt ast in logistik menü einbauen» — firms, suppliers, manufacturers, persons.
             // D-1185, his word 2026-11-06: «kontakte hat doch schon unter knoten die bitte im kontakte knoten an zueigen und der kontakte knoten
             // selbst ist alle kontakte», then «ich meine das kontakte menü» — the area itself opens all contacts, the nodes below it are its items.
-            ['key' => 'contacts', 'label' => __('Kontakte', 'taxmod-stock'), 'url' => ContactsPage::url(), 'items' => self::contactItems()],
             // His word 2026-11-01: «einen Punkt Einstellung … die API-Konfiguration, die Grundeinstellung und ja, die Lagerstruktur».
             ['key' => 'settings', 'label' => __('Einstellungen', 'taxmod-stock'), 'items' => [
                 // D-1085: the business settings inside the navigation; the technical structure stays on the modeller's Configuration.
@@ -107,6 +106,9 @@ final class LogisticsShell
                 // His words 2026-11-03 (D-1129): «sollte eigener punkt in einstellungen sein vielleicht lagerstrukut platzarten, layout».
                 ['path' => [__('Lagerstruktur', 'taxmod-stock')]] + $item('structure', __('Layout', 'taxmod-stock'), StockPage::PAGE, 'lagerstruktur'),
                 ['path' => [__('Lagerstruktur', 'taxmod-stock')]] + $item('place-types', __('Platzarten', 'taxmod-stock'), StockPage::PAGE, 'platzarten'),
+                // D-1193, his word 2026-11-06: «kontakte nochmal in einstellungen ? finde sie da gut aber dann sollten sie aus dem andren
+                // menü raus» — the contact group stands under Einstellungen only; its head opens all contacts.
+                ...self::contactItems(),
                 ...self::modules('settings'),
                 // His words 2026-11-03: «pack mal das menü drucken unter einstellungen», «warum hat das nur zwei ebenen», «kannst du
                 // das so bauen das es n ebenen zulässt» — an item's `path` puts it any depth below its area (D-1121).
@@ -120,8 +122,8 @@ final class LogisticsShell
     }
 
     /**
-     * D-1185: the contact branch's nodes as items — the root a hidden item (the area's own page), a node with nodes below it a group
-     * whose head item is its own link. One read-tree per request.
+     * D-1185, D-1193: the contact branch's nodes as items of the group «Kontakte» under Einstellungen — the group's head opens all
+     * contacts, a node with nodes below it a group whose head item is its own link. One read-tree per request.
      *
      * @return list<array<string, mixed>>
      */
@@ -133,7 +135,8 @@ final class LogisticsShell
             return $items;
         }
 
-        $items = [['key' => 'contacts', 'label' => __('Alle Kontakte', 'taxmod-stock'), 'page' => ContactsPage::PAGE, 'tab' => '', 'hidden' => true]];
+        $group = __('Kontakte', 'taxmod-stock');
+        $items = [['key' => 'contacts', 'label' => $group, 'page' => ContactsPage::PAGE, 'tab' => '', 'path' => [$group], 'head' => true]];
 
         try {
             $stock = new StockService();
@@ -141,7 +144,7 @@ final class LogisticsShell
 
             foreach (Contacts::menu($tree, $stock->contactRoot()) as $node) {
                 $items[] = ['key' => 'contact-' . $node['node'], 'label' => $node['label'], 'page' => ContactsPage::PAGE, 'tab' => (string) $node['node'],
-                    'path' => $node['path'], 'head' => $node['head']];
+                    'path' => [$group, ...$node['path']], 'head' => $node['head']];
             }
         } catch (StockError) {
             // Without the modeller's tree the area keeps its own page only; the page names what is missing.

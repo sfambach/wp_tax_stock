@@ -44,7 +44,11 @@ $submenu[Plugin::PARENT]          = [
     ['Taxonomy Modeller', 'manage_options', Plugin::PARENT],
     ['Import', 'manage_options', 'taxmod-inbox'],
     ['Logistik', 'manage_options', CockpitPage::PAGE],
+    ['Einkauf', 'manage_options', \TaxmodStock\WordPress\Admin\PurchasePage::PAGE],
+    ['Wareneingang', 'manage_options', Plugin::MENU],
     ['Lager', 'manage_options', StockPage::PAGE],
+    // D-1193: the stock's own pages stand in the submenu as Plugin registers them, so a missing exclusion shows.
+    ['Kontakte', 'manage_options', \TaxmodStock\WordPress\Admin\ContactsPage::PAGE],
     ['Grundeinstellungen', 'manage_options', SettingsPage::PAGE],
     ['Logistik', 'manage_options', ModulePage::PAGE],
     ['eBay-Versand', 'manage_options', 'taxebay-shipping'],
@@ -79,7 +83,9 @@ foreach ($navigation->areas() as $area) {
 }
 
 $pruefe($outside === [], 'no item leaves the logistics navigation' . ($outside === [] ? '' : ': ' . implode('; ', $outside)));
-$settings = array_values(array_filter($navigation->areas(), static fn (array $area): bool => $area['key'] === 'settings'))[0]['items'] ?? [];
+$settingsAll = array_values(array_filter($navigation->areas(), static fn (array $area): bool => $area['key'] === 'settings'))[0]['items'] ?? [];
+// D-1193: the contact group stands in Einstellungen too; the module checks below look at the rest.
+$settings    = array_values(array_filter($settingsAll, static fn (array $item): bool => ! str_starts_with((string) $item['key'], 'contact')));
 $pruefe(array_slice(array_column($settings, 'key'), 0, 4) === ['basics', 'structure', 'place-types', 'module-__navcheck-dhl'] && array_filter(array_slice(array_column($settings, 'key'), 4), static fn (string $key): bool => ! str_starts_with($key, 'module-') && $key !== 'label-templates') === [], 'Einstellungen: Grundeinstellungen, Lagerstruktur › Layout and Platzarten (D-1129), then the module (' . implode(', ', array_column($settings, 'key')) . ')');
 $pruefe(($settings[1]['path'] ?? []) === ['Lagerstruktur'] && ($settings[2]['path'] ?? []) === ['Lagerstruktur'] && ($settings[2]['tab'] ?? '') === 'platzarten', 'Layout and Platzarten stand in the group «Lagerstruktur»');
 $pruefe(($settings[0]['page'] ?? '') === SettingsPage::PAGE, 'Grundeinstellungen is a page of the stock interface, not the modeller\'s Configuration');
@@ -103,9 +109,15 @@ $bestand = array_values(array_filter($areas, static fn (array $area): bool => $a
 $platz   = array_values(array_filter($bestand, static fn (array $item): bool => $item['key'] === 'places'))[0] ?? null;
 $pruefe(($platz['label'] ?? '') === 'Platzbestand' && ($platz['tab'] ?? '') === 'lagerorte', 'Bestand › Platzbestand opens what lies at a place (renamed from «Lagerorte», his word 2026-11-05)');
 $pruefe(array_slice(array_column($bestand, 'key'), 0, 2) === ['material', 'group-stock'] && ($bestand[1]['tab'] ?? '') === 'gruppenbestand', 'D-1174: Bestand › Gruppenbestand stands after Material');
-$kontakte = array_values(array_filter($areas, static fn (array $area): bool => $area['key'] === 'contacts'))[0]['items'] ?? [];
-$pruefe(($kontakte[0]['page'] ?? '') === \TaxmodStock\WordPress\Admin\ContactsPage::PAGE && array_search('contacts', array_column($areas, 'key'), true) === array_search('settings', array_column($areas, 'key'), true) - 1, 'D-1184: Kontakte is an area of its own, right before Einstellungen');
-$pruefe(! empty($kontakte[0]['hidden']) && count($kontakte) > 1 && array_unique(array_column($kontakte, 'page')) === [\TaxmodStock\WordPress\Admin\ContactsPage::PAGE], 'D-1185: the contact nodes are the items of Kontakte, the area itself opens all contacts');
+// D-1193, his word 2026-11-06: «kontakte nochmal in einstellungen ? finde sie da gut aber dann sollten sie aus dem andren menü raus».
+$kontakte = array_values(array_filter($settingsAll, static fn (array $item): bool => str_starts_with((string) $item['key'], 'contact')));
+$pruefe(! in_array('contacts', array_column($areas, 'key'), true) && ($kontakte[0]['page'] ?? '') === \TaxmodStock\WordPress\Admin\ContactsPage::PAGE && ($kontakte[0]['path'] ?? []) === ['Kontakte'] && ! empty($kontakte[0]['head']), 'D-1193: Kontakte is a group under Einstellungen only, its head opens all contacts');
+$pruefe(count($kontakte) > 1 && array_unique(array_column($kontakte, 'page')) === [\TaxmodStock\WordPress\Admin\ContactsPage::PAGE] && array_filter($kontakte, static fn (array $item): bool => ($item['path'][0] ?? '') !== 'Kontakte') === [], 'D-1185: the contact nodes are the items of the group Kontakte');
+// D-1193: a page the stock frames itself must never come back as a connection module — ModulePage would frame it a second time
+// (his finding 2026-11-06 «warum nun zweimal menü ?» on Kontakte).
+$own = [\TaxmodStock\WordPress\Admin\CockpitPage::PAGE, \TaxmodStock\WordPress\Admin\PurchasePage::PAGE, \TaxmodStock\WordPress\Plugin::MENU, \TaxmodStock\WordPress\Admin\StockPage::PAGE, \TaxmodStock\WordPress\Admin\ContactsPage::PAGE, \TaxmodStock\WordPress\Admin\SettingsPage::PAGE];
+$twice = array_values(array_intersect($own, array_column(\TaxmodStock\WordPress\Admin\ModulePage::all(), 'slug')));
+$pruefe($twice === [], 'no page of the stock is framed twice as a connection module' . ($twice === [] ? '' : ': ' . implode(', ', $twice)));
 $fertigung = array_values(array_filter($areas, static fn (array $area): bool => $area['key'] === 'production'))[0]['items'] ?? [];
 $pruefe(array_column($fertigung, 'key') === ['project-boxes', 'module-__navcheck-production'], 'D-1142: a page announced with area «production» stands under Fertigung, after Projekt-Gebinde');
 $_GET = ['page' => ModulePage::PAGE, 'module' => '__navcheck-deep'];

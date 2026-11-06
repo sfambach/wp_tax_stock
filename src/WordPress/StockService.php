@@ -84,6 +84,8 @@ final class StockService
     /** @var array<int, Table> node id → its records, read once */
     private array $tables = [];
 
+    private ?Structure $structure = null;
+
     /** @var array<int, array{name: string, parent: int, class: string}>|null the tree under the things' root, read once */
     private ?array $tree = null;
 
@@ -104,11 +106,78 @@ final class StockService
 
     public function structure(): Structure
     {
+        // Once per service: it was parsed from the option and the bundled file on every call, dozens of times a page (D-1195).
+        if ($this->structure !== null) {
+            return $this->structure;
+        }
+
         $raw     = get_option(self::OPTION, []);
         $file    = dirname(__DIR__, 2) . '/structure-live.json';
         $bundled = is_readable($file) ? json_decode((string) file_get_contents($file), true) : null;
 
-        return Structure::fromArray(Structure::completed(is_array($raw) ? $raw : [], is_array($bundled) ? $bundled : []));
+        return $this->structure = Structure::fromArray(Structure::completed(is_array($raw) ? $raw : [], is_array($bundled) ? $bundled : []));
+    }
+
+    /**
+     * The same service, reading only what belongs to one thing (D-1195): its purchases, lots, lot lines and their transactions,
+     * its Lager record, the orders and amounts of those purchases, and its own record — instead of every record of those
+     * nodes. For the material view; a modeller without the narrow read gets the service unchanged.
+     */
+    public function scopedTo(int $thing): self
+    {
+        $s       = $this->structure();
+        $refs    = fn (array $records, string $field): ?array => $s->hasField($field) ? $this->model->referrers($records, $s->field($field)) : [];
+        $lots    = $refs([$thing], 'lot_thing');
+        $bought  = $refs([$thing], 'purchase_model');
+        $lager   = $refs([$thing], 'lager_thing');
+
+        if ($lots === null || $bought === null || $lager === null) {
+            return $this;
+        }
+
+        $lines   = $refs($lots, 'line_lot') ?? [];
+        $deals   = $refs($lines, 'transaction_lines') ?? [];
+        $orders  = $refs($bought, 'order_lines') ?? [];
+        $scoped  = new self($this->model);
+        $read    = fn (array $ids): Table => $ids === [] ? new Table([]) : ($this->model->records($ids) ?? new Table([]));
+        $nodes   = $this->model->nodesOf([$thing]);
+
+        $scoped->structure = $s;
+        $scoped->tables    = [
+            $s->node('purchase')    => $purchases = $read($bought),
+            $s->node('lot')         => $lotTable = $read($lots),
+            $s->node('line')        => $read($lines),
+            $s->node('transaction') => $read($deals),
+            $s->node('lager')       => $read($lager),
+            $s->node('order')       => $read($orders),
+        ] + $this->tables;
+
+        // The amounts its purchases and lots name, read by id.
+        $money = [];
+
+        foreach (['purchase_unit_price', 'purchase_landed_price', 'purchase_total_price'] as $field) {
+            if ($s->hasField($field)) {
+                foreach ($purchases->ids() as $id) {
+                    $money[] = (int) $purchases->first($id, $s->field($field));
+                }
+            }
+        }
+
+        if ($s->hasField('lot_value')) {
+            foreach ($lotTable->ids() as $id) {
+                $money[] = (int) $lotTable->first($id, $s->field('lot_value'));
+            }
+        }
+
+        if ($s->hasNode('money')) {
+            $scoped->tables[$s->node('money')] = $read(array_values(array_unique(array_filter($money))));
+        }
+
+        if (isset($nodes[$thing]) && ! isset($scoped->tables[$nodes[$thing]])) {
+            $scoped->tables[$nodes[$thing]] = $read([$thing]);
+        }
+
+        return $scoped;
     }
 
     /**
@@ -182,10 +251,25 @@ final class StockService
             $byNode[$node][] = $record;
         }
 
+        // Nodes already read answer from memory; the rest in one read of just these records, not of their whole nodes (D-1195).
+        $rest = [];
+
         foreach ($byNode as $node => $ids) {
-            $table = $this->tableOf($node);
+            if (! isset($this->tables[$node])) {
+                array_push($rest, ...$ids);
+
+                continue;
+            }
 
             foreach ($ids as $id) {
+                $out[$id] = (string) $this->tables[$node]->first($id, $field);
+            }
+        }
+
+        if ($rest !== []) {
+            $table = $this->model->records(array_values(array_unique($rest))) ?? new Table([]);
+
+            foreach ($rest as $id) {
                 $out[$id] = (string) $table->first($id, $field);
             }
         }

@@ -66,6 +66,17 @@ final class ModelGateway
         return $this->door->recordsOf($nodes, $limit);
     }
 
+    /**
+     * The records whose field `$relation` points at one of these, or null from a modeller without that read (before 0.1.184).
+     *
+     * @param list<int> $records
+     * @return list<int>|null
+     */
+    public function referrers(array $records, int $relation): ?array
+    {
+        return method_exists($this->door, 'referrers') ? $this->door->referrers($records, $relation) : null;
+    }
+
     /** @param list<int> $records */
     public function records(array $records): ?Table
     {

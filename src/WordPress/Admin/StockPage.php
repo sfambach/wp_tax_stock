@@ -123,7 +123,8 @@ final class StockPage
             $thing = absint($_GET['thing'] ?? 0);
             // The tabs are the menu group «Bestand»; Einbuchen (Eingang) and the structure (Einstellungen, D-1085) stand alone.
             $html .= (in_array($tab, ['wareneingang', 'lagerstruktur', 'platzarten', 'etikettenvorlagen', 'drucker', 'fertigung'], true) ? '' : '<div class="taxmod-stock-pagetabs">' . $this->tabBar($tab, $list) . '</div>') . match ($tab) {
-                'material'  => $thing > 0 ? $this->thingView($thing) : $this->materialList($list),
+                // D-1195: one material reads only its own purchases, lots and bookings.
+                'material'  => $thing > 0 ? (new self($this->stock->scopedTo($thing)))->thingView($thing) : $this->materialList($list),
                 'gruppenbestand' => $this->groupStock($list),
                 'inventur'  => $this->inventoryForm(),
                 'verbrauch' => $this->consumptionForm($thing, absint($_GET['lot'] ?? 0), absint($_GET['place'] ?? 0)),
@@ -563,9 +564,11 @@ final class StockPage
         }
 
         $thing  = absint($args['thing'] ?? 0);
-        $ledger = $this->stock->ledger();
+        // D-1195: an opened row reads its own lots and bookings, not the whole ledger.
+        $view   = new self($this->stock->scopedTo($thing));
+        $ledger = $view->stock->ledger();
 
-        return $this->lotList($thing, $ledger, count($this->heldAt($thing, $ledger)) > 1);
+        return $view->lotList($thing, $ledger, count($view->heldAt($thing, $ledger)) > 1);
     }
 
     /**

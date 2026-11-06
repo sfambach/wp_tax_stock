@@ -806,7 +806,7 @@ $x->write((new ReceiptReversal($x->structureWithKinds()))->reverse($r['best2'], 
 $nach   = new StockService();
 $pruefe(count($vorher) === 8 && $zeilen($nach) === [] && array_filter($zwei, static fn (int $l): bool => $nach->table('lot')->has($l)) === [], 'a receipt whose lot was only moved goes back, its Umbuchung lines with it');
 
-// D-1208: the stock as an ability — at a place and inside it, and per material, the same numbers as the ledger.
+// D-1209: the stock as an ability — at a place and inside it, and per material, the same numbers as the ledger.
 $frage = wp_get_ability('taxmod-stock/stock');
 $nun   = new StockService();
 $oben  = (int) ($nun->locationTree()->ordered()[0][0] ?? 0);

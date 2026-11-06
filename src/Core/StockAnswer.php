@@ -4,7 +4,7 @@ namespace TaxmodStock\Core;
 
 /**
  * What lies where and how much of a material there is — the answer of the ability `taxmod-stock/stock`, so a reader does not
- * load every lot and every transaction to learn it (D-1208).
+ * load every lot and every transaction to learn it (D-1209).
  *
  * ```mermaid
  * flowchart LR
@@ -16,7 +16,7 @@ namespace TaxmodStock\Core;
  * ⚠️ *The quantity is the ledger's rest, as on the stock page (D-956): reserved stock still counts, it lowers what is available,
  * not what is there (D-1083).*
  *
- * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/NewConcept/90-decision-log.md D-1208
+ * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/NewConcept/90-decision-log.md D-1209
  */
 final class StockAnswer
 {

@@ -6,9 +6,9 @@ use TaxmodStock\Core\StockAnswer;
 
 /**
  * The stock as an ability, for a reader over MCP: what lies at a place and inside it, how much there is of a material — the
- * ledger's answer, not every lot and transaction (D-1208).
+ * ledger's answer, not every lot and transaction (D-1209).
  *
- * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/NewConcept/90-decision-log.md D-1208
+ * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/NewConcept/90-decision-log.md D-1209
  */
 final class StockAbility
 {

@@ -11,7 +11,7 @@ use TaxmodStock\Core\Table;
 use TaxmodStock\Core\Things;
 
 /**
- * D-1208: «is anything stored under Alex?» answered from the ledger, not by reading every lot and transaction.
+ * D-1209: «is anything stored under Alex?» answered from the ledger, not by reading every lot and transaction.
  */
 final class StockAnswerTest extends TestCase
 {

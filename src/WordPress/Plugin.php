@@ -112,6 +112,23 @@ final class Plugin
             ContactsPage::DETAILS       => (new ContactsPage())->listDetails($html, $source, $args),
             default                     => $html,
         }, 10, 3);
+        // D-1203: the modeller's scanner test page opens a scanned place, box or material here.
+        add_filter('taxmod_scan_links', [self::class, 'scanLinks'], 10, 3);
+    }
+
+    /**
+     * Links for a scanned label code (D-1203): O and K open the place in the storage structure, M the material's stock.
+     *
+     * @param array<string, string> $links label → URL
+     * @return array<string, string>
+     */
+    public static function scanLinks(array $links, string $kind, int $record): array
+    {
+        return $links + match ($kind) {
+            'O', 'K' => [__('Lagerort öffnen', 'taxmod-stock') => add_query_arg(['page' => StockPage::PAGE, 'tab' => 'lagerstruktur', 'ort' => $record], admin_url('admin.php'))],
+            'M'      => [__('Material im Lager öffnen', 'taxmod-stock') => StockPage::thingUrl($record, 'bestand')],
+            default  => [],
+        };
     }
 
     /**

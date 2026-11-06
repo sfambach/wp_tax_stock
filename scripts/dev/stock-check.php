@@ -160,6 +160,16 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'set_values', 'record' => '@kaufD', 'values' => ['@label' => 'MPSA56 ×2', '@k_offen' => '0', '@k_anz' => '2']],
     ['op' => 'create_record', 'ref' => 'best2', 'node' => '@ord'],
     ['op' => 'set_values', 'record' => '@best2', 'values' => ['@label' => 'Bestellung 2', '@o_pos' => ['values' => ['@kaufC', '@kaufD']]]],
+    // D-1202: one material label, so the lists offer «Etiketten drucken …» for the ticked materials.
+    ['op' => 'create_node', 'ref' => 'etk', 'name' => '__Etiketten', 'parent' => '@stock'],
+    ['op' => 'create_node', 'ref' => 'etk_mat', 'name' => 'Materialetiketten', 'parent' => '@etk'],
+    $field('e_key', '@etk', 'Druckformat', $text, 'composition', '0..1'),
+    $field('e_w', '@etk', 'Breite', $int, 'composition', '0..1'),
+    $field('e_h', '@etk', 'Höhe', $int, 'composition', '0..1'),
+    $field('e_lay', '@etk', 'Layout', $text, 'composition', '0..1'),
+    ['op' => 'create_record', 'ref' => 'etk40', 'node' => '@etk_mat'],
+    ['op' => 'set_values', 'record' => '@etk40', 'values' => ['@label' => 'Material 40×30', '@e_key' => 'mat4030', '@e_w' => '40', '@e_h' => '30',
+        '@e_lay' => '[{"type":"text","field":"Bezeichnung","x":2,"y":2,"w":36,"h":8,"pt":9}]']],
 ]]);
 
 if (is_wp_error($aufbau)) {
@@ -184,7 +194,7 @@ if ($kind === 'composition') {
 
 $struktur = [
     'nodes'  => ['lager' => $r['mat'], 'lot' => $r['lot'], 'transaction' => $r['vg'], 'line' => $r['vp'], 'location' => $r['lo'], 'order' => $r['ord'], 'purchase' => $r['pur'], 'money' => $money,
-        'lager_use' => $r['verw']],
+        'lager_use' => $r['verw'], 'label_template' => $r['etk'], 'label_materials' => $r['etk_mat']],
     'fields' => [
         'lager_use' => $r['m_use'], 'lager_location' => $r['m_ort'], 'purchase_model' => $r['k_mod'],
         'order_merchant' => $r['o_hand'], 'purchase_demand' => $r['k_bedarf'], 'transaction_reference' => $r['v_bezug'], 'line_thing' => $r['p_ding'],
@@ -195,6 +205,7 @@ $struktur = [
         'location_parent' => $r['lo_vater'], 'location_movable' => $r['lo_beweg'], 'transaction_carrier' => $r['v_traeger'],
         'order_status' => $r['o_stat'], 'order_lines' => $r['o_pos'],
         'purchase_quantity' => $r['k_anz'], 'purchase_undetermined' => $r['k_offen'],
+        'template_key' => $r['e_key'], 'template_width' => $r['e_w'], 'template_height' => $r['e_h'], 'template_layout' => $r['e_lay'],
         'purchase_landed_price' => $r['k_ein'], 'purchase_unit_price' => $r['k_preis'], 'money_amount' => 4234, 'money_unit' => 4236,
     ],
     'values' => [
@@ -387,6 +398,15 @@ $_GET = ['page' => StockPage::PAGE, 'tab' => 'material'];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, '<option value="">--</option>') && str_contains($html, 'data-taxmod-ask="taxmod-stock-bulk-transfer"') && str_contains($html, 'taxmod-bulk-asks'), 'D-1202: «Umbuchen nach …» stands in the one bulk choice, its dialog opens from there');
 
+$pruefe(! class_exists(Taxmod\Core\Renderer\DialogMarkup::class) || (str_contains($html, 'data-taxmod-ask="taxmod-stock-material-labels"') && str_contains($html, 'value="materialetiketten-pdf"') && str_contains($html, '>Material 40×30</option>')), 'D-1202: «Etiketten drucken …» for the ticked materials stands in the one bulk choice, with the material labels');
+
+if (method_exists(Taxmod\WordPress\Printing\LabelButton::class, 'filled')) {
+    $vorlagen = (new StockService())->labelTemplates();
+    $dialog   = $vorlagen->dialog($r['etk40'], ['record' => $r['lm']]);
+    $gefuellt = Taxmod\WordPress\Printing\LabelButton::filled(Taxmod\Core\Printing\LabelContent::of(Taxmod\Core\Printing\LabelPrefix::from('M'), $r['lm'], 'LM2930T-5.0', ''), array_diff_key($dialog, ['choices' => 1, 'chosen' => 1, 'printers' => 1]));
+    $pruefe($gefuellt !== null && ($gefuellt->values['Bezeichnung'] ?? '') === 'LM2930T-5.0' && $gefuellt->format->widthMm === 40.0, 'D-1202: a ticked material\'s label reads its own «Bezeichnung», on the 40×30 label');
+}
+
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'group' => (string) $r['teile']];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'value="' . $r['teile'] . '" selected') && str_contains($html, 'LM2930T-5.0') && ! str_contains($html, 'notice-error'), 'the list filters by group');
@@ -397,6 +417,7 @@ $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'Materialgruppen') && str_contains($html, 'Links eine Materialgruppe wählen') && ! str_contains($html, 'LM2930T-5.0</a>') && ! str_contains($html, 'notice-error'), 'D-1174: «Gruppenbestand» waits for a group from the tree');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'gruppenbestand', 'group' => (string) $r['teile']];
 $html = (new StockPage())->render();
+$pruefe(! class_exists(Taxmod\Core\Renderer\DialogMarkup::class) || str_contains($html, 'value="materialetiketten-pdf"'), 'D-1202: the group stock offers the same bulk label print');
 $pruefe(str_contains($html, 'LM2930T-5.0') && str_contains($html, 'Menge gesamt') && str_contains($html, 'data-source="' . StockPage::DETAILS_MATERIAL . '"') && ! str_contains($html, 'notice-error'), 'D-1174: a group shows its materials, the totals as tiles and lots loaded when a row opens');
 
 // Laid out as the eBay shipping page (2026-10-25): «Wareneingang» first and default, list tables with search, filter and sorting.

@@ -174,6 +174,17 @@ final class StockPage
             $this->printPlaceLabels(array_values(array_filter(array_map('absint', (array) ($_POST['selected'] ?? [])))), absint($_POST['return_ort'] ?? 0), $kind === 'etiketten-service');
         }
 
+        // D-1202, his wish 2026-11-06: «Drucken» in the material and group stock lists — one label per ticked material.
+        if ($kind === 'materialetiketten-service' || $kind === 'materialetiketten-pdf') {
+            $this->printMaterialLabels(
+                array_values(array_filter(array_map('absint', (array) ($_POST['selected'] ?? [])))),
+                absint($_POST['label_choice'] ?? 0),
+                absint($_POST['label_printer'] ?? 0),
+                absint($_POST['copies'] ?? 0),
+                $kind === 'materialetiketten-service'
+            );
+        }
+
         // D-1072: the material just created with «Neues Material» opens in its dialog once the page is back.
         $open = 0;
         // D-1130: a copy opens at once, to change what differs.
@@ -467,7 +478,7 @@ final class StockPage
             /* translators: %d: number of materials */
             _n('%d Material', '%d Materialien', count($shown), 'taxmod-stock'),
             count($shown)
-        ), ListPage::filterToggle() . ListPage::columnMenu($listId, $view, $url([])), $this->bulkTransferAsk());
+        ), ListPage::filterToggle() . ListPage::columnMenu($listId, $view, $url([])), $this->bulkTransferAsk() + $this->materialLabelsAsk());
         $body    = $waits ? ($branch ? '<tr class="no-items"><td class="colspanchange" colspan="' . esc_attr((string) (count($visible) + 2)) . '">'
             . esc_html__('Links eine Materialgruppe wählen: angezeigt wird alles darin und in den Gruppen darunter.', 'taxmod-stock') . '</td></tr>'
             : ListPage::searchPrompt(count($visible), $url([ListPage::SHOW_ALL => '1']), count($all))) : ($shown === [] ? $this->noItems(count($visible)) : '');
@@ -1094,6 +1105,139 @@ final class StockPage
             . '<p class="description">' . esc_html__('Bucht alles von den angehakten Materialien, jeden Posten von jedem Ort, an den gewählten Ort um: ein Vorgang «Umbuchung», «Stornieren» bei den Vorgängen nimmt ihn zurück.', 'taxmod-stock') . '</p>';
 
         return ['taxmod-stock-bulk-transfer' => [__('Umbuchen nach …', 'taxmod-stock'), '<div class="alignleft actions">' . ListPage::dialogAction('taxmod-stock-bulk-transfer', __('Umbuchen nach …', 'taxmod-stock'), __('Ausgewählte umbuchen', 'taxmod-stock'), $body, 'booking', 'sammelumbuchen', __('Umbuchen', 'taxmod-stock'), self::BULK_FORM) . '</div>']];
+    }
+
+    /**
+     * D-1202: «Etiketten drucken …» for the ticked materials — a label of «Materialetiketten», a printer its roll allows, and
+     * how many each; every label reads its material's own fields when it prints (D-1160).
+     *
+     * @return array<string, array{0: string, 1: string}>
+     */
+    private function materialLabelsAsk(): array
+    {
+        $s = $this->stock->structure();
+
+        if (! $s->hasNode('label_materials') || ! class_exists(DialogMarkup::class) || ! method_exists(LabelButton::class, 'filled')) {
+            return [];
+        }
+
+        $templates = $this->stock->labelTemplates();
+        $node      = $s->node('label_materials');
+        $first     = $templates->firstIn($node);
+        $labels    = '';
+
+        foreach ($templates->all() as $id => $template) {
+            if (($template['node'] ?? 0) === $node) {
+                $labels .= '<option value="' . esc_attr((string) $id) . '"' . selected($id, $first, false) . '>' . esc_html($template['name']) . '</option>';
+            }
+        }
+
+        if ($labels === '') {
+            return [];
+        }
+
+        $printers = '<option value="">' . esc_html__('Wie beim Etikett hinterlegt', 'taxmod-stock') . '</option>';
+
+        foreach (method_exists($templates, 'printerList') ? $templates->printerList() : [] as $id => $printer) {
+            $printers .= '<option value="' . esc_attr((string) $id) . '">' . esc_html((string) ($printer['name'] ?? '#' . $id)) . '</option>';
+        }
+
+        $service = PrintService::isSetUp();
+        $form    = ' form="' . esc_attr(self::BULK_FORM) . '"';
+        $field   = static fn (string $title, string $control): string => '<label style="display:block;margin-bottom:.5em"><span style="display:block;font-weight:600">' . esc_html($title) . '</span>' . $control . '</label>';
+        $body    = $field(__('Etikett', 'taxmod-stock'), '<select name="label_choice"' . $form . '>' . $labels . '</select>')
+            . ($service ? $field(__('Drucker', 'taxmod-stock'), '<select name="label_printer"' . $form . '>' . $printers . '</select>') : '')
+            . $field(__('Anzahl je Material', 'taxmod-stock'), '<input type="number" name="copies" min="1" max="50" step="1" placeholder="' . esc_attr__('wie beim Etikett', 'taxmod-stock') . '"' . $form . ' style="width:14em">')
+            . '<span class="description" style="display:block">' . esc_html__('Ein Etikett je angehaktem Material, beschriftet mit seinen eigenen Feldern.', 'taxmod-stock')
+            . ($service ? '' : ' ' . esc_html__('Kein Druckdienst eingerichtet: die Etiketten öffnen sich als PDF.', 'taxmod-stock')) . '</span>';
+        $foot    = ($service ? '<button type="submit" class="button button-primary" name="booking" value="materialetiketten-service"' . $form . '>' . esc_html__('Drucken', 'taxmod-stock') . '</button>' : '')
+            . '<button type="submit" class="button' . ($service ? '' : ' button-primary') . '" name="booking" value="materialetiketten-pdf" formtarget="_blank"' . $form . '>' . esc_html__('Als PDF öffnen', 'taxmod-stock') . '</button>';
+
+        return ['taxmod-stock-material-labels' => [__('Etiketten drucken …', 'taxmod-stock'), '<div class="alignleft actions">' . DialogMarkup::of(
+            'taxmod-stock-material-labels',
+            esc_html__('Etiketten drucken …', 'taxmod-stock'),
+            esc_html__('Etiketten drucken', 'taxmod-stock'),
+            '<span class="taxmod-dialog-body" style="display:block;padding:.75em 1em;white-space:normal;text-align:left">' . $body . '</span>',
+            $foot,
+            'button taxmod-dialog-open',
+            '',
+            __('Abbrechen', 'taxmod-stock')
+        ) . '</div>']];
+    }
+
+    /**
+     * The labels of the ticked materials: queued for the print service, or one PDF with a page each. Ends the request.
+     *
+     * @param list<int> $things
+     */
+    private function printMaterialLabels(array $things, int $chosen, int $printer, int $asked, bool $toService): void
+    {
+        $last      = get_transient(self::LAST_LIST . get_current_user_id());
+        $url       = is_string($last) && $last !== '' ? $last : $this->lastList();
+        $s         = $this->stock->structure();
+        $templates = $this->stock->labelTemplates();
+        $template  = $templates->get($chosen);
+        $printers  = method_exists($templates, 'printerList') ? $templates->printerList() : [];
+        $fail      = function (string $message) use ($url): never {
+            $this->remember('error', $message);
+            wp_safe_redirect($url);
+            exit;
+        };
+
+        if ($things === []) {
+            $fail(__('Kein Material angehakt.', 'taxmod-stock'));
+        }
+
+        if ($template === null || ! $s->hasNode('label_materials') || ($template['node'] ?? 0) !== $s->node('label_materials') || ! method_exists(LabelButton::class, 'filled')) {
+            $fail(__('Unbekanntes Material-Etikett.', 'taxmod-stock'));
+        }
+
+        if ($printer > 0 && ! in_array($chosen, $printers[$printer]['allows'] ?? [], true)) {
+            $fail(__('In diesem Drucker liegt keine Rolle für dieses Etikett.', 'taxmod-stock'));
+        }
+
+        $names  = $this->stock->recordLabels($things);
+        $count  = min(50, $asked > 0 ? $asked : max(1, (int) ($template['copies'] ?? 1)));
+        $filled = [];
+
+        foreach ($things as $thing) {
+            $dialog = $templates->dialog($chosen, ['record' => $thing]);
+            if ($printer > 0) {
+                $dialog['printer'] = array_diff_key($printers[$printer], ['allows' => 1, 'roll_name' => 1]);
+            }
+            $label = LabelContent::of(LabelPrefix::from('M'), $thing, (string) ($names[$thing] ?? '#' . $thing), '');
+            $own   = LabelButton::filled($label, array_diff_key($dialog, ['choices' => 1, 'chosen' => 1, 'printers' => 1]));
+            if ($own !== null) {
+                $filled[] = [$label, $own];
+            }
+        }
+
+        if ($filled === []) {
+            $fail(__('Das Etikett lässt sich nicht zeichnen; bitte sein Layout prüfen.', 'taxmod-stock'));
+        }
+
+        if ($toService && PrintService::isSetUp()) {
+            $jobs = new PrintJobs();
+
+            // D-1162: the copies of one material travel together, as one job with that many pages.
+            foreach ($filled as [$label, $own]) {
+                $jobs->queue($own->format, $label, false, $own->toJson(), $count);
+            }
+
+            $total = count($filled) * $count;
+            $this->remember('success', sprintf(/* translators: %d: number of labels */ _n('%d Etikett wartet auf den Druckdienst.', '%d Etiketten warten auf den Druckdienst.', $total, 'taxmod-stock'), $total));
+            wp_safe_redirect($url);
+            exit;
+        }
+
+        // One label, so one size: every page shares the format and layout of the first.
+        $pdf = LabelDocument::renderLayout($filled[0][1]->format, $filled[0][1]->layout, array_merge(...array_map(static fn (array $one): array => array_fill(0, $count, $one[1]->values), $filled)));
+        nocache_headers();
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: inline; filename="material-etiketten-' . gmdate('Ymd-His') . '.pdf"');
+        header('Content-Length: ' . (string) strlen($pdf));
+        echo $pdf; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- binary PDF, not HTML.
+        exit;
     }
 
     /**

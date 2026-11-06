@@ -806,5 +806,21 @@ $x->write((new ReceiptReversal($x->structureWithKinds()))->reverse($r['best2'], 
 $nach   = new StockService();
 $pruefe(count($vorher) === 8 && $zeilen($nach) === [] && array_filter($zwei, static fn (int $l): bool => $nach->table('lot')->has($l)) === [], 'a receipt whose lot was only moved goes back, its Umbuchung lines with it');
 
+// D-1208: the stock as an ability — at a place and inside it, and per material, the same numbers as the ledger.
+$frage = wp_get_ability('taxmod-stock/stock');
+$nun   = new StockService();
+$oben  = (int) ($nun->locationTree()->ordered()[0][0] ?? 0);
+$dort  = $frage?->execute(['place' => $oben, 'limit' => 1000]);
+$soll  = 0;
+
+foreach ($nun->ledger()->stockByPlace() as $at) {
+    $soll += count(array_intersect_key($at, array_fill_keys($nun->locationTree()->withAllBelow($oben), true)));
+}
+
+$pruefe($frage !== null && ($frage->get_meta()['annotations']['readonly'] ?? false) === true, 'taxmod-stock/stock is registered and only reads');
+$pruefe(is_array($dort) && $dort['total_lots'] === $soll, 'the ability answers with every lot at the place and inside it');
+$pruefe(is_array($ein = $frage?->execute(['materials' => [$bc]])) && abs(($ein['materials'][0]['quantity'] ?? -1.0) - $nun->ledger()->stockOf($bc)) < 1e-9, 'per material: the quantity is the ledger\'s stock');
+$pruefe(is_wp_error($frage?->execute(['limit' => 0]) ?? new WP_Error()), 'a wrong limit is refused');
+
 echo $fehler === 0 ? "all green ({$kind})\n" : "{$fehler} red ({$kind})\n";
 exit($fehler === 0 ? 0 : 1);

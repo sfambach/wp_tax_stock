@@ -56,6 +56,9 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
   - **Lagerorte** (D-1090, from 0.14.0) — the places as the modeller's tree on the left (search, fold, a click opens a
     place; needs the modeller from 0.1.123), on the right what lies there and below it, one row per lot and place with
     «Umbuchen» and «Ausbuchen». A row dragged onto a place in the tree asks for the Umbuchung (D-1039).
+  - **Bestand für Leser über MCP** (D-1208, from 0.59.0) — the ability `taxmod-stock/stock` answers what lies at a place
+    and every place inside it, or how much there is of given materials: one row per lot and place with quantity, and the
+    total per material, from the ledger — instead of loading every lot and transaction.
   - **Lagerstruktur** (Logistik → Einstellungen, D-1085, D-1090) — the same tree; on the right the place with
     «Bearbeiten» (the modeller's form), «Verschieben» (the target in the same tree, the place and what lies in it left
     out), «Neuer Unterort» and «Für Produktion reservieren», each in the shared dialog; «+ Neuer Lagerort» above the tree.

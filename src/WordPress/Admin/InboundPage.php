@@ -427,7 +427,7 @@ final class InboundPage
     private function button(int $order, string $op, string $label, string $tab, bool $primary, string $confirm = ''): string
     {
         return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline"'
-            . ($confirm === '' ? '' : ' onsubmit="return confirm(' . esc_attr((string) wp_json_encode($confirm)) . ')"') . '>'
+            . ($confirm === '' ? '' : ListPage::confirm($confirm)) . '>'
             . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"><input type="hidden" name="op" value="' . esc_attr($op) . '">'
             . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '"><input type="hidden" name="tab" value="' . esc_attr($tab) . '">' . $this->stay()
             . wp_nonce_field(self::ACTION, '_wpnonce', true, false)

@@ -66,10 +66,11 @@ final class Plugin
 
     public function bootWhenModellerIsThere(): void
     {
-        // *The one door into the model (D-1186) came with the modeller 0.1.174; an older one is named rather than failing on a page.*
-        if (! class_exists(\Taxmod\WordPress\Plugin::class) || ! class_exists(\Taxmod\WordPress\ModelDoor::class)) {
+        // *The one door into the model and the shared confirm dialog (D-1186) came with the modeller 0.1.175; an older one is named
+        // rather than failing on a page.*
+        if (! class_exists(\Taxmod\WordPress\ModelDoor::class) || ! method_exists(\Taxmod\WordPress\Admin\ListPage::class, 'confirm')) {
             add_action('admin_notices', static function (): void {
-                echo '<div class="notice notice-error"><p>' . esc_html__('Taxmod Stock braucht den aktiven Taxonomy Modeller ab 0.1.174.', 'taxmod-stock') . '</p></div>';
+                echo '<div class="notice notice-error"><p>' . esc_html__('Taxmod Stock braucht den aktiven Taxonomy Modeller ab 0.1.175.', 'taxmod-stock') . '</p></div>';
             });
 
             return;

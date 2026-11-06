@@ -554,7 +554,7 @@ final class PurchasePage
     private function button(string $op, int $order, int $purchase, string $label, string $tab, bool $primary, string $confirm = ''): string
     {
         return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline"'
-            . ($confirm === '' ? '' : ' onsubmit="return confirm(' . esc_attr((string) wp_json_encode($confirm)) . ')"') . '>'
+            . ($confirm === '' ? '' : ListPage::confirm($confirm)) . '>'
             . $this->hidden($op, $tab) . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
             . ($purchase > 0 ? '<input type="hidden" name="purchase" value="' . esc_attr((string) $purchase) . '">' : '')
             . '<button type="submit" class="button' . ($primary ? ' button-primary' : '') . '">' . esc_html($label) . '</button></form> ';

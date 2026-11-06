@@ -237,7 +237,7 @@ final class ContactsPage
         }
 
         return $this->formStart($node) . '<input type="hidden" name="kontakt" value="' . esc_attr((string) $contact) . '">'
-            . '<p style="text-align:right"><button type="submit" class="button" name="booking" value="zuruecknehmen" onclick="return confirm(' . esc_attr(wp_json_encode(__('Den eben angelegten Kontakt mit allen eingetragenen Werten wieder entfernen?', 'taxmod-stock'))) . ')">'
+            . '<p style="text-align:right"><button type="submit" class="button" name="booking" value="zuruecknehmen"' . ListPage::confirm(__('Den eben angelegten Kontakt mit allen eingetragenen Werten wieder entfernen?', 'taxmod-stock')) . '>'
             . esc_html__('Anlegen zurücknehmen', 'taxmod-stock') . '</button></p></form>';
     }
 

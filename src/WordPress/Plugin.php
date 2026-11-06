@@ -58,6 +58,12 @@ final class Plugin
         add_action('plugins_loaded', [$this, 'bootWhenModellerIsThere']);
     }
 
+    /** The modeller's answer whether admin-post.php or admin-ajax.php serve this request; an older modeller wires always (D-1186). */
+    private static function handlesAdminActions(): bool
+    {
+        return ! method_exists(\Taxmod\WordPress\Plugin::class, 'handlesAdminActions') || \Taxmod\WordPress\Plugin::handlesAdminActions();
+    }
+
     public function bootWhenModellerIsThere(): void
     {
         // *The shared tiles (D-1149) and the period view's blocks (D-1167) came with the modeller 0.1.165; an older one is
@@ -71,21 +77,25 @@ final class Plugin
         }
 
         add_filter('taxmod_config_tabs', [SettingsTab::class, 'register']);
-        add_action('init', [$this, 'registerSettings']);
+        // On admin_init and rest_api_init, where settings are saved: on init it compiled the stock service on every page view (D-1186).
+        add_action('admin_init', [$this, 'registerSettings']);
+        add_action('rest_api_init', [$this, 'registerSettings']);
         // After the modeller (priority 10) has created its menu.
         add_action('admin_menu', [$this, 'registerMenu'], 20);
         // Last, when every module has hung its page under the Taxmod menu, and before admin_head takes the entries out.
         add_action('admin_menu', [ModulePage::class, 'capture'], PHP_INT_MAX);
-        add_action('admin_post_' . StockPage::ACTION, static fn () => self::serially(static fn () => (new StockPage())->handle()));
-        add_action('admin_post_' . StockPage::POSITIONS, static fn () => (new StockPage())->positions());
-        add_action('admin_post_' . StockPage::THING_SEARCH, static fn () => (new StockPage())->thingSearch());
-        add_action('admin_post_' . StockPage::THING_NODES, static fn () => (new StockPage())->thingNodes());
-        add_action('admin_post_' . StockPage::THING_BRANCH, static fn () => (new StockPage())->thingBranch());
-        add_action('admin_post_' . InboundPage::ACTION, static fn () => self::serially(static fn () => (new InboundPage())->handle()));
-        add_action('admin_post_' . PurchasePage::ACTION, static fn () => self::serially(static fn () => (new PurchasePage())->handle()));
-        add_action('admin_post_' . ContactsPage::ACTION, static fn () => (new ContactsPage())->handle());
-        add_action('admin_post_' . SettingsPage::ACTION, static fn () => (new SettingsPage())->handle());
-        add_action('admin_post_' . LogisticsShell::FULLSCREEN_ACTION, [LogisticsShell::class, 'switchFullscreen']);
+        if (self::handlesAdminActions()) {
+            add_action('admin_post_' . StockPage::ACTION, static fn () => self::serially(static fn () => (new StockPage())->handle()));
+            add_action('admin_post_' . StockPage::POSITIONS, static fn () => (new StockPage())->positions());
+            add_action('admin_post_' . StockPage::THING_SEARCH, static fn () => (new StockPage())->thingSearch());
+            add_action('admin_post_' . StockPage::THING_NODES, static fn () => (new StockPage())->thingNodes());
+            add_action('admin_post_' . StockPage::THING_BRANCH, static fn () => (new StockPage())->thingBranch());
+            add_action('admin_post_' . InboundPage::ACTION, static fn () => self::serially(static fn () => (new InboundPage())->handle()));
+            add_action('admin_post_' . PurchasePage::ACTION, static fn () => self::serially(static fn () => (new PurchasePage())->handle()));
+            add_action('admin_post_' . ContactsPage::ACTION, static fn () => (new ContactsPage())->handle());
+            add_action('admin_post_' . SettingsPage::ACTION, static fn () => (new SettingsPage())->handle());
+            add_action('admin_post_' . LogisticsShell::FULLSCREEN_ACTION, [LogisticsShell::class, 'switchFullscreen']);
+        }
         add_filter(self::BOOK_BUILD, [self::class, 'bookBuild'], 10, 2);
         add_filter(self::PLACES_OF, [self::class, 'placesOf'], 10, 2);
         add_filter(self::BOOK_PICK, [self::class, 'bookPick'], 10, 2);

@@ -77,23 +77,102 @@ final class Contacts
      */
     public static function rows(array $tree, int $root, int $chosen, array $records, array $sources, string $search = ''): array
     {
-        $rows   = [];
-        $needle = mb_strtolower(trim($search));
+        $rows = [];
 
         foreach (array_keys(self::branch($tree, $chosen)) as $node) {
             foreach ($records[$node] ?? [] as $id => $name) {
-                $group = self::path($tree, $root, $node);
-
-                if ($needle !== '' && ! str_contains(mb_strtolower($name . ' ' . $group . ' ' . $id), $needle)) {
-                    continue;
-                }
-
-                $rows[] = ['id' => $id, 'name' => $name, 'node' => $node, 'group' => $group, 'sources' => $sources[$id] ?? 0];
+                $rows[] = ['id' => $id, 'name' => $name, 'node' => $node, 'group' => self::path($tree, $root, $node), 'sources' => $sources[$id] ?? 0];
             }
         }
 
         usort($rows, static fn (array $a, array $b): int => strnatcasecmp($a['name'], $b['name']) ?: $a['id'] <=> $b['id']);
 
-        return $rows;
+        return self::filter($rows, $search);
+    }
+
+    /**
+     * The rows a search over name, group and number keeps.
+     *
+     * @param list<array{id: int, name: string, node: int, group: string, sources: int}> $rows
+     * @return list<array{id: int, name: string, node: int, group: string, sources: int}>
+     */
+    public static function filter(array $rows, string $search): array
+    {
+        $needle = mb_strtolower(trim($search));
+
+        return $needle === '' ? $rows : array_values(array_filter($rows, static fn (array $row): bool => str_contains(mb_strtolower($row['name'] . ' ' . $row['group'] . ' ' . $row['id']), $needle)));
+    }
+    /**
+     * D-1185: the nodes below the root as menu items, in tree order. A node with nodes below it is a group of the menu (`path` ends
+     * with its own name) and `head`: its own link opens it; the nodes below it stand inside it.
+     *
+     * @param array<int, array{name: string, parent: int, hidden: bool}> $tree
+     * @return list<array{node: int, label: string, path: list<string>, head: bool}>
+     */
+    public static function menu(array $tree, int $root): array
+    {
+        $visible  = self::branch($tree, $root);
+        $children = [];
+
+        foreach ($tree as $node => $row) {
+            if (isset($visible[$node]) && $node !== $root) {
+                $children[$row['parent']][] = $node;
+            }
+        }
+
+        $items = [];
+        $walk  = static function (int $parent, array $path) use (&$walk, &$items, $children, $tree): void {
+            foreach ($children[$parent] ?? [] as $node) {
+                $head    = isset($children[$node]);
+                $items[] = ['node' => $node, 'label' => $tree[$node]['name'], 'path' => $head ? [...$path, $tree[$node]['name']] : $path, 'head' => $head];
+
+                if ($head) {
+                    $walk($node, [...$path, $tree[$node]['name']]);
+                }
+            }
+        };
+        $walk($root, []);
+
+        return $items;
+    }
+
+    /**
+     * D-1185: how many contacts each node holds, those of the nodes below it included — for the tiles above the list.
+     *
+     * @param array<int, array{name: string, parent: int, hidden: bool}> $tree
+     * @param list<array{node: int}> $rows
+     * @return array<int, int>
+     */
+    public static function counts(array $tree, array $rows): array
+    {
+        $counts = [];
+
+        foreach ($rows as $row) {
+            for ($at = $row['node'], $seen = []; isset($tree[$at]) && ! isset($seen[$at]); $at = $tree[$at]['parent']) {
+                $seen[$at]    = true;
+                $counts[$at] = ($counts[$at] ?? 0) + 1;
+            }
+        }
+
+        return $counts;
+    }
+
+    /**
+     * The visible nodes directly below `$node`.
+     *
+     * @param array<int, array{name: string, parent: int, hidden: bool}> $tree
+     * @return array<int, string> node → name
+     */
+    public static function childrenOf(array $tree, int $node): array
+    {
+        $out = [];
+
+        foreach ($tree as $id => $row) {
+            if ($row['parent'] === $node && $id !== $node && ! $row['hidden']) {
+                $out[$id] = $row['name'];
+            }
+        }
+
+        return $out;
     }
 }

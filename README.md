@@ -87,11 +87,13 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
   [`docs/pakete/lager/einkauf.md`](https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/lager/einkauf.md).
 - **Tab «Lager» on Configuration** — only the technical part: the ids of the Stock nodes and fields, pasted as JSON.
   `structure-live.json` holds those of fambach.net; a structure pasted before 0.2.0 still reads.
-- **Logistik → Kontakte** (D-1184) — the model's contact branch (Organisation with Hersteller/Lieferant, Person): the node
-  tree on the left, the contacts of the chosen node and every node below it in the shared list on the right (Nr., Name,
-  Gruppe, Bezugsquellen); a row opens to the materials whose sources name it, «Bearbeiten» opens the modeller's record
-  editor, «+ Neuer Kontakt» creates one in the chosen node by its name (a person's first name too) and can be taken back
-  right after. The root is `nodes.contact` of the structure (3083 on fambach.net), otherwise the firms' node.
+- **Logistik → Kontakte** (D-1184, D-1185) — the model's contact branch (Organisation with Hersteller/Lieferant, Person).
+  Its nodes are the items of the area «Kontakte» (a node with nodes below it is a menu group that opens the node itself);
+  the area itself lists all contacts. Every node shows a tile per node directly below it with its number of contacts, then
+  the shared list (Nr., Name, Gruppe, Bezugsquellen); a row opens to the materials whose sources name it, «Bearbeiten»
+  opens the modeller's record editor, «+ Neuer Kontakt» creates one in the chosen node by its name (a person's first name
+  too) and can be taken back right after. The root is `nodes.contact` of the structure (3083 on fambach.net), otherwise
+  the firms' node.
 - **Logistik → Einstellungen → Grundeinstellungen** (D-1085) — the business settings, inside the logistics navigation:
   «Kein Material» (branches under Model that hold no material, left out of search, tree and groups; also settable over
   REST as `taxmod_stock_not_material`), «Einlagerung nach Typ» (rows «branch node id → place», D-972), the test after the

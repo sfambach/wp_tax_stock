@@ -105,6 +105,7 @@ $pruefe(($platz['label'] ?? '') === 'Platzbestand' && ($platz['tab'] ?? '') === 
 $pruefe(array_slice(array_column($bestand, 'key'), 0, 2) === ['material', 'group-stock'] && ($bestand[1]['tab'] ?? '') === 'gruppenbestand', 'D-1174: Bestand › Gruppenbestand stands after Material');
 $kontakte = array_values(array_filter($areas, static fn (array $area): bool => $area['key'] === 'contacts'))[0]['items'] ?? [];
 $pruefe(($kontakte[0]['page'] ?? '') === \TaxmodStock\WordPress\Admin\ContactsPage::PAGE && array_search('contacts', array_column($areas, 'key'), true) === array_search('settings', array_column($areas, 'key'), true) - 1, 'D-1184: Kontakte is an area of its own, right before Einstellungen');
+$pruefe(! empty($kontakte[0]['hidden']) && count($kontakte) > 1 && array_unique(array_column($kontakte, 'page')) === [\TaxmodStock\WordPress\Admin\ContactsPage::PAGE], 'D-1185: the contact nodes are the items of Kontakte, the area itself opens all contacts');
 $fertigung = array_values(array_filter($areas, static fn (array $area): bool => $area['key'] === 'production'))[0]['items'] ?? [];
 $pruefe(array_column($fertigung, 'key') === ['project-boxes', 'module-__navcheck-production'], 'D-1142: a page announced with area «production» stands under Fertigung, after Projekt-Gebinde');
 $_GET = ['page' => ModulePage::PAGE, 'module' => '__navcheck-deep'];

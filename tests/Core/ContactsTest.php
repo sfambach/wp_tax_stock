@@ -59,4 +59,28 @@ final class ContactsTest extends TestCase
         self::assertSame('Reichelt', Contacts::displayName('Reichelt', '', 1));
         self::assertSame('#7', Contacts::displayName(' ', '', 7));
     }
+
+    #[Test]
+    public function the_menu_lists_the_nodes_below_the_root_and_a_node_with_children_heads_its_group(): void
+    {
+        $menu = Contacts::menu(self::tree(), 3083);
+
+        self::assertSame([13, 100, 14], array_column($menu, 'node'), 'tree order, the hidden branch left out');
+        self::assertSame(['node' => 13, 'label' => 'Organisation', 'path' => ['Organisation'], 'head' => true], $menu[0]);
+        self::assertSame(['Organisation'], $menu[1]['path']);
+        self::assertFalse($menu[1]['head']);
+        self::assertSame([], $menu[2]['path']);
+    }
+
+    #[Test]
+    public function a_count_holds_the_contacts_of_the_node_and_of_those_below_it(): void
+    {
+        $counts = Contacts::counts(self::tree(), [['node' => 13], ['node' => 100], ['node' => 100], ['node' => 14]]);
+
+        self::assertSame(3, $counts[13]);
+        self::assertSame(2, $counts[100]);
+        self::assertSame(1, $counts[14]);
+        self::assertSame(4, $counts[3083]);
+        self::assertSame([13 => 'Organisation', 14 => 'Person'], Contacts::childrenOf(self::tree(), 3083));
+    }
 }

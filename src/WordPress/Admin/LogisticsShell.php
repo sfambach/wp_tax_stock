@@ -2,8 +2,11 @@
 
 namespace TaxmodStock\WordPress\Admin;
 
+use TaxmodStock\Core\Contacts;
 use TaxmodStock\Core\Navigation;
 use TaxmodStock\Core\ReturnPath;
+use TaxmodStock\Core\StockError;
+use TaxmodStock\WordPress\StockService;
 
 /**
  * The frame of the stock interface (D-1029, D-1053, D-1085): its own navigation on the left, along the flow of goods, with each page's
@@ -94,9 +97,9 @@ final class LogisticsShell
             ]],
             ['key' => 'outbound', 'label' => __('Warenausgang', 'taxmod-stock'), 'items' => self::modules('outbound')],
             // D-1184, his word 2026-11-05: «kontakt ast in logistik menü einbauen» — firms, suppliers, manufacturers, persons.
-            ['key' => 'contacts', 'label' => __('Kontakte', 'taxmod-stock'), 'items' => [
-                $item('contacts', __('Alle Kontakte', 'taxmod-stock'), ContactsPage::PAGE),
-            ]],
+            // D-1185, his word 2026-11-06: «kontakte hat doch schon unter knoten die bitte im kontakte knoten an zueigen und der kontakte knoten
+            // selbst ist alle kontakte», then «ich meine das kontakte menü» — the area itself opens all contacts, the nodes below it are its items.
+            ['key' => 'contacts', 'label' => __('Kontakte', 'taxmod-stock'), 'url' => ContactsPage::url(), 'items' => self::contactItems()],
             // His word 2026-11-01: «einen Punkt Einstellung … die API-Konfiguration, die Grundeinstellung und ja, die Lagerstruktur».
             ['key' => 'settings', 'label' => __('Einstellungen', 'taxmod-stock'), 'items' => [
                 // D-1085: the business settings inside the navigation; the technical structure stays on the modeller's Configuration.
@@ -112,6 +115,37 @@ final class LogisticsShell
                 ...array_map(static fn (array $item): array => ['path' => [__('Druck', 'taxmod-stock'), ...$item['path']]] + $item, self::modules('print')),
             ]],
         ]);
+    }
+
+    /**
+     * D-1185: the contact branch's nodes as items — the root a hidden item (the area's own page), a node with nodes below it a group
+     * whose head item is its own link. One read-tree per request.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function contactItems(): array
+    {
+        static $items = null;
+
+        if ($items !== null) {
+            return $items;
+        }
+
+        $items = [['key' => 'contacts', 'label' => __('Alle Kontakte', 'taxmod-stock'), 'page' => ContactsPage::PAGE, 'tab' => '', 'hidden' => true]];
+
+        try {
+            $stock = new StockService();
+            $tree  = $stock->contactTree();
+
+            foreach (Contacts::menu($tree, $stock->contactRoot()) as $node) {
+                $items[] = ['key' => 'contact-' . $node['node'], 'label' => $node['label'], 'page' => ContactsPage::PAGE, 'tab' => (string) $node['node'],
+                    'path' => $node['path'], 'head' => $node['head']];
+            }
+        } catch (StockError) {
+            // Without the modeller's tree the area keeps its own page only; the page names what is missing.
+        }
+
+        return $items;
     }
 
     /**
@@ -215,7 +249,7 @@ final class LogisticsShell
         foreach ($navigation->areas() as $area) {
             $here  = $area['key'] === $active['area'];
             // D-1128: the area itself opens its overview with a tile per item; the cockpit is that overview already.
-            $link  = $area['key'] === 'cockpit' ? self::url($area['items'][0]) : CockpitPage::overviewUrl($area['key']);
+            $link  = $area['url'] ?? ($area['key'] === 'cockpit' ? self::url($area['items'][0]) : CockpitPage::overviewUrl($area['key']));
             $html .= '<li class="taxmod-shell-area' . ($here ? ' is-open' : '') . '"><a href="' . esc_url(add_query_arg(self::VIA_MENU, '1', $link)) . '">' . esc_html($area['label']) . '</a>';
 
             if ($here || count($area['items']) > 1) {
@@ -247,6 +281,10 @@ final class LogisticsShell
             $item = $items[$i];
             $path = array_values($item['path'] ?? []);
 
+            if (! empty($item['hidden'])) {
+                continue;
+            }
+
             if (count($path) <= $depth) {
                 $html .= '<li><a href="' . esc_url(add_query_arg(self::VIA_MENU, '1', self::url($item))) . '" style="padding-left:' . (24 + 12 * $depth) . 'px"'
                     . ($item['key'] === $current ? ' class="is-current" aria-current="page"' : '') . '>' . esc_html($item['label']) . '</a></li>';
@@ -262,10 +300,22 @@ final class LogisticsShell
             $i--;
             $groupPath = implode('/', array_slice($path, 0, $depth + 1));
             $open      = in_array($current, array_column($members, 'key'), true) || $openGroup === $groupPath || str_starts_with($openGroup, $groupPath . '/');
+            // D-1185: a group with a head item (a node with nodes below it) opens that item's page; the head is not listed inside it.
+            $head      = null;
+            foreach ($members as $at => $member) {
+                if (! empty($member['head']) && count((array) $member['path']) === $depth + 1) {
+                    $head = $member;
+                    unset($members[$at]);
+                    break;
+                }
+            }
+            $members   = array_values($members);
             // D-1128: a group opens its own overview, like an area.
-            $html .= '<li class="taxmod-shell-group' . ($open ? ' is-open' : '') . '"><a href="' . esc_url(add_query_arg(self::VIA_MENU, '1', $area === '' ? self::url($members[0]) : CockpitPage::overviewUrl($area, $groupPath))) . '" style="padding-left:' . (24 + 12 * $depth) . 'px"'
-                . ($openGroup === $groupPath ? ' class="is-current" aria-current="page"' : '') . '>'
-                . esc_html($group) . '</a>' . self::items($members, $depth + 1, $current, $area, $openGroup) . '</li>';
+            $target    = $head !== null ? self::url($head) : ($area === '' ? self::url($members[0]) : CockpitPage::overviewUrl($area, $groupPath));
+            $here      = $head !== null ? $head['key'] === $current : $openGroup === $groupPath;
+            $html .= '<li class="taxmod-shell-group' . ($open ? ' is-open' : '') . '"><a href="' . esc_url(add_query_arg(self::VIA_MENU, '1', $target)) . '" style="padding-left:' . (24 + 12 * $depth) . 'px"'
+                . ($here ? ' class="is-current" aria-current="page"' : '') . '>'
+                . esc_html($head !== null ? (string) $head['label'] : $group) . '</a>' . ($members === [] ? '' : self::items($members, $depth + 1, $current, $area, $openGroup)) . '</li>';
         }
 
         return $html . '</ul>';

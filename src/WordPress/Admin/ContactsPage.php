@@ -4,16 +4,19 @@ namespace TaxmodStock\WordPress\Admin;
 
 use Taxmod\Core\Listing\ListView;
 use Taxmod\WordPress\Admin\ListPage;
+use Taxmod\WordPress\Admin\Tiles;
+use TaxmodStock\Core\Contacts;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\WordPress\StockService;
 
 /**
- * Logistik › Kontakte (D-1184): the contact branch of the model — firms, suppliers, manufacturers, persons — as the modeller's tree on
- * the left and its contacts in the shared list on the right; a contact opens in the modeller's record editor.
+ * Logistik › Kontakte (D-1184, D-1185): the contact branch of the model — firms, suppliers, manufacturers, persons. Its nodes are the
+ * items of the area in the navigation; the area itself lists all contacts, each node its own and those below it, with a tile per node
+ * directly below; a contact opens in the modeller's record editor.
  *
  * ```mermaid
  * flowchart LR
- *   T["Baum links: Knoten wählen"] --> L["Liste: Kontakte des Knotens und darunter"]
+ *   T["Menü: Knoten wählen"] --> K["Kacheln: Unterknoten mit Anzahl"] --> L["Liste: Kontakte des Knotens und darunter"]
  *   L -->|Bearbeiten| E["Satz-Editor des Modellers"]
  *   L -->|"+ Neuer Kontakt"| N["Name → anlegen"] -->|Rückgängig| L
  * ```
@@ -55,12 +58,11 @@ final class ContactsPage
                 return ['side' => '', 'main' => $html . '<p class="description">' . esc_html__('Das Modell kennt keinen Kontakt-Ast (nodes.contact in der Lager-Struktur).', 'taxmod-stock') . '</p></div>'];
             }
 
-            $node    = absint($_GET['gruppe'] ?? 0);
+            $node    = absint($_GET['tab'] ?? 0);
             $node    = isset($tree[$node]) ? $node : $root;
             $contact = absint($_GET['kontakt'] ?? 0);
-            $side    = $this->side($root, $node);
 
-            return ['side' => $side, 'main' => $html . ($contact > 0 ? $this->editor($contact, $node) : $this->list($tree, $root, $node)) . '</div>'];
+            return ['side' => '', 'main' => $html . ($contact > 0 ? $this->editor($contact, $node) : $this->list($tree, $root, $node)) . '</div>'];
         } catch (StockError $e) {
             return ['side' => '', 'main' => $html . '<div class="notice notice-error"><p>' . esc_html(Messages::of($e)) . '</p></div></div>'];
         }
@@ -78,7 +80,7 @@ final class ContactsPage
         $kind = sanitize_key((string) ($_POST['booking'] ?? ''));
         $node = absint($_POST['gruppe'] ?? 0);
         $user = get_current_user_id();
-        $back = ['gruppe' => (string) $node];
+        $back = ['tab' => (string) $node];
 
         try {
             if ($kind === 'neu') {
@@ -139,37 +141,24 @@ final class ContactsPage
         return '<p><strong>' . esc_html__('Bezugsquelle für', 'taxmod-stock') . '</strong></p><ul style="margin:0 0 0 1.5em;list-style:disc">' . $items . '</ul>';
     }
 
-    /** The contact tree under the navigation (D-1092), fixed on the page; a click opens the node's contacts. */
-    private function side(int $root, int $node): string
-    {
-        $tree = (string) apply_filters('taxmod_node_chooser', '', [
-            'name'        => 'taxmod_stock_contact_group',
-            'root'        => $root,
-            'preselected' => $node,
-            'inline'      => true,
-            'pick_url'    => self::url(['gruppe' => '{id}']),
-        ]);
-
-        return $tree === '' ? '' : '<div class="taxmod-stock-places"><div class="taxmod-stock-places-head"><p class="taxmod-shell-title">'
-            . esc_html__('Kontakt-Gruppen', 'taxmod-stock') . '</p></div>' . $tree . '</div>';
-    }
-
     /** @param array<int, array{name: string, parent: int, class: string, hidden: bool}> $tree */
     private function list(array $tree, int $root, int $node): string
     {
         $search = sanitize_text_field(wp_unslash((string) ($_GET['s'] ?? '')));
-        $rows   = $this->stock->contacts($node, $search);
+        $all    = $this->stock->contacts($node);
+        $rows   = Contacts::filter($all, $search);
         $paged  = absint($_GET['paged'] ?? 1);
-        $url    = static fn (array $change): string => self::url($change + ['gruppe' => (string) $node, 's' => $search]);
+        $url    = static fn (array $change): string => self::url($change + ['tab' => (string) $node, 's' => $search]);
         $count  = sprintf(/* translators: %d: number of contacts */ _n('%d Kontakt', '%d Kontakte', count($rows), 'taxmod-stock'), count($rows));
         $html   = '<h2>' . esc_html($node === $root ? __('Alle Kontakte', 'taxmod-stock') : $tree[$node]['name']) . '</h2>'
+            . $this->tiles($tree, $node, $all)
             . ($node === $root ? '' : '<div style="text-align:right;margin-bottom:12px">' . $this->newDialog($node, $tree[$node]['name']) . '</div>')
-            . ListPage::searchBox(self::SEARCH, $search, __('Name, Gruppe, Nummer …', 'taxmod-stock'), ['page' => self::PAGE, 'gruppe' => (string) $node])
+            . ListPage::searchBox(self::SEARCH, $search, __('Name, Gruppe, Nummer …', 'taxmod-stock'), ['page' => self::PAGE, 'tab' => (string) $node])
             . ListPage::bulkBar(self::BULK_FORM, self::ACTION, [], $count);
         $body   = '';
 
         foreach (ListView::page($rows, $paged, self::PER_PAGE) as $row) {
-            $edit  = esc_url(self::url(['gruppe' => (string) $node, 'kontakt' => (string) $row['id']]));
+            $edit  = esc_url(self::url(['tab' => (string) $node, 'kontakt' => (string) $row['id']]));
             $body .= ListPage::row(self::BULK_FORM, (string) $row['id'], [
                 '<a href="' . $edit . '">' . esc_html((string) $row['id']) . '</a>',
                 '<strong><a href="' . $edit . '">' . esc_html($row['name']) . '</a></strong>',
@@ -186,13 +175,38 @@ final class ContactsPage
             . ListPage::pagination(count($rows), $paged, self::PER_PAGE, $url);
     }
 
+    /**
+     * D-1185, his word 2026-11-06: «der kontakte knoten selbst ist alle kontakte und zeigt die tiles oben it den unterknoten und anzahl
+     * einträge» — one tile per node directly below, with its contacts and those below it; a click opens it.
+     *
+     * @param array<int, array{name: string, parent: int, class: string, hidden: bool}> $tree
+     * @param list<array{id: int, name: string, node: int, group: string, sources: int}> $rows
+     */
+    private function tiles(array $tree, int $node, array $rows): string
+    {
+        $children = Contacts::childrenOf($tree, $node);
+
+        if ($children === []) {
+            return '';
+        }
+
+        $counts = Contacts::counts($tree, $rows);
+        $tiles  = [];
+
+        foreach ($children as $child => $name) {
+            $tiles[] = Tiles::counted($name, $counts[$child] ?? 0, self::url(['tab' => (string) $child]));
+        }
+
+        return Tiles::grid($tiles);
+    }
+
     /** D-1025: the contact in the modeller's record editor; saving comes back here. */
     private function editor(int $contact, int $node): string
     {
-        $back = self::url(['gruppe' => (string) $node, 'kontakt' => (string) $contact]);
+        $back = self::url(['tab' => (string) $node, 'kontakt' => (string) $contact]);
         $form = (string) apply_filters('taxmod_record_editor', '', $contact, $back);
 
-        return '<p><a href="' . esc_url(self::url(['gruppe' => (string) $node])) . '">' . esc_html__('← zur Liste', 'taxmod-stock') . '</a></p>' . $this->undoForm($contact, $node)
+        return '<p><a href="' . esc_url(self::url(['tab' => (string) $node])) . '">' . esc_html__('← zur Liste', 'taxmod-stock') . '</a></p>' . $this->undoForm($contact, $node)
             . ($form === '' ? '<p><a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $contact], admin_url('admin.php'))) . '">'
                 . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a></p>' : $form);
     }

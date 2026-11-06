@@ -592,18 +592,22 @@ final class StockService
     /** The names from the root down to a node, «Bauteile ▸ Aktiv ▸ Transistor». */
     public function path(int $node): string
     {
+        return implode(' ▸ ', $this->pathNodes($node));
+    }
+
+    /** @return array<int, string> node → name from the root down to a node, the root itself left out */
+    public function pathNodes(int $node): array
+    {
         $tree  = $this->tree();
         $names = [];
 
         for ($at = $node, $seen = []; isset($tree[$at]) && ! isset($seen[$at]); $at = $tree[$at]['parent']) {
             $seen[$at] = true;
-            array_unshift($names, $tree[$at]['name']);
+            $names     = [$at => $tree[$at]['name']] + $names;
         }
 
         // The root itself is «Model» for every thing and says nothing.
-        array_shift($names);
-
-        return implode(' ▸ ', $names);
+        return array_slice($names, 1, null, true);
     }
 
     /** @return array<int, string> the choices of «Verwendung», empty if it is not configured */

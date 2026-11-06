@@ -379,6 +379,10 @@ foreach (['daten' => 'Taxonomy Modeller', 'einkauf' => 'LM2930T-5.0 ×5', 'lager
     $pruefe(str_contains($html, '>LM2930T-5.0</h2>') && str_contains($html, 'nav-tab-active') && str_contains($html, $erwartet) && ! str_contains($html, 'notice-error'), "the thing's tab «{$view}» shows its head and «{$erwartet}»");
 }
 
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => $r['lm'], 'view' => 'daten'];
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'tab=gruppenbestand&#038;group=' . $r['teile'] . '"') || str_contains($html, 'tab=gruppenbestand&amp;group=' . $r['teile'] . '"'), 'each group of the head path links to its «Gruppenbestand» (2026-11-06)');
+
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'group' => (string) $r['teile']];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'value="' . $r['teile'] . '" selected') && str_contains($html, 'LM2930T-5.0') && ! str_contains($html, 'notice-error'), 'the list filters by group');

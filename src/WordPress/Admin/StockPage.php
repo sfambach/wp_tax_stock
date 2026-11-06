@@ -747,7 +747,7 @@ final class StockPage
 
         $html = '<div class="taxmod-stock-head" style="display:flex;gap:16px;align-items:flex-start;background:#fff;border:1px solid #c3c4c7;padding:16px;margin:8px 0 0">'
             . ($media > 0 ? (string) wp_get_attachment_image($media, [96, 96], false, ['style' => 'width:96px;height:96px;object-fit:cover;border-radius:4px']) : '<div style="width:96px;height:96px;background:#f0f0f1;border-radius:4px"></div>')
-            . '<div><p style="margin:0;color:#50575e">' . esc_html(sprintf(/* translators: %d: record id of the thing */ __('Nr. %d', 'taxmod-stock'), $thing)) . ' · ' . esc_html($this->stock->path($node)) . '</p>'
+            . '<div><p style="margin:0;color:#50575e">' . esc_html(sprintf(/* translators: %d: record id of the thing */ __('Nr. %d', 'taxmod-stock'), $thing)) . ' · ' . $this->pathLinks($node) . '</p>'
             . '<h2 style="margin:4px 0;font-size:1.6em">' . esc_html($label === '' ? '—' : $label) . '</h2>'
             . ($about === '' ? '' : '<p style="margin:0">' . esc_html($about) . '</p>') . $chips . '</div>'
             . '<span style="margin-left:auto;white-space:nowrap"><a class="button button-primary" href="' . esc_url(PurchasePage::reorderUrl($thing)) . '">'
@@ -771,6 +771,18 @@ final class StockPage
             // The foot stays at the bottom of the window: back to the list with its search and filters (design 7.3).
             . '<div class="taxmod-stock-foot" style="position:sticky;bottom:0;z-index:5;display:flex;gap:16px;align-items:center;background:#fff;border:1px solid #c3c4c7;border-top:2px solid #2271b1;padding:8px 16px;margin-top:12px">'
             . '<a href="' . esc_url($back) . '">← ' . esc_html__('Zur Liste', 'taxmod-stock') . '</a></div>';
+    }
+
+    /** The path of the head, each group a link to its group stock — his word: «damit ich auf display drücken kann sollte dann im gruppen bestand anzeigen». */
+    private function pathLinks(int $node): string
+    {
+        $links = [];
+
+        foreach ($this->stock->pathNodes($node) as $group => $name) {
+            $links[] = '<a href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'gruppenbestand', 'group' => $group], admin_url('admin.php'))) . '">' . esc_html($name) . '</a>';
+        }
+
+        return implode(' ▸ ', $links);
     }
 
     /** The list the material was opened from, if it was this user's last one today; else the plain material list. */

@@ -66,11 +66,10 @@ final class Plugin
 
     public function bootWhenModellerIsThere(): void
     {
-        // *The shared tiles (D-1149) and the period view's blocks (D-1167) came with the modeller 0.1.165; an older one is
-        // named rather than failing on a page.*
-        if (! class_exists(\Taxmod\WordPress\Plugin::class) || ! class_exists(\Taxmod\Core\Tile\Period::class)) {
+        // *The one door into the model (D-1186) came with the modeller 0.1.174; an older one is named rather than failing on a page.*
+        if (! class_exists(\Taxmod\WordPress\Plugin::class) || ! class_exists(\Taxmod\WordPress\ModelDoor::class)) {
             add_action('admin_notices', static function (): void {
-                echo '<div class="notice notice-error"><p>' . esc_html__('Taxmod Stock braucht den aktiven Taxonomy Modeller ab 0.1.165.', 'taxmod-stock') . '</p></div>';
+                echo '<div class="notice notice-error"><p>' . esc_html__('Taxmod Stock braucht den aktiven Taxonomy Modeller ab 0.1.174.', 'taxmod-stock') . '</p></div>';
             });
 
             return;
@@ -223,19 +222,13 @@ final class Plugin
      * One booking at a time (D-1147): two pickers who both read «1 left» must not both book it.
      *
      * The second waits for the first, then reads the stock again inside its own request and is refused if it is no longer there.
-     * The lock lasts one request and is dropped with the connection, so a closed browser holds nothing. Without a modeller that has
-     * the lock (before 0.1.151) the booking runs as before.
+     * The lock lasts one request and is dropped with the connection, so a closed browser holds nothing; it is the modeller's,
+     * through its one door (D-1186).
      */
     public static function serially(callable $work): void
     {
-        if (! class_exists(\Taxmod\WordPress\Persistence\WriteLock::class)) {
-            $work();
-
-            return;
-        }
-
         try {
-            \Taxmod\WordPress\Persistence\WriteLock::around('stock', $work);
+            \Taxmod\WordPress\ModelDoor::serially('stock', $work);
         } catch (\Taxmod\Core\Exception\ConcurrentChange $e) {
             wp_die(esc_html($e->getMessage()), esc_html__('Gerade wird gebucht', 'taxmod-stock'), ['response' => 409, 'back_link' => true]);
         }

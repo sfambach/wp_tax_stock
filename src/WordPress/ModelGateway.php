@@ -2,225 +2,86 @@
 
 namespace TaxmodStock\WordPress;
 
+use Taxmod\Core\Exception\ModelDoorRefused;
+use Taxmod\WordPress\ModelDoor;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\Table;
 
 /**
- * The module's only door into the model: the modeller's abilities, nothing of its internals.
- *
- * Reading is `taxmod/read-node` — one call per node, which is one query per table (CD-7). Writing is
- * `taxmod/write-data` (D-936): records only, one change number, all or nothing.
- *
- * ⚠️ Exceptions, through the modeller's record repository (like {@see recordsMatching()} and {@see recordsOf()}):
- * {@see nodesOf()} — no ability says which node a record belongs to, and «Bezug» may point at a record under any node of
- * `Model`; reading every node to find a label would be hundreds of reads. {@see records()} — a few records of a node too
- * large to read whole: the amounts node holds every price of the installation (4634 records, measured 2026-11-02).
+ * The module's side of the modeller's one door into the model (`Taxmod\WordPress\ModelDoor`, D-1186): it only wraps the
+ * answers in the core's {@see Table} and words a refusal as {@see StockError}. Reads, caching and the few repository
+ * reads no ability offers live in the modeller, once for every module.
  */
 final class ModelGateway
 {
-    /** @var array<int, array<string, mixed>> node id → the answer of `read-node`, read once per request */
-    private array $read = [];
+    private readonly ModelDoor $door;
+
+    public function __construct()
+    {
+        $this->door = new ModelDoor();
+    }
 
     public function table(int $node): Table
     {
-        $result  = $this->readNode($node);
-        $records = [];
-
-        foreach ($result['records'] ?? [] as $record) {
-            $values = [];
-
-            foreach ($record['values'] ?? [] as $value) {
-                $values[(int) $value['relation_id']][] = (string) $value['value'];
-            }
-
-            $records[(int) $record['id']] = $values;
-        }
-
-        return new Table($records);
+        return new Table($this->ask(fn (): array => $this->door->records($node)));
     }
 
-    /**
-     * The fields of a node as the modeller lists them, inherited ones included — from the same read as its records.
-     *
-     * @return array<int, array{name: string, target: int, type: string|null, kind: string, multiplicity: string}> relation id → field
-     */
+    /** @return array<int, array{name: string, target: int, type: string|null, kind: string, multiplicity: string}> relation id → field */
     public function fields(int $node): array
     {
-        $out = [];
-
-        foreach ($this->readNode($node)['fields'] ?? [] as $field) {
-            $out[(int) $field['relation_id']] = [
-                'name'   => (string) ($field['name'] ?? ''),
-                'target' => (int) ($field['target'] ?? 0),
-                'type'   => isset($field['type']) ? (string) $field['type'] : null,
-                'kind'   => (string) ($field['kind'] ?? ''),
-                'multiplicity' => (string) ($field['multiplicity'] ?? ''),
-            ];
-        }
-
-        return $out;
+        return $this->ask(fn (): array => $this->door->fields($node));
     }
 
-    /**
-     * Every node under `$root` with its name and parent — one `read-tree` call.
-     *
-     * @return array<int, array{name: string, parent: int, class: string, hidden: bool}>
-     */
+    /** @return array<int, array{name: string, parent: int, class: string, hidden: bool}> */
     public function tree(int $root): array
     {
-        $out = [];
-
-        foreach ($this->execute('taxmod/read-tree', ['root' => $root, 'depth' => 12])['rows'] ?? [] as $row) {
-            $out[(int) $row['id']] = ['name' => (string) ($row['name'] ?? ''), 'parent' => (int) ($row['parent'] ?? 0), 'class' => (string) ($row['class'] ?? ''), 'hidden' => ! empty($row['hidden'])];
-        }
-
-        return $out;
+        return $this->ask(fn (): array => $this->door->tree($root));
     }
 
     /**
-     * Which node each record belongs to, in one query through the modeller's record repository.
-     *
      * @param list<int> $records
-     * @return array<int, int> record id → node id; empty if the modeller does not offer it
+     * @return array<int, int> record id → node id
      */
     public function nodesOf(array $records): array
     {
-        $repository = \Taxmod\WordPress\Persistence\WpdbRecordRepository::class;
-
-        if ($records === [] || ! class_exists($repository) || ! method_exists($repository, 'byIds')) {
-            return [];
-        }
-
-        $out = [];
-
-        foreach ((new $repository())->byIds($records) as $id => $record) {
-            $out[(int) $id] = (int) $record->nodeId;
-        }
-
-        return $out;
+        return $this->door->nodesOf($records);
     }
 
     /**
-     * The records in these nodes that every condition matches — the modeller's own record search (D-958 F3a).
-     *
-     * @param list<int>                                      $nodes
-     * @param list<array{text: string, nodes: list<int>}>    $conditions a word, found in a text value or in the name of one of these nodes
-     * @return list<int> empty if the modeller does not offer it
+     * @param list<int>                                   $nodes
+     * @param list<array{text: string, nodes: list<int>}> $conditions
+     * @return list<int>
      */
     public function recordsMatching(array $nodes, array $conditions, int $limit): array
     {
-        $repository = \Taxmod\WordPress\Persistence\WpdbRecordRepository::class;
-
-        if (! class_exists($repository) || ! method_exists($repository, 'recordsMatching')) {
-            return [];
-        }
-
-        return array_map('intval', (new $repository())->recordsMatching($nodes, $conditions, $limit));
+        return $this->door->recordsMatching($nodes, $conditions, $limit);
     }
 
     /**
-     * The user records of these nodes, at most `$limit`, with the node each lives in.
-     *
      * @param list<int> $nodes
-     * @return array<int, int> record id → node id; empty if the modeller does not offer it
+     * @return array<int, int> record id → node id
      */
     public function recordsOf(array $nodes, int $limit): array
     {
-        $repository = \Taxmod\WordPress\Persistence\WpdbRecordRepository::class;
-
-        if ($nodes === [] || ! class_exists($repository) || ! method_exists($repository, 'ofNodes')) {
-            return [];
-        }
-
-        $out = [];
-
-        foreach ((new $repository())->ofNodes($nodes) as $node => $records) {
-            foreach ($records as $record) {
-                if (count($out) >= $limit || $record->recordType === \Taxmod\Core\Model\RecordType::Settings) {
-                    continue;
-                }
-
-                $out[(int) $record->id] = (int) $node;
-            }
-        }
-
-        return $out;
+        return $this->door->recordsOf($nodes, $limit);
     }
 
-    /**
-     * Only these records with their values, in one query — for a few records of a node too large to read whole
-     * (the amounts: every price of the installation is one).
-     *
-     * @param list<int> $records
-     * @return Table|null null if the modeller does not offer it
-     */
+    /** @param list<int> $records */
     public function records(array $records): ?Table
     {
-        $repository = \Taxmod\WordPress\Persistence\WpdbRecordRepository::class;
-
-        if (! class_exists($repository) || ! method_exists($repository, 'valuesOfMany')) {
-            return null;
-        }
-
-        $out = [];
-
-        foreach ((new $repository())->valuesOfMany($records) as $id => $values) {
-            $out[(int) $id] = [];
-
-            foreach ($values as $value) {
-                $out[(int) $id][(int) $value->relationId][] = $value->value->rawValue();
-            }
-        }
-
-        return new Table($out);
+        return new Table($this->door->valuesOf($records));
     }
 
     /** @return array<int, string> child node id → name */
     public function children(int $node): array
     {
-        $out = [];
-
-        foreach ($this->execute('taxmod/read-tree', ['root' => $node, 'depth' => 1])['rows'] ?? [] as $row) {
-            if ((int) ($row['parent'] ?? 0) === $node) {
-                $out[(int) $row['id']] = (string) $row['name'];
-            }
-        }
-
-        return $out;
+        return $this->ask(fn (): array => $this->door->children($node));
     }
 
-    /**
-     * The nodes below a node with their distance from it, and the node's own name — one `read-tree` call.
-     *
-     * @return array{name: string, steps: array<int, int>} node id → steps below `$root` (the root itself is 0)
-     */
+    /** @return array{name: string, steps: array<int, int>} */
     public function subtree(int $root): array
     {
-        $parents = [];
-        $name    = '';
-
-        foreach ($this->execute('taxmod/read-tree', ['root' => $root, 'depth' => 12])['rows'] ?? [] as $row) {
-            $parents[(int) $row['id']] = (int) ($row['parent'] ?? 0);
-            $name                      = (int) $row['id'] === $root ? (string) ($row['name'] ?? '') : $name;
-        }
-
-        $steps = [$root => 0];
-
-        foreach (array_keys($parents) as $node) {
-            $path = [];
-
-            for ($at = $node; ! isset($steps[$at]) && isset($parents[$at]) && ! in_array($at, $path, true); $at = $parents[$at]) {
-                $path[] = $at;
-            }
-
-            if (isset($steps[$at])) {
-                foreach (array_reverse($path) as $i => $on) {
-                    $steps[$on] = $steps[$at] + $i + 1;
-                }
-            }
-        }
-
-        return ['name' => $name, 'steps' => $steps];
+        return $this->ask(fn (): array => $this->door->subtree($root));
     }
 
     /**
@@ -229,33 +90,19 @@ final class ModelGateway
      */
     public function write(array $changes): array
     {
-        return $this->execute('taxmod/write-data', ['changes' => $changes]);
-    }
-
-    /** @return array<string, mixed> */
-    private function readNode(int $node): array
-    {
-        return $this->read[$node] ??= $this->execute('taxmod/read-node', ['node' => $node]);
+        return $this->ask(fn (): array => $this->door->write($changes));
     }
 
     /**
-     * @param array<string, mixed> $input
-     * @return array<string, mixed>
+     * @param callable(): array<mixed> $read
+     * @return array<mixed>
      */
-    private function execute(string $name, array $input): array
+    private function ask(callable $read): array
     {
-        $ability = function_exists('wp_get_ability') ? wp_get_ability($name) : null;
-
-        if ($ability === null) {
-            throw StockError::modelRefused($name . ' is not available — is the Taxonomy Modeller active?');
+        try {
+            return $read();
+        } catch (ModelDoorRefused $refused) {
+            throw StockError::fromModel($refused->getMessage());
         }
-
-        $result = $ability->execute($input);
-
-        if (is_wp_error($result)) {
-            throw StockError::fromModel($result->get_error_message());
-        }
-
-        return is_array($result) ? $result : [];
     }
 }

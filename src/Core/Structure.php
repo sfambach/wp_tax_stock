@@ -34,7 +34,7 @@ final class Structure
         'board', 'board_revision', 'bom_position',
         // D-1153, D-1159: the labels; D-1160: the category a material prints from.
         'label_template', 'label_materials',
-        // D-1190: the printers, next to the labels.
+        // D-1190, D-1191: the printers, next to the labels.
         'label_printer',
         // D-1158: the Dimension node behind a place type's outer and inner size.
         'dimension',
@@ -84,9 +84,10 @@ final class Structure
         // D-1159: a label carries its own size; the separate format records are gone.
         'template_key', 'template_width', 'template_height', 'template_roll', 'template_copies', 'template_layout',
         'type_label_template', 'type_label_copies',
-        // D-1190: a label names its printer and its CUPS options; a printer its queue, whether it turns the label, and where its
-        // lines start on the head and how long they are.
-        'template_printer', 'template_options', 'printer_queue', 'printer_turns', 'printer_offset', 'printer_line',
+        // D-1191: every print setting is the printer's — its queue, the roll it holds, whether it turns roll-wide labels, its
+        // options, the options for a turned label, the CUPS name of each size, and where its lines start (D-1190).
+        'printer_queue', 'printer_roll', 'printer_turns', 'printer_options', 'printer_turn_options', 'printer_sizes',
+        'printer_offset', 'printer_line',
         // D-1158: a place type's outer and inner size, and the three sides of a Dimension.
         'type_outer', 'type_inner', 'dimension_length', 'dimension_width', 'dimension_height',
         // D-1169: a place type chooses its fit calculation and its message.

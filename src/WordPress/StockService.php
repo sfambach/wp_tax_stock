@@ -843,7 +843,7 @@ final class StockService
         $nodeOf     = $this->model->recordsOf(array_merge([$root], array_keys($categories)), 500);
         $table      = $nodeOf === [] ? $this->table('label_template') : ($this->model->records(array_keys($nodeOf)) ?? $this->table('label_template'));
 
-        // D-1190: the printers the labels name, one read.
+        // D-1191: the printers, one read; each label goes to the one of its roll.
         $printers = $s->hasNode('label_printer') ? $this->table('label_printer') : null;
 
         return $this->labelTemplates = LabelTemplates::from($s, $table, array_map(static fn (int $node): string => $categories[$node] ?? '', $nodeOf), $nodeOf, $printers);

@@ -12,7 +12,7 @@ namespace TaxmodStock\Core;
  * ```mermaid
  * flowchart LR
  *   PA["Platzart"] -- "Etikett" --> E["Etikett: Druckformat, Breite, Höhe, Rolle, Anzahl, Layout, Druckoptionen"]
- *   E -- "Drucker (D-1190)" --> D["Drucker: Warteschlange, Etikett drehen"]
+ *   E -. "Rolle (D-1191)" .-> D["Drucker: Warteschlange, Rolle, Drehen, Optionen, Seitengrößen, Versatz"]
  * ```
  *
  * @see wp-taxonomy-modeler docs/NewConcept/90-decision-log.md D-1159
@@ -29,13 +29,14 @@ final class LabelTemplates
     /**
      * @param array<int, string> $categoryOf record id → the name of the category (sub-node of «Etiketten») it stands in
      * @param array<int, int>    $nodeOf     record id → the node it stands in
-     * @param Table|null         $printers   D-1190: the records of «Drucker», read once beside the labels
+     * @param Table|null         $printers   D-1191: the records of «Drucker», read once beside the labels
      */
     public static function from(Structure $s, Table $labels, array $categoryOf = [], array $nodeOf = [], ?Table $printers = null): self
     {
         $int  = static fn (int $id, string $field): int => $s->hasField($field) ? (int) $labels->first($id, $s->field($field)) : 0;
         $text = static fn (int $id, string $field): string => $s->hasField($field) ? trim((string) $labels->first($id, $s->field($field))) : '';
         $out  = [];
+        $byRoll = self::printersByRoll($s, $printers);
 
         foreach ($labels->ids() as $id) {
             $key    = $text($id, 'template_key');
@@ -53,40 +54,54 @@ final class LabelTemplates
                 'layout' => $layout,
                 'category' => $categoryOf[$id] ?? '',
                 'node'     => $nodeOf[$id] ?? 0,
-            ] + self::printerOf($s, $printers, $int($id, 'template_printer'), $text($id, 'template_options'));
+            ] + (isset($byRoll[$int($id, 'template_roll')]) ? ['printer' => $byRoll[$int($id, 'template_roll')]] : []);
         }
 
         return new self($out);
     }
 
     /**
-     * D-1190: the printer a label names, as the modeller's label dialog takes it; nothing where it names none or the printer has
-     * no queue — the print service then chooses by roll width as before.
+     * D-1191: the printer of each roll width, as the modeller's label dialog takes it — the first by name where two hold the same
+     * roll; a printer without a queue or a roll is left out, and its labels go to the print service's own choice as before.
      *
-     * @return array{printer?: array{queue: string, options: string, turn: bool, name: string, offset: int, line: int}}
+     * @return array<int, array{queue: string, roll: int, turn: bool, options: string, turn_options: string, sizes: string, offset: int, line: int, name: string}>
      */
-    private static function printerOf(Structure $s, ?Table $printers, int $printer, string $options): array
+    private static function printersByRoll(Structure $s, ?Table $printers): array
     {
-        if ($printers === null || $printer <= 0 || ! $s->hasField('printer_queue') || ! $printers->has($printer)) {
+        if ($printers === null || ! $s->hasField('printer_queue') || ! $s->hasField('printer_roll')) {
             return [];
         }
-        $queue = trim((string) $printers->first($printer, $s->field('printer_queue')));
-        if ($queue === '') {
-            return [];
+        $text = static fn (int $id, string $field): string => $s->hasField($field) ? trim((string) $printers->first($id, $s->field($field))) : '';
+        $all  = [];
+        foreach ($printers->ids() as $id) {
+            $queue = $text($id, 'printer_queue');
+            $roll  = (int) $text($id, 'printer_roll');
+            if ($queue === '' || $roll <= 0) {
+                continue;
+            }
+            $all[$id] = [
+                'queue'        => $queue,
+                'roll'         => $roll,
+                'turn'         => $text($id, 'printer_turns') === '1',
+                'options'      => $text($id, 'printer_options'),
+                'turn_options' => $text($id, 'printer_turn_options'),
+                'sizes'        => $text($id, 'printer_sizes'),
+                'offset'       => (int) $text($id, 'printer_offset'),
+                'line'         => (int) $text($id, 'printer_line'),
+                'name'         => trim((string) ($printers->first($id, $s->field('label')) ?? '')),
+            ];
+        }
+        uasort($all, static fn (array $a, array $b): int => strnatcasecmp($a['name'], $b['name']));
+        $out = [];
+        foreach ($all as $printer) {
+            $out[$printer['roll']] ??= $printer;
         }
 
-        return ['printer' => [
-            'queue'   => $queue,
-            'options' => $options,
-            'turn'    => $s->hasField('printer_turns') && $printers->first($printer, $s->field('printer_turns')) === '1',
-            'name'    => trim((string) ($printers->first($printer, $s->field('label')) ?? '')),
-            'offset'  => $s->hasField('printer_offset') ? (int) $printers->first($printer, $s->field('printer_offset')) : 0,
-            'line'    => $s->hasField('printer_line') ? (int) $printers->first($printer, $s->field('printer_line')) : 0,
-        ]];
+        return $out;
     }
 
     /**
-     * What the modeller's label button takes of a label (D-1153, D-1190): name, size, layout and, where it names one, its printer.
+     * What the modeller's label button takes of a label (D-1153, D-1191): name, size, layout and, where one holds its roll, its printer.
      *
      * @param array{name: string, format: array{key: string, w: int, h: int, roll: int}, layout: string, printer?: array<string, mixed>} $template
      * @param array<string, mixed> $more record, values …

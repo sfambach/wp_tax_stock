@@ -58,8 +58,6 @@ final class LabelTemplates
                 'layout' => $layout,
                 'category' => $categoryOf[$id] ?? '',
                 'node'     => $nodeOf[$id] ?? 0,
-                // D-1199: what the label prints about the place's content, a choice of «Etiketteninhalte».
-                'contents' => self::contentsOf($s, $int($id, 'template_contents')),
             ];
             // D-1192: the first printer (by name) whose loaded roll allows this label is the one the dialog starts with.
             foreach ($all as $printer) {
@@ -71,15 +69,6 @@ final class LabelTemplates
         }
 
         return new self($out, $all);
-    }
-
-    private static function contentsOf(Structure $s, int $choice): string
-    {
-        return match (true) {
-            $choice > 0 && $s->hasValue('contents_categories') && $choice === $s->value('contents_categories') => LabelContents::CATEGORIES,
-            $choice > 0 && $s->hasValue('contents_materials') && $choice === $s->value('contents_materials')   => LabelContents::MATERIALS,
-            default                                                                                          => LabelContents::NOTHING,
-        };
     }
 
     /**
@@ -127,7 +116,7 @@ final class LabelTemplates
      * D-1199: `$contents` holds the names of what lies on the place; each label takes the ones its choice asks for.
      *
      * @param array<string, mixed> $more
-     * @param array{categories?: list<string>, materials?: list<string>} $contents
+     * @param array{categories?: list<string>, materials?: list<string>, words?: array<string, string>} $contents
      * @return array<string, mixed>
      */
     public function dialog(int $chosen, array $more = [], array $contents = []): array
@@ -145,21 +134,34 @@ final class LabelTemplates
     }
 
     /**
+     * D-1199, his choice «Auswahl im Druckdialog»: a label whose layout names `inhalt` offers what to print there — nothing, the
+     * categories or the materials — each shortened to what its layout holds; the dialog starts on the categories.
+     *
      * @param array<string, mixed> $template
      * @param array<string, mixed> $more
-     * @param array{categories?: list<string>, materials?: list<string>} $contents
+     * @param array{categories?: list<string>, materials?: list<string>, words?: array<string, string>} $contents
      * @return array<string, mixed>
      */
     private static function withContents(array $template, array $more, array $contents): array
     {
-        $kind = (string) ($template['contents'] ?? LabelContents::NOTHING);
-        if ($kind === LabelContents::NOTHING || ! isset($contents[$kind])) {
+        $layout = (string) ($template['layout'] ?? '');
+        if (! isset($contents['categories']) || ! LabelContents::named($layout)) {
             return $more;
         }
-        $more['values'] = (is_array($more['values'] ?? null) ? $more['values'] : [])
-            + [LabelContents::FIELD => LabelContents::line($contents[$kind], LabelContents::maxOf((string) $template['layout']))];
+        $max   = LabelContents::maxOf($layout);
+        $words = $contents['words'] ?? [];
+        $more2 = (string) ($words['more'] ?? '+%d');
 
-        return $more;
+        return $more + ['variants' => [
+            'field'   => LabelContents::FIELD,
+            'label'   => (string) ($words['label'] ?? LabelContents::FIELD),
+            'chosen'  => LabelContents::CATEGORIES,
+            'options' => [
+                LabelContents::NOTHING    => ['name' => (string) ($words[LabelContents::NOTHING] ?? '—'), 'text' => ''],
+                LabelContents::CATEGORIES => ['name' => (string) ($words[LabelContents::CATEGORIES] ?? LabelContents::CATEGORIES), 'text' => LabelContents::line($contents['categories'] ?? [], $max, $more2)],
+                LabelContents::MATERIALS  => ['name' => (string) ($words[LabelContents::MATERIALS] ?? LabelContents::MATERIALS), 'text' => LabelContents::line($contents['materials'] ?? [], $max, $more2)],
+            ],
+        ]];
     }
 
     /** @return list<int> the labels of one category, by name; none for 0 */

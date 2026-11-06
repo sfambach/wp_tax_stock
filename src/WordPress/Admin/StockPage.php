@@ -2113,7 +2113,10 @@ final class StockPage
             // D-1160: the modeller reads the fields the layout names from the place itself; these fill what it has no field for.
             'record' => $place,
             'values' => ['bezeichnung' => $tree->titleOf($place), 'kurzzeichen' => $tree->shortOf($place), 'projekt' => $project, 'ort' => $parent],
-        ], $this->contentsOf([$place])[$place])];
+        ], $this->contentsOf([$place])[$place] + ['words' => [
+            'label' => __('Inhalt andrucken', 'taxmod-stock'), '' => __('Nichts', 'taxmod-stock'), 'categories' => __('Kategorien', 'taxmod-stock'),
+            'materials' => __('Materialien', 'taxmod-stock'), /* translators: %d: names left out */ 'more' => __('+%d weitere', 'taxmod-stock'),
+        ]])];
     }
 
     /**
@@ -2537,11 +2540,15 @@ final class StockPage
         $open      = static fn (int $record): string => esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $record], admin_url('admin.php')));
         $body      = '';
 
+        $setup = $s->hasField('printer_setup') ? $this->stock->table('label_printer') : null;
+
         foreach ($this->stock->labels('label_printer') as $id => $name) {
             $printer = $active[$id] ?? null;
+            $howto   = $setup === null ? '' : trim((string) $setup->first($id, $s->field('printer_setup')));
             $allowed = $printer === null ? [] : array_map(static fn (int $t): string => (string) ($templates->get($t)['name'] ?? '#' . $t), $printer['allows']);
             $body   .= '<tr><th scope="row" class="check-column"></th>'
-                . '<td><a href="' . $open($id) . '"><strong>' . esc_html($name) . '</strong></a></td>'
+                . '<td><a href="' . $open($id) . '"><strong>' . esc_html($name) . '</strong></a>'
+                . ($howto === '' ? '' : '<details><summary>' . esc_html__('Einrichtung', 'taxmod-stock') . '</summary><div>' . esc_html($howto) . '</div></details>') . '</td>'
                 . '<td>' . esc_html($printer === null ? __('— (Warteschlange oder Rolle fehlt)', 'taxmod-stock') : $printer['queue']) . '</td>'
                 . '<td>' . esc_html($printer['roll_name'] ?? '—') . '</td>'
                 . '<td>' . esc_html(implode(', ', array_unique($allowed)) ?: '—') . '</td>'
@@ -2554,7 +2561,16 @@ final class StockPage
                 . '<td style="text-align:right"><a class="button" href="' . $open($id) . '">' . esc_html__('Öffnen', 'taxmod-stock') . '</a></td></tr>';
         }
 
-        return $html . ListPage::table([[__('Drucker', 'taxmod-stock'), '14em'], [__('Warteschlange', 'taxmod-stock'), '12em'], [__('Eingelegte Rolle', 'taxmod-stock'), '14em'], [__('Erlaubte Etiketten', 'taxmod-stock'), '']], $body === '' ? $this->noItems(4) : $body)
+        // D-1201, his word «was wir pro drucker etikett machen müssen müssen wir irgendwo speichern als anleitung»: the steps for a
+        // new label stand here; what is particular to one printer stands in its own «Einrichtung».
+        $help = '<details class="taxmod-help" style="margin:0 0 1em"><summary><strong>' . esc_html__('Neues Etikett einrichten', 'taxmod-stock') . '</strong></summary><ol>'
+            . '<li>' . esc_html__('Unter Etiketten das Etikett anlegen: Größe, Rolle, Anzahl, Layout.', 'taxmod-stock') . '</li>'
+            . '<li>' . esc_html__('Unter Rollen das Etikett bei der Rolle eintragen, auf der es gedruckt wird.', 'taxmod-stock') . '</li>'
+            . '<li>' . esc_html__('Kennt der Drucker die Größe nicht nach Millimetern, die Größe am Drucker anlegen und unter «Seitengrößen» als «BreitexHöhe=Name» eintragen — wie, steht in seiner Einrichtung.', 'taxmod-stock') . '</li>'
+            . '<li>' . esc_html__('Testdruck aus dem Etikett; verschoben oder blass: Versatz, Zeilenlänge oder Layout anpassen.', 'taxmod-stock') . '</li>'
+            . '</ol></details>';
+
+        return $html . $help . ListPage::table([[__('Drucker', 'taxmod-stock'), '14em'], [__('Warteschlange', 'taxmod-stock'), '12em'], [__('Eingelegte Rolle', 'taxmod-stock'), '14em'], [__('Erlaubte Etiketten', 'taxmod-stock'), '']], $body === '' ? $this->noItems(4) : $body)
             . '<h2>' . esc_html__('Rollen', 'taxmod-stock') . '</h2>'
             . '<p class="description">' . esc_html__('Eine Rolle nennt ihre Breite und die Etiketten, die auf ihr gedruckt werden dürfen.', 'taxmod-stock') . '</p>'
             . ListPage::table([[__('Rolle', 'taxmod-stock'), '']], $rollBody === '' ? $this->noItems(1) : $rollBody);

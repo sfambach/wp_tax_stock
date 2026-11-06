@@ -20,7 +20,7 @@ final class LabelTemplatesTest extends TestCase
     {
         $templates = $this->templates();
 
-        self::assertSame(['name' => 'Platz', 'format' => ['key' => 'holder62', 'w' => 62, 'h' => 50, 'roll' => 62], 'copies' => 1, 'layout' => self::LAYOUT, 'category' => '', 'node' => 0, 'contents' => ''], $templates->get(90));
+        self::assertSame(['name' => 'Platz', 'format' => ['key' => 'holder62', 'w' => 62, 'h' => 50, 'roll' => 62], 'copies' => 1, 'layout' => self::LAYOUT, 'category' => '', 'node' => 0], $templates->get(90));
         self::assertSame(2, $templates->get(91)['copies']);
         self::assertFalse($templates->has(92), 'a template without a layout cannot print');
         self::assertFalse($templates->has(93), 'a label without a size cannot print');
@@ -82,27 +82,31 @@ final class LabelTemplatesTest extends TestCase
     }
 
     #[Test]
-    public function each_label_prints_the_content_its_choice_asks_for(): void
+    public function a_label_with_a_content_field_offers_nothing_categories_or_materials_shortened_to_its_lines(): void
     {
         $s      = $this->structure();
         $label  = $s->field('label');
-        $layout = '[{"type":"text","field":"inhalt","x":2,"y":40,"w":58,"h":20,"lines":3}]';
-        $row    = static fn (string $name, string $choice): array => [$label => [$name], 400 => ['x'], 401 => ['62'], 402 => ['62'], 405 => ['1'], 406 => [$layout], 445 => [$choice]];
-        $labels = LabelTemplates::from($s, new Table([1 => $row('62×62', '446'), 2 => $row('62×62 Teile', '447'), 3 => $row('62×50', '')]), [], [1 => 40, 2 => 40, 3 => 40]);
-        $dialog = $labels->dialog(1, ['values' => ['ort' => 'A1']], ['categories' => ['Widerstände', 'Kondensatoren'], 'materials' => ['R 10k', 'R 1k', 'C 100n', 'C 10µ']]);
+        $with   = '[{"type":"text","field":"inhalt","x":2,"y":40,"w":58,"h":20,"lines":3}]';
+        $row    = static fn (string $name, string $layout): array => [$label => [$name], 400 => ['x'], 401 => ['62'], 402 => ['62'], 405 => ['1'], 406 => [$layout]];
+        $labels = LabelTemplates::from($s, new Table([1 => $row('62×62', $with), 2 => $row('62×50', self::LAYOUT)]), [], [1 => 40, 2 => 40]);
+        $dialog = $labels->dialog(1, ['values' => ['ort' => 'A1']], ['categories' => ['Widerstände', 'Kondensatoren'], 'materials' => ['R 10k', 'R 1k', 'C 100n', 'C 10µ'], 'words' => ['more' => '+%d weitere']]);
 
-        self::assertSame(['ort' => 'A1', 'inhalt' => 'Kondensatoren · Widerstände'], $dialog['values']);
-        self::assertSame('C 10µ · C 100n · +2 weitere', $dialog['choices'][2]['values']['inhalt'], 'three lines: two names and the rest');
-        self::assertSame(['ort' => 'A1'], $dialog['choices'][3]['values'], 'nothing chosen, nothing printed');
+        self::assertSame(['ort' => 'A1'], $dialog['values'], 'the values stay the caller\'s');
+        self::assertSame('categories', $dialog['variants']['chosen']);
+        self::assertSame('Kondensatoren · Widerstände', $dialog['variants']['options']['categories']['text']);
+        self::assertSame('C 10µ · C 100n · +2 weitere', $dialog['variants']['options']['materials']['text'], 'three lines: two names and the rest');
+        self::assertSame('', $dialog['variants']['options']['']['text']);
+        self::assertArrayNotHasKey('variants', $dialog['choices'][2], 'a label without a place for it offers nothing');
     }
 
     #[Test]
     public function a_content_line_says_how_many_it_leaves_out(): void
     {
         self::assertSame('A · B', LabelContents::line(['B', 'A', 'A', ' '], 2));
-        self::assertSame('A · +2 weitere', LabelContents::line(['A', 'B', 'C'], 2));
-        self::assertSame(6, LabelContents::maxOf('[{"field":"code"}]'));
+        self::assertSame('A · +2', LabelContents::line(['A', 'B', 'C'], 2));
+        self::assertSame(6, LabelContents::maxOf('[{"field":"inhalt"}]'));
         self::assertSame(4, LabelContents::maxOf('[{"field":"inhalt","lines":2,"max":4}]'));
+        self::assertFalse(LabelContents::named('[{"field":"code"}]'));
     }
 
     private function withPrinters(): LabelTemplates
@@ -156,9 +160,7 @@ final class LabelTemplatesTest extends TestCase
         $raw['fields'] += ['template_key' => 400, 'template_width' => 401, 'template_height' => 402, 'template_roll' => 403,
             'template_copies' => 405, 'template_layout' => 406, 'type_label_template' => 410, 'type_label_copies' => 411,
             'printer_queue' => 430, 'printer_turns' => 431, 'printer_offset' => 432, 'printer_line' => 433,
-            'printer_options' => 435, 'printer_turn_options' => 436, 'printer_sizes' => 437, 'printer_loaded_roll' => 438, 'roll_width' => 440, 'roll_labels' => 441,
-            'template_contents' => 445];
-        $raw['values'] = ($raw['values'] ?? []) + ['contents_categories' => 446, 'contents_materials' => 447];
+            'printer_options' => 435, 'printer_turn_options' => 436, 'printer_sizes' => 437, 'printer_loaded_roll' => 438, 'roll_width' => 440, 'roll_labels' => 441];
 
         return Structure::fromArray($raw);
     }

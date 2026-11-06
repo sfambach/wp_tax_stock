@@ -277,6 +277,32 @@ final class StockService
         return $out;
     }
 
+    /**
+     * The one place that knows a record's picture (D-1204): today the field «Titelbild»; if pictures become one ordered
+     * list, the first of it — and only this changes. One read for all records asked.
+     *
+     * @param list<int> $records
+     * @return array<int, int> record → attachment id, 0 where there is none
+     */
+    public function titleImages(array $records): array
+    {
+        $s = $this->structure();
+
+        if ($records === [] || ! $s->hasField('title_image')) {
+            return array_fill_keys($records, 0);
+        }
+
+        $table = $this->model->records(array_values(array_unique($records))) ?? new Table([]);
+        $out   = [];
+
+        foreach ($records as $id) {
+            $value    = (string) $table->first($id, $s->field('title_image'));
+            $out[$id] = str_starts_with($value, 'media:') ? absint(substr($value, 6)) : 0;
+        }
+
+        return $out;
+    }
+
     /** @return array<int, int> record → the node it lives in */
     public function nodesOf(array $records): array
     {

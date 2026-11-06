@@ -401,7 +401,10 @@ final class StockPage
         $within    = $branch && $group > 0 ? GroupStock::branch($this->stock->groupParents(), $group) : [];
         $technical = $group > 0 && ! $branch ? $this->technicalColumns($group) : [];
         $data      = $technical !== [] ? $this->stock->tableOf($group) : null;
-        $columns   = [new ListColumn('nr', __('Nr.', 'taxmod-stock'), fixed: true, width: '6em'), new ListColumn('name', __('Material', 'taxmod-stock'), fixed: true),
+        // D-1204: a picture per row, unless the Configuration has pictures in lists off.
+        $images    = method_exists(ListPage::class, 'thumbnails') && ListPage::showsImages();
+        $columns   = [...($images ? [new ListColumn('image', __('Bild', 'taxmod-stock'), fixed: true, width: '56px')] : []),
+            new ListColumn('nr', __('Nr.', 'taxmod-stock'), fixed: true, width: '6em'), new ListColumn('name', __('Material', 'taxmod-stock'), fixed: true),
             new ListColumn('group', __('Gruppe', 'taxmod-stock'))];
         // D-1030: where it lies, by path and project — so a search for a project finds the parts in its box.
         $columns[] = new ListColumn('places', __('Lagerort', 'taxmod-stock'));
@@ -489,7 +492,11 @@ final class StockPage
         $paged  = absint($_GET['paged'] ?? 1);
         $places = $this->stock->places();
 
-        foreach (ListView::page($shown, $paged, self::PER_PAGE) as $row) {
+        $page   = ListView::page($shown, $paged, self::PER_PAGE);
+        // Only the rows of this page, in one read (CD-7).
+        $thumbs = $images ? ListPage::thumbnails($this->stock->titleImages(array_column($page, 'id'))) : [];
+
+        foreach ($page as $row) {
             $id    = $row['id'];
             $link  = esc_url($this->thingUrl($id, 'daten'));
             $cells = [];
@@ -497,6 +504,7 @@ final class StockPage
             foreach ($visible as $column) {
                 $text    = $row['cells'][$column->key] ?? '';
                 $cells[] = match ($column->key) {
+                    'image' => ($thumbs[$id] ?? '') === '' ? '' : '<a href="' . $link . '">' . $thumbs[$id] . '</a>',
                     'nr'    => '<a href="' . $link . '">' . esc_html($text) . '</a>',
                     'name'  => '<strong><a href="' . $link . '">' . esc_html($text === '' ? '—' : $text) . '</a></strong>',
                     'stock' => '<span' . ($row['low'] ? ' style="color:#b32d2e;font-weight:600"' : '') . '>' . esc_html($text) . '</span>',
@@ -747,8 +755,7 @@ final class StockPage
         $table  = $this->stock->tableOf($node);
         $label  = (string) $table->first($thing, $s->field('label'));
         $about  = $s->hasField('description') ? (string) $table->first($thing, $s->field('description')) : '';
-        $image  = $s->hasField('title_image') ? (string) $table->first($thing, $s->field('title_image')) : '';
-        $media  = str_starts_with($image, 'media:') ? absint(substr($image, 6)) : 0;
+        $media  = $this->stock->titleImages([$thing])[$thing] ?? 0;
         $back   = $this->lastList();
         $chips  = $this->chips($thing);
         $titles = [

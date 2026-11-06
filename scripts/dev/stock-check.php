@@ -407,6 +407,15 @@ if (method_exists(Taxmod\WordPress\Printing\LabelButton::class, 'filled')) {
     $pruefe($gefuellt !== null && ($gefuellt->values['Bezeichnung'] ?? '') === 'LM2930T-5.0' && $gefuellt->format->widthMm === 40.0, 'D-1202: a ticked material\'s label reads its own «Bezeichnung», on the 40×30 label');
 }
 
+if (method_exists(ListPage::class, 'thumbnails')) {
+    $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'group' => (string) $r['teile']];
+    $mit  = (new StockPage())->render();
+    update_option('taxmod_list_images', '0');
+    $ohne = (new StockPage())->render();
+    delete_option('taxmod_list_images');
+    $pruefe(str_contains($mit, '>Bild<') && ! str_contains($ohne, '>Bild<'), 'D-1204: the material list has a picture column, and none with pictures switched off');
+}
+
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'group' => (string) $r['teile']];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'value="' . $r['teile'] . '" selected') && str_contains($html, 'LM2930T-5.0') && ! str_contains($html, 'notice-error'), 'the list filters by group');

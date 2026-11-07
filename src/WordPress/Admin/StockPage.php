@@ -75,6 +75,7 @@ final class StockPage
     private const BULK_FORM   = 'taxmod-stock-bulk';
     /** The bulk form of a place's list of Unterorte on «Lagerstruktur». */
     private const CHILD_FORM  = 'taxmod-stock-children';
+    private const PLACE_FORM  = 'taxmod-stock-place-lots';
 
     /** The thing's own fields that its head shows, or that say nothing in «Technische Daten». */
     private const HEAD_FIELDS = ['label', 'description', 'title_image'];
@@ -180,7 +181,8 @@ final class StockPage
         // D-1202, his wish 2026-11-06: «Drucken» in the material and group stock lists — one label per ticked material.
         if ($kind === 'materialetiketten-service' || $kind === 'materialetiketten-pdf') {
             $this->printMaterialLabels(
-                array_values(array_filter(array_map('absint', (array) ($_POST['selected'] ?? [])))),
+                // A ticked lot on «Platzbestand» posts «lot:place:thing» (D-1224); its label is its material's.
+                array_values(array_unique(array_filter(array_map(static fn (string $one): int => absint(str_contains($one, ':') ? (string) array_slice(explode(':', $one), -1)[0] : $one), array_map('strval', (array) ($_POST['selected'] ?? [])))))),
                 absint($_POST['label_choice'] ?? 0),
                 absint($_POST['label_printer'] ?? 0),
                 absint($_POST['copies'] ?? 0),
@@ -198,6 +200,16 @@ final class StockPage
                 'inventur'     => $this->stock->bookInventory($this->inventoryRows(), $today, $this->title(__('Inventur', 'taxmod-stock'), $today)),
                 'lager'        => $this->stock->saveLager($thing, $this->lagerInput()),
                 'verschieben'  => $this->stock->moveThing($thing, absint($_POST['group'] ?? 0)),
+                'postenumbuchen' => $this->stock->moveLotsWhole(
+                    array_values(array_filter(array_map(static function (string $one): ?array {
+                        $parts = array_map('absint', explode(':', $one));
+
+                        return count($parts) === 3 && $parts[0] > 0 && $parts[1] > 0 ? [$parts[0], $parts[1]] : null;
+                    }, array_map('strval', (array) ($_POST['selected'] ?? []))))),
+                    absint($_POST['location'] ?? 0),
+                    $today,
+                    $this->title(__('Umbuchung', 'taxmod-stock'), $today)
+                ),
                 'sammelumbuchen' => $this->stock->moveThings(
                     array_values(array_filter(array_map('absint', (array) ($_POST['selected'] ?? [])))),
                     absint($_POST['location'] ?? 0),
@@ -289,6 +301,7 @@ final class StockPage
                 'orteverschieben' => __('Verschoben: die gewählten Orte liegen jetzt dort, mit allem, was in ihnen liegt.', 'taxmod-stock'),
                 'umbuchen'       => __('Umgebucht: ein Vorgang «Umbuchung» mit Abgang am alten und Zugang am neuen Ort.', 'taxmod-stock'),
                 'sammelumbuchen' => __('Umgebucht: alle gewählten Materialien liegen jetzt am neuen Ort, als ein Vorgang «Umbuchung».', 'taxmod-stock'),
+                'postenumbuchen' => __('Umgebucht: die gewählten Posten liegen jetzt ganz am neuen Ort, als ein Vorgang «Umbuchung».', 'taxmod-stock'),
                 'storno', 'reservierungstorno', 'verbrauchstorno', 'inventurstorno' => __('Storniert: die Gegenbuchung hebt den Vorgang auf, beide bleiben im Protokoll.', 'taxmod-stock'),
                 'reservieren'    => __('Reserviert: der verfügbare Bestand sinkt, der Bestand bleibt.', 'taxmod-stock'),
                 'ort'            => __('Lagerort angelegt.', 'taxmod-stock'),
@@ -1173,7 +1186,7 @@ final class StockPage
      *
      * @return array<string, array{0: string, 1: string}>
      */
-    private function materialLabelsAsk(): array
+    private function materialLabelsAsk(string $formId = self::BULK_FORM, string $per = ''): array
     {
         $s = $this->stock->structure();
 
@@ -1203,18 +1216,20 @@ final class StockPage
         }
 
         $service = PrintService::isSetUp();
-        $form    = ' form="' . esc_attr(self::BULK_FORM) . '"';
+        $form    = ' form="' . esc_attr($formId) . '"';
         $field   = static fn (string $title, string $control): string => '<label style="display:block;margin-bottom:.5em"><span style="display:block;font-weight:600">' . esc_html($title) . '</span>' . $control . '</label>';
         $body    = $field(__('Etikett', 'taxmod-stock'), '<select name="label_choice"' . $form . '>' . $labels . '</select>')
             . ($service ? $field(__('Drucker', 'taxmod-stock'), '<select name="label_printer"' . $form . '>' . $printers . '</select>') : '')
             . $field(__('Anzahl je Material', 'taxmod-stock'), '<input type="number" name="copies" min="1" max="50" step="1" placeholder="' . esc_attr__('wie beim Etikett', 'taxmod-stock') . '"' . $form . ' style="width:14em">')
-            . '<span class="description" style="display:block">' . esc_html__('Ein Etikett je angehaktem Material, beschriftet mit seinen eigenen Feldern.', 'taxmod-stock')
+            . '<span class="description" style="display:block">' . esc_html($per !== '' ? $per : __('Ein Etikett je angehaktem Material, beschriftet mit seinen eigenen Feldern.', 'taxmod-stock'))
             . ($service ? '' : ' ' . esc_html__('Kein Druckdienst eingerichtet: die Etiketten öffnen sich als PDF.', 'taxmod-stock')) . '</span>';
         $foot    = ($service ? '<button type="submit" class="button button-primary" name="booking" value="materialetiketten-service"' . $form . '>' . esc_html__('Drucken', 'taxmod-stock') . '</button>' : '')
             . '<button type="submit" class="button' . ($service ? '' : ' button-primary') . '" name="booking" value="materialetiketten-pdf" formtarget="_blank"' . $form . '>' . esc_html__('Als PDF öffnen', 'taxmod-stock') . '</button>';
 
-        return ['taxmod-stock-material-labels' => [__('Etiketten drucken …', 'taxmod-stock'), '<div class="alignleft actions">' . DialogMarkup::of(
-            'taxmod-stock-material-labels',
+        $dialog = $formId === self::BULK_FORM ? 'taxmod-stock-material-labels' : $formId . '-labels';
+
+        return [$dialog => [__('Etiketten drucken …', 'taxmod-stock'), '<div class="alignleft actions">' . DialogMarkup::of(
+            $dialog,
             esc_html__('Etiketten drucken …', 'taxmod-stock'),
             esc_html__('Etiketten drucken', 'taxmod-stock'),
             '<span class="taxmod-dialog-body" style="display:block;padding:.75em 1em;white-space:normal;text-align:left">' . $body . '</span>',
@@ -1234,6 +1249,8 @@ final class StockPage
     {
         $last      = get_transient(self::LAST_LIST . get_current_user_id());
         $url       = is_string($last) && $last !== '' ? $last : $this->lastList();
+        $url       = sanitize_key((string) ($_POST['return_tab'] ?? '')) === 'lagerorte' && absint($_POST['return_ort'] ?? 0) > 0
+            ? add_query_arg(['page' => self::PAGE, 'tab' => 'lagerorte', 'ort' => absint($_POST['return_ort'])], admin_url('admin.php')) : $url;
         $s         = $this->stock->structure();
         $templates = $this->stock->labelTemplates();
         $template  = $templates->get($chosen);
@@ -2276,6 +2293,8 @@ final class StockPage
         $html = $this->placeHead($place, $tree)
             . '<div class="taxmod-stock-place-actions" style="text-align:right;margin-bottom:12px">'
             . ($form === '' ? '<a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $place], admin_url('admin.php'))) . '">' . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a> ' : '')
+            // D-1224, his word 2026-11-07: «zur bestandsansicht wechseln» — what lies here and below, in «Platzbestand».
+            . '<a class="button" href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'lagerorte', 'ort' => $place], admin_url('admin.php'))) . '">' . esc_html__('Zur Bestandsansicht', 'taxmod-stock') . '</a> '
             . $this->movePlaceDialog($place, $tree) . ' '
             . $this->newPlaceDialog($place, 'lagerstruktur') . ' '
             . $this->copyPlaceDialog($place, $tree, count($below) - 1) . ' '
@@ -2395,6 +2414,27 @@ final class StockPage
         return '<h3 style="margin-top:1.5em">' . esc_html__('Unterorte', 'taxmod-stock') . '</h3>' . $bar
             . ListPage::table([[__('Bezeichnung', 'taxmod-stock')], [__('Platzart', 'taxmod-stock'), '12em'], [__('Beweglich', 'taxmod-stock'), '7em'],
                 [__('Unterorte', 'taxmod-stock'), '7em'], [__('Posten', 'taxmod-stock'), '6em']], $body);
+    }
+
+    /**
+     * D-1224, his word 2026-11-07: «wo sind denn die massen aktionen und das drucken» — the ticked lots of «Platzbestand»
+     * reach «Etiketten drucken …» (their materials' labels) and «Umbuchen nach …» (each lot whole), in the shared bulk bar.
+     */
+    private function placeLotsBar(int $place, int $count): string
+    {
+        $body  = '<label style="display:block">' . esc_html__('Nach', 'taxmod-stock') . '<br>' . $this->stock->placeChooser('location', 0, self::PLACE_FORM) . '</label>'
+            . '<p class="description">' . esc_html__('Bucht jeden angehakten Posten ganz vom Ort, an dem er liegt, an den gewählten Ort um: ein Vorgang «Umbuchung», «Stornieren» bei den Vorgängen nimmt ihn zurück.', 'taxmod-stock') . '</p>';
+        $move  = ['taxmod-stock-place-lots-move' => [__('Umbuchen nach …', 'taxmod-stock'), '<div class="alignleft actions">' . ListPage::dialogAction('taxmod-stock-place-lots-move', __('Umbuchen nach …', 'taxmod-stock'), __('Ausgewählte umbuchen', 'taxmod-stock'),
+            $body, 'booking', 'postenumbuchen', __('Umbuchen', 'taxmod-stock'), self::PLACE_FORM) . '</div>']];
+        $label = $this->materialLabelsAsk(self::PLACE_FORM, __('Ein Etikett je Material der angehakten Posten, beschriftet mit seinen eigenen Feldern.', 'taxmod-stock'));
+        $text  = sprintf(/* translators: %d: number of lots */ _n('%d Posten', '%d Posten', $count, 'taxmod-stock'), $count);
+
+        return str_replace(
+            ['name="action" id="' . self::PLACE_FORM . '-action"', '</form>'],
+            ['name="bulk" id="' . self::PLACE_FORM . '-action"', '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
+                . '<input type="hidden" name="return_tab" value="lagerorte"><input type="hidden" name="return_ort" value="' . esc_attr((string) $place) . '"></form>'],
+            self::bulkBar(self::PLACE_FORM, $text, '', $label + $move)
+        );
     }
 
     /** A child's row details: what its label would say, so the bulk print holds no surprise. */
@@ -2928,7 +2968,7 @@ final class StockPage
                 $inner = $where === $place ? '' : implode(' › ', array_slice(explode(' › ', $tree->pathOf($where)), $depth));
                 $count++;
                 $body .= '<tr draggable="true" data-taxmod-stock-lot="' . esc_attr(implode(':', [$lot, $where, $this->plain($quantity), $thing])) . '" style="cursor:grab">'
-                    . '<th scope="row" class="check-column"></th>'
+                    . '<th scope="row" class="check-column"><input type="checkbox" name="selected[]" value="' . esc_attr($lot . ':' . $where . ':' . $thing) . '" form="' . esc_attr(self::PLACE_FORM) . '" aria-label="' . esc_attr__('Auswählen', 'taxmod-stock') . '"></th>'
                     . '<td><a href="' . esc_url($this->thingUrl($thing, 'bestand')) . '">' . esc_html($things[$thing] ?? '#' . $thing) . '</a></td>'
                     . '<td>#' . esc_html((string) $lot) . '</td>'
                     . '<td>' . esc_html($inner) . $this->reservedMark($where, $flags) . '</td>'
@@ -2943,6 +2983,7 @@ final class StockPage
         return $this->placeHead($place, $tree)
             . '<p>' . esc_html(sprintf(/* translators: %d: lots at the place and below it */ _n('%d Posten hier und darunter.', '%d Posten hier und darunter.', $count, 'taxmod-stock'), $count))
             . ' <a href="' . esc_url($structure) . '">' . esc_html__('Lagerstruktur bearbeiten', 'taxmod-stock') . '</a></p>'
+            . ($count > 0 ? $this->placeLotsBar($place, $count) : '')
             . ListPage::table([[__('Material', 'taxmod-stock'), ''], [__('Posten', 'taxmod-stock'), '6em'], [__('Unterort', 'taxmod-stock'), '12em'], [__('Menge', 'taxmod-stock'), '6em']], $body === '' ? $this->noItems(5) : $body);
     }
 

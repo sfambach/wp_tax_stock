@@ -2416,6 +2416,41 @@ final class StockService
     }
 
     /**
+     * D-1224: «Umbuchen nach …» for the ticked lots of «Platzbestand» — each lot whole, from the place it lies at, to one
+     * place: one Vorgang «Umbuchung», one write.
+     *
+     * @param list<array{0: int, 1: int}> $lotsAt lot and the place it lies at
+     * @return array<string, mixed>
+     */
+    public function moveLotsWhole(array $lotsAt, int $location, string $today, string $title): array
+    {
+        if (! $this->table('location')->has($location)) {
+            throw StockError::notALocation($location);
+        }
+
+        $ledger = $this->ledger();
+        $rows   = [];
+
+        foreach ($lotsAt as [$lot, $from]) {
+            if (! $this->table('lot')->has($lot)) {
+                throw StockError::noLot($lot);
+            }
+
+            $rest = $ledger->restAt($lot, $from);
+
+            if ($rest > 0.0 && $from !== $location) {
+                $rows[] = new TransferRow($lot, $from, $location, rtrim(rtrim(number_format($rest, 6, '.', ''), '0'), '.'));
+            }
+        }
+
+        if ($rows === []) {
+            throw StockError::nothingToBook();
+        }
+
+        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $this->boundLots()));
+    }
+
+    /**
      * «Umbuchen nach …» for several materials at once (his wish 2026-11-03: «3 material wählen alle umbuchen nach»): all
      * of each one, every lot from every place it lies at, to one place — one Vorgang «Umbuchung», one write.
      *

@@ -2799,8 +2799,12 @@ final class StockPage
             . '<h2>' . esc_html($name) . '</h2>'
             . '<div style="text-align:right;margin-bottom:12px">' . $actions
             . ($form === '' ? ' <a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $record], admin_url('admin.php'))) . '">' . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a>' : '') . '</div>'
-            . '<table class="widefat striped" style="max-width:60em;margin-bottom:1em">' . $facts . '</table>'
-            . $form;
+            // Wide screens: the facts beside the form; narrow ones keep them above it.
+            . '<style>.taxmod-stock-printer-facts{max-width:60em;margin-bottom:1em}'
+            . '@media (min-width:1100px){.taxmod-stock-printer-detail{display:grid;grid-template-columns:minmax(0,1fr) minmax(18em,34em);gap:16px;align-items:start}'
+            . '.taxmod-stock-printer-detail>.taxmod-stock-printer-facts{grid-column:2;grid-row:1;margin:0}.taxmod-stock-printer-detail>.taxmod-stock-printer-form{grid-column:1;grid-row:1;min-width:0}}</style>'
+            . '<div class="taxmod-stock-printer-detail"><table class="widefat striped taxmod-stock-printer-facts">' . $facts . '</table>'
+            . '<div class="taxmod-stock-printer-form">' . $form . '</div></div>';
     }
 
     /**

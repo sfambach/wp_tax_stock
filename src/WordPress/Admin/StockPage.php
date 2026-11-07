@@ -181,8 +181,8 @@ final class StockPage
         // D-1202, his wish 2026-11-06: «Drucken» in the material and group stock lists — one label per ticked material.
         if ($kind === 'materialetiketten-service' || $kind === 'materialetiketten-pdf') {
             $this->printMaterialLabels(
-                // A ticked lot on «Platzbestand» posts «lot:place:thing» (D-1224); its label is its material's.
-                array_values(array_unique(array_filter(array_map(static fn (string $one): int => absint(str_contains($one, ':') ? (string) array_slice(explode(':', $one), -1)[0] : $one), array_map('strval', (array) ($_POST['selected'] ?? [])))))),
+                // A ticked lot on «Platzbestand» posts «lot:place:thing» (D-1224); since D-1225 it prints the label of that lot.
+                self::labelItems(array_map('strval', (array) ($_POST['selected'] ?? []))),
                 absint($_POST['label_choice'] ?? 0),
                 absint($_POST['label_printer'] ?? 0),
                 absint($_POST['copies'] ?? 0),
@@ -1241,12 +1241,35 @@ final class StockPage
     }
 
     /**
-     * The labels of the ticked materials: queued for the print service, or one PDF with a page each. Ends the request.
+     * D-1225: what the bulk print got ticked — a material id, or «lot:place:thing» for a lot; each lot once, each material once.
      *
-     * @param list<int> $things
+     * @param list<string> $ticked
+     * @return list<array{0: int, 1: int}> material, lot (0 for a material label)
      */
-    private function printMaterialLabels(array $things, int $chosen, int $printer, int $asked, bool $toService): void
+    private static function labelItems(array $ticked): array
     {
+        $items = [];
+        foreach ($ticked as $one) {
+            $parts = explode(':', $one);
+            $thing = absint((string) end($parts));
+            $lot   = count($parts) === 3 ? absint($parts[0]) : 0;
+            if ($thing > 0) {
+                $items[$lot > 0 ? 'p' . $lot : 'm' . $thing] = [$thing, $lot];
+            }
+        }
+
+        return array_values($items);
+    }
+
+    /**
+     * The labels of the ticked materials or lots: queued for the print service, or one PDF with a page each. Ends the request.
+     * D-1225: a lot prints as P-<lot> with its «Charge» (D-1223).
+     *
+     * @param list<array{0: int, 1: int}> $items material, lot (0 for a material label)
+     */
+    private function printMaterialLabels(array $items, int $chosen, int $printer, int $asked, bool $toService): void
+    {
+        $things = array_values(array_unique(array_map(static fn (array $item): int => $item[0], $items)));
         $last      = get_transient(self::LAST_LIST . get_current_user_id());
         $url       = is_string($last) && $last !== '' ? $last : $this->lastList();
         $url       = sanitize_key((string) ($_POST['return_tab'] ?? '')) === 'lagerorte' && absint($_POST['return_ort'] ?? 0) > 0
@@ -1277,12 +1300,16 @@ final class StockPage
         $count  = min(50, $asked > 0 ? $asked : max(1, (int) ($template['copies'] ?? 1)));
         $filled = [];
 
-        foreach ($things as $thing) {
-            $dialog = $templates->dialog($chosen, ['record' => $thing]);
+        $charges = $this->charges(array_values(array_filter(array_map(static fn (array $item): int => $item[1], $items))));
+        $lotKind = LabelPrefix::tryFrom('P');
+
+        foreach ($items as [$thing, $lot]) {
+            $asLot  = $lot > 0 && $lotKind !== null;
+            $dialog = $templates->dialog($chosen, ['record' => $thing] + ($asLot ? ['values' => [self::CHARGE_FIELD => sprintf(/* translators: %s: batch number */ __('Charge %s', 'taxmod-stock'), $charges[$lot] ?? 'P-' . $lot)]] : []));
             if ($printer > 0) {
                 $dialog['printer'] = array_diff_key($printers[$printer], ['allows' => 1, 'roll_name' => 1]);
             }
-            $label = LabelContent::of(LabelPrefix::from('M'), $thing, (string) ($names[$thing] ?? '#' . $thing), '');
+            $label = LabelContent::of($asLot ? $lotKind : LabelPrefix::from('M'), $asLot ? $lot : $thing, (string) ($names[$thing] ?? '#' . $thing), '');
             $own   = LabelButton::filled($label, array_diff_key($dialog, ['choices' => 1, 'chosen' => 1, 'printers' => 1]));
             if ($own !== null) {
                 $filled[] = [$label, $own];
@@ -2426,7 +2453,7 @@ final class StockPage
             . '<p class="description">' . esc_html__('Bucht jeden angehakten Posten ganz vom Ort, an dem er liegt, an den gewählten Ort um: ein Vorgang «Umbuchung», «Stornieren» bei den Vorgängen nimmt ihn zurück.', 'taxmod-stock') . '</p>';
         $move  = ['taxmod-stock-place-lots-move' => [__('Umbuchen nach …', 'taxmod-stock'), '<div class="alignleft actions">' . ListPage::dialogAction('taxmod-stock-place-lots-move', __('Umbuchen nach …', 'taxmod-stock'), __('Ausgewählte umbuchen', 'taxmod-stock'),
             $body, 'booking', 'postenumbuchen', __('Umbuchen', 'taxmod-stock'), self::PLACE_FORM) . '</div>']];
-        $label = $this->materialLabelsAsk(self::PLACE_FORM, __('Ein Etikett je Material der angehakten Posten, beschriftet mit seinen eigenen Feldern.', 'taxmod-stock'));
+        $label = $this->materialLabelsAsk(self::PLACE_FORM, __('Ein Etikett je angehaktem Posten: mit den Feldern seines Materials, seiner Charge und dem Code P-…', 'taxmod-stock'));
         $text  = sprintf(/* translators: %d: number of lots */ _n('%d Posten', '%d Posten', $count, 'taxmod-stock'), $count);
 
         return str_replace(

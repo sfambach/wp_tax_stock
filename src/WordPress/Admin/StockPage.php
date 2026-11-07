@@ -2709,12 +2709,20 @@ final class StockPage
         $templates = $this->stock->labelTemplates();
         $active    = $templates->printerList();
         $rolls     = $this->stock->rolls();
-        $open      = static fn (int $record): string => esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $record], admin_url('admin.php')));
+        // His word 2026-11-07: «warum kommt bei den drucker einstellung der tax und nicht eine detailseite ?» — a printer or a roll
+        // opens here, like a place does under Lagerstruktur.
+        $open      = static fn (int $record): string => esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'drucker', 'satz' => $record], admin_url('admin.php')));
+        $chosen    = absint($_GET['satz'] ?? 0);
+        $printers  = $this->stock->labels('label_printer');
+
+        if ($chosen > 0 && (isset($printers[$chosen]) || isset($rolls[$chosen]))) {
+            return $this->printerDetails($chosen, $printers, $rolls, $active, $templates);
+        }
         $body      = '';
 
         $setup = $s->hasField('printer_setup') ? $this->stock->table('label_printer') : null;
 
-        foreach ($this->stock->labels('label_printer') as $id => $name) {
+        foreach ($printers as $id => $name) {
             $printer = $active[$id] ?? null;
             $howto   = $setup === null ? '' : trim((string) $setup->first($id, $s->field('printer_setup')));
             $allowed = $printer === null ? [] : array_map(static fn (int $t): string => (string) ($templates->get($t)['name'] ?? '#' . $t), $printer['allows']);
@@ -2746,6 +2754,47 @@ final class StockPage
             . '<h2>' . esc_html__('Rollen', 'taxmod-stock') . '</h2>'
             . '<p class="description">' . esc_html__('Eine Rolle nennt ihre Breite und die Etiketten, die auf ihr gedruckt werden dürfen.', 'taxmod-stock') . '</p>'
             . ListPage::table([[__('Rolle', 'taxmod-stock'), '']], $rollBody === '' ? $this->noItems(1) : $rollBody);
+    }
+
+    /**
+     * The detail page of one printer or roll: its own fields in the record editor, and for a printer its loaded roll, the
+     * labels that roll allows, «Rolle wechseln» and its «Einrichtung» (D-1201).
+     *
+     * @param array<int, string>               $printers
+     * @param array<int, string>               $rolls
+     * @param array<int, array<string, mixed>> $active
+     */
+    private function printerDetails(int $record, array $printers, array $rolls, array $active, LabelTemplates $templates): string
+    {
+        $s       = $this->stock->structure();
+        $list    = add_query_arg(['page' => self::PAGE, 'tab' => 'drucker'], admin_url('admin.php'));
+        $back    = add_query_arg(['satz' => $record], $list);
+        $form    = (string) apply_filters('taxmod_record_editor', '', $record, $back);
+        $isRoll  = isset($rolls[$record]);
+        $name    = $isRoll ? $rolls[$record] : $printers[$record];
+        $facts   = '';
+        $actions = '';
+
+        if ($isRoll) {
+            $holders = array_filter($active, static fn (array $p): bool => ($p['roll_name'] ?? '') === $name);
+            $facts  .= '<tr><th scope="row" style="width:14em">' . esc_html__('Eingelegt in', 'taxmod-stock') . '</th><td>'
+                . esc_html(implode(', ', array_map(static fn (array $p): string => (string) $p['name'], $holders)) ?: '—') . '</td></tr>';
+        } else {
+            $printer = $active[$record] ?? null;
+            $allowed = $printer === null ? [] : array_unique(array_map(static fn (int $t): string => (string) ($templates->get($t)['name'] ?? '#' . $t), $printer['allows']));
+            $howto   = $s->hasField('printer_setup') ? trim((string) $this->stock->table('label_printer')->first($record, $s->field('printer_setup'))) : '';
+            $facts  .= '<tr><th scope="row" style="width:14em">' . esc_html__('Eingelegte Rolle', 'taxmod-stock') . '</th><td>' . esc_html($printer['roll_name'] ?? '—') . '</td></tr>'
+                . '<tr><th scope="row">' . esc_html__('Erlaubte Etiketten', 'taxmod-stock') . '</th><td>' . esc_html(implode(', ', $allowed) ?: '—') . '</td></tr>'
+                . ($howto === '' ? '' : '<tr><th scope="row">' . esc_html__('Einrichtung', 'taxmod-stock') . '</th><td>' . esc_html($howto) . '</td></tr>');
+            $actions = $this->changeRollDialog($record, $name, $rolls);
+        }
+
+        return '<p><a href="' . esc_url($list) . '">' . esc_html__('← Drucker und Rollen', 'taxmod-stock') . '</a></p>'
+            . '<h2>' . esc_html($name) . '</h2>'
+            . '<div style="text-align:right;margin-bottom:12px">' . $actions
+            . ($form === '' ? ' <a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $record], admin_url('admin.php'))) . '">' . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a>' : '') . '</div>'
+            . '<table class="widefat striped" style="max-width:60em;margin-bottom:1em">' . $facts . '</table>'
+            . $form;
     }
 
     /**

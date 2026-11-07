@@ -52,6 +52,9 @@ use TaxmodStock\WordPress\StockService;
  */
 final class StockPage
 {
+    /** D-1223: the layout field that prints a lot's batch number. */
+    public const CHARGE_FIELD = 'Charge';
+
     public const PAGE       = 'taxmod-stock';
     public const ACTION     = 'taxmod_stock_book';
     public const POSITIONS  = 'taxmod_stock_positions';
@@ -725,6 +728,52 @@ final class StockPage
         return $held;
     }
 
+    /**
+     * D-1223, his word 2026-11-07: «im grunde drucken wir etiketten für einen bestimmt bestand … charge material und die charge
+     * müsste auch textuell auf den etiketten stehen» — the label of one lot: its code is P-<lot>, its fields come from the material,
+     * and «Charge» carries the lot's batch number (D-1043).
+     */
+    private function lotLabel(int $thing, int $lot, string $label, string $charge): string
+    {
+        $s         = $this->stock->structure();
+        $templates = $this->stock->labelTemplates();
+        $first     = $s->hasNode('label_materials') ? $templates->firstIn($s->node('label_materials')) : 0;
+        $chosen    = $first > 0 ? $templates->get($first) : null;
+        $template  = $chosen === null ? [] : $templates->dialog($first, ['record' => $thing, 'values' => [self::CHARGE_FIELD => sprintf(/* translators: %s: batch number */ __('Charge %s', 'taxmod-stock'), $charge)]]);
+
+        return (string) apply_filters('taxmod_label_button', '', 'P', $lot, $label === '' ? '#' . $thing : $label, '', $chosen['copies'] ?? 1, $template);
+    }
+
+    /**
+     * D-1043: the batch number of each lot — the order number of the purchase it came from; a lot without one (an Inventur) is
+     * known by its own code. One pass over the orders, not one per lot (CD-7).
+     *
+     * @param list<int> $lots
+     * @return array<int, string>
+     */
+    private function charges(array $lots): array
+    {
+        $s       = $this->stock->structure();
+        $table   = $this->stock->table('lot');
+        $orders  = $this->stock->table('order');
+        $orderOf = [];
+        if ($s->hasField('order_lines') && $s->hasField('order_number')) {
+            foreach ($orders->ids() as $order) {
+                foreach ($orders->all($order, $s->field('order_lines')) as $purchase) {
+                    $orderOf[(int) $purchase] ??= $order;
+                }
+            }
+        }
+        $out = [];
+        foreach ($lots as $lot) {
+            $purchase = (int) $table->first($lot, $s->field('lot_purchase'));
+            $number   = isset($orderOf[$purchase]) ? trim((string) $orders->first($orderOf[$purchase], $s->field('order_number'))) : '';
+            $out[$lot] = $number !== '' ? $number : 'P-' . $lot;
+        }
+
+        return $out;
+    }
+
     /** D-997: one thing opened whole — the head fixed, the views as tabs below. */
     /**
      * D-1153 step 3, D-1160: «Etikett drucken» for a material — the first label of the category «Materialetiketten», its fields
@@ -1030,6 +1079,8 @@ final class StockPage
         $held    = $this->stock->reservedByThing()[$thing] ?? 0.0;
         $worth   = 0.0;
         $rows    = '';
+        $charges = $this->charges($ledger->lotsOf($thing));
+        $name    = (string) ($this->stock->recordLabels([$thing])[$thing] ?? '');
 
         foreach ($ledger->lotsOf($thing) as $lot) {
             $value    = $lots->first($lot, $s->field('lot_value'));
@@ -1045,7 +1096,8 @@ final class StockPage
                     . '<td>' . ($first ? esc_html($purchase === null ? __('Inventur', 'taxmod-stock') : '#' . $purchase) : '') . '</td>'
                     . '<td>' . ($first ? esc_html(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10)) : '') . '</td>'
                     . '<td style="text-align:right;white-space:nowrap">' . ($quantity > 0.0 ? $this->transferDialog($thing, $lot, $place, $quantity, $places) : '')
-                    . ' <a class="button" href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'verbrauch', 'thing' => $thing, 'lot' => $lot, 'place' => $place], admin_url('admin.php'))) . '">' . esc_html__('Ausbuchen', 'taxmod-stock') . '</a></td></tr>';
+                    . ' <a class="button" href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'verbrauch', 'thing' => $thing, 'lot' => $lot, 'place' => $place], admin_url('admin.php'))) . '">' . esc_html__('Ausbuchen', 'taxmod-stock') . '</a>'
+                    . ($first ? ' ' . $this->lotLabel($thing, $lot, $name, $charges[$lot] ?? '') : '') . '</td></tr>';
                 $first = false;
             }
 

@@ -129,8 +129,20 @@ final class Plugin
         return $links + match ($kind) {
             'O', 'K' => [__('Lagerort öffnen', 'taxmod-stock') => add_query_arg(['page' => StockPage::PAGE, 'tab' => 'lagerstruktur', 'ort' => $record], admin_url('admin.php'))],
             'M'      => [__('Material im Lager öffnen', 'taxmod-stock') => StockPage::thingUrl($record, 'bestand')],
+            // D-1223: a lot label opens the stock of its material, where the lot stands with its places.
+            'P'      => self::lotLink($record),
             default  => [],
         };
+    }
+
+    /** @return array<string, string> */
+    private static function lotLink(int $lot): array
+    {
+        $stock = new StockService();
+        $s     = $stock->structure();
+        $thing = $s->hasField('lot_thing') ? (int) $stock->table('lot')->first($lot, $s->field('lot_thing')) : 0;
+
+        return $thing > 0 ? [__('Charge im Lager öffnen', 'taxmod-stock') => StockPage::thingUrl($thing, 'bestand')] : [];
     }
 
     /**

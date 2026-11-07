@@ -21,6 +21,7 @@ use TaxmodStock\Core\LocationTree;
 use TaxmodStock\Core\LabelTemplates;
 use TaxmodStock\Core\OutputPlan;
 use TaxmodStock\Core\Pack;
+use TaxmodStock\Core\TitlePicture;
 use TaxmodStock\Core\FitLevel;
 use TaxmodStock\Core\PlaceFit;
 use TaxmodStock\Core\PlaceTypes;
@@ -278,17 +279,19 @@ final class StockService
     }
 
     /**
-     * The one place that knows a record's picture (D-1204): today the field «Titelbild»; if pictures become one ordered
-     * list, the first of it — and only this changes. One read for all records asked.
+     * The one place that knows a record's picture (D-1204): the first of the ordered list «Bilder» (D-1205); the old field
+     * «Titelbild» while it is still filled. One read for all records asked.
      *
      * @param list<int> $records
      * @return array<int, int> record → attachment id, 0 where there is none
      */
     public function titleImages(array $records): array
     {
-        $s = $this->structure();
+        $s      = $this->structure();
+        $title  = $s->hasField('title_image') ? $s->field('title_image') : 0;
+        $images = $s->hasField('images') ? $s->field('images') : 0;
 
-        if ($records === [] || ! $s->hasField('title_image')) {
+        if ($records === [] || ($title === 0 && $images === 0)) {
             return array_fill_keys($records, 0);
         }
 
@@ -296,8 +299,7 @@ final class StockService
         $out   = [];
 
         foreach ($records as $id) {
-            $value    = (string) $table->first($id, $s->field('title_image'));
-            $out[$id] = str_starts_with($value, 'media:') ? absint(substr($value, 6)) : 0;
+            $out[$id] = TitlePicture::of($title === 0 ? null : $table->first($id, $title), $images === 0 ? [] : $table->all($id, $images));
         }
 
         return $out;

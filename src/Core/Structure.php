@@ -43,7 +43,9 @@ final class Structure
 
     /** Fields the module uses when they are there and leaves out when they are not. */
     private const OPTIONAL_FIELDS = [
-        'description', 'title_image', 'lager_use', 'lager_location', 'transaction_project',
+        'description', 'title_image', 'lager_use',
+        // D-1205: the ordered picture list; its first picture is the title picture.
+        'images', 'lager_location', 'transaction_project',
         // D-1002: the test after the goods receipt; its result is the lot's condition.
         'lot_condition', 'lot_tested_on', 'lot_test_note',
         // D-1018: «Bezugsquellen» of the Lager view — firm and number — and the name of a firm.

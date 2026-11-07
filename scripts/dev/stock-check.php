@@ -773,6 +773,27 @@ preg_match('/name="lots" value="([0-9,]+)"><input type="hidden" name="from" valu
 $ledger = (new StockService())->ledger();
 $pruefe(array_sum(array_map(static fn (string $l): float => $ledger->restAt((int) $l, $r['platz']), explode(',', $paar[1] ?? '0'))) === 3.0, 'D-1181: «Umbuchen» of that line moves from both lots, oldest first');
 
+// D-1213: an Inventur taken back — one position, the lot stands at zero, the pair is hidden; a lot booked since is refused.
+$zaehlung = (new StockService())->bookInventory([new TaxmodStock\Core\InventoryRow($r['lm'], null, 'Dublette', '7', null, ''), new TaxmodStock\Core\InventoryRow($r['lm'], null, 'Dublette', '1', null, '')], '2026-11-07', 'Inventur Dublette');
+$s        = new StockService();
+$inventur = max(array_filter($s->table('transaction')->ids(), static fn (int $d): bool => (string) $s->table('transaction')->first($d, $s->structure()->field('label')) === 'Inventur Dublette'));
+[$zeile7, $zeile1] = array_map('intval', $s->table('transaction')->all($inventur, $s->structure()->field('transaction_lines')));
+$vorher   = $s->ledger()->stockOf($r['lm']);
+$s->cancelCount($inventur, $zeile7, '2026-11-07 10:00:00', 'Stefan');
+$s        = new StockService();
+$posten7  = (int) $s->table('line')->first($zeile7, $s->structure()->field('line_lot'));
+$pruefe($s->ledger()->stockOf($r['lm']) === $vorher - 7.0 && $s->ledger()->restOf($posten7) === 0.0, 'D-1213: the Storno of one count position takes its 7 out, the lot stands at zero');
+$pruefe(isset((new TaxmodStock\Core\Storno($s->structure()))->pairedLines($s->table('line'))[$zeile7]), 'D-1213: the count line and its Storno are a hidden pair');
+$posten1  = (int) $s->table('line')->first($zeile1, $s->structure()->field('line_lot'));
+$s->bookConsumption($r['lm'], $posten1, '1', Purpose::none(), '2026-11-07', 'Verbrauch Dublette');
+
+try {
+    (new StockService())->cancelCount($inventur, null, '2026-11-07 10:01:00', 'Stefan');
+    $pruefe(false, 'D-1213: a lot consumed since the count keeps it');
+} catch (StockError $e) {
+    $pruefe($e->reason === 'lot_booked_since_count' && $e->detail === (string) $posten1, 'D-1213: a lot consumed since the count keeps it, the lot is named');
+}
+
 // D-1158: without sizes on the kinds of place nothing is said — the warning never stands in the way of a move.
 $ohneMass = $ort('Passt-Regal', 0);
 $pruefe((new StockService())->misfits([$ort('Passt-Box', $ohneMass, true)], $ohneMass) === [] && (new StockService())->fitsNew(0, $ohneMass) === null, 'D-1158: places without a kind or sizes give no fit warning');

@@ -10,6 +10,7 @@ namespace TaxmodStock\Core;
  * flowchart LR
  *   U["Umbuchung: −A, +B"] -.-> S["Storno: −B (von +B), +A (von −A)"]
  *   V["Verbrauch: −n an A"] -.-> T["Storno: +n an A (von −n)"]
+ *   I["Inventur: +n Posten P"] -.-> J["Storno: −n Posten P (von +n)"]
  * ```
  */
 final class Storno
@@ -128,6 +129,71 @@ final class Storno
         }
 
         return $rows === [] ? throw StockError::notCancellable($deal) : $rows;
+    }
+
+    /**
+     * The rows of the Storno of a count (D-1036): every line «+Menge» of the Inventur — or only `$line` — goes out again.
+     * A lot with any booking since the count that is not itself cancelled keeps its count: that booking is taken back first.
+     *
+     * @return list<array{lot: int, place: int|null, quantity: string, reverses: int}>
+     */
+    public function countRows(int $deal, ?int $line, Table $transactions, Table $lines): array
+    {
+        $s = $this->structure;
+
+        if (! $s->hasField('line_reverses')) {
+            throw StockError::notConfigured('fields.line_reverses');
+        }
+
+        if (! $transactions->has($deal) || (int) $transactions->first($deal, $s->field('transaction_kind')) !== $s->value('kind_count')) {
+            throw StockError::notCancellable($deal);
+        }
+
+        $paired = $this->pairedLines($lines);
+        $mine   = array_map('intval', $transactions->all($deal, $s->field('transaction_lines')));
+        $mine   = array_values(array_filter($mine, static fn (int $id): bool => ! isset($paired[$id])));
+
+        if ($line !== null) {
+            if (! in_array($line, array_map('intval', $transactions->all($deal, $s->field('transaction_lines'))), true)) {
+                throw StockError::notCancellable($deal);
+            }
+
+            $mine = in_array($line, $mine, true) ? [$line] : throw StockError::alreadyCancelled($deal);
+        }
+
+        if ($mine === []) {
+            throw StockError::alreadyCancelled($deal);
+        }
+
+        $own   = array_flip($mine);
+        $later = [];
+
+        foreach ($lines->ids() as $other) {
+            if (! isset($own[$other]) && ! isset($paired[$other])) {
+                $later[(int) $lines->first($other, $s->field('line_lot'))] = true;
+            }
+        }
+
+        $where = $s->hasField('line_location') ? $s->field('line_location') : null;
+        $rows  = [];
+
+        foreach ($mine as $id) {
+            $lot      = (int) $lines->first($id, $s->field('line_lot'));
+            $quantity = trim((string) $lines->first($id, $s->field('line_quantity')));
+            $place    = $where === null ? 0 : (int) $lines->first($id, $where);
+
+            if ($lot <= 0 || str_starts_with($quantity, '-') || (float) $quantity <= 0.0) {
+                throw StockError::notCancellable($deal);
+            }
+
+            if (isset($later[$lot])) {
+                throw StockError::lotBookedSinceCount($lot);
+            }
+
+            $rows[] = ['lot' => $lot, 'place' => $place > 0 ? $place : null, 'quantity' => '-' . $quantity, 'reverses' => $id];
+        }
+
+        return $rows;
     }
 
     private function placeOf(int $line, int $lot, Table $lines, Ledger $ledger): int

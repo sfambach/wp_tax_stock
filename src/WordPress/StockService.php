@@ -2315,6 +2315,23 @@ final class StockService
     }
 
     /**
+     * D-1036 for a count: the counted goods go out again, the whole Inventur or one position (`$line`); who and when
+     * stand in the Storno.
+     *
+     * @return array<string, mixed>
+     */
+    public function cancelCount(int $deal, ?int $line, string $now, string $who): array
+    {
+        $s     = $this->structure();
+        $deals = $this->table('transaction');
+        $rows  = (new Storno($s))->countRows($deal, $line, $deals, $this->table('line'));
+        /* translators: %s: the name of the Vorgang taken back */
+        $title = sprintf(__('Storno: %s', 'taxmod-stock'), (string) ($deals->first($deal, $s->field('label')) ?? '#' . $deal));
+
+        return $this->model->write((new Bookings($this->structureWithKinds(), $now))->cancelCount($rows, $title, $who . ', ' . $now));
+    }
+
+    /**
      * Where a consumption takes from when no place is named: where the lot came in if something lies there, else where
      * most lies — a reserved place only when nothing lies elsewhere or the purpose is its Bezug, so a refusal names it.
      */

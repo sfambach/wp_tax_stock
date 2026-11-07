@@ -159,6 +159,12 @@ final class StockError extends \RuntimeException
         return new self('already_booked', '');
     }
 
+    /** D-1036: a counted lot booked since the count keeps its count until that booking is cancelled. */
+    public static function lotBookedSinceCount(int $lot): self
+    {
+        return new self('lot_booked_since_count', (string) $lot);
+    }
+
     public static function nothingToUnbook(): self
     {
         return new self('nothing_to_unbook', '');

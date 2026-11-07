@@ -228,6 +228,7 @@ final class StockPage
                 'reservierungstorno' => $this->stock->cancelReservation(absint($_POST['transaction'] ?? 0), absint($_POST['line'] ?? 0) ?: null, current_time('Y-m-d H:i:s'), wp_get_current_user()->display_name),
                 'storno'       => $this->stock->cancelTransfer(absint($_POST['transaction'] ?? 0), current_time('Y-m-d H:i:s'), wp_get_current_user()->display_name),
                 'verbrauchstorno' => $this->stock->cancelConsumption(absint($_POST['transaction'] ?? 0), current_time('Y-m-d H:i:s'), wp_get_current_user()->display_name),
+                'inventurstorno' => $this->stock->cancelCount(absint($_POST['transaction'] ?? 0), absint($_POST['line'] ?? 0) ?: null, current_time('Y-m-d H:i:s'), wp_get_current_user()->display_name),
                 'wareneingang' => $this->stock->bookReceipt(
                     absint($_POST['order'] ?? 0),
                     $this->receiptChoices(),
@@ -285,7 +286,7 @@ final class StockPage
                 'orteverschieben' => __('Verschoben: die gewählten Orte liegen jetzt dort, mit allem, was in ihnen liegt.', 'taxmod-stock'),
                 'umbuchen'       => __('Umgebucht: ein Vorgang «Umbuchung» mit Abgang am alten und Zugang am neuen Ort.', 'taxmod-stock'),
                 'sammelumbuchen' => __('Umgebucht: alle gewählten Materialien liegen jetzt am neuen Ort, als ein Vorgang «Umbuchung».', 'taxmod-stock'),
-                'storno', 'reservierungstorno', 'verbrauchstorno' => __('Storniert: die Gegenbuchung hebt den Vorgang auf, beide bleiben im Protokoll.', 'taxmod-stock'),
+                'storno', 'reservierungstorno', 'verbrauchstorno', 'inventurstorno' => __('Storniert: die Gegenbuchung hebt den Vorgang auf, beide bleiben im Protokoll.', 'taxmod-stock'),
                 'reservieren'    => __('Reserviert: der verfügbare Bestand sinkt, der Bestand bleibt.', 'taxmod-stock'),
                 'ort'            => __('Lagerort angelegt.', 'taxmod-stock'),
                 'platzart'       => __('Platzart angelegt; die weiteren Felder stehen jetzt zum Ausfüllen da.', 'taxmod-stock'),
@@ -323,7 +324,7 @@ final class StockPage
                 'verschieben'  => ['material', ['thing' => $thing, 'view' => 'daten']],
                 'kopieren'     => ['material', ['thing' => $copy, 'view' => 'bearbeiten']],
                 'lager'        => ['material', ['thing' => $thing, 'view' => 'lager']],
-                'umbuchen', 'storno', 'verbrauchstorno' => ['material', ['thing' => $thing, 'view' => 'bestand']],
+                'umbuchen', 'storno', 'verbrauchstorno', 'inventurstorno' => ['material', ['thing' => $thing, 'view' => 'bestand']],
                 'reservieren', 'reservierungstorno' => sanitize_key((string) ($_POST['back'] ?? '')) === 'bestand' && $thing > 0
                     ? ['material', ['thing' => $thing, 'view' => 'bestand']] : ['reservierungen', []],
                 'wareneingang', 'aufteilen', 'zuordnen', 'nichteinlagern', 'einlagern' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
@@ -344,7 +345,7 @@ final class StockPage
                 'rollewechseln'     => ['drucker', []],
                 'umhaengen', 'orteverschieben', 'ort', 'reservieren', 'freigeben' => ['lagerstruktur', []],
                 'aufteilen'         => ['wareneingang', ['order' => absint($_POST['order'] ?? 0), 'split' => absint($_POST['purchase'] ?? 0)]],
-                'lager', 'umbuchen', 'storno', 'verbrauchstorno' => ['material', ['thing' => $thing, 'view' => $kind === 'lager' ? 'lager' : 'bestand']],
+                'lager', 'umbuchen', 'storno', 'verbrauchstorno', 'inventurstorno' => ['material', ['thing' => $thing, 'view' => $kind === 'lager' ? 'lager' : 'bestand']],
                 // D-1073: refused because values would fall — named, nothing moved (his doubt 2026-11-01: «das verschieben ist problematisch»).
                 'verschieben'       => ['material', ['thing' => $thing, 'view' => 'daten']],
                 'verbrauch'         => ['verbrauch', ['thing' => $thing]],
@@ -1505,24 +1506,25 @@ final class StockPage
     }
 
     /** D-1036: «Stornieren» of a Vorgang, asked in the shared dialog; the Storno names who and when. */
-    private function stornoDialog(int $thing, int $deal, string $what, string $booking = 'storno'): string
+    private function stornoDialog(int $thing, int $deal, string $what, string $booking = 'storno', ?int $line = null): string
     {
         if (! method_exists(ListPage::class, 'dialogAction')) {
             return '';
         }
 
         $body = '<input type="hidden" name="thing" value="' . esc_attr((string) $thing) . '"><input type="hidden" name="transaction" value="' . esc_attr((string) $deal) . '">'
+            . ($line === null ? '' : '<input type="hidden" name="line" value="' . esc_attr((string) $line) . '">')
             . '<p style="margin:0">' . esc_html($what) . '</p><p class="description">' . esc_html__('Eine Gegenbuchung hebt den Vorgang auf; beide bleiben stehen und werden in den Listen ausgeblendet.', 'taxmod-stock') . '</p>';
 
         return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'
             . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">' . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
-            . ListPage::dialogAction('taxmod-stock-storno-' . $deal, __('Stornieren', 'taxmod-stock'), __('Vorgang stornieren', 'taxmod-stock'), $body, 'booking', $booking, __('Stornieren', 'taxmod-stock'))
+            . ListPage::dialogAction('taxmod-stock-storno-' . $deal . '-' . ($line ?? 0), __('Stornieren', 'taxmod-stock'), $line === null ? __('Vorgang stornieren', 'taxmod-stock') : __('Position stornieren', 'taxmod-stock'), $body, 'booking', $booking, __('Stornieren', 'taxmod-stock'))
             . '</form>';
     }
 
     /**
      * The movements per lot: date, kind, place and quantity of each line, read from the Vorgänge in one go (CD-7). A Storno
-     * and what it cancels are left out (D-1036); an Umbuchung and a consumption offer their own Storno.
+     * and what it cancels are left out (D-1036); an Umbuchung and a consumption offer their own Storno, a count one per lot.
      *
      * @param list<int> $lots
      * @return array<int, string> lot → its movements as a list
@@ -1563,9 +1565,13 @@ final class StockPage
             $place    = $where === null ? 0 : (int) $lines->first($line, $where);
             $transfer = $deal !== null && $s->hasValue('kind_transfer') && $kind === $s->value('kind_transfer');
             $consumed = $deal !== null && $kind === $s->value('kind_consumption') && $s->hasField('line_reverses');
-            // One Storno per Umbuchung or consumption, at its first line on this lot.
-            $storno   = ($transfer || $consumed) && ! isset($offered[$deal])
-                ? ' ' . $this->stornoDialog($thing, $deal, (string) $deals->first($deal, $s->field('label')), $transfer ? 'storno' : 'verbrauchstorno') : '';
+            $counted  = $deal !== null && $kind === $s->value('kind_count') && $s->hasField('line_reverses');
+            // One Storno per Umbuchung or consumption, at its first line on this lot; a count only for this lot's position.
+            $storno   = match (true) {
+                $counted                                         => ' ' . $this->stornoDialog($thing, $deal, sprintf(/* translators: 1: the Inventur, 2: record id of the lot */ __('%1$s · Posten #%2$s', 'taxmod-stock'), (string) $deals->first($deal, $s->field('label')), $lot), 'inventurstorno', $line),
+                ($transfer || $consumed) && ! isset($offered[$deal]) => ' ' . $this->stornoDialog($thing, $deal, (string) $deals->first($deal, $s->field('label')), $transfer ? 'storno' : 'verbrauchstorno'),
+                default                                          => '',
+            };
 
             if ($transfer || $consumed) {
                 $offered[$deal] = true;

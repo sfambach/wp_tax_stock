@@ -410,6 +410,29 @@ final class Bookings
      */
     public function cancelConsumption(array $rows, string $title, string $note): array
     {
+        return $this->reversal($rows, $title, $note, 'kind_consumption');
+    }
+
+    /**
+     * D-1036 for a count: a Vorgang «Inventur» whose lines take out what each counted line put in, naming the line it
+     * cancels. The lot stays, at zero.
+     *
+     * @param list<array{lot: int, place: int|null, quantity: string, reverses: int}> $rows
+     * @return list<array<string, mixed>>
+     */
+    public function cancelCount(array $rows, string $title, string $note): array
+    {
+        return $this->reversal($rows, $title, $note, 'kind_count');
+    }
+
+    /**
+     * A Storno Vorgang of `$kind`: per row one line naming the line it cancels (D-1036).
+     *
+     * @param list<array{lot: int, place: int|null, quantity: string, reverses: int}> $rows
+     * @return list<array<string, mixed>>
+     */
+    private function reversal(array $rows, string $title, string $note, string $kind): array
+    {
         $s = $this->structure;
 
         if (! $s->hasField('line_reverses')) {
@@ -428,7 +451,7 @@ final class Bookings
 
         $extra = $note !== '' && $s->hasField('description') ? [(string) $s->field('description') => $note] : [];
 
-        return $this->finish($title, 'kind_consumption', $extra);
+        return $this->finish($title, $kind, $extra);
     }
 
     /**

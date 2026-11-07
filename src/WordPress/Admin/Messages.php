@@ -60,6 +60,8 @@ final class Messages
             'already_booked'            => __('Von dieser Bestellung ist schon etwas eingebucht — sie bleibt angekommen.', 'taxmod-stock'),
             'nothing_to_unbook'         => __('Von dieser Bestellung ist nichts eingebucht.', 'taxmod-stock'),
             /* translators: %s: record id of the lot */
+            /* translators: %s: record id of the lot */
+            'lot_booked_since_count'    => sprintf(__('Bestandsposten #%s hat seit der Inventur weitere Buchungen (Verbrauch, Umbuchung, Reservierung) — erst diese stornieren.', 'taxmod-stock'), $error->detail),
             'lot_already_used'          => sprintf(__('Bestandsposten #%s wurde seit dem Wareneingang verbraucht oder gezählt — der Wareneingang bleibt.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id of the thing */
             'not_enough_for_build'      => sprintf(__('Material #%s liegt nicht in der benötigten Menge im Gebinde — nichts gebucht.', 'taxmod-stock'), $error->detail),

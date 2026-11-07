@@ -1104,7 +1104,8 @@ final class StockPage
             $first    = true;
 
             foreach ($where as $place => $quantity) {
-                $rows .= '<tr><th scope="row" class="check-column"></th><td>' . ($first ? '#' . esc_html((string) $lot) : '') . '</td><td>' . esc_html($places[$place] ?? '—') . $this->reservedMark($place, $flags) . '</td><td>' . esc_html($this->number($quantity)) . '</td>'
+                // D-1227: a lot's further places and its «Vorgänge» move with its first row when the list is sorted or grouped.
+                $rows .= '<tr' . ($first ? '' : ' class="taxmod-list-more"') . '><th scope="row" class="check-column"></th><td>' . ($first ? '#' . esc_html((string) $lot) : '') . '</td><td>' . esc_html($places[$place] ?? '—') . $this->reservedMark($place, $flags) . '</td><td>' . esc_html($this->number($quantity)) . '</td>'
                     . '<td>' . ($first ? esc_html($amount ?? '—') : '') . '</td>'
                     . '<td>' . ($first ? esc_html($purchase === null ? __('Inventur', 'taxmod-stock') : '#' . $purchase) : '') . '</td>'
                     . '<td>' . ($first ? esc_html(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10)) : '') . '</td>'
@@ -1114,7 +1115,7 @@ final class StockPage
                 $first = false;
             }
 
-            $rows .= '<tr><th scope="row" class="check-column"></th><td></td><td colspan="6"><details><summary>' . esc_html__('Vorgänge', 'taxmod-stock') . '</summary>' . ($moves[$lot] ?? '—') . '</details></td></tr>';
+            $rows .= '<tr class="taxmod-list-more"><th scope="row" class="check-column"></th><td></td><td colspan="6"><details><summary>' . esc_html__('Vorgänge', 'taxmod-stock') . '</summary>' . ($moves[$lot] ?? '—') . '</details></td></tr>';
         }
 
         // *The modeller's shared tiles (D-1149): nothing reserved is the shrunk tile, a stock below its minimum the red one.*
@@ -1131,7 +1132,7 @@ final class StockPage
             . $this->reservedOf($thing, $ledger, $flags)
             . ($rows === '' ? '<p>' . esc_html__('Kein Bestandsposten.', 'taxmod-stock') . '</p>' : ListPage::table([
                 [__('Posten', 'taxmod-stock'), '6em'], [__('Ort', 'taxmod-stock'), ''], [__('Menge', 'taxmod-stock'), '6em'], [__('Wert je Stück', 'taxmod-stock'), '8em'],
-                [__('Kauf', 'taxmod-stock'), '7em'], [__('Eingang', 'taxmod-stock'), '7em'],
+                [__('Kauf', 'taxmod-stock'), '7em'], [__('Buchungsdatum', 'taxmod-stock'), '8em'],
             ], $rows));
     }
 
@@ -3000,6 +3001,7 @@ final class StockPage
                     . '<td>#' . esc_html((string) $lot) . '</td>'
                     . '<td>' . esc_html($inner) . $this->reservedMark($where, $flags) . '</td>'
                     . '<td>' . esc_html($this->number($quantity)) . '</td>'
+                    . '<td>' . esc_html(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10)) . '</td>'
                     . '<td style="text-align:right;white-space:nowrap">' . $this->transferDialog($thing, $lot, $where, $quantity, $places, $place)
                     . ' <a class="button" href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'verbrauch', 'thing' => $thing, 'lot' => $lot, 'place' => $where], admin_url('admin.php'))) . '">' . esc_html__('Ausbuchen', 'taxmod-stock') . '</a></td></tr>';
             }
@@ -3011,7 +3013,7 @@ final class StockPage
             . '<p>' . esc_html(sprintf(/* translators: %d: lots at the place and below it */ _n('%d Posten hier und darunter.', '%d Posten hier und darunter.', $count, 'taxmod-stock'), $count))
             . ' <a href="' . esc_url($structure) . '">' . esc_html__('Lagerstruktur bearbeiten', 'taxmod-stock') . '</a></p>'
             . ($count > 0 ? $this->placeLotsBar($place, $count) : '')
-            . ListPage::table([[__('Material', 'taxmod-stock'), ''], [__('Posten', 'taxmod-stock'), '6em'], [__('Unterort', 'taxmod-stock'), '12em'], [__('Menge', 'taxmod-stock'), '6em']], $body === '' ? $this->noItems(5) : $body);
+            . ListPage::table([[__('Material', 'taxmod-stock'), ''], [__('Posten', 'taxmod-stock'), '6em'], [__('Unterort', 'taxmod-stock'), '12em'], [__('Menge', 'taxmod-stock'), '6em'], [__('Buchungsdatum', 'taxmod-stock'), '8em']], $body === '' ? $this->noItems(5) : $body);
     }
 
     /**

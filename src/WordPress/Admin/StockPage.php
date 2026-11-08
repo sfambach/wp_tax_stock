@@ -787,6 +787,39 @@ final class StockPage
         return $out;
     }
 
+    /**
+     * D-1235: one label for the print thread's «print-label» — a material (M) or a lot (P), on this label of «Materialetiketten»
+     * and, when given, this printer; built as the dialog builds it. Null when the code, the label or the printer does not fit.
+     *
+     * @return array{title: string, template: array<string, mixed>}|null
+     */
+    public function labelFor(string $prefix, int $id, int $template, int $printer): ?array
+    {
+        $s         = $this->stock->structure();
+        $templates = $this->stock->labelTemplates();
+        $chosen    = $templates->get($template);
+        if ($chosen === null || ! $s->hasNode('label_materials') || ($chosen['node'] ?? 0) !== $s->node('label_materials')) {
+            return null;
+        }
+        $lot   = $prefix === 'P' ? $id : 0;
+        $thing = $prefix === 'M' ? $id : ($lot > 0 ? (int) ($this->stock->ledger()->thingOf($lot) ?? 0) : 0);
+        if ($thing <= 0) {
+            return null;
+        }
+        $more   = ['record' => $thing] + ($lot > 0 ? ['values' => [self::CHARGE_FIELD => sprintf(/* translators: %s: batch number */ __('Charge: %s', 'taxmod-stock'), $this->charges([$lot])[$lot] ?? 'P-' . $lot)]] : []);
+        $dialog = $templates->dialog($template, $more);
+        if ($printer > 0) {
+            $one = $dialog['printers'][$printer] ?? null;
+            if (! is_array($one) || ! in_array($template, $one['allows'] ?? [], true)) {
+                return null;
+            }
+            $dialog['printer'] = array_diff_key($one, ['allows' => 1, 'roll_name' => 1]);
+        }
+        $title = $this->stock->recordLabels([$thing])[$thing] ?? '';
+
+        return ['title' => $title === '' ? '#' . $thing : $title, 'template' => array_diff_key($dialog, ['choices' => 1, 'chosen' => 1, 'printers' => 1])];
+    }
+
     /** D-997: one thing opened whole — the head fixed, the views as tabs below. */
     /**
      * D-1153 step 3, D-1160: «Etikett drucken» for a material — the first label of the category «Materialetiketten», its fields

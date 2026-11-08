@@ -633,6 +633,7 @@ $pruefe(! has_filter('taxmod_label_button') || str_contains($html, 'value="P-' .
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => $bc, 'view' => 'bestand'];
 $bestandHtml = (new StockPage())->render();
 $pruefe(str_contains($bestandHtml, 'id="taxmod-stock-lot-' . $posten . '"'), 'the material\'s Bestand marks each lot\'s line, so the link lands on it');
+$pruefe(str_contains($bestandHtml, '>#' . $posten . '</td><td>BC547C'), 'the material\'s Bestand names the material in each lot\'s line (his wish 2026-11-08)');
 // D-1230, his word «drucken knopf durch icon drucker … umbuchen zwei gegenläufige pfeile … ein icon für ausbuchen».
 if (defined(Taxmod\WordPress\Admin\ListPage::class . '::ICON_TRANSFER')) {
     $pruefe(str_contains($bestandHtml, 'dashicons-leftright') && str_contains($bestandHtml, 'dashicons-migrate') && str_contains($bestandHtml, '<span class="screen-reader-text">Ausbuchen</span>'), 'D-1230: Umbuchen and Ausbuchen of a lot are drawn as their icons, the word kept for the screen reader');

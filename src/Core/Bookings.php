@@ -54,7 +54,7 @@ final class Bookings
             $value    = $row->value === null || $row->value === '' ? null : $this->moneyPart(Quantity::amount($row->value), null);
             $lot      = $this->lot($row->name, $thing, null, $value, $row->note);
 
-            $this->line($row->name, $lot, $quantity, $quantity);
+            $this->line($row->name, $lot, $quantity, $quantity, $this->homeOf($lot));
         }
 
         return $this->finish($title, 'kind_count', []);
@@ -116,7 +116,7 @@ final class Bookings
 
             $lot = $this->lot($name, $thing, (string) $purchase, $price, '', $choice->location);
 
-            $this->line($name, $lot, $quantity, null);
+            $this->line($name, $lot, $quantity, null, $this->homeOf($lot));
         }
 
         $all    = $inOrder !== [] && array_diff($inOrder, array_keys($choices), array_keys($received)) === [];
@@ -670,6 +670,20 @@ final class Bookings
     }
 
     /** @param array<string, array<string, string>>|null $value */
+    /**
+     * Where each lot of this booking came in. D-1233, the report 2026-11-08 (HD15, SMD parts): an Umbuchung and then a changed «Lagerort»
+     * of the lot counted it twice at the new place — the first line had no place of its own and followed the lot's field. So the
+     * first line names its place too; the lot's field no longer moves anything booked.
+     *
+     * @var array<string, int>
+     */
+    private array $homes = [];
+
+    private function homeOf(string $lot): ?int
+    {
+        return $this->homes[$lot] ?? null;
+    }
+
     private function lot(string $name, string $thing, ?string $purchase, ?array $value, string $note, ?int $location = null): string
     {
         $s   = $this->structure;
@@ -696,6 +710,7 @@ final class Bookings
 
         $this->changes[] = ['op' => 'create_record', 'ref' => $ref, 'node' => $s->node('lot')];
         $this->changes[] = ['op' => 'set_values', 'record' => '@' . $ref, 'values' => $values];
+        $this->homes['@' . $ref] = (int) $values[(string) $s->field('lot_location')];
 
         return '@' . $ref;
     }

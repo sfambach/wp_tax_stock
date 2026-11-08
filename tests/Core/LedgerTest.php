@@ -60,4 +60,19 @@ final class LedgerTest extends TestCase
 
         return new Ledger($s, $lots, new Table($lines));
     }
+
+    #[\PHPUnit\Framework\Attributes\Test]
+    public function a_lot_whose_place_was_changed_by_hand_after_an_umbuchung_is_named(): void
+    {
+        $s     = Fixture::structure();
+        // Came in at 1 (line 80 has no place), moved 1 → 2, then the lot's field was set to 2 by hand.
+        $lots  = new \TaxmodStock\Core\Table([60 => [$s->field('lot_thing') => ['5'], $s->field('lot_location') => ['2']]]);
+        $lines = new \TaxmodStock\Core\Table([
+            80 => [$s->field('line_lot') => ['60'], $s->field('line_quantity') => ['3']],
+            81 => [$s->field('line_lot') => ['60'], $s->field('line_quantity') => ['-3'], $s->field('line_location') => ['1']],
+            82 => [$s->field('line_lot') => ['60'], $s->field('line_quantity') => ['3'], $s->field('line_location') => ['2']],
+        ]);
+
+        self::assertSame([60], (new \TaxmodStock\Core\Ledger($s, $lots, $lines))->misplaced());
+    }
 }

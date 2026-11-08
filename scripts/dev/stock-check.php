@@ -257,6 +257,9 @@ $pruefe((new StockService())->ledger()->stockOf($r['lm']) === 0.0, 'the refused 
 $s   = new StockService();
 $lot = $s->ledger()->lotsOf($r['lm'])[0] ?? 0;
 $pruefe($s->ledger()->stockOf($r['lm']) === 5.0, 'receiving purchase B books its 5 pieces on its Modell');
+// His report 2026-11-08 (HD15): the receipt line names its place, so a «Lagerort» changed later on the lot moves nothing booked.
+$weZeile = array_values(array_filter($s->table('line')->ids(), static fn (int $l): bool => (int) $s->table('line')->first($l, $r['p_lot']) === $lot));
+$pruefe(count($weZeile) === 1 && $s->table('line')->first($weZeile[0], $r['p_lo']) === (string) $r['lager'], 'the receipt line names the place the lot came in');
 $wert = $s->table('lot')->first($lot, $r['l_wert']);
 $pruefe($wert !== null && $s->table('money')->first((int) $wert, 4234) === '1.8', 'the lot carries the purchase price per piece');
 $pruefe($s->table('order')->first($r['best'], $r['o_stat']) === (string) $r['s_teil'], 'the order is partly received');

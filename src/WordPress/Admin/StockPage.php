@@ -1132,6 +1132,7 @@ final class StockPage
             $tile(__('Mindestbestand', 'taxmod-stock'), $min === null ? '—' : $min . ' ' . ($low ? '✗' : '✓'), $min === null ? TileTone::Empty : ($low ? TileTone::Alert : TileTone::Normal)),
         ])
             . $this->reservedOf($thing, $ledger, $flags)
+            . $this->misplacedNotice(array_values(array_intersect($ledger->misplaced(), $ledger->lotsOf($thing))))
             . ($rows === '' ? '<p>' . esc_html__('Kein Bestandsposten.', 'taxmod-stock') . '</p>' : ListPage::table([
                 [__('Posten', 'taxmod-stock'), '6em'], [__('Material', 'taxmod-stock'), ''], [__('Ort', 'taxmod-stock'), ''], [__('Menge', 'taxmod-stock'), '6em'], [__('Wert je Stück', 'taxmod-stock'), '8em'],
                 [__('Kauf', 'taxmod-stock'), '7em'], [__('Buchungsdatum', 'taxmod-stock'), '8em'],
@@ -1704,6 +1705,20 @@ final class StockPage
         return self::icon('ICON_BOOK_OUT') === '' || ! method_exists(ListPage::class, 'iconLink')
             ? '<a class="button" href="' . esc_url($url) . '">' . esc_html__('Ausbuchen', 'taxmod-stock') . '</a>'
             : ListPage::iconLink(self::icon('ICON_BOOK_OUT'), __('Ausbuchen', 'taxmod-stock'), $url);
+    }
+
+    /**
+     * D-1233: a lot moved by Umbuchung and then given another «Lagerort» by hand counts twice at the new place.
+     *
+     * @param list<int> $lots
+     */
+    private function misplacedNotice(array $lots): string
+    {
+        return $lots === [] ? '' : '<div class="notice notice-error inline"><p>' . esc_html(sprintf(
+            /* translators: %s: lot numbers */
+            __('Posten %s: der Lagerort wurde nach einer Umbuchung direkt geändert, darum ist ein Platz negativ und ein anderer doppelt gezählt. Bitte den Lagerort des Postens zurücksetzen und nur per «Umbuchen» bewegen.', 'taxmod-stock'),
+            implode(', ', array_map(static fn (int $lot): string => '#' . $lot, $lots))
+        )) . '</p></div>';
     }
 
     /** A lot's own line in its material's Bestand. */

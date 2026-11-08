@@ -102,6 +102,17 @@ final class Ledger
         return array_filter($this->at[$lot] ?? [], static fn (float $q): bool => abs($q) > self::NOTHING);
     }
 
+    /**
+     * Lots below nothing at some place — what an Umbuchung leaves when the lot's «Lagerort» was changed by hand afterwards
+     * (his report 2026-11-08): the old place goes negative, the new one counts twice.
+     *
+     * @return list<int>
+     */
+    public function misplaced(): array
+    {
+        return array_keys(array_filter($this->at, static fn (array $places): bool => array_filter($places, static fn (float $q): bool => $q < -self::NOTHING) !== []));
+    }
+
     public function restAt(int $lot, int $place): float
     {
         return $this->at[$lot][$place] ?? 0.0;

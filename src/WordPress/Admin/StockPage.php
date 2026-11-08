@@ -749,6 +749,19 @@ final class StockPage
      * müsste auch textuell auf den etiketten stehen» — the label of one lot: its code is P-<lot>, its fields come from the material,
      * and «Charge» carries the lot's batch number (D-1043).
      */
+    /**
+     * How many labels, as the model's own integer field (his word 2026-11-08: «kein Standard-Int-Feld. Sondern wieder was
+     * Eigenes.»); empty means each record's own number, said beside the field.
+     */
+    private static function copiesInput(string $formId, string $emptyMeans): string
+    {
+        $input = class_exists(\Taxmod\Core\Renderer\DialogNumber::class)
+            ? \Taxmod\Core\Renderer\DialogNumber::input('copies', null, 1, 50, $formId)
+            : '<input type="number" name="copies" min="1" max="50" step="1" form="' . esc_attr($formId) . '">';
+
+        return $input . ' <span class="description">' . esc_html($emptyMeans) . '</span>';
+    }
+
     private function lotLabel(int $thing, int $lot, string $label, string $charge): string
     {
         $s         = $this->stock->structure();
@@ -1289,7 +1302,7 @@ final class StockPage
         $field   = static fn (string $title, string $control): string => '<label style="display:block;margin-bottom:.5em"><span style="display:block;font-weight:600">' . esc_html($title) . '</span>' . $control . '</label>';
         $body    = $field(__('Etikett', 'taxmod-stock'), '<select name="label_choice"' . $form . '>' . $labels . '</select>')
             . ($service ? $field(__('Drucker', 'taxmod-stock'), '<select name="label_printer"' . $form . '>' . $printers . '</select>') : '')
-            . $field(__('Anzahl je Material', 'taxmod-stock'), '<input type="number" name="copies" min="1" max="50" step="1" placeholder="' . esc_attr__('wie beim Etikett', 'taxmod-stock') . '"' . $form . ' style="width:14em">')
+            . $field(__('Anzahl je Material', 'taxmod-stock'), self::copiesInput($formId, __('leer: wie beim Etikett', 'taxmod-stock')))
             . '<span class="description" style="display:block">' . esc_html($per !== '' ? $per : __('Ein Etikett je angehaktem Material, beschriftet mit seinen eigenen Feldern.', 'taxmod-stock'))
             . ($service ? '' : ' ' . esc_html__('Kein Druckdienst eingerichtet: die Etiketten öffnen sich als PDF.', 'taxmod-stock')) . '</span>';
         $foot    = ($service ? '<button type="submit" class="button button-primary" name="booking" value="materialetiketten-service"' . $form . '>' . esc_html__('Drucken', 'taxmod-stock') . '</button>' : '')
@@ -2599,7 +2612,7 @@ final class StockPage
             . '<select name="format"' . $form . '>' . $options . '</select></label>'
             // D-1152: empty means each place's own number — 2 for a box, 1 otherwise; a number holds for every ticked place.
             . '<label style="display:block;margin-bottom:.5em"><span style="display:block;font-weight:600">' . esc_html__('Anzahl je Ort', 'taxmod-stock') . '</span>'
-            . '<input type="number" name="copies" min="1" max="50" step="1" placeholder="' . esc_attr__('2 bei beweglichen, sonst 1', 'taxmod-stock') . '"' . $form . ' style="width:14em"></label>'
+            . self::copiesInput(self::CHILD_FORM, __('leer: 2 bei beweglichen, sonst 1', 'taxmod-stock')) . '</label>'
             . '<span class="description" style="display:block">' . esc_html__('Ein Etikett je angehaktem Ort, beschriftet wie sein eigenes.', 'taxmod-stock')
             . ($service ? '' : ' ' . esc_html__('Kein Druckdienst eingerichtet: die Etiketten öffnen sich als PDF.', 'taxmod-stock')) . '</span>';
         $foot    = ($service ? '<button type="submit" class="button button-primary" name="booking" value="etiketten-service"' . $form . '>' . esc_html__('Drucken', 'taxmod-stock') . '</button>' : '')

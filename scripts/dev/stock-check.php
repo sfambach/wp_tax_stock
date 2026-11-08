@@ -404,6 +404,9 @@ $pruefe(str_contains($html, '<option value="">--</option>') && str_contains($htm
 
 $pruefe(! class_exists(Taxmod\Core\Renderer\DialogMarkup::class) || (str_contains($html, 'data-taxmod-ask="taxmod-stock-material-labels"') && str_contains($html, 'value="materialetiketten-pdf"') && str_contains($html, '>Material 40×30</option>')), 'D-1202: «Etiketten drucken …» for the ticked materials stands in the one bulk choice, with the material labels');
 
+// His word 2026-11-08: «kein Standard-Int-Feld. Sondern wieder was Eigenes.» — the label count is the model's integer field.
+$pruefe(! class_exists(Taxmod\Core\Renderer\DialogNumber::class) || (str_contains($html, '<input type="number" name="copies" form="') && ! str_contains($html, 'name="copies" min="1" max="50" step="1" placeholder=')), 'the label count in «Etiketten drucken …» is the model\'s integer field');
+
 if (method_exists(Taxmod\WordPress\Printing\LabelButton::class, 'filled')) {
     $vorlagen = (new StockService())->labelTemplates();
     $dialog   = $vorlagen->dialog($r['etk40'], ['record' => $r['lm']]);

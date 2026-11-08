@@ -87,7 +87,8 @@ final class LabelTemplates
         foreach ($printers->ids() as $id) {
             $queue = $text($printers, $id, 'printer_queue');
             $roll  = (int) $text($printers, $id, 'printer_loaded_roll');
-            if ($queue === '' || $roll <= 0 || ! $rolls->has($roll)) {
+            // D-1231: his wish 2026-11-08 «Drucker deaktivieren» — a printer switched off is not offered.
+            if ($queue === '' || $roll <= 0 || ! $rolls->has($roll) || $text($printers, $id, 'printer_active') === '0') {
                 continue;
             }
             $out[$id] = [

@@ -122,6 +122,8 @@ final class LabelTemplatesTest extends TestCase
             70 => [$label => ['Phomemo M22L'], 430 => ['Phomemo_M220L'], 438 => ['80'], 431 => ['0'], 437 => ['*=w{B}h{H}'], 432 => ['21'], 433 => ['38']],
             71 => [$label => ['QL-810W'], 430 => ['QL-810W_take'], 438 => ['81'], 431 => ['1'], 436 => ['orientation-requested=4'], 437 => ['62x30=BrL053E01E3D0F6']],
             72 => [$label => ['A ohne Warteschlange'], 438 => ['81']],
+            // D-1231: switched off, so not offered.
+            73 => [$label => ['B aus'], 430 => ['Off'], 438 => ['81'], 442 => ['0']],
             73 => [$label => ['Z ohne Rolle'], 430 => ['QL-1100']],
         ]);
 
@@ -160,7 +162,7 @@ final class LabelTemplatesTest extends TestCase
         $raw['fields'] += ['template_key' => 400, 'template_width' => 401, 'template_height' => 402, 'template_roll' => 403,
             'template_copies' => 405, 'template_layout' => 406, 'type_label_template' => 410, 'type_label_copies' => 411,
             'printer_queue' => 430, 'printer_turns' => 431, 'printer_offset' => 432, 'printer_line' => 433,
-            'printer_options' => 435, 'printer_turn_options' => 436, 'printer_sizes' => 437, 'printer_loaded_roll' => 438, 'roll_width' => 440, 'roll_labels' => 441];
+            'printer_options' => 435, 'printer_turn_options' => 436, 'printer_sizes' => 437, 'printer_loaded_roll' => 438, 'roll_width' => 440, 'roll_labels' => 441, 'printer_active' => 442];
 
         return Structure::fromArray($raw);
     }

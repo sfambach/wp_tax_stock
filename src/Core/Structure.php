@@ -94,6 +94,8 @@ final class Structure
         'printer_loaded_roll', 'roll_width', 'roll_labels',
         // D-1201: how a printer is set up and how a new label size gets onto it — his «als anleitung … beim drucker setup».
         'printer_setup',
+        // D-1231: a printer can be switched off; it then leaves the label dialog. No value counts as on.
+        'printer_active',
         // D-1158: a place type's outer and inner size, and the three sides of a Dimension.
         'type_outer', 'type_inner', 'dimension_length', 'dimension_width', 'dimension_height',
         // D-1169: a place type chooses its fit calculation and its message.

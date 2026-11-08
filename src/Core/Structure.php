@@ -96,6 +96,8 @@ final class Structure
         'printer_setup',
         // D-1231: a printer can be switched off; it then leaves the label dialog. No value counts as on.
         'printer_active',
+        // D-1234: whether CUPS may try a failed job again by itself; off unless set.
+        'printer_retry',
         // D-1158: a place type's outer and inner size, and the three sides of a Dimension.
         'type_outer', 'type_inner', 'dimension_length', 'dimension_width', 'dimension_height',
         // D-1169: a place type chooses its fit calculation and its message.

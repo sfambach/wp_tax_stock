@@ -75,7 +75,7 @@ final class LabelTemplates
      * D-1191, D-1192: every printer with a queue and a loaded roll, by name — its settings as the modeller's label dialog takes
      * them, the width of the roll it holds, and the labels that roll allows.
      *
-     * @return array<int, array{queue: string, roll: int, turn: bool, options: string, turn_options: string, sizes: string, offset: int, line: int, name: string, roll_name: string, allows: list<int>}>
+     * @return array<int, array{queue: string, roll: int, turn: bool, options: string, turn_options: string, sizes: string, offset: int, line: int, retry: bool, name: string, roll_name: string, allows: list<int>}>
      */
     private static function printers(Structure $s, ?Table $printers, ?Table $rolls): array
     {
@@ -100,6 +100,7 @@ final class LabelTemplates
                 'sizes'        => $text($printers, $id, 'printer_sizes'),
                 'offset'       => (int) $text($printers, $id, 'printer_offset'),
                 'line'         => (int) $text($printers, $id, 'printer_line'),
+                'retry'        => $text($printers, $id, 'printer_retry') === '1',
                 'name'         => trim((string) ($printers->first($id, $s->field('label')) ?? '')),
                 'roll_name'    => trim((string) ($rolls->first($roll, $s->field('label')) ?? '')),
                 'allows'       => array_values(array_map('intval', $rolls->all($roll, $s->field('roll_labels')))),

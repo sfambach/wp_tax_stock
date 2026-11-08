@@ -99,8 +99,8 @@ final class Plugin
             add_action('admin_post_' . SettingsPage::USER_ACTION, static fn () => (new SettingsPage())->handleUser());
             add_action('admin_post_' . LogisticsShell::FULLSCREEN_ACTION, [LogisticsShell::class, 'switchFullscreen']);
         }
-        // D-1235: the print thread asks for one material or lot label, as the dialog would build it.
-        add_filter('taxmod_label_for', static fn (?array $found, string $prefix, int $id, int $template, int $printer): ?array => $found ?? (in_array($prefix, ['M', 'P'], true) ? (new StockPage())->labelFor($prefix, $id, $template, $printer) : null), 10, 5);
+        // D-1235, D-1238: the print thread asks for one material, lot or place label, as the dialog would build it.
+        add_filter('taxmod_label_for', static fn (?array $found, string $prefix, int $id, int $template, int $printer): ?array => $found ?? (in_array($prefix, StockPage::LABEL_PREFIXES, true) ? (new StockPage())->labelFor($prefix, $id, $template, $printer) : null), 10, 5);
         add_filter(self::BOOK_BUILD, [self::class, 'bookBuild'], 10, 2);
         add_filter(self::PLACES_OF, [self::class, 'placesOf'], 10, 2);
         add_filter(self::BOOK_PICK, [self::class, 'bookPick'], 10, 2);

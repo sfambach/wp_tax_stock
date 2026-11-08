@@ -410,6 +410,10 @@ if (method_exists(Taxmod\WordPress\Printing\LabelButton::class, 'filled')) {
     $pruefe($gefuellt !== null && ($gefuellt->values['Bezeichnung'] ?? '') === 'LM2930T-5.0' && $gefuellt->format->widthMm === 40.0, 'D-1202: a ticked material\'s label reads its own «Bezeichnung», on the 40×30 label');
 }
 
+// D-1238: «print-label» reaches the place label through the filter, not only material and lot.
+$platzEtikett = apply_filters('taxmod_label_for', null, 'O', $r['platz'], $r['etk40'], 0);
+$pruefe(is_array($platzEtikett) && isset($platzEtikett['template']), 'D-1238: a place label (O-) comes back through taxmod_label_for');
+
 if (method_exists(ListPage::class, 'thumbnails')) {
     $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'group' => (string) $r['teile']];
     $mit  = (new StockPage())->render();

@@ -55,6 +55,9 @@ final class StockPage
     /** D-1223: the layout field that prints a lot's batch number. */
     public const CHARGE_FIELD = 'Charge';
 
+    /** The codes «print-label» may ask this page for (D-1235, D-1238): material, lot, place, box. */
+    public const LABEL_PREFIXES = ['M', 'P', 'O', 'K'];
+
     public const PAGE       = 'taxmod-stock';
     public const ACTION     = 'taxmod_stock_book';
     public const POSITIONS  = 'taxmod_stock_positions';

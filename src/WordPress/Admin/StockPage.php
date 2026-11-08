@@ -752,7 +752,7 @@ final class StockPage
         $templates = $this->stock->labelTemplates();
         $first     = $s->hasNode('label_materials') ? $templates->firstIn($s->node('label_materials')) : 0;
         $chosen    = $first > 0 ? $templates->get($first) : null;
-        $template  = $chosen === null ? [] : $templates->dialog($first, ['record' => $thing, 'values' => [self::CHARGE_FIELD => sprintf(/* translators: %s: batch number */ __('Charge %s', 'taxmod-stock'), $charge)]]);
+        $template  = $chosen === null ? [] : $templates->dialog($first, ['record' => $thing, 'values' => [self::CHARGE_FIELD => sprintf(/* translators: %s: batch number */ __('Charge: %s', 'taxmod-stock'), $charge)]]);
 
         return (string) apply_filters('taxmod_label_button', '', 'P', $lot, $label === '' ? '#' . $thing : $label, '', $chosen['copies'] ?? 1, $template);
     }
@@ -1306,7 +1306,7 @@ final class StockPage
 
         foreach ($items as [$thing, $lot]) {
             $asLot  = $lot > 0 && $lotKind !== null;
-            $dialog = $templates->dialog($chosen, ['record' => $thing] + ($asLot ? ['values' => [self::CHARGE_FIELD => sprintf(/* translators: %s: batch number */ __('Charge %s', 'taxmod-stock'), $charges[$lot] ?? 'P-' . $lot)]] : []));
+            $dialog = $templates->dialog($chosen, ['record' => $thing] + ($asLot ? ['values' => [self::CHARGE_FIELD => sprintf(/* translators: %s: batch number */ __('Charge: %s', 'taxmod-stock'), $charges[$lot] ?? 'P-' . $lot)]] : []));
             if ($printer > 0) {
                 $dialog['printer'] = array_diff_key($printers[$printer], ['allows' => 1, 'roll_name' => 1]);
             }

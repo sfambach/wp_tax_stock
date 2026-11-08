@@ -22,6 +22,8 @@ final class SettingsPage
 {
     public const PAGE   = 'taxmod-lager-einstellungen';
     public const ACTION = 'taxmod_stock_basics';
+    public const USER_TAB = 'benutzer';
+    public const USER_ACTION = 'taxmod_stock_user_settings';
 
     public static function url(): string
     {
@@ -30,6 +32,10 @@ final class SettingsPage
 
     public function render(): string
     {
+        if (sanitize_key((string) ($_GET['tab'] ?? '')) === self::USER_TAB) {
+            return $this->userSettings();
+        }
+
         return '<div class="wrap">' . ListPage::heading(__('Grundeinstellungen', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . $this->notice()
             . '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">'
             . wp_nonce_field(self::ACTION, '_wpnonce', true, false) . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
@@ -51,6 +57,47 @@ final class SettingsPage
         set_transient(StockPage::NOTICE . get_current_user_id(), ['type' => 'success', 'text' => __('Gespeichert.', 'taxmod-stock')], 60);
         wp_safe_redirect(self::url());
         exit;
+    }
+
+    /**
+     * D-1232: what each person sets for themselves — stored with the user, never as a site option, so one person's choice
+     * changes nothing for another.
+     */
+    private function userSettings(): string
+    {
+        return '<div class="wrap">' . ListPage::heading(__('Benutzereinstellungen', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . $this->notice()
+            . '<p>' . esc_html(sprintf(/* translators: %s: the user's display name */ __('Gilt nur für %s.', 'taxmod-stock'), wp_get_current_user()->display_name)) . '</p>'
+            . '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">'
+            . wp_nonce_field(self::USER_ACTION, '_wpnonce', true, false) . '<input type="hidden" name="action" value="' . esc_attr(self::USER_ACTION) . '">'
+            . '<table class="form-table" role="presentation"><tbody>'
+            . '<tr><th scope="row">' . esc_html__('Vollbild', 'taxmod-stock') . '</th><td><label><input type="checkbox" name="fullscreen" value="1"' . checked(LogisticsShell::isFullscreen(), true, false) . '> '
+            . esc_html__('Logistik ohne WordPress-Leisten zeigen', 'taxmod-stock') . '</label></td></tr>'
+            . (method_exists(ListPage::class, 'resetColumns') ? '<tr><th scope="row">' . esc_html__('Spalten der Listen', 'taxmod-stock') . '</th><td><label><input type="checkbox" name="reset_columns" value="1"> '
+                . esc_html__('Eigene Spaltenwahl aller Listen zurücksetzen', 'taxmod-stock') . '</label></td></tr>' : '')
+            . '</tbody></table>' . get_submit_button(__('Speichern', 'taxmod-stock')) . '</form></div>';
+    }
+
+    /** admin-post for Benutzereinstellungen: logged in with access to the stock → nonce → keep for this user → back. */
+    public function handleUser(): void
+    {
+        if (! current_user_can('manage_options')) {
+            wp_die(esc_html__('Keine Berechtigung.', 'taxmod-stock'), '', ['response' => 403]);
+        }
+
+        check_admin_referer(self::USER_ACTION);
+        $this->saveUser(! empty($_POST['fullscreen']), ! empty($_POST['reset_columns']));
+        set_transient(StockPage::NOTICE . get_current_user_id(), ['type' => 'success', 'text' => __('Gespeichert.', 'taxmod-stock')], 60);
+        wp_safe_redirect(add_query_arg('tab', self::USER_TAB, self::url()));
+        exit;
+    }
+
+    public function saveUser(bool $fullscreen, bool $resetColumns): void
+    {
+        LogisticsShell::setFullscreen($fullscreen);
+
+        if ($resetColumns && method_exists(ListPage::class, 'resetColumns')) {
+            ListPage::resetColumns();
+        }
     }
 
     /** One section per tab of the stock page; «Gleich aufgeklappt» where its rows can be opened. */

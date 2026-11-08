@@ -164,6 +164,16 @@ $html = LogisticsShell::wrap(ModulePage::PAGE, (new ModulePage())->render(Module
 $pruefe(str_contains($html, 'JLC übergeben') && str_contains($html, 'aria-current="page">JLCPCB</a>'), 'a module that hands over a render callback is drawn from it, inside the frame');
 $pruefe(! in_array('__navcheck-jlc', ModulePage::menuEntries(), true), 'a module announced only through the filter has no menu entry to hide');
 
+echo "Benutzereinstellungen\n";
+// D-1232, his question 2026-11-08: «was ist eigentlich mit dem Benutzereinstellungen los? Die sind noch nicht sichtbar in den Einstellungsmenü.»
+$_GET = ['page' => SettingsPage::PAGE, 'tab' => SettingsPage::USER_TAB];
+$html = LogisticsShell::wrap(SettingsPage::PAGE, (new SettingsPage())->render());
+$pruefe(str_contains($html, 'aria-current="page">Benutzereinstellungen</a>') && str_contains($html, 'name="fullscreen"') && str_contains($html, 'value="' . SettingsPage::USER_ACTION . '"'), 'D-1232: Einstellungen › Benutzereinstellungen is in the navigation and carries this person\'s settings');
+(new SettingsPage())->saveUser(true, false);
+$pruefe(LogisticsShell::isFullscreen(), 'D-1232: «Vollbild» set there is the same switch as the one under the navigation');
+(new SettingsPage())->saveUser(false, false);
+$pruefe(! LogisticsShell::isFullscreen(), 'D-1232: and it can be switched off again');
+
 echo "Grundeinstellungen\n";
 $_GET = ['page' => SettingsPage::PAGE];
 $html = LogisticsShell::wrap(SettingsPage::PAGE, (new SettingsPage())->render());

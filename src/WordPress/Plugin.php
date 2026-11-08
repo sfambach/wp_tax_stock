@@ -96,6 +96,7 @@ final class Plugin
             add_action('admin_post_' . PurchasePage::ACTION, static fn () => self::serially(static fn () => (new PurchasePage())->handle()));
             add_action('admin_post_' . ContactsPage::ACTION, static fn () => (new ContactsPage())->handle());
             add_action('admin_post_' . SettingsPage::ACTION, static fn () => (new SettingsPage())->handle());
+            add_action('admin_post_' . SettingsPage::USER_ACTION, static fn () => (new SettingsPage())->handleUser());
             add_action('admin_post_' . LogisticsShell::FULLSCREEN_ACTION, [LogisticsShell::class, 'switchFullscreen']);
         }
         add_filter(self::BOOK_BUILD, [self::class, 'bookBuild'], 10, 2);

@@ -36,6 +36,12 @@ final class LogisticsShell
     /** User meta: the stack of origins (D-1179). */
     private const RETURN_META = 'taxmod_stock_return_path';
 
+    /** D-1232: the same switch, set from Benutzereinstellungen. */
+    public static function setFullscreen(bool $on): void
+    {
+        update_user_meta(get_current_user_id(), self::FULLSCREEN_META, $on ? '1' : '0');
+    }
+
     public static function isFullscreen(): bool
     {
         return get_user_meta(get_current_user_id(), self::FULLSCREEN_META, true) === '1';
@@ -117,6 +123,8 @@ final class LogisticsShell
                 // D-1192: the printers, the roll each holds, «Rolle wechseln».
                 ['path' => [__('Druck', 'taxmod-stock')]] + $item('printers', __('Drucker', 'taxmod-stock'), StockPage::PAGE, 'drucker'),
                 ...array_map(static fn (array $item): array => ['path' => [__('Druck', 'taxmod-stock'), ...$item['path']]] + $item, self::modules('print')),
+                // D-1232, his question 2026-11-08: «was ist eigentlich mit dem Benutzereinstellungen los? Die sind noch nicht sichtbar».
+                $item('user', __('Benutzereinstellungen', 'taxmod-stock'), SettingsPage::PAGE, SettingsPage::USER_TAB),
             ]],
         ]);
     }

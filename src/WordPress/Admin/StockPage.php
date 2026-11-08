@@ -1105,12 +1105,12 @@ final class StockPage
 
             foreach ($where as $place => $quantity) {
                 // D-1227: a lot's further places and its «Vorgänge» move with its first row when the list is sorted or grouped.
-                $rows .= '<tr' . ($first ? '' : ' class="taxmod-list-more"') . '><th scope="row" class="check-column"></th><td>' . ($first ? '#' . esc_html((string) $lot) : '') . '</td><td>' . esc_html($places[$place] ?? '—') . $this->reservedMark($place, $flags) . '</td><td>' . esc_html($this->number($quantity)) . '</td>'
+                $rows .= '<tr' . ($first ? ' id="taxmod-stock-lot-' . esc_attr((string) $lot) . '"' : ' class="taxmod-list-more"') . '><th scope="row" class="check-column"></th><td>' . ($first ? '#' . esc_html((string) $lot) : '') . '</td><td>' . esc_html($places[$place] ?? '—') . $this->reservedMark($place, $flags) . '</td><td>' . esc_html($this->number($quantity)) . '</td>'
                     . '<td>' . ($first ? esc_html($amount ?? '—') : '') . '</td>'
                     . '<td>' . ($first ? esc_html($purchase === null ? __('Inventur', 'taxmod-stock') : '#' . $purchase) : '') . '</td>'
                     . '<td>' . ($first ? esc_html(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10)) : '') . '</td>'
                     . '<td style="text-align:right;white-space:nowrap">' . ($quantity > 0.0 ? $this->transferDialog($thing, $lot, $place, $quantity, $places) : '')
-                    . ' <a class="button" href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'verbrauch', 'thing' => $thing, 'lot' => $lot, 'place' => $place], admin_url('admin.php'))) . '">' . esc_html__('Ausbuchen', 'taxmod-stock') . '</a>'
+                    . ' ' . $this->bookOutButton(add_query_arg(['page' => self::PAGE, 'tab' => 'verbrauch', 'thing' => $thing, 'lot' => $lot, 'place' => $place], admin_url('admin.php')))
                     . ($first ? ' ' . $this->lotLabel($thing, $lot, $name, $charges[$lot] ?? '') : '') . '</td></tr>';
                 $first = false;
             }
@@ -1159,7 +1159,7 @@ final class StockPage
             . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">' . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
             . ($returnPlace > 0 ? $this->returnFields('lagerorte', $returnPlace) : '')
             . ($toList ? '<input type="hidden" name="return_tab" value="' . esc_attr(self::BACK_TO_LIST) . '">' : '')
-            . ListPage::dialogAction('taxmod-stock-transfer-' . $lot . '-' . $from . ($toList ? '-list' : ''), __('Umbuchen', 'taxmod-stock'), __('Umbuchen', 'taxmod-stock'), $body, 'booking', 'umbuchen', __('Umbuchen', 'taxmod-stock'))
+            . ListPage::dialogAction('taxmod-stock-transfer-' . $lot . '-' . $from . ($toList ? '-list' : ''), __('Umbuchen', 'taxmod-stock'), __('Umbuchen', 'taxmod-stock'), $body, 'booking', 'umbuchen', __('Umbuchen', 'taxmod-stock'), '', self::icon('ICON_TRANSFER'))
             . '</form>';
     }
 
@@ -1686,6 +1686,28 @@ final class StockPage
     public static function thingUrl(int $thing, string $view): string
     {
         return add_query_arg(['page' => self::PAGE, 'tab' => 'material', 'thing' => $thing, 'view' => $view], admin_url('admin.php'));
+    }
+
+    /**
+     * D-1230, his word «generell drucken knopf durch icon drucker ersetzten … umbuchen zwei gegenläufige pfeile … ein icon für
+     * ausbuchen»: the modeller's icon for an act, or none on a modeller without them (the word stays then).
+     */
+    private static function icon(string $constant): string
+    {
+        return defined(ListPage::class . '::' . $constant) ? (string) constant(ListPage::class . '::' . $constant) : '';
+    }
+
+    private function bookOutButton(string $url): string
+    {
+        return self::icon('ICON_BOOK_OUT') === '' || ! method_exists(ListPage::class, 'iconLink')
+            ? '<a class="button" href="' . esc_url($url) . '">' . esc_html__('Ausbuchen', 'taxmod-stock') . '</a>'
+            : ListPage::iconLink(self::icon('ICON_BOOK_OUT'), __('Ausbuchen', 'taxmod-stock'), $url);
+    }
+
+    /** A lot's own line in its material's Bestand. */
+    public static function lotUrl(int $thing, int $lot): string
+    {
+        return self::thingUrl($thing, 'bestand') . '#taxmod-stock-lot-' . $lot;
     }
 
     /**
@@ -2989,6 +3011,7 @@ final class StockPage
         $body  = '';
         $count = 0;
         $depth = count($tree->lineOf($place));
+        $charges = $this->charges(array_values(array_unique(array_merge([], ...array_map(static fn (int $where): array => array_keys($byPlace[$where] ?? []), $tree->withAllBelow($place))))));
 
         foreach ($tree->withAllBelow($place) as $where) {
             foreach ($byPlace[$where] ?? [] as $lot => $quantity) {
@@ -2997,13 +3020,17 @@ final class StockPage
                 $count++;
                 $body .= '<tr draggable="true" data-taxmod-stock-lot="' . esc_attr(implode(':', [$lot, $where, $this->plain($quantity), $thing])) . '" style="cursor:grab">'
                     . '<th scope="row" class="check-column"><input type="checkbox" name="selected[]" value="' . esc_attr($lot . ':' . $where . ':' . $thing) . '" form="' . esc_attr(self::PLACE_FORM) . '" aria-label="' . esc_attr__('Auswählen', 'taxmod-stock') . '"></th>'
-                    . '<td><a href="' . esc_url($this->thingUrl($thing, 'bestand')) . '">' . esc_html($things[$thing] ?? '#' . $thing) . '</a></td>'
-                    . '<td>#' . esc_html((string) $lot) . '</td>'
+                    // His question 2026-11-08: «müsste dann nicht eigentlich der Bestand angezeigt werden, anstatt das Material?» —
+                    // the row is a lot, so the lot stands first and leads to its own line in the material's Bestand.
+                    . '<td><a href="' . esc_url($this->lotUrl($thing, $lot)) . '">#' . esc_html((string) $lot) . '</a></td>'
+                    . '<td><a href="' . esc_url($this->lotUrl($thing, $lot)) . '">' . esc_html($things[$thing] ?? '#' . $thing) . '</a></td>'
                     . '<td>' . esc_html($inner) . $this->reservedMark($where, $flags) . '</td>'
                     . '<td>' . esc_html($this->number($quantity)) . '</td>'
                     . '<td>' . esc_html(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10)) . '</td>'
                     . '<td style="text-align:right;white-space:nowrap">' . $this->transferDialog($thing, $lot, $where, $quantity, $places, $place)
-                    . ' <a class="button" href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'verbrauch', 'thing' => $thing, 'lot' => $lot, 'place' => $where], admin_url('admin.php'))) . '">' . esc_html__('Ausbuchen', 'taxmod-stock') . '</a></td></tr>';
+                    . ' ' . $this->bookOutButton(add_query_arg(['page' => self::PAGE, 'tab' => 'verbrauch', 'thing' => $thing, 'lot' => $lot, 'place' => $where], admin_url('admin.php')))
+                    // His word 2026-11-08: «Massenfunktion ist da, aber das Drucken pro Posten».
+                    . ' ' . $this->lotLabel($thing, $lot, (string) ($things[$thing] ?? ''), $charges[$lot] ?? '') . '</td></tr>';
             }
         }
 
@@ -3013,7 +3040,7 @@ final class StockPage
             . '<p>' . esc_html(sprintf(/* translators: %d: lots at the place and below it */ _n('%d Posten hier und darunter.', '%d Posten hier und darunter.', $count, 'taxmod-stock'), $count))
             . ' <a href="' . esc_url($structure) . '">' . esc_html__('Lagerstruktur bearbeiten', 'taxmod-stock') . '</a></p>'
             . ($count > 0 ? $this->placeLotsBar($place, $count) : '')
-            . ListPage::table([[__('Material', 'taxmod-stock'), ''], [__('Posten', 'taxmod-stock'), '6em'], [__('Unterort', 'taxmod-stock'), '12em'], [__('Menge', 'taxmod-stock'), '6em'], [__('Buchungsdatum', 'taxmod-stock'), '8em']], $body === '' ? $this->noItems(5) : $body);
+            . ListPage::table([[__('Posten', 'taxmod-stock'), '6em'], [__('Material', 'taxmod-stock'), ''], [__('Unterort', 'taxmod-stock'), '12em'], [__('Menge', 'taxmod-stock'), '6em'], [__('Buchungsdatum', 'taxmod-stock'), '8em']], $body === '' ? $this->noItems(5) : $body);
     }
 
     /**

@@ -627,6 +627,16 @@ $pruefe(str_contains($framed, 'class="taxmod-shell has-side"') && strpos($framed
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'lagerorte', 'ort' => $schrank];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'data-taxmod-stock-lot="' . $posten . ':' . $kiste . ':' . rtrim(rtrim(number_format($menge, 3, '.', ''), '0'), '.') . ':' . $bc . '"') && str_contains($html, '__Schublade 2 › __Kiste') && str_contains($html, 'BC547C'), 'Lagerorte: what lies at the place and below it, each row draggable onto a place');
+// His question 2026-11-08: «müsste dann nicht eigentlich der Bestand angezeigt werden, anstatt das Material?»
+$pruefe(str_contains($html, '<a href="' . esc_url(StockPage::lotUrl($bc, $posten)) . '">#' . $posten . '</a></td><td><a href="' . esc_url(StockPage::lotUrl($bc, $posten)) . '">BC547C'), 'Platzbestand: each row starts with its lot, and lot and material both lead to that lot in the material\'s Bestand');
+$pruefe(! has_filter('taxmod_label_button') || str_contains($html, 'value="P-' . $posten . '"'), 'Platzbestand: each lot has its own «Etikett drucken» (his word 2026-11-08: «das Drucken pro Posten»)');
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => $bc, 'view' => 'bestand'];
+$bestandHtml = (new StockPage())->render();
+$pruefe(str_contains($bestandHtml, 'id="taxmod-stock-lot-' . $posten . '"'), 'the material\'s Bestand marks each lot\'s line, so the link lands on it');
+// D-1230, his word «drucken knopf durch icon drucker … umbuchen zwei gegenläufige pfeile … ein icon für ausbuchen».
+if (defined(Taxmod\WordPress\Admin\ListPage::class . '::ICON_TRANSFER')) {
+    $pruefe(str_contains($bestandHtml, 'dashicons-leftright') && str_contains($bestandHtml, 'dashicons-migrate') && str_contains($bestandHtml, '<span class="screen-reader-text">Ausbuchen</span>'), 'D-1230: Umbuchen and Ausbuchen of a lot are drawn as their icons, the word kept for the screen reader');
+}
 
 // D-1146, his choice «Ja, so bauen»: the manufacturing module books a build's consumption from the box, and takes it back.
 add_filter(TaxmodStock\WordPress\Plugin::BOOK_BUILD, [TaxmodStock\WordPress\Plugin::class, 'bookBuild'], 10, 2);

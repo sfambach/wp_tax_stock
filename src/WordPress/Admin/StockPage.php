@@ -798,6 +798,9 @@ final class StockPage
         $s         = $this->stock->structure();
         $templates = $this->stock->labelTemplates();
         $chosen    = $templates->get($template);
+        if ($prefix === 'O' || $prefix === 'K') {
+            return $this->placeLabelFor($id, $template, $printer);
+        }
         if ($chosen === null || ! $s->hasNode('label_materials') || ($chosen['node'] ?? 0) !== $s->node('label_materials')) {
             return null;
         }
@@ -818,6 +821,32 @@ final class StockPage
         $title = $this->stock->recordLabels([$thing])[$thing] ?? '';
 
         return ['title' => $title === '' ? '#' . $thing : $title, 'template' => array_diff_key($dialog, ['choices' => 1, 'chosen' => 1, 'printers' => 1])];
+    }
+
+    /**
+     * D-1238: a place (O, or K for a movable one) for «print-label», on the label asked for, filled as «Etikett drucken» at the place fills it.
+     *
+     * @return array{title: string, subtitle: string, template: array<string, mixed>}|null
+     */
+    private function placeLabelFor(int $place, int $template, int $printer): ?array
+    {
+        $tree = $this->stock->locationTree();
+        if ($template <= 0 || $this->stock->labelTemplates()->get($template) === null || ! $this->stock->table('location')->has($place)) {
+            return null;
+        }
+        [, , $title, $subtitle, , $dialog] = $this->placeLabel($place, $tree, $template);
+        if ($dialog === []) {
+            return null;
+        }
+        if ($printer > 0) {
+            $one = $dialog['printers'][$printer] ?? null;
+            if (! is_array($one) || ! in_array($template, $one['allows'] ?? [], true)) {
+                return null;
+            }
+            $dialog['printer'] = array_diff_key($one, ['allows' => 1, 'roll_name' => 1]);
+        }
+
+        return ['title' => $title, 'subtitle' => $subtitle, 'template' => array_diff_key($dialog, ['choices' => 1, 'chosen' => 1, 'printers' => 1, 'words' => 1])];
     }
 
     /** D-997: one thing opened whole — the head fixed, the views as tabs below. */
@@ -2438,7 +2467,7 @@ final class StockPage
         return $this->contents;
     }
 
-    private function placeLabel(int $place, LocationTree $tree): array
+    private function placeLabel(int $place, LocationTree $tree, int $instead = 0): array
     {
         $movable = $tree->isMovable($place);
         $project = (string) $tree->projectOf($place);
@@ -2456,7 +2485,7 @@ final class StockPage
             $tree->shortOf($place),
             $project === '' ? '' : __('Projekt', 'taxmod-stock') . ': ' . $project,
             $parent,
-        ])), $copies, $template === null ? [] : $this->stock->labelTemplates()->dialog($this->stock->placeTypes()->labelTemplateOf($type), [
+        ])), $copies, $template === null && $instead === 0 ? [] : $this->stock->labelTemplates()->dialog($instead > 0 ? $instead : $this->stock->placeTypes()->labelTemplateOf($type), [
             // D-1160: the modeller reads the fields the layout names from the place itself; these fill what it has no field for.
             'record' => $place,
             'values' => ['bezeichnung' => $tree->titleOf($place), 'kurzzeichen' => $tree->shortOf($place), 'projekt' => $project, 'ort' => $parent],

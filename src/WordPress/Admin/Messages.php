@@ -33,6 +33,15 @@ final class Messages
             'not_a_contact_group'       => sprintf(__('Knoten %s liegt nicht im Kontakt-Ast.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id */
             'contact_not_undoable'      => sprintf(__('Kontakt %s kann nicht mehr zurückgenommen werden; im Taxonomy Modeller entfernen.', 'taxmod-stock'), $error->detail),
+            'label_without_name'        => __('Ein Etikett braucht einen Namen.', 'taxmod-stock'),
+            /* translators: %s: field=value as typed */
+            'not_a_label_size'          => sprintf(__('«%s»: Breite, Höhe, Rolle und Anzahl sind ganze Zahlen größer als null.', 'taxmod-stock'), $error->detail),
+            /* translators: %s: names of place types */
+            'label_in_use'              => sprintf(__('Das Etikett wird noch von Platzarten genutzt: %s. Erst dort ein anderes Etikett wählen.', 'taxmod-stock'), $error->detail),
+            /* translators: %s: record id */
+            'not_a_roll'                => sprintf(__('#%s ist keine Rolle.', 'taxmod-stock'), $error->detail),
+            /* translators: %s: why */
+            'not_a_label'               => sprintf(__('Etikett: %s', 'taxmod-stock'), $error->detail),
             'place_without_name'        => __('Ein neuer Lagerort braucht einen Namen.', 'taxmod-stock'),
             /* translators: %s: record id of the place */
             'place_type_loop'           => sprintf(__('Platzart #%s enthält sich über ihre Teile selbst.', 'taxmod-stock'), $error->detail),

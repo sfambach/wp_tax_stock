@@ -19,6 +19,7 @@ use TaxmodStock\Core\MaterialCopy;
 use TaxmodStock\Core\NamedCopy;
 use TaxmodStock\Core\LocationTree;
 use TaxmodStock\Core\LabelTemplates;
+use TaxmodStock\Core\LabelChanges;
 use TaxmodStock\Core\OutputPlan;
 use TaxmodStock\Core\Pack;
 use TaxmodStock\Core\TitlePicture;
@@ -953,17 +954,85 @@ final class StockService
             return $this->labelTemplates;
         }
 
-        // D-1160: the labels stand in categories, the sub-nodes of «Etiketten» — read all of them in one go (CD-7).
+        ['table' => $table, 'categories' => $categories, 'node_of' => $nodeOf] = $this->labelRecords();
+
+        // D-1191, D-1192: the printers and the rolls, one read each; a label goes to a printer whose loaded roll allows it.
+        $printers = $s->hasNode('label_printer') ? $this->table('label_printer') : null;
+
+        return $this->labelTemplates = LabelTemplates::from($s, $table, array_map(static fn (int $node): string => $categories[$node] ?? '', $nodeOf), $nodeOf, $printers, $this->rollTable());
+    }
+
+    /**
+     * D-1160: the labels stand in categories, the sub-nodes of «Etiketten» — read all of them in one go (CD-7), complete or not.
+     *
+     * @return array{table: Table, categories: array<int, string>, node_of: array<int, int>, root: int}
+     */
+    public function labelRecords(): array
+    {
+        $s          = $this->structure();
         $root       = $s->node('label_template');
         $categories = $this->model->children($root);
         $nodeOf     = $this->model->recordsOf(array_merge([$root], array_keys($categories)), 500);
         $table      = $nodeOf === [] ? $this->table('label_template') : ($this->model->records(array_keys($nodeOf)) ?? $this->table('label_template'));
 
-        // D-1191, D-1192: the printers and the rolls, one read each; a label goes to a printer whose loaded roll allows it.
-        $printers = $s->hasNode('label_printer') ? $this->table('label_printer') : null;
-        $rolls    = $s->hasNode('label_roll') ? $this->table('label_roll') : null;
+        return ['table' => $table, 'categories' => $categories, 'node_of' => $nodeOf, 'root' => $root];
+    }
 
-        return $this->labelTemplates = LabelTemplates::from($s, $table, array_map(static fn (int $node): string => $categories[$node] ?? '', $nodeOf), $nodeOf, $printers, $rolls);
+    /** D-1192: the records of «Rollen»; null while the model has none. */
+    public function rollTable(): ?Table
+    {
+        return $this->structure()->hasNode('label_roll') ? $this->table('label_roll') : null;
+    }
+
+    /**
+     * D-1239: a label created (in `$node`, «Etiketten» or one of its categories) or changed, and the rolls that allow it from now
+     * on; one write.
+     *
+     * @param array<string, mixed> $given name, key, width, height, roll, copies, layout — only what changes
+     * @param list<int> $rolls
+     * @return int the label
+     */
+    public function saveLabel(int $label, int $node, array $given, array $rolls = []): int
+    {
+        $s = $this->structure();
+        if (! $s->hasNode('label_template')) {
+            throw StockError::notConfigured('nodes.label_template');
+        }
+        $records = $this->labelRecords();
+        $changes = new LabelChanges($s);
+
+        if ($label > 0) {
+            if (! isset($records['node_of'][$label]) && ! $records['table']->has($label)) {
+                throw StockError::notALabel('#' . $label);
+            }
+            $list = $changes->update($label, $given, $rolls, $this->rollTable());
+            if ($list !== []) {
+                $this->model->write($list);
+            }
+            $this->labelTemplates = null;
+
+            return $label;
+        }
+
+        if ($node !== $records['root'] && ! isset($records['categories'][$node])) {
+            throw StockError::notALabel('node ' . $node);
+        }
+        $answer = $this->model->write($changes->create($node, $given, $rolls, $this->rollTable()));
+        $this->labelTemplates = null;
+
+        return (int) ($answer['refs']['etikett'] ?? 0);
+    }
+
+    /** D-1239: a label removed, and out of every roll that allowed it; refused while a place type prints with it. */
+    public function removeLabel(int $label): void
+    {
+        $s       = $this->structure();
+        $records = $s->hasNode('label_template') ? $this->labelRecords() : null;
+        if ($records === null || (! isset($records['node_of'][$label]) && ! $records['table']->has($label))) {
+            throw StockError::notALabel('#' . $label);
+        }
+        $this->model->write((new LabelChanges($s))->remove($label, $this->rollTable(), $this->placeTypes()));
+        $this->labelTemplates = null;
     }
 
     /** @return array<int, string> D-1192: every roll by its name — what «Rolle wechseln» offers */

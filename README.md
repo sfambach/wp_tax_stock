@@ -59,6 +59,10 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
   - **Bestand für Leser über MCP** (D-1209, from 0.59.0) — the ability `taxmod-stock/stock` answers what lies at a place
     and every place inside it, or how much there is of given materials: one row per lot and place with quantity, and the
     total per material, from the ledger — instead of loading every lot and transaction.
+  - **Etiketten über MCP** (D-1239, from 0.64.6) — `taxmod-stock/labels` reads every label (size, roll, copies, rolls,
+    printers, place types; the layout JSON on request), `taxmod-stock/label-save` creates or changes one (layout checked
+    against its size first; `dry_run`; `pdf` draws it with the examples of its layout), `taxmod-stock/label-remove` takes
+    it out of its rolls and removes it, refused while a place type prints with it. No release, no test print.
   - **Lagerstruktur** (Logistik → Einstellungen, D-1085, D-1090) — the same tree; on the right the place with
     «Bearbeiten» (the modeller's form), «Verschieben» (the target in the same tree, the place and what lies in it left
     out), «Neuer Unterort» and «Für Produktion reservieren», each in the shared dialog; «+ Neuer Lagerort» above the tree.

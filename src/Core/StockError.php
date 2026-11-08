@@ -343,4 +343,34 @@ final class StockError extends \RuntimeException
 
         return new self('parts_referenced', $m[1] . '|' . implode(';', array_map(static fn (array $w): string => $w[1] . ':' . $w[2] . ':' . $w[3], $who)));
     }
+
+    /** D-1239: a label needs a name. */
+    public static function labelWithoutName(): self
+    {
+        return new self('label_without_name', '');
+    }
+
+    /** D-1239: width, height, roll and copies are whole numbers above 0. */
+    public static function notALabelSize(string $typed): self
+    {
+        return new self('not_a_label_size', $typed);
+    }
+
+    /** D-1239: a label a place type prints with is not removed; the detail names the place types. */
+    public static function labelInUse(string $types): self
+    {
+        return new self('label_in_use', $types);
+    }
+
+    /** D-1239: no such roll. */
+    public static function notARoll(string $id): self
+    {
+        return new self('not_a_roll', $id);
+    }
+
+    /** D-1239: no such label, or the layout cannot be drawn on it. */
+    public static function notALabel(string $detail): self
+    {
+        return new self('not_a_label', $detail);
+    }
 }

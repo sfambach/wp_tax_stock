@@ -54,6 +54,7 @@ use TaxmodStock\Core\StockError;
 use Taxmod\WordPress\Admin\ListPage;
 use TaxmodStock\WordPress\Admin\LogisticsShell;
 use TaxmodStock\WordPress\Admin\StockPage;
+use TaxmodStock\WordPress\LabelAbilities;
 use TaxmodStock\WordPress\StockService;
 
 wp_set_current_user(1);
@@ -413,6 +414,27 @@ if (method_exists(Taxmod\WordPress\Printing\LabelButton::class, 'filled')) {
 // D-1238: «print-label» reaches the place label through the filter, not only material and lot.
 $platzEtikett = apply_filters('taxmod_label_for', null, 'O', $r['platz'], $r['etk40'], 0);
 $pruefe(is_array($platzEtikett) && isset($platzEtikett['template']), 'D-1238: a place label (O-) comes back through taxmod_label_for');
+
+// D-1239: the labels as abilities — read with layout, a new one checked (dry_run, pdf), written, changed and removed again.
+if (function_exists('wp_get_ability') && wp_get_ability(LabelAbilities::READ) !== null) {
+    $gelesen = wp_get_ability(LabelAbilities::READ)->execute(['ids' => [$r['etk40']]]);
+    $pruefe(is_array($gelesen) && ($gelesen['labels'][0]['width'] ?? 0) === 40 && str_contains((string) ($gelesen['labels'][0]['layout'] ?? ''), 'Bezeichnung') && in_array($r['etk_mat'], array_column($gelesen['categories'], 'node'), true), 'D-1239: labels reads a label with its size, its layout and the categories');
+    $vorher  = count(wp_get_ability(LabelAbilities::READ)->execute([])['labels']);
+    $layout  = [['type' => 'text', 'field' => 'title', 'x' => 1, 'y' => 1, 'w' => 38, 'h' => 10, 'example' => 'Probe']];
+    $neu     = ['category' => $r['etk_mat'], 'name' => '40×12 Probe', 'key' => 'p40x12', 'width' => 40, 'height' => 12, 'layout' => $layout];
+    $probe   = wp_get_ability(LabelAbilities::SAVE)->execute($neu + ['dry_run' => true, 'pdf' => true]);
+    $pruefe(is_array($probe) && $probe['written'] === false && str_starts_with((string) base64_decode((string) ($probe['pdf'] ?? ''), true), '%PDF') && count(wp_get_ability(LabelAbilities::READ)->execute([])['labels']) === $vorher, 'D-1239: label-save dry_run answers the PDF and writes nothing');
+    $pruefe(wp_get_ability(LabelAbilities::SAVE)->execute(['width' => 20] + $neu) instanceof \WP_Error, 'D-1239: a layout reaching past its label is refused before anything is written');
+    $angelegt = wp_get_ability(LabelAbilities::SAVE)->execute($neu);
+    $id       = is_array($angelegt) ? (int) $angelegt['id'] : 0;
+    $pruefe($id > 0 && ($angelegt['label']['name'] ?? '') === '40×12 Probe' && ($angelegt['label']['complete'] ?? false) === true && ($angelegt['label']['node'] ?? 0) === $r['etk_mat'], 'D-1239: label-save creates the label in its category, complete');
+    $geaendert = wp_get_ability(LabelAbilities::SAVE)->execute(['id' => $id, 'name' => '40×12 Probe 2']);
+    $pruefe(is_array($geaendert) && ($geaendert['label']['name'] ?? '') === '40×12 Probe 2' && ($geaendert['before']['name'] ?? '') === '40×12 Probe' && ($geaendert['label']['width'] ?? 0) === 40, 'D-1239: a change writes only the field given and answers the label before it');
+    $weg = wp_get_ability(LabelAbilities::REMOVE)->execute(['id' => $id]);
+    $pruefe(is_array($weg) && $weg['removed'] === true && str_contains((string) ($weg['label']['layout'] ?? ''), 'Probe') && wp_get_ability(LabelAbilities::READ)->execute(['ids' => [$id]])['labels'] === [], 'D-1239: label-remove removes it and answers it as it was');
+} else {
+    echo "stock: no Abilities API here, D-1239 not checked\n";
+}
 
 if (method_exists(ListPage::class, 'thumbnails')) {
     $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'group' => (string) $r['teile']];

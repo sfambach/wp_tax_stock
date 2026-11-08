@@ -79,6 +79,8 @@ final class Plugin
         add_filter('taxmod_config_tabs', [SettingsTab::class, 'register']);
         // D-1209: the stock for a reader over MCP, in the modeller's category (registered by the modeller beforehand).
         add_action('wp_abilities_api_init', static fn () => (new StockAbility())->register());
+        // D-1239: the labels read, created, changed and removed over MCP, with a PDF to look at instead of a test print.
+        add_action('wp_abilities_api_init', static fn () => (new LabelAbilities())->register());
         // On admin_init and rest_api_init, where settings are saved: on init it compiled the stock service on every page view (D-1187).
         add_action('admin_init', [$this, 'registerSettings']);
         add_action('rest_api_init', [$this, 'registerSettings']);

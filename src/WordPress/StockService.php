@@ -1110,7 +1110,9 @@ final class StockService
         $s      = $this->structure();
         $places = $this->table('location');
 
-        return $this->locationTree = LocationTree::from($s, $places, $this->recordLabels(LocationTree::projectIds($s, $places)), $this->placeTypes());
+        return $this->locationTree = LocationTree::from($s, $places, $this->recordLabels(LocationTree::projectIds($s, $places)), $this->placeTypes())
+            // D-1267: a place deleted while old bookings still name it.
+            ->withUnknownName(static fn (int $id): string => sprintf(/* translators: %d: record id of the deleted place */ __('gelöschter Ort #%d', 'taxmod-stock'), $id));
     }
 
     /** D-1153, D-1159: the labels kept as records; none while the model has no node for them. */
@@ -1545,60 +1547,110 @@ final class StockService
      * @return int the copy of the place
      */
     /**
-     * D-1267: why a place cannot be deleted — empty when nothing uses it. Read from what this request holds already (the
-     * place tree, the lots, the lines, the Lager views, the group places), no query per reason.
+     * D-1093, his word «löschen mit vorsicht dann muss bestand im ast hochwandern»: what deleting a place does — what lies
+     * there goes to its parent, the materials and groups that name it as their usual place name the parent. The places
+     * inside hang at the parent, or — his word 2026-11-09 «unterort mit löschen» — go too, and what lies in them goes to
+     * the parent as well. Read from what this request holds already; the groups in one read.
      *
-     * @return list<string> the reasons, each a short phrase
+     * @return array{parent: int, gone: list<int>, lots: list<TransferRow>, children: list<int>, lager: list<int>, groups: list<int>, refused: string}
      */
-    public function placeBlockers(int $place): array
+    public function placeDeletion(int $place, bool $withBelow = false): array
     {
-        $s       = $this->structure();
-        $tree    = $this->locationTree();
-        $uses    = static fn (Table $table, string $field): int => $s->hasField($field) ? count(array_filter($table->ids(), static fn (int $id): bool => (int) $table->first($id, $s->field($field)) === $place)) : 0;
-        $here    = array_sum(array_map(static fn (array $at): float => $at[$place] ?? 0.0, $this->ledger()->stockByPlace()));
-        $groups  = count(array_filter($this->groupProperty(self::PLACE_PROPERTY), static fn (bool|int|null $at): bool => $at === $place));
-        $options = [(int) ($this->locationSettings([])->unreferenced ?? 0), (int) ($this->testSettings([])->place ?? 0), ...array_values($this->plannedPlaces())];
-        $reasons = [
-            /* translators: %d: count */
-            [count($tree->childrenOf($place)), _n('%d Unterort', '%d Unterorte', count($tree->childrenOf($place)), 'taxmod-stock')],
-            [$here > 0.0 ? 1 : 0, __('es liegt Bestand dort', 'taxmod-stock')],
-            /* translators: %d: count */
-            [$n = $uses($this->table('lot'), 'lot_location'), _n('%d Posten kam dort an', '%d Posten kamen dort an', $n, 'taxmod-stock')],
-            /* translators: %d: count */
-            [$m = $uses($this->table('line'), 'line_location'), _n('%d Buchung nennt ihn', '%d Buchungen nennen ihn', $m, 'taxmod-stock')],
-            /* translators: %d: count */
-            [$k = $uses($this->table('lager'), 'lager_location'), _n('%d Material hat ihn als Standard-Lagerort', '%d Materialien haben ihn als Standard-Lagerort', $k, 'taxmod-stock')],
-            [$groups, __('eine Materialgruppe hat ihn als Standard-Lagerort', 'taxmod-stock')],
-            [in_array($place, $options, true) ? 1 : 0, __('er ist in den Grundeinstellungen oder im Wareneingang gewählt', 'taxmod-stock')],
-        ];
-        $out = [];
+        $s      = $this->structure();
+        $tree   = $this->locationTree();
+        $parent = $tree->parentOf($place);
+        $gone   = $withBelow ? $tree->withAllBelow($place) : [$place];
+        $lots   = [];
 
-        foreach ($reasons as [$count, $text]) {
-            if ($count > 0) {
-                $out[] = str_contains($text, '%d') ? sprintf($text, $count) : $text;
+        foreach ($this->ledger()->stockByPlace() as $lot => $at) {
+            foreach ($gone as $where) {
+                if (($at[$where] ?? 0.0) > 0.0) {
+                    $lots[] = new TransferRow($lot, $where, $parent, rtrim(rtrim(number_format($at[$where], 6, '.', ''), '0'), '.'));
+                }
             }
         }
 
-        return $out;
+        $lagerTable = $this->table('lager');
+        $lager      = $s->hasField('lager_location') ? array_values(array_filter($lagerTable->ids(), static fn (int $id): bool => in_array((int) $lagerTable->first($id, $s->field('lager_location')), $gone, true))) : [];
+        $groups     = array_keys(array_filter($this->model->ownProperties(array_keys($this->tree()), self::PLACE_PROPERTY), static fn (bool|int $at): bool => is_int($at) && in_array($at, $gone, true)));
+        $settings   = [(int) ($this->locationSettings([])->unreferenced ?? 0), (int) ($this->testSettings([])->place ?? 0)];
+
+        $refused = match (true) {
+            $parent <= 0 && ($lots !== [] || $lager !== [] || $groups !== []) => __('ein Ort der obersten Ebene, an dem etwas liegt oder der als Standard-Lagerort gilt, hat keinen übergeordneten Ort, in den es wandern kann', 'taxmod-stock'),
+            array_intersect($gone, $settings) !== [] => __('er ist in den Grundeinstellungen gewählt (Käufe ohne Material oder Test); dort zuerst einen anderen wählen', 'taxmod-stock'),
+            default => '',
+        };
+
+        return ['parent' => $parent, 'gone' => $gone, 'lots' => $lots, 'children' => $withBelow ? [] : $tree->childrenOf($place), 'lager' => $lager, 'groups' => $groups, 'refused' => $refused];
     }
 
     /**
-     * D-1267: deletes an unused place in one act, undoable; answers its parent, where the page goes back to.
+     * D-1093: deletes a place in one act, undoable — its stock goes to the parent as an «Umbuchung» (a box inside as an
+     * «Umlagerung», D-1091), the places inside hang at the parent or go along, the materials and groups naming one of them
+     * name the parent; a field of another module still pointing at one refuses (D-1268). Answers the parent, where the page
+     * goes back to.
      */
-    public function deletePlace(int $place): int
+    public function deletePlace(int $place, string $today, string $title, bool $withBelow = false): int
     {
         if (! $this->table('location')->has($place)) {
             throw StockError::notALocation($place);
         }
 
-        $blockers = $this->placeBlockers($place);
+        $plan = $this->placeDeletion($place, $withBelow);
 
-        if ($blockers !== []) {
-            throw StockError::placeInUse(implode(', ', $blockers));
+        if ($plan['refused'] !== '') {
+            throw StockError::placeInUse($plan['refused']);
         }
 
-        $parent = $this->locationTree()->parentOf($place);
-        $this->model->write([['op' => 'remove_record', 'record' => (string) $place]]);
+        $s        = $this->structure();
+        $parent   = $plan['parent'];
+        $gone     = $plan['gone'];
+        $tree     = $this->locationTree();
+        $ledger   = $this->ledger();
+        $bookings = new Bookings($this->structureWithKinds(), $today);
+        $rules    = new LocationChanges($s);
+        $changes  = $plan['lots'] === [] ? [] : $bookings->transfer($plan['lots'], $title, $ledger, '', $this->reservedPlaces(), $this->boundLots());
+
+        $this->guardFit($plan['children'], 0, $parent);
+
+        foreach ($plan['children'] as $child) {
+            $changes = [...$changes, ...$rules->move($child, $parent, $tree, $this->table('location'))];
+
+            if ($this->relocates() && $tree->isMovable($child)) {
+                $changes = [...$changes, ...$bookings->relocate($child, $place, $parent, $title)];
+            }
+        }
+
+        foreach ($plan['lager'] as $record) {
+            $changes[] = ['op' => 'set_values', 'record' => (string) $record, 'values' => [(string) $s->field('lager_location') => $parent > 0 ? (string) $parent : '']];
+        }
+
+        foreach ($plan['groups'] as $node) {
+            $changes[] = ['op' => 'set_setting', 'node' => $node, 'attribute' => self::PLACE_PROPERTY, 'value' => $parent > 0 ? (string) $parent : ''];
+        }
+
+        // D-1268: what still points at them once this act is done — history aside — is a field this module does not move.
+        $left = [];
+
+        foreach ($this->model->referrersOf($gone) as $referrers) {
+            foreach ($referrers as $id) {
+                if (! in_array($id, [...$gone, ...$plan['children'], ...$plan['lager']], true)
+                    && ! $this->table('lot')->has($id) && ! $this->table('line')->has($id) && ! $this->table('transaction')->has($id)) {
+                    $left[$id] = $id;
+                }
+            }
+        }
+
+        if ($left !== []) {
+            throw StockError::placeInUse(sprintf(/* translators: %s: record ids */ __('Sätze %s verweisen noch auf ihn', 'taxmod-stock'), implode(', ', array_map(static fn (int $id): string => '#' . $id, array_values($left)))));
+        }
+
+        foreach ($gone as $record) {
+            $changes[] = ['op' => 'remove_record', 'record' => (string) $record];
+        }
+
+        $this->model->write($changes);
+        $this->planPlaces(array_map(static fn (int $at): int => $parent, array_filter($this->plannedPlaces(), static fn (int $at): bool => in_array($at, $gone, true))));
 
         return $parent;
     }

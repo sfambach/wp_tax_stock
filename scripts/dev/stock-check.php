@@ -870,19 +870,42 @@ try {
 
 // D-1158: without sizes on the kinds of place nothing is said — the warning never stands in the way of a move.
 $ohneMass = $ort('Passt-Regal', 0);
-// D-1267, his report 2026-11-09 «ich kann einen lagerort nicht mehr löschen»: an unused place is deleted, a used one refused with its reasons.
-$leer    = $ort('__Leer', $ohneMass);
-$_GET    = ['page' => StockPage::PAGE, 'tab' => 'lagerstruktur', 'ort' => (string) $ohneMass];
-$pruefe(str_contains((new StockPage())->render(), 'Nicht löschbar: 1 Unterort'), 'D-1267: a place with a place inside shows the bin greyed, the reason as its tooltip');
-$_GET    = ['page' => StockPage::PAGE, 'tab' => 'lagerstruktur', 'ort' => (string) $leer];
-$pruefe(str_contains((new StockPage())->render(), 'value="ortloeschen-' . $leer . '"'), 'D-1267: an unused place offers «Löschen»');
-$pruefe((new StockService())->deletePlace($leer) === $ohneMass && ! (new StockService())->table('location')->has($leer), 'D-1267: deleting an unused place removes it and answers its parent');
+// D-1093, his word 2026-11-09 «wenn wir den löschen muss der gesamte bestand in den vater wechseln»: deleting a place moves what lies there up.
+$alt     = $ort('__Alt', $r['lager']);
+$altKind = $ort('__Alt-Kind', $alt);
+$s       = new StockService();
+$wo      = array_key_first(array_filter($s->ledger()->placesOf($posten), static fn (float $q): bool => $q > 0.0));
+$s->moveLotsWhole([[$posten, (int) $wo]], $alt, '2026-11-09', 'vor dem Löschen');
+$rest    = (new StockService())->ledger()->restAt($posten, $alt);
+$_GET    = ['page' => StockPage::PAGE, 'tab' => 'lagerstruktur', 'ort' => (string) $alt];
+$html    = (new StockPage())->render();
+$pruefe(str_contains($html, 'value="ortloeschen-' . $alt . '"') && str_contains($html, '1 Posten wird nach') && str_contains($html, '1 Unterort hängt danach an'), 'D-1093: the bin of a place says first what goes where');
+$zurueck = (new StockService())->deletePlace($alt, '2026-11-09', 'Lagerort gelöscht');
+$s       = new StockService();
+$pruefe($zurueck === $r['lager'] && ! $s->table('location')->has($alt) && $s->locationTree()->parentOf($altKind) === $r['lager'] && $rest > 0.0 && abs(($s->ledger()->placesOf($posten)[$alt] ?? 0.0)) < 1e-9,
+    'D-1093: deleting a place books what lay there into its parent, hangs its places there and removes it in one act');
+$pruefe(str_contains($s->locationTree()->pathOf($alt), 'gelöschter Ort #' . $alt), 'D-1093: a deleted place is named «gelöschter Ort #id» where old bookings still name it');
+// His word 2026-11-09 «unterort mit löschen»: the places inside go too, what lay in any of them goes to the parent.
+$baum  = $ort('__Baum', $r['lager']);
+$ast   = $ort('__Ast', $baum);
+$blatt = $ort('__Blatt', $ast);
+(new StockService())->moveLotsWhole([[$posten, $r['lager']]], $blatt, '2026-11-09', 'in das Blatt');
+$_GET  = ['page' => StockPage::PAGE, 'tab' => 'lagerstruktur', 'ort' => (string) $baum];
+$html  = (new StockPage())->render();
+$pruefe(str_contains($html, 'name="below" value="1"') && str_contains($html, '2 Unterorte werden mitgelöscht'), 'D-1093: with places inside, the dialog offers both ways and says what each does');
+(new StockService())->deletePlace($baum, '2026-11-09', 'Lagerort gelöscht', true);
+$s     = new StockService();
+$pruefe(! $s->table('location')->has($baum) && ! $s->table('location')->has($ast) && ! $s->table('location')->has($blatt) && abs(($s->ledger()->placesOf($posten)[$r['lager']] ?? 0.0) - $rest) < 1e-9 && ! isset($s->ledger()->placesOf($posten)[$blatt]),
+    'D-1093: «Unterorte mitlöschen» removes the whole branch, what lay deep inside lies in the parent');
+$oben    = $ort('__Oben', 0);
+(new StockService())->moveLotsWhole([[$posten, $r['lager']]], $oben, '2026-11-09', 'nach oben');
 try {
-    (new StockService())->deletePlace($schrank);
-    $pruefe(false, 'D-1267: a place in use is refused');
+    (new StockService())->deletePlace($oben, '2026-11-09', 'x');
+    $pruefe(false, 'D-1093: a top place with stock is refused');
 } catch (StockError $e) {
-    $pruefe($e->reason === 'place_in_use' && (new StockService())->table('location')->has($schrank), 'D-1267: a place in use is refused, naming why: ' . $e->detail);
+    $pruefe($e->reason === 'place_in_use' && (new StockService())->table('location')->has($oben), 'D-1093: a top place with stock is refused, nothing done');
 }
+(new StockService())->moveLotsWhole([[$posten, $oben]], (int) $wo, '2026-11-09', 'zurück');
 $pruefe((new StockService())->misfits([$ort('Passt-Box', $ohneMass, true)], $ohneMass) === [] && (new StockService())->fitsNew(0, $ohneMass) === null, 'D-1158: places without a kind or sizes give no fit warning');
 
 // The Configuration tab: the modeller lists it, and pasting structure-live.json stores those ids.

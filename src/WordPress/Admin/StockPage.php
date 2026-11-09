@@ -297,7 +297,7 @@ final class StockPage
                 'rollewechseln' => $this->stock->changeRoll($rowPurchase, absint($_POST['roll'] ?? 0)),
                 'vorlagekopieren' => $copy = $this->stock->copyLabelTemplate($rowPurchase, sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? '')))),
                 // D-1267: the page goes back to the parent of the place deleted.
-                'ortloeschen'  => $copy = $this->stock->deletePlace($rowPurchase),
+                'ortloeschen'  => $copy = $this->stock->deletePlace($rowPurchase, current_time('Y-m-d'), __('Lagerort gelöscht', 'taxmod-stock'), ! empty($_POST['below'])),
                 'artkopieren'  => $copy = $this->stock->copyPlaceType($rowPurchase, sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? '')))),
                 // D-1130: «Kopieren» — the copy's id is what the page goes back to.
                 'ortkopieren'  => $copy = $this->stock->copyPlace($rowPurchase, sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? ''))), ! empty($_POST['below'])),
@@ -329,7 +329,7 @@ final class StockPage
                 'vorlagekopieren' => __('Kopiert: die neue Vorlage trägt Format, Layout und Anzahl der alten; die Platzarten bleiben bei der alten.', 'taxmod-stock'),
                 'artkopieren'    => __('Kopiert: die neue Platzart trägt Felder und Teile der alten; die Plätze bleiben bei der alten.', 'taxmod-stock'),
                 'ortkopieren'    => __('Kopiert: der neue Ort trägt die Felder des alten, aber nichts von dem, was dort liegt.', 'taxmod-stock'),
-                'ortloeschen'    => __('Gelöscht. Rückgängig geht es oben über die Liste der letzten Änderungen.', 'taxmod-stock'),
+                'ortloeschen'    => __('Gelöscht: was dort lag ist jetzt im übergeordneten Ort. Rückgängig geht es oben über die Liste der letzten Änderungen.', 'taxmod-stock'),
                 'kopieren'       => __('Kopiert: das neue Material trägt Daten und Lagersicht des alten, aber keinen Bestand; Bestellnummern bitte neu eintragen.', 'taxmod-stock'),
                 'reservieren'    => __('Reserviert für Produktion: alles, was dort und darunter liegt, ist reserviert.', 'taxmod-stock'),
                 'freigeben'      => __('Kennzeichen entfernt: was dort liegt, ist nicht mehr reserviert.', 'taxmod-stock'),
@@ -783,7 +783,7 @@ final class StockPage
         foreach ($ledger->lotsOf($thing) as $lot) {
             foreach ($ledger->placesOf($lot) as $place => $quantity) {
                 if ($place > 0 && $quantity > 0.0) {
-                    $out[$place] = $places[$place] ?? '#' . $place;
+                    $out[$place] = $places[$place] ?? $this->stock->locationTree()->pathOf($place);
                 }
             }
         }
@@ -1574,7 +1574,7 @@ final class StockPage
 
             if ($quantity > 0.0) {
                 $items[] = '<li>' . esc_html($this->number($quantity)) . ' ' . esc_html__('reserviert', 'taxmod-stock') . ' → <a href="' . esc_url($this->reservationUrl('o' . $holder)) . '">'
-                    . esc_html(sprintf(/* translators: %s: the reserved place, by its path */ __('Reservierung des Ortes %s', 'taxmod-stock'), $places[$holder] ?? '#' . $holder)) . '</a></li>';
+                    . esc_html(sprintf(/* translators: %s: the reserved place, by its path */ __('Reservierung des Ortes %s', 'taxmod-stock'), $places[$holder] ?? $this->stock->locationTree()->pathOf($holder))) . '</a></li>';
             }
         }
 
@@ -1715,7 +1715,7 @@ final class StockPage
             foreach ($lots as $lot => $at) {
                 foreach ($at as $place => $quantity) {
                     $lines .= '<li>' . $name((int) $ledger->thingOf($lot)) . ' · ' . esc_html($this->number($quantity)) . ' · ' . esc_html__('Posten', 'taxmod-stock') . ' #' . esc_html((string) $lot)
-                        . ' · ' . esc_html($places[$place] ?? '#' . $place) . '</li>';
+                        . ' · ' . esc_html($places[$place] ?? $this->stock->locationTree()->pathOf($place)) . '</li>';
                 }
             }
 
@@ -1879,7 +1879,7 @@ final class StockPage
 
             $out[$lot]  = ($out[$lot] ?? '') . '<li>' . esc_html($deal === null ? '—' : substr((string) $deals->first($deal, $s->field('transaction_date')), 0, 10))
                 . ' · ' . esc_html($kinds[$kind] ?? '')
-                . ($place > 0 ? ' · ' . esc_html($places[$place] ?? '#' . $place) : '')
+                . ($place > 0 ? ' · ' . esc_html($places[$place] ?? $this->stock->locationTree()->pathOf($place)) : '')
                 . ' · ' . esc_html((string) $lines->first($line, $s->field('line_quantity'))) . $storno . '</li>';
         }
 
@@ -3442,25 +3442,64 @@ final class StockPage
     }
 
     /**
-     * D-1267, his report 2026-11-09 «ich kann einen lagerort nicht mehr löschen»: the bin of a place nothing uses; one that is
-     * still used shows it greyed, the reasons as its tooltip.
+     * D-1093, his word «löschen mit vorsicht dann muss bestand im ast hochwandern» (again 2026-11-09: «wenn wir den löschen muss
+     * der gesamte bestand in den vater wechseln»): the bin of a place, its dialog saying what goes where first; refused ones
+     * show it greyed with the reason.
      */
     private function deletePlaceDialog(int $place, LocationTree $tree): string
     {
-        $blockers = $this->stock->placeBlockers($place);
-        $icon     = defined(ListPage::class . '::ICON_DELETE') ? ListPage::ICON_DELETE : 'trash';
+        $plan = $this->stock->placeDeletion($place);
+        $icon = defined(ListPage::class . '::ICON_DELETE') ? ListPage::ICON_DELETE : 'trash';
 
-        if ($blockers !== []) {
-            $why = sprintf(/* translators: %s: the reasons */ __('Nicht löschbar: %s', 'taxmod-stock'), implode(', ', $blockers));
+        if ($plan['refused'] !== '') {
+            $why = sprintf(/* translators: %s: the reason */ __('Nicht löschbar: %s', 'taxmod-stock'), $plan['refused']);
 
-            return '<button type="button" class="button" disabled title="' . esc_attr($why) . '"><span class="dashicons dashicons-' . esc_attr($icon) . '" aria-hidden="true"></span><span class="screen-reader-text">' . esc_html($why) . '</span></button>';
+            return '<button type="button" class="button" disabled>' . ListPage::icon($icon, $why) . '</button>';
         }
 
-        $body = '<p>' . esc_html(sprintf(/* translators: %s: the place, by its path */ __('«%s» löschen? Er ist leer und wird nirgends gebraucht. Rückgängig geht über die letzten Änderungen.', 'taxmod-stock'), $tree->pathOf($place))) . '</p>';
+        $to   = $plan['parent'] > 0 ? $tree->pathOf($plan['parent']) : __('— oberste Ebene —', 'taxmod-stock');
+        $body = '<p>' . esc_html(sprintf(/* translators: %s: the place, by its path */ __('«%s» löschen?', 'taxmod-stock'), $tree->pathOf($place))) . '</p>';
+
+        if ($plan['children'] === []) {
+            $body .= $this->deletionMoves($plan, $to);
+        } else {
+            // His word 2026-11-09 «unterort in den vater verschieben der andere ist unterot mit löschen»: both ways, each saying first what it does.
+            $all   = $this->stock->placeDeletion($place, true);
+            $body .= '<label style="display:block"><input type="radio" name="below" value="0" checked> ' . esc_html__('Unterorte in den übergeordneten Ort hängen', 'taxmod-stock') . '</label>'
+                . $this->deletionMoves($plan, $to)
+                . '<label style="display:block;margin-top:.5em"><input type="radio" name="below" value="1"' . ($all['refused'] === '' ? '' : ' disabled') . '> ' . esc_html__('Unterorte mitlöschen', 'taxmod-stock') . '</label>'
+                . ($all['refused'] === ''
+                    ? $this->deletionMoves($all, $to)
+                    : '<p class="description">' . esc_html(sprintf(/* translators: %s: the reason */ __('Nicht löschbar: %s', 'taxmod-stock'), $all['refused'])) . '</p>');
+        }
+
+        $body .= '<p class="description">' . esc_html__('Alles in einem Schritt; rückgängig über die letzten Änderungen, die Umbuchung ist zusätzlich stornierbar.', 'taxmod-stock') . '</p>';
 
         return $this->formStart('lagerstruktur') . $this->returnFields('lagerstruktur', $place)
             . ListPage::dialogAction('taxmod-stock-delete-place-' . $place, __('Löschen', 'taxmod-stock'), __('Lagerort löschen', 'taxmod-stock'), $body, 'booking', 'ortloeschen-' . $place, __('Löschen', 'taxmod-stock'), '', $icon)
             . '</form>';
+    }
+
+    /**
+     * D-1093: what one way of deleting a place does, as a list.
+     *
+     * @param array{parent: int, gone: list<int>, lots: list<\TaxmodStock\Core\TransferRow>, children: list<int>, lager: list<int>, groups: list<int>, refused: string} $plan
+     */
+    private function deletionMoves(array $plan, string $to): string
+    {
+        $below = count($plan['gone']) - 1;
+        $moves = array_filter([
+            /* translators: 1: count, 2: the parent place */
+            count($plan['lots']) > 0 ? sprintf(_n('%1$d Posten wird nach %2$s umgebucht.', '%1$d Posten werden nach %2$s umgebucht.', count($plan['lots']), 'taxmod-stock'), count($plan['lots']), $to) : '',
+            /* translators: 1: count, 2: the parent place */
+            count($plan['children']) > 0 ? sprintf(_n('%1$d Unterort hängt danach an %2$s.', '%1$d Unterorte hängen danach an %2$s.', count($plan['children']), 'taxmod-stock'), count($plan['children']), $to) : '',
+            /* translators: %d: count */
+            $below > 0 ? sprintf(_n('%d Unterort wird mitgelöscht.', '%d Unterorte werden mitgelöscht.', $below, 'taxmod-stock'), $below) : '',
+            /* translators: 1: count, 2: the parent place */
+            count($plan['lager']) + count($plan['groups']) > 0 ? sprintf(__('%1$d Materialien und Gruppen nennen danach %2$s als Standard-Lagerort.', 'taxmod-stock'), count($plan['lager']) + count($plan['groups']), $to) : '',
+        ]);
+
+        return $moves === [] ? '<p>' . esc_html__('Der Ort ist leer.', 'taxmod-stock') . '</p>' : '<ul style="list-style:disc;margin-left:1.5em">' . implode('', array_map(static fn (string $m): string => '<li>' . esc_html($m) . '</li>', $moves)) . '</ul>';
     }
 
     /** D-1130: «Kopieren» of a place — its name proposed with «(Kopie)», the places inside it on request. */
@@ -3908,12 +3947,12 @@ final class StockPage
             . '<span class="taxmod-record-choices" hidden>' . $radio('', $none) . ($none ? '' : $radio((string) $value, true)) . '</span>'
             . '<input type="search" class="taxmod-record-quick" autocomplete="off" placeholder="' . esc_attr__('Material suchen …', 'taxmod-stock') . '"' . ($none ? '' : ' hidden') . '>'
             . '<button type="button" class="button taxmod-icon-button taxmod-record-browse"' . ($none ? '' : ' hidden') . ' title="' . esc_attr($tree) . '">'
-                . '<span class="dashicons dashicons-networking" aria-hidden="true"></span><span class="screen-reader-text">' . esc_html($tree) . '</span></button>'
+                . \Taxmod\Core\Renderer\IconMarkup::dashicon('networking') . '<span class="screen-reader-text">' . esc_html($tree) . '</span></button>'
             . ($none || $purchase === null
                 ? '<span class="taxmod-record-dialog-open taxmod-record-word"' . ($none ? ' hidden' : '') . '>' . esc_html($word) . '</span>'
                 : $this->materialLink($purchase, $value, $word, 'taxmod-record-dialog-open taxmod-record-word'))
             . '<button type="button" class="button taxmod-icon-button taxmod-record-clear"' . ($none ? ' hidden' : '') . ' title="' . esc_attr($clear) . '">'
-                . '<span class="dashicons dashicons-undo" aria-hidden="true"></span><span class="screen-reader-text">' . esc_html($clear) . '</span></button>'
+                . \Taxmod\Core\Renderer\IconMarkup::dashicon('undo') . '<span class="screen-reader-text">' . esc_html($clear) . '</span></button>'
             . '<span class="taxmod-record-hits" hidden></span>'
             . '</span>';
     }
@@ -3925,10 +3964,8 @@ final class StockPage
     private function modellerAssets(bool $groups): string
     {
         if (class_exists(\Taxmod\WordPress\Plugin::class)) {
-            $root = dirname((string) (new \ReflectionClass(\Taxmod\WordPress\Plugin::class))->getFileName(), 3);
-            $base = WP_PLUGIN_DIR . '/' . basename($root) . '/x.php';
-            wp_enqueue_style('taxmod-admin', plugins_url('assets/admin.css', $base), ['dashicons', 'buttons'], (string) \Taxmod\WordPress\Plugin::VERSION);
-            wp_enqueue_script('taxmod-admin', plugins_url('assets/admin.js', $base), [], (string) \Taxmod\WordPress\Plugin::VERSION, true);
+            // D-1269: the modeller's own stylesheet with the icon size he chose, and its script.
+            do_action(\Taxmod\WordPress\Plugin::STYLE_ACTION);
         }
 
         $address = static fn (string $action): string => esc_url(add_query_arg(['action' => $action, '_ajax_nonce' => wp_create_nonce($action)], admin_url('admin-post.php')));

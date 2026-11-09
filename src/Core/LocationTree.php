@@ -37,6 +37,23 @@ final class LocationTree
     ) {
     }
 
+    /** @var (\Closure(int): string)|null D-1267: how a place no longer there is named — given at the boundary, the core has no words */
+    private ?\Closure $unknown = null;
+
+    /** D-1267: the same tree, naming a deleted place in one place for every page that shows a place. */
+    public function withUnknownName(\Closure $name): self
+    {
+        $copy          = clone $this;
+        $copy->unknown = $name;
+
+        return $copy;
+    }
+
+    private function nameOf(int $place): string
+    {
+        return $this->names[$place] ?? ($this->unknown === null ? '#' . $place : ($this->unknown)($place));
+    }
+
     /** @param array<int, string> $projectNames project record id → name */
     public static function from(Structure $s, Table $places, array $projectNames, PlaceTypes $types = new PlaceTypes()): self
     {
@@ -100,7 +117,7 @@ final class LocationTree
     /** D-1150: the place's Bezeichnung without its short mark — the title on its label. */
     public function titleOf(int $id): string
     {
-        return $this->titles[$id] ?? $this->names[$id] ?? '#' . $id;
+        return $this->titles[$id] ?? $this->nameOf($id);
     }
 
     /** D-1150: the place's short mark (Kurzzeichen), '' where none is set. */
@@ -112,7 +129,7 @@ final class LocationTree
     /** «Keller › Bauteile › Regal 2» */
     public function pathOf(int $id): string
     {
-        return implode(' › ', array_map(fn (int $place): string => $this->names[$place] ?? '#' . $place, $this->lineOf($id)));
+        return implode(' › ', array_map($this->nameOf(...), $this->lineOf($id)));
     }
 
     /** The project of the place or of the nearest place it sits in. */

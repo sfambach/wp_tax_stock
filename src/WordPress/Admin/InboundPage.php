@@ -258,7 +258,7 @@ final class InboundPage
                 '<strong>' . esc_html($thing === null ? '#' . $lot : $things->word($thing)) . '</strong> <span class="description">' . esc_html(sprintf(/* translators: %d: material number */ __('Nr. %d', 'taxmod-stock'), (int) $thing)) . '</span>',
                 esc_html($order > 0 ? ($orders[$order] ?? '#' . $order) : '—'),
                 esc_html(substr((string) $table->first($lot, $s->field('lot_date')), 0, 10)),
-                esc_html($places[(int) $table->first($lot, $s->field('lot_location'))] ?? ''),
+                esc_html(($at = (int) $table->first($lot, $s->field('lot_location'))) > 0 ? ($places[$at] ?? $this->inbound->stock()->locationTree()->pathOf($at)) : ''),
                 esc_html(rtrim(rtrim(number_format($ledger->restOf($lot), 3, ',', '.'), '0'), ',')),
             ], '', $this->testForm($lot), true);
         }
@@ -506,7 +506,7 @@ final class InboundPage
         foreach ($this->inbound->lotsOf($purchase) as $lot) {
             $thing = $ledger->thingOf($lot);
             $at    = (int) $lots->first($lot, $s->field('lot_location'));
-            $place = $places[$at] ?? '';
+            $place = $at > 0 ? ($places[$at] ?? $stock->locationTree()->pathOf($at)) : '';
             $date  = substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10);
             $out['material'][] = $thing === null ? esc_html('#' . $lot) : '<a href="' . esc_url(StockPage::thingUrl($thing, 'daten')) . '">' . esc_html($things->word($thing)) . '</a>';
             // His word 2026-11-09: «weiterhin fehlt der platz auf dem es jetzt liegt mit absprunglink zu platz bestand».

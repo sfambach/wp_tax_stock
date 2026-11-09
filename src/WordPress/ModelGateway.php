@@ -74,6 +74,22 @@ final class ModelGateway
         return $nodes !== [] && method_exists($this->door, 'ownPropertiesOf') ? $this->ask(fn (): array => $this->door->ownPropertiesOf($nodes, $key)) : [];
     }
 
+    /**
+     * D-1268: who points at these records through any field, in one read (modeller 0.2.45; deleting needs 0.2.47).
+     *
+     * @param list<int> $records
+     * @return array<int, list<int>> referred record → the records pointing at it
+     */
+    public function referrersOf(array $records): array
+    {
+        // D-1270: before 0.2.47 removing a place emptied the oldest line naming it, and that line's stock moved home.
+        if (! method_exists($this->door, 'referrersOf') || version_compare((string) \Taxmod\WordPress\Plugin::VERSION, '0.2.47', '<')) {
+            throw StockError::fromModel('The Taxonomy Modeller is too old to delete a place (0.2.47).');
+        }
+
+        return $records === [] ? [] : $this->ask(fn (): array => $this->door->referrersOf($records));
+    }
+
     /** D-1259: one act, undoable; null lets the node inherit again. */
     public function setProperty(int $node, string $key, bool|int|null $value): void
     {

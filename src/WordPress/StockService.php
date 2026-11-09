@@ -37,6 +37,7 @@ use TaxmodStock\Core\ReservedPlaces;
 use TaxmodStock\Core\SourceRow;
 use TaxmodStock\Core\SplitRow;
 use TaxmodStock\Core\StockError;
+use TaxmodStock\Core\PurchasePictures;
 use TaxmodStock\Core\Storno;
 use TaxmodStock\Core\TransferRow;
 use TaxmodStock\Core\Structure;
@@ -315,6 +316,59 @@ final class StockService
         }
 
         return $out;
+    }
+
+    /**
+     * D-1264: the picture fields of some records, in one read.
+     *
+     * @param list<int> $records
+     * @return array<int, array{title: string|null, pictures: list<string>}>
+     */
+    public function picturesOf(array $records): array
+    {
+        $s      = $this->structure();
+        $title  = $s->hasField('title_image') ? $s->field('title_image') : 0;
+        $images = $s->hasField('images') ? $s->field('images') : 0;
+        $table  = $records === [] ? new Table([]) : ($this->model->records(array_values(array_unique($records))) ?? new Table([]));
+        $out    = [];
+
+        foreach ($records as $id) {
+            $out[$id] = [
+                'title'    => $title === 0 ? null : $table->first($id, $title),
+                'pictures' => $images === 0 ? [] : array_map('strval', $table->all($id, $images)),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * D-1264: the changes that give each chosen material without a picture its purchase's title picture.
+     *
+     * @param array<int, string> $chosen purchase → thing id or ref
+     * @return list<array<string, mixed>>
+     */
+    private function firstPictures(array $chosen): array
+    {
+        $known = array_values(array_map('intval', array_filter($chosen, 'ctype_digit')));
+
+        return $chosen === [] ? [] : (new PurchasePictures($this->structure()))->firstPictures($chosen, $this->picturesOf(array_keys($chosen)), $this->picturesOf($known));
+    }
+
+    /** D-1264, «Bild übernehmen»: the purchase's picture behind its material's pictures, in one act; nothing when it is there. */
+    public function takePurchasePicture(int $purchase): array
+    {
+        $s     = $this->structure();
+        $thing = (int) $this->table('purchase')->first($purchase, $s->field('purchase_model'));
+
+        if ($thing <= 0) {
+            throw StockError::purchaseWithoutThing($purchase);
+        }
+
+        $pictures = $this->picturesOf([$purchase, $thing]);
+        $changes  = (new PurchasePictures($s))->append($thing, $pictures[$purchase], $pictures[$thing]);
+
+        return $changes === [] ? ['applied' => []] : $this->model->write($changes);
     }
 
     /** @return array<int, int> record → the node it lives in */
@@ -983,7 +1037,8 @@ final class StockService
         // in the same step, and the receipt counts it.
         [$fix, $purchases] = $this->quantityChanges($quantities, array_map('intval', $this->table('order')->all($order, $s->field('order_lines'))));
 
-        $changes = [...$fix, ...(new Bookings($this->structureWithKinds(), $today))->receipt(
+        $bookings = new Bookings($this->structureWithKinds(), $today);
+        $changes  = [...$fix, ...$bookings->receipt(
             $order,
             $choices,
             $this->table('order'),
@@ -995,7 +1050,8 @@ final class StockService
             $this->packsOf(array_values(array_filter(array_map(fn (int $purchase, ReceiptChoice $c): ?int => $c->keep ? (int) $this->table('purchase')->first($purchase, $s->field('purchase_model')) : $c->thing, array_keys($choices), $choices))))
         )];
 
-        $result = $this->model->write($changes);
+        // D-1264: a material without a picture takes its purchase's, in the same act.
+        $result = $this->model->write([...$changes, ...$this->firstPictures($bookings->chosenThings())]);
         // Booked: the lot holds the place now, the plan has done its work.
         $this->planPlaces(array_fill_keys(array_keys($choices), 0));
 
@@ -1757,7 +1813,10 @@ final class StockService
 
         $this->checkGroups(array_values(array_filter($things, static fn (int|NewThing $t): bool => $t instanceof NewThing)));
         $inOrder = array_map('intval', $this->table('order')->all($order, $this->structure()->field('order_lines')));
-        $changes = [...$this->quantityChanges($quantities, $inOrder)[0], ...(new Bookings($this->structureWithKinds(), current_time('Y-m-d')))->assign($order, $things, $this->table('order'), $this->table('purchase'))];
+        $bookings = new Bookings($this->structureWithKinds(), current_time('Y-m-d'));
+        $changes  = [...$this->quantityChanges($quantities, $inOrder)[0], ...$bookings->assign($order, $things, $this->table('order'), $this->table('purchase'))];
+        // D-1264: a material without a picture takes its purchase's, in the same act.
+        $changes  = $changes === [] ? [] : [...$changes, ...$this->firstPictures($bookings->chosenThings())];
         $this->planPlaces($places);
 
         return $changes === [] ? ['applied' => []] : $this->model->write($changes);

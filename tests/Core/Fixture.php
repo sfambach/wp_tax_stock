@@ -24,7 +24,7 @@ final class Fixture
             'lager_sources', 'source_firm', 'source_number', 'firm_name', 'lager_unit', 'lager_prefix', 'source_content',
             'purchase_shipping_share', 'purchase_fees_share',
             'order_merchant', 'order_number', 'purchase_number', 'purchase_demand', 'purchase_not_stocked', 'location_parent', 'location_movable', 'location_project',
-            'line_location', 'line_reverses', 'location_reserved', 'transaction_reference', 'transaction_deadline', 'line_thing', 'transaction_carrier',
+            'line_location', 'line_reverses', 'location_reserved', 'transaction_reference', 'transaction_deadline', 'line_thing', 'transaction_carrier', 'images',
         ] as $i => $key) {
             $fields[$key] = 100 + $i;
         }

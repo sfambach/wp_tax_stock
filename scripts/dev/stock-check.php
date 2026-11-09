@@ -73,6 +73,7 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'create_node', 'ref' => 'stock', 'name' => '__Stock', 'parent' => 402],
     // On Model itself, so the things in __Teile carry it as well as the Stock records.
     $field('label', 402, 'Bezeichnung', $text, 'composition', '0..1'),
+    $field('bilder', 402, '__Bilder', $text, 'composition', '0..*'),
     ['op' => 'create_node', 'ref' => 'mat', 'name' => 'Lager', 'parent' => '@stock'],
     ['op' => 'create_node', 'ref' => 'lot', 'name' => 'Bestandsposten', 'parent' => '@stock'],
     ['op' => 'create_node', 'ref' => 'vg', 'name' => 'Vorgänge', 'parent' => '@stock'],
@@ -200,7 +201,7 @@ $struktur = [
     'fields' => [
         'lager_use' => $r['m_use'], 'lager_location' => $r['m_ort'], 'purchase_model' => $r['k_mod'],
         'order_merchant' => $r['o_hand'], 'purchase_demand' => $r['k_bedarf'], 'transaction_reference' => $r['v_bezug'], 'line_thing' => $r['p_ding'],
-        'label' => $r['label'], 'lager_thing' => $r['m_ding'], 'lager_single' => $r['m_einz'], 'lager_min' => $r['m_min'],
+        'label' => $r['label'], 'images' => $r['bilder'], 'lager_thing' => $r['m_ding'], 'lager_single' => $r['m_einz'], 'lager_min' => $r['m_min'],
         'lot_thing' => $r['l_mat'], 'lot_purchase' => $r['l_kauf'], 'lot_location' => $r['l_lo'], 'lot_value' => $r['l_wert'], 'lot_date' => $r['l_dat'],
         'transaction_kind' => $r['v_art'], 'transaction_date' => $r['v_dat'], 'transaction_order' => $r['v_best'], 'transaction_source' => $r['v_quel'], 'transaction_lines' => $r['v_pos'],
         'line_lot' => $r['p_lot'], 'line_quantity' => $r['p_menge'], 'line_counted' => $r['p_gez'], 'line_location' => $r['p_lo'], 'line_reverses' => $r['p_storno'],
@@ -313,9 +314,19 @@ try {
     $pruefe($e->reason === 'not_a_quantity' && (new StockService())->table('purchase')->first($r['kaufD'], $r['k_anz']) === '4', 'a quantity below 1 is refused, nothing written');
 }
 
+// D-1264: the purchases carry pictures; the receipt hands them to materials without one.
+(new StockService())->write([['op' => 'set_values', 'record' => (string) $r['kaufD'], 'values' => [(string) $r['bilder'] => ['values' => ['media:4711']]]],
+    ['op' => 'set_values', 'record' => (string) $r['kaufC'], 'values' => [(string) $r['bilder'] => ['values' => ['media:4712']]]]]);
+$vorBild = (new StockService())->picturesOf([$r['t1']])[$r['t1']]['pictures'];
 $antwort = (new StockService())->bookReceipt($r['best2'], [$r['kaufC'] => ReceiptChoice::keep()->at($orte[$r['kaufC']]), $r['kaufD'] => ReceiptChoice::create(new NewThing($r['teile'], 'MPSA56 neu'))], '2026-10-21', 'WE 2', [$r['kaufD'] => '2']);
 $s       = new StockService();
 $neu     = (int) (array_values(array_filter($antwort['refs'], static fn ($v, $k): bool => preg_match('/^d\d+$/', (string) $k) === 1, ARRAY_FILTER_USE_BOTH))[0] ?? 0);
+$bilder  = (new StockService())->picturesOf([$neu, $r['t1']]);
+$pruefe($bilder[$neu]['pictures'] === ['media:4711'] && $bilder[$r['t1']]['pictures'] === ($vorBild === [] ? ['media:4712'] : $vorBild), 'D-1264: the receipt gives a material without a picture its purchase\'s, as a reference; one with pictures keeps them');
+(new StockService())->write([['op' => 'set_values', 'record' => (string) $r['kaufC'], 'values' => [(string) $r['bilder'] => ['values' => ['media:4713']]]]]);
+(new StockService())->takePurchasePicture($r['kaufC']);
+(new StockService())->takePurchasePicture($r['kaufC']);
+$pruefe((array_count_values((new StockService())->picturesOf([$r['t1']])[$r['t1']]['pictures'])['media:4713'] ?? 0) === 1, 'D-1264: «Bild übernehmen» appends the purchase\'s picture to its material, once');
 $pruefe($neu > 0 && $s->tableOf($r['teile'])->first($neu, $r['label']) === 'MPSA56 neu', 'the new thing is created in the chosen group with its name');
 $pruefe($s->table('purchase')->first($r['kaufD'], $r['k_mod']) === (string) $neu, 'the receipt writes the new thing into the purchase\'s Modell');
 $pruefe($s->ledger()->stockOf($r['t1']) === 3.0 && $s->ledger()->stockOf($neu) === 2.0, 'both purchases are in stock');

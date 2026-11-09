@@ -5,6 +5,7 @@ namespace TaxmodStock\WordPress\Admin;
 use Taxmod\WordPress\Admin\ListPage;
 use TaxmodStock\Core\InboundOrder;
 use TaxmodStock\Core\InboundStage;
+use TaxmodStock\Core\PurchasePictures;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\Table;
 use TaxmodStock\Core\TestResult;
@@ -116,6 +117,8 @@ final class InboundPage
                 // D-1060: a purchase marked private already in the order view, and taken back.
                 'private'   => $this->applied($this->inbound->stock()->closeWithoutStock((int) ($ids[0] ?? 0), absint($_POST['purchase'] ?? 0), __('privat', 'taxmod-stock'))),
                 'unprivate' => $this->applied($this->inbound->stock()->reopenForStock((int) ($ids[0] ?? 0), absint($_POST['purchase'] ?? 0))),
+                // D-1264: the purchase's picture behind its material's pictures.
+                'take_picture' => $this->applied($this->inbound->stock()->takePurchasePicture(absint($_POST['purchase'] ?? 0))),
                 'tracking' => $this->applied($this->inbound->addTracking((int) ($ids[0] ?? 0), sanitize_text_field(wp_unslash((string) ($_POST['number'] ?? ''))))),
                 'untrack' => $this->applied($this->inbound->removeTracking((int) ($ids[0] ?? 0), sanitize_text_field(wp_unslash((string) ($_POST['number'] ?? ''))))),
                 'test'    => $this->applied($this->inbound->recordTest(
@@ -561,6 +564,9 @@ final class InboundPage
         // and what the purchase already says, read from the one table of this order's purchases (CD-7).
         $ids      = array_map('intval', $purchases);
         $pictures = method_exists(ListPage::class, 'thumbnails') ? ListPage::thumbnails($stock->titleImages($ids)) : [];
+        // D-1264, «Bild übernehmen»: offered where the purchase has a picture its material does not hold yet — one read for both.
+        $models   = array_filter(array_combine($ids, array_map(static fn (int $p): int => (int) $table->first($p, $s->field('purchase_model')), $ids)) ?: []);
+        $held     = $stock->picturesOf([...$ids, ...array_values($models)]);
 
         foreach ($purchases as $purchase) {
             $purchase = (int) $purchase;
@@ -571,6 +577,12 @@ final class InboundPage
                 $reason !== ''                          => ' <em>(' . esc_html($reason) . ')</em> ' . $this->purchaseButton($order->id, $purchase, 'unprivate', __('Zurücknehmen', 'taxmod-stock'), $tab),
                 default                                 => ' ' . $this->purchaseButton($order->id, $purchase, 'private', __('Privat', 'taxmod-stock'), $tab),
             };
+            $picture = PurchasePictures::titleOf($held[$purchase] ?? null);
+
+            if ($picture > 0 && isset($models[$purchase]) && ! PurchasePictures::holds($held[$models[$purchase]] ?? ['title' => null, 'pictures' => []], $picture)) {
+                $button .= ' ' . $this->purchaseButton($order->id, $purchase, 'take_picture', __('Bild übernehmen', 'taxmod-stock'), $tab);
+            }
+
             $count = (float) ($table->first($purchase, $s->field('purchase_quantity')) ?? 0);
             $each  = $amountOf($table->first($purchase, $s->field('purchase_unit_price')));
             $total = $s->hasField('purchase_total_price') ? $amountOf($table->first($purchase, $s->field('purchase_total_price'))) : null;

@@ -34,6 +34,9 @@ final class Bookings
 
     private int $counter = 0;
 
+    /** @var array<int, string> D-1264: purchase → the thing it went in as (an id, or the ref of a new one) in the last booking built */
+    private array $chosen = [];
+
     public function __construct(private readonly Structure $structure, private readonly string $today)
     {
     }
@@ -223,8 +226,13 @@ final class Bookings
             }
 
             if ($thing instanceof NewThing) {
-                $this->changes[] = ['op' => 'set_values', 'record' => $purchase, 'values' => [(string) $s->field('purchase_model') => '@' . $this->newThing($thing)]];
+                $this->chosen[$purchase] = '@' . $this->newThing($thing);
+                $this->changes[] = ['op' => 'set_values', 'record' => $purchase, 'values' => [(string) $s->field('purchase_model') => $this->chosen[$purchase]]];
                 continue;
+            }
+
+            if ($thing > 0) {
+                $this->chosen[$purchase] = (string) $thing;
             }
 
             // 0 is a material taken away with «Zurücksetzen»: the purchase forgets its «Modell» (his report 2026-11-01).
@@ -685,8 +693,20 @@ final class Bookings
         return [(string) $this->structure->field('transaction_deadline') => $deadline];
     }
 
+    /**
+     * D-1264: purchase → the thing it was booked or assigned as in the last booking built — an id, or the ref of a thing
+     * made in the same act.
+     *
+     * @return array<int, string>
+     */
+    public function chosenThings(): array
+    {
+        return $this->chosen;
+    }
+
     private function start(): void
     {
+        $this->chosen    = [];
         $this->changes   = [];
         $this->lineRefs  = [];
         $this->lineParts = [];
@@ -700,7 +720,7 @@ final class Bookings
         if ($choice->keep) {
             $model = (int) $purchases->first($purchase, $s->field('purchase_model'));
 
-            return $model > 0 ? (string) $model : throw StockError::purchaseWithoutThing($purchase);
+            return $model > 0 ? $this->chosen[$purchase] = (string) $model : throw StockError::purchaseWithoutThing($purchase);
         }
 
         $thing = match (true) {
@@ -710,6 +730,7 @@ final class Bookings
         };
 
         $this->changes[] = ['op' => 'set_values', 'record' => $purchase, 'values' => [(string) $s->field('purchase_model') => $thing]];
+        $this->chosen[$purchase] = $thing;
 
         return $thing;
     }

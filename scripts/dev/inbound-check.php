@@ -272,6 +272,8 @@ $html = (new InboundPage())->render();
 $pruefe(! str_contains($html, 'button taxmod-list-toggle') && ! str_contains($html, 'Expand all') && str_contains($html, 'order=' . $r['o5']), '«Eingebucht» lists its orders without opening rows, each linked to its own view');
 $html .= $details('booked');
 $pruefe(str_contains($html, 'Ladegerät') && str_contains($html, 'thing=' . $r['et4000']) && str_contains($html, 'view=bestand'), '«Eingebucht» shows where each purchase went, linked to its material');
+// The fixture's lots lie nowhere, so the link is read from the source.
+$pruefe(str_contains((string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Admin/InboundPage.php'), "'tab' => 'lagerorte', 'ort' => \$at"), 'his word «weiterhin fehlt der platz auf dem es jetzt liegt mit absprunglink zu platz bestand»: the place links to its stock');
 
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'shipped'];
 $html = (new InboundPage())->render();
@@ -284,7 +286,9 @@ $pruefe(str_contains($html, 'href="https://shop.test/order?id=8199"') && str_con
 $pruefe(! str_contains($html, '{nr}'), 'a template is never shown as it stands');
 $pruefe(preg_match('/data-order="' . $r['o2'] . '" data-back="' . InboundPage::BACK . '" data-assign="1"/', $html) === 1, 'his choice «Material schon am Kauf wählen»: an order on its way offers the choice of material before it arrives');
 $assignForm = (new \ReflectionMethod(StockPage::class, 'receiptPositions'))->invoke(new StockPage(), $r['o2'], InboundPage::BACK, true);
-$pruefe(str_contains($assignForm, 'class="taxmod-stock-assign"') && str_contains($assignForm, 'value="zuordnen"') && ! str_contains($assignForm, 'Wareneingang buchen') && str_contains($assignForm, 'thing[' . $r['kaufE'] . ']'), 'it only keeps the choice: nothing can be booked before the order arrives');
+$pruefe(str_contains($assignForm, 'class="taxmod-stock-assign"') && str_contains($assignForm, 'value="zuordnen"') && ! str_contains($assignForm, 'value="Wareneingang buchen"') && str_contains($assignForm, 'thing[' . $r['kaufE'] . ']'), 'it only keeps the choice: nothing can be booked before the order arrives');
+$pruefe(str_contains($assignForm, 'data-taxmod-fill="location"') && strpos($assignForm, 'taxmod-stock-receipt-bulk-') < strpos($assignForm, 'class="taxmod-stock-assign"'), 'his wish «bulk funktion platz für alle wählen»: the bar before the form sets the place of every ticked purchase');
+$pruefe(str_contains(InboundPage::orderUrl($r['o4'], 'ordered'), 'tab=arrived'), 'his word «sollte dann auf eingebucht oben springen … sollte generell so sein»: after an action the order opens at the stage it stands in now');
 $plugin = (string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Plugin.php');
 $pruefe(str_contains($plugin, "'admin_post_' . StockPage::ASSIGN"), 'the choice is saved without a reload, under its own action');
 

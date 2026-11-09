@@ -399,7 +399,8 @@ final class StockPage
         }
 
         if ($fromCockpit) {
-            wp_safe_redirect(InboundPage::url(['tab' => 'arrived', 'order' => absint($_POST['order'] ?? 0)] + ($open > 0 ? ['material' => $open] : [])));
+            $to = InboundPage::orderUrl(absint($_POST['order'] ?? 0), 'arrived');
+            wp_safe_redirect($open > 0 ? add_query_arg('material', $open, $to) : $to);
             exit;
         }
 
@@ -2199,6 +2200,33 @@ final class StockPage
         }
     }
 
+    /**
+     * His wish 2026-11-09 «button platz für alle übernehmen oder bulk funktion platz für alle wählen»: the bulk bar of the receipt
+     * with «Lagerort für alle …», which writes the chosen place into every ticked purchase's row — saved when booking or keeping.
+     */
+    private function placeForAll(int $order, int $count): string
+    {
+        if (! method_exists(ListPage::class, 'fillAction')) {
+            return '';
+        }
+
+        $switch = 'taxmod-stock-place-all-' . $order;
+        $body   = self::actForm([['label' => __('Lagerort', 'taxmod-stock'), 'control' => $this->stock->placeChooser('fill_location'),
+            'hint' => __('Setzt den Lagerort bei allen angehakten Käufen; gespeichert wird er mit «Wareneingang buchen» oder «Zuordnung speichern».', 'taxmod-stock')]]);
+
+        return ListPage::bulkBar(
+            'taxmod-stock-receipt-bulk-' . $order,
+            self::ACTION,
+            [],
+            /* translators: %d: number of purchases */
+            sprintf(_n('%d Kauf', '%d Käufe', $count, 'taxmod-stock'), $count),
+            '',
+            false,
+            [$switch => [__('Lagerort für alle …', 'taxmod-stock'), '<div class="alignleft actions">'
+                . ListPage::fillAction($switch, __('Lagerort für alle angehakten', 'taxmod-stock'), $body, 'location', 'fill_location', __('Übernehmen', 'taxmod-stock')) . '</div>']]
+        );
+    }
+
     /** «open», «partial» or «received», read from the order's status value. */
     private function orderState(?string $value): string
     {
@@ -2243,7 +2271,9 @@ final class StockPage
         $bought  = $this->stock->table('purchase');
         $amount  = $this->stock->structure()->field('purchase_quantity');
         $first = $assign ? 'zuordnen' : 'wareneingang';
-        $html  = ($assign ? str_replace('<form ', '<form class="taxmod-stock-assign" ', $this->formStart($first)) : $this->formStart($first))
+        // His wish 2026-11-09: «bulk funktion platz für alle wählen» — the bar stands before the form, a form holds no form.
+        $bulk  = $this->placeForAll($order, count($plan));
+        $html  = $bulk . ($assign ? str_replace('<form ', '<form class="taxmod-stock-assign" ', $this->formStart($first)) : $this->formStart($first))
             . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
             . ($back === '' ? '' : '<input type="hidden" name="back" value="' . esc_attr($back) . '">')
             // ⚠️ *Enter in a reason field must book, not close the first row: the browser presses the first submit button.*
@@ -2251,11 +2281,11 @@ final class StockPage
             . ($closing ? '<datalist id="taxmod-stock-reasons">' . implode('', array_map(static fn (string $r): string => '<option value="' . esc_attr($r) . '">', self::notStockedReasons())) . '</datalist>' : '')
             . ($assign ? '<p>' . esc_html__('Schon vor dem Eintreffen je Kauf das Material wählen oder als «Neues Material» in seiner Gruppe anlegen; die Felder kommen aus der Gruppe. Gespeichert wird nur die Zuordnung, eingebucht wird erst beim Wareneingang.', 'taxmod-stock') . '</p>' : '')
             . ($assign ? '' : '<p>' . esc_html__('Je Kauf das Material: vorgeschlagen ist das «Modell» des Kaufs; «Zurücksetzen» (Pfeil) gibt die Suche frei; «Neues Material» (oder eine Gruppe in der Suche) legt ein neues Material in der Gruppe an. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seiner Gruppe; Gebrauchtware aus einem Zweig mit Test nach dem Wareneingang geht an den «Lagerort für Test», wenn einer eingestellt ist. Der Materialtext öffnet das Material wie der Knopf «Material». Die Menge ist die gekaufte Anzahl (bei Ware in Packungen: Packungen); geändert wird sie beim Buchen oder Speichern in den Kauf geschrieben.', 'taxmod-stock') . '</p>')
-            . '<div class="tablenav top"><div class="tablenav-pages one-page"><span class="displaying-num">' . esc_html(sprintf(
+            . ($bulk === '' ? '<div class="tablenav top"><div class="tablenav-pages one-page"><span class="displaying-num">' . esc_html(sprintf(
                 /* translators: %d: number of purchases */
                 _n('%d Kauf', '%d Käufe', count($plan), 'taxmod-stock'),
                 count($plan)
-            )) . '</span></div><br class="clear"></div>';
+            )) . '</span></div><br class="clear"></div>' : '');
         $head  = '<tr><td class="manage-column column-cb check-column"><input type="checkbox" aria-label="' . esc_attr__('Alle wählen', 'taxmod-stock') . '"></td>'
             . '<th scope="col" class="manage-column" style="width:28%">' . esc_html__('Kauf', 'taxmod-stock') . '</th><th scope="col" class="manage-column" style="width:28%">' . esc_html__('Material', 'taxmod-stock')
             . '</th><th scope="col" class="manage-column" style="width:6em">' . esc_html__('Menge', 'taxmod-stock') . '</th><th scope="col" class="manage-column">' . esc_html__('Lagerort', 'taxmod-stock') . '</th>'

@@ -60,6 +60,26 @@ final class InboundPage
         return add_query_arg(array_filter(['page' => self::PAGE] + $query), admin_url('admin.php'));
     }
 
+    /**
+     * His word 2026-11-09 «sollte dann auf eingebucht oben springen wenn einbuchen button gedrück wurde … sollte generell so sein»:
+     * after an action the order's own view opens at the stage it stands in now — arrow, way back and menu alike; read afresh.
+     */
+    public static function orderUrl(int $order, string $tab): string
+    {
+        $inbound = new InboundService();
+        $stock   = $inbound->stock();
+
+        try {
+            $now = ($inbound->orders()[$order] ?? null)?->stage($stock->structure(), $stock->inboundArchive(current_time('Y-m-d')));
+        } catch (StockError) {
+            $now = null;
+        }
+
+        $tab = $now !== null && in_array($now->value, self::tabSlugs(), true) ? $now->value : $tab;
+
+        return self::url(['tab' => $tab, 'order' => $order]);
+    }
+
     public function render(): string
     {
         $html = '<div class="wrap">' . ListPage::heading(__('Wareneingang', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . $this->notice();
@@ -117,7 +137,7 @@ final class InboundPage
         }
 
         $tab = in_array($tab, self::tabSlugs(), true) ? $tab : '';
-        wp_safe_redirect(self::url(['tab' => $tab, 'order' => empty($_POST['detail']) ? 0 : (int) ($ids[0] ?? 0)]));
+        wp_safe_redirect(empty($_POST['detail']) ? self::url(['tab' => $tab]) : self::orderUrl((int) ($ids[0] ?? 0), $tab));
         exit;
     }
 
@@ -468,9 +488,11 @@ final class InboundPage
 
         foreach ($this->inbound->lotsOf($purchase) as $lot) {
             $thing = $ledger->thingOf($lot);
-            $place = $places[(int) $lots->first($lot, $s->field('lot_location'))] ?? '';
+            $at    = (int) $lots->first($lot, $s->field('lot_location'));
+            $place = $places[$at] ?? '';
+            // His word 2026-11-09: «weiterhin fehlt der platz auf dem es jetzt liegt mit absprunglink zu platz bestand».
             $out[] = ($thing === null ? esc_html('#' . $lot) : '<a href="' . esc_url(StockPage::thingUrl($thing, 'bestand')) . '">' . esc_html($things->word($thing)) . '</a>')
-                . ($place === '' ? '' : ' · ' . esc_html($place));
+                . ($place === '' ? '' : ' · <a href="' . esc_url(add_query_arg(['page' => StockPage::PAGE, 'tab' => 'lagerorte', 'ort' => $at], admin_url('admin.php'))) . '">' . esc_html($place) . '</a>');
         }
 
         return $out === [] ? '' : ' → ' . implode(', ', $out);

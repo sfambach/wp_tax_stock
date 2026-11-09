@@ -56,7 +56,7 @@ final class Reservations
             $kind = (int) $transactions->first($deal, $s->field('transaction_kind'));
 
             // D-1088: what was consumed for a subject, a Storno and what it cancelled left out.
-            if ($kind === $s->value('kind_consumption')) {
+            if (in_array($kind, $s->consumptionKinds(), true)) {
                 $for = self::purposeOf($deal, $transactions, $subject, $project);
 
                 foreach ($for > 0 ? $transactions->all($deal, $s->field('transaction_lines')) : [] as $line) {

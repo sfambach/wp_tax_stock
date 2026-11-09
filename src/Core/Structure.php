@@ -123,6 +123,8 @@ final class Structure
         'kind_transfer', 'kind_reservation',
         // D-1091: a box moved with its content, no lot rebooked.
         'kind_relocation',
+        // D-1260: the Vorgang «Verkauf», booked by the sales module.
+        'kind_sale',
         // D-1169: a place type's fit calculation and how loudly a misfit is said.
         'fit_volume', 'fit_sides', 'fit_none', 'level_info', 'level_warning', 'level_error',
     ];
@@ -234,6 +236,17 @@ final class Structure
     public function hasValue(string $key): bool
     {
         return isset($this->values[$key]);
+    }
+
+    /**
+     * The kinds of Vorgang that take goods out for a Bezug: «Verbrauch», and «Verkauf» where the model has it (D-1260).
+     * They lower a reservation alike (D-1088) and are cancelled alike (D-1036).
+     *
+     * @return list<int>
+     */
+    public function consumptionKinds(): array
+    {
+        return array_values(array_filter([$this->values['kind_consumption'] ?? null, $this->values['kind_sale'] ?? null]));
     }
 
     /**

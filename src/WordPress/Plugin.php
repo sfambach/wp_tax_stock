@@ -53,6 +53,18 @@ final class Plugin
     /** D-1168: taking the resend back cancels that loss (D-1036). */
     public const CANCEL_LOSS = 'taxmod_stock_cancel_loss';
 
+    /** D-1260: the goods of a sale leave as a Vorgang «Verkauf» naming the sale. */
+    public const BOOK_SALE = 'taxmod_stock_book_sale';
+
+    /** D-1260: taking a sale back cancels its Vorgang «Verkauf» (D-1036), the same way as a loss. */
+    public const CANCEL_SALE = 'taxmod_stock_cancel_sale';
+
+    /** D-1260: an old sale without stock — «Nacherfassung» in, «Verkauf» out, in one act. */
+    public const BOOK_BACKFILL = 'taxmod_stock_book_backfill';
+
+    /** D-1260: material → lot → rest, for the sales module to pick lots from. */
+    public const LOTS_OF = 'taxmod_stock_lots_of';
+
     public function boot(): void
     {
         // Checked at runtime rather than with «Requires Plugins»: WordPress matches that header against the folder name, and the
@@ -126,6 +138,10 @@ final class Plugin
         add_filter(self::LOSS_LOTS, [self::class, 'lossLots']);
         add_filter(self::BOOK_LOSS, [self::class, 'bookLoss'], 10, 2);
         add_filter(self::CANCEL_LOSS, [self::class, 'cancelLoss'], 10, 2);
+        add_filter(self::BOOK_SALE, [self::class, 'bookSale'], 10, 2);
+        add_filter(self::CANCEL_SALE, [self::class, 'cancelLoss'], 10, 2);
+        add_filter(self::BOOK_BACKFILL, [self::class, 'bookBackfill'], 10, 2);
+        add_filter(self::LOTS_OF, [self::class, 'lotsOf'], 10, 2);
         // D-1147: the rows of the material and purchase lists draw their details when opened.
         // The filter's name stands as text, so an older modeller without it does not stop the module.
         add_filter('taxmod_list_details', static fn (?string $html, string $source, array $args): ?string => match ($source) {
@@ -384,6 +400,113 @@ final class Plugin
                 $date,
                 sanitize_text_field((string) ($args['title'] ?? __('Verlust', 'taxmod-stock')))
             );
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1260: `apply_filters('taxmod_stock_book_sale', null, ['sale' => id, 'lines' => [lot => '2', …], 'date' => 'Y-m-d',
+     * 'title' => '…'])` books the goods of a sale as one Vorgang «Verkauf» with the sale as Bezug; answers its id or a
+     * WP_Error. `taxmod_stock_cancel_sale` with ['deal' => id] takes it back.
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     the booking as the caller sends it; `mixed`: checked here
+     */
+    public static function bookSale(mixed $previous, mixed $args): int|\WP_Error
+    {
+        if (is_int($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args  = is_array($args) ? $args : [];
+        $date  = sanitize_text_field((string) ($args['date'] ?? ''));
+        $lines = [];
+
+        foreach (is_array($args['lines'] ?? null) ? $args['lines'] : [] as $lot => $quantity) {
+            if (absint($lot) > 0 && is_numeric($quantity) && (float) $quantity > 0) {
+                $lines[absint($lot)] = (string) $quantity;
+            }
+        }
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+            return new \WP_Error('taxmod_stock_not_a_date', Messages::of(StockError::notADate($date)));
+        }
+
+        try {
+            return (new StockService())->bookSale(absint($args['sale'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Verkauf', 'taxmod-stock'))));
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1260: `apply_filters('taxmod_stock_book_backfill', null, ['material' => id, 'quantity' => '1', 'date' => 'Y-m-d' (the
+     * day of the sale), 'reference' => sale, 'value' => '12.50' (per piece, optional), 'place' => id (optional), 'title' =>
+     * '…'])` brings the goods in as «Nacherfassung» and out as «Verkauf» in one act; answers the new lot or a WP_Error.
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     the booking as the caller sends it; `mixed`: checked here
+     */
+    public static function bookBackfill(mixed $previous, mixed $args): int|\WP_Error
+    {
+        if (is_int($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args  = is_array($args) ? $args : [];
+        $date  = sanitize_text_field((string) ($args['date'] ?? ''));
+        $value = isset($args['value']) && is_numeric($args['value']) ? (string) $args['value'] : null;
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+            return new \WP_Error('taxmod_stock_not_a_date', Messages::of(StockError::notADate($date)));
+        }
+
+        try {
+            return (new StockService())->bookBackfill(
+                absint($args['material'] ?? 0),
+                sanitize_text_field((string) ($args['quantity'] ?? '')),
+                absint($args['reference'] ?? 0),
+                $date,
+                $value,
+                absint($args['place'] ?? 0),
+                sanitize_text_field((string) ($args['title'] ?? __('Verkauf', 'taxmod-stock')))
+            );
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1260: `apply_filters('taxmod_stock_lots_of', null, ['materials' => [ids]])` answers material → lot → rest, only lots
+     * with something left, oldest first; read only.
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     `mixed`: checked here
+     * @return array<int, array<int, float>>|\WP_Error
+     */
+    public static function lotsOf(mixed $previous, mixed $args): array|\WP_Error
+    {
+        if (is_array($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args = is_array($args) ? $args : [];
+
+        try {
+            return (new StockService())->lotsWithRest(array_values(array_filter(array_map('absint', is_array($args['materials'] ?? null) ? $args['materials'] : []))));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }

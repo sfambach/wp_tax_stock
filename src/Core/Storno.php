@@ -104,7 +104,7 @@ final class Storno
             throw StockError::notConfigured('fields.line_reverses');
         }
 
-        if (! $transactions->has($deal) || (int) $transactions->first($deal, $s->field('transaction_kind')) !== $s->value('kind_consumption')) {
+        if (! $transactions->has($deal) || ! in_array((int) $transactions->first($deal, $s->field('transaction_kind')), $s->consumptionKinds(), true)) {
             throw StockError::notCancellable($deal);
         }
 

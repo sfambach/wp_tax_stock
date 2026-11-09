@@ -1795,7 +1795,8 @@ final class StockPage
             $s->value('kind_receipt')     => __('Wareneingang', 'taxmod-stock'),
             $s->value('kind_consumption') => __('Verbrauch', 'taxmod-stock'),
             $s->value('kind_count')       => __('Inventur', 'taxmod-stock'),
-        ] + ($s->hasValue('kind_transfer') ? [$s->value('kind_transfer') => __('Umbuchung', 'taxmod-stock')] : []);
+        ] + ($s->hasValue('kind_transfer') ? [$s->value('kind_transfer') => __('Umbuchung', 'taxmod-stock')] : [])
+            + ($s->hasValue('kind_sale') ? [$s->value('kind_sale') => __('Verkauf', 'taxmod-stock')] : []);
         $wanted  = array_flip($lots);
         $hidden  = (new Storno($s))->pairedLines($lines) + Ledger::reservationLines($s, $deals);
         $where   = $s->hasField('line_location') ? $s->field('line_location') : null;
@@ -1820,7 +1821,7 @@ final class StockPage
             $kind     = $deal === null ? 0 : (int) $deals->first($deal, $s->field('transaction_kind'));
             $place    = $where === null ? 0 : (int) $lines->first($line, $where);
             $transfer = $deal !== null && $s->hasValue('kind_transfer') && $kind === $s->value('kind_transfer');
-            $consumed = $deal !== null && $kind === $s->value('kind_consumption') && $s->hasField('line_reverses');
+            $consumed = $deal !== null && in_array($kind, $s->consumptionKinds(), true) && $s->hasField('line_reverses');
             $counted  = $deal !== null && $kind === $s->value('kind_count') && $s->hasField('line_reverses');
             // One Storno per Umbuchung or consumption, at its first line on this lot; a count only for this lot's position.
             $storno   = match (true) {

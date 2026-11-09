@@ -282,6 +282,18 @@ final class StockError extends \RuntimeException
     }
 
     /** D-1083: a reservation needs its subject — a project or a sale (D-1088: build runs and repairs are no Bezug). */
+    /** D-1260: a sale takes no more from a lot than it holds; the detail is the lot. */
+    public static function saleTooLarge(int $lot): self
+    {
+        return new self('sale_too_large', (string) $lot);
+    }
+
+    /** D-1260: an old sale is backfilled at a place: given, the material's, its group's or the one for purchases without material. */
+    public static function noBackfillPlace(int $thing): self
+    {
+        return new self('no_backfill_place', (string) $thing);
+    }
+
     public static function noSubject(): self
     {
         return new self('no_subject', '');

@@ -2534,6 +2534,117 @@ final class StockService
         return $this->dealOf($this->bookConsumption($thing, $lot, $quantity, $purpose, $today, $title, null, $reason));
     }
 
+    /**
+     * D-1260 for the sales module: the goods of a sale leave as one Vorgang «Verkauf» with the sale as Bezug. A lot a
+     * reservation for this sale names gives first (D-1088); no lot gives more than it holds.
+     *
+     * @param array<int, string> $lines lot → quantity
+     */
+    public function bookSale(int $sale, array $lines, string $today, string $title): int
+    {
+        $this->checkSale($sale);
+        $ledger   = $this->ledger();
+        $reserved = $this->reservedPlaces();
+        $purpose  = Purpose::subject($sale);
+        $rows     = [];
+
+        foreach ($lines as $lot => $quantity) {
+            if ($ledger->thingOf($lot) === null) {
+                throw StockError::noLot(0);
+            }
+
+            if ((float) \TaxmodStock\Core\Quantity::positive($quantity) > $ledger->restOf($lot) + 1e-9) {
+                throw StockError::saleTooLarge($lot);
+            }
+
+            $place = $this->takenFrom($lot, $ledger, $reserved, $purpose);
+            $reserved->checkConsumption($place ?? $ledger->homeOf($lot), $purpose);
+            $this->reservations()->checkConsumption($lot, $quantity, $place ?? $ledger->homeOf($lot), $purpose, $ledger, $reserved);
+            $rows[] = ['lot' => $lot, 'place' => $place, 'quantity' => $quantity];
+        }
+
+        return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->sale($rows, $sale, $title)));
+    }
+
+    /**
+     * D-1260: an old sale without stock — a lot «Nacherfassung» on the day of the sale, out again at once as «Verkauf», in
+     * one act. The place: the one given, else the material's own, its group's (D-1259), else the one for purchases without
+     * material; none of them refuses, no place is made up. Answers the new lot.
+     */
+    public function bookBackfill(int $thing, string $quantity, int $sale, string $today, ?string $value, int $place, string $title): int
+    {
+        $this->checkSale($sale);
+        $this->checkThings([$thing]);
+        $place = $this->backfillPlace($thing, $place);
+        /* translators: %s: the material backfilled */
+        $name   = sprintf(__('Nacherfassung: %s', 'taxmod-stock'), $this->recordLabels([$thing])[$thing] ?? '#' . $thing);
+        $answer = $this->model->write((new Bookings($this->structureWithKinds(), $today))->backfill($name, $thing, $quantity, $value, $place, $sale, $title));
+
+        foreach ((array) ($answer['refs'] ?? []) as $ref => $id) {
+            if (preg_match('/^l\d+$/', (string) $ref) === 1) {
+                return (int) $id;
+            }
+        }
+
+        throw StockError::nothingToBook();
+    }
+
+    /**
+     * D-1260: the lots of these materials with something left, for the sales module to pick from — read only.
+     *
+     * @param list<int> $things
+     * @return array<int, array<int, float>> material → lot → rest, oldest lot first
+     */
+    public function lotsWithRest(array $things): array
+    {
+        $ledger = $this->ledger();
+        $out    = [];
+
+        foreach (array_unique($things) as $thing) {
+            foreach ($ledger->lotsOf($thing) as $lot) {
+                $rest = $ledger->restOf($lot);
+
+                if ($rest > 1e-9) {
+                    $out[$thing][$lot] = $rest;
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    private function backfillPlace(int $thing, int $given): int
+    {
+        $s      = $this->structure();
+        $places = $this->table('location');
+
+        if ($given > 0) {
+            return $places->has($given) ? $given : throw StockError::notALocation($given);
+        }
+
+        $record = $this->things()->lagerOf($thing);
+        $own    = $record !== null && $s->hasField('lager_location') ? (int) $this->table('lager')->first($record, $s->field('lager_location')) : 0;
+        $node   = $this->model->nodesOf([$thing])[$thing] ?? 0;
+        $group  = $node > 0 ? ($this->groupProperty(self::PLACE_PROPERTY, [$node])[$node] ?? null) : null;
+
+        foreach ([$own, is_int($group) ? $group : 0, (int) $this->locationSettings([])->unreferenced] as $place) {
+            if ($place > 0 && $places->has($place)) {
+                return $place;
+            }
+        }
+
+        throw StockError::noBackfillPlace($thing);
+    }
+
+    private function checkSale(int $sale): void
+    {
+        $known = array_merge(...array_map('array_keys', array_values($this->purposes())));
+
+        if ($sale <= 0 || ! in_array($sale, $known, true)) {
+            throw StockError::noSubject();
+        }
+    }
+
     /** D-1168: the Storno of a loss booked by {@see bookLoss()}. */
     public function cancelLoss(int $deal, string $now, string $who): int
     {

@@ -402,6 +402,66 @@ final class Bookings
     }
 
     /**
+     * D-1260: the goods of a sale leave in one Vorgang «Verkauf» whose Bezug is the sale.
+     *
+     * @param list<array{lot: int, place: int|null, quantity: string}> $rows
+     * @return list<array<string, mixed>>
+     */
+    public function sale(array $rows, int $sale, string $title): array
+    {
+        if ($rows === []) {
+            throw StockError::nothingToBook();
+        }
+
+        $this->start();
+
+        foreach ($rows as $row) {
+            $this->line($title, (string) $row['lot'], '-' . Quantity::positive($row['quantity']), null, $row['place']);
+        }
+
+        return $this->saleDeal($title, $sale);
+    }
+
+    /**
+     * D-1260, an old sale nobody booked stock for: a new lot comes in as «Nacherfassung» on the day of the sale and leaves
+     * at once as «Verkauf» — two Vorgänge in one act, the stock of today unchanged, the history complete.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function backfill(string $name, int $thing, string $quantity, ?string $value, int $place, int $sale, string $title): array
+    {
+        $s      = $this->structure;
+        $amount = Quantity::positive($quantity);
+
+        $this->start();
+        $lot = $this->lot($name, (string) $thing, null, $value === null ? null : $this->moneyPart(Quantity::amount($value), null), '', $place);
+        $this->line($name, $lot, $amount, null, $place);
+        $this->finish($name, 'kind_receipt', [(string) $s->field('transaction_reference') => (string) $sale]);
+
+        $this->lineRefs  = [];
+        $this->lineParts = [];
+        $this->line($title, $lot, '-' . $amount, null, $place);
+
+        return $this->saleDeal($title, $sale);
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function saleDeal(string $title, int $sale): array
+    {
+        $s = $this->structure;
+
+        if (! $s->hasValue('kind_sale')) {
+            throw StockError::notConfigured('values.kind_sale');
+        }
+
+        if (! $s->hasField('transaction_reference')) {
+            throw StockError::notConfigured('fields.transaction_reference');
+        }
+
+        return $this->finish($title, 'kind_sale', [(string) $s->field('transaction_reference') => (string) $sale]);
+    }
+
+    /**
      * D-1036 for a consumption: a Vorgang «Verbrauch» whose lines put back what each line took, at its place, naming
      * the line it cancels. A reservation the consumption lowered is open again by as much (D-1088).
      *

@@ -86,6 +86,7 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'create_node', 'ref' => 'k_in', 'name' => 'Inventur', 'parent' => '@arten'],
     ['op' => 'create_node', 'ref' => 'k_um', 'name' => 'Umbuchung', 'parent' => '@arten'],
     ['op' => 'create_node', 'ref' => 'k_ul', 'name' => 'Umlagerung', 'parent' => '@arten'],
+    ['op' => 'create_node', 'ref' => 'k_vk', 'name' => 'Verkauf', 'parent' => '@arten'],
     ['op' => 'create_node', 'ref' => 'stat', 'name' => '__Bestellstatus', 'parent' => 410, 'class' => 'Choice'],
     ['op' => 'create_node', 'ref' => 's_teil', 'name' => 'teilweise eingegangen', 'parent' => '@stat'],
     ['op' => 'create_node', 'ref' => 's_ganz', 'name' => 'eingegangen', 'parent' => '@stat'],
@@ -210,7 +211,7 @@ $struktur = [
         'purchase_landed_price' => $r['k_ein'], 'purchase_unit_price' => $r['k_preis'], 'money_amount' => 4234, 'money_unit' => 4236,
     ],
     'values' => [
-        'kind_receipt' => $r['k_we'], 'kind_consumption' => $r['k_vb'], 'kind_count' => $r['k_in'], 'kind_transfer' => $r['k_um'], 'kind_relocation' => $r['k_ul'], 'source_manual' => $r['q_hand'],
+        'kind_receipt' => $r['k_we'], 'kind_consumption' => $r['k_vb'], 'kind_count' => $r['k_in'], 'kind_transfer' => $r['k_um'], 'kind_relocation' => $r['k_ul'], 'kind_sale' => $r['k_vk'], 'source_manual' => $r['q_hand'],
         'status_partial' => $r['s_teil'], 'status_received' => $r['s_ganz'], 'location_default' => $r['lager'],
         'status_draft' => $r['s_entw'], 'status_ordered' => $r['s_best'], 'status_cancelled' => $r['s_storn'], 'kind_reservation' => $r['k_res'],
     ],
@@ -755,6 +756,7 @@ $pruefe($zuviel instanceof WP_Error && (new StockService())->ledger()->stockOf($
 $keinLot = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_LOSS, null, ['sale' => $auftrag, 'lot' => 0, 'quantity' => '1', 'reason' => 'x', 'date' => '2026-11-04']);
 $pruefe($keinLot instanceof WP_Error, 'a loss without a lot is refused');
 
+
 // D-1027 with D-1097/D-1098: a demand, a source and back, a position removed — the same before and after the switch.
 $offen = static function (StockService $s): array {
     $orders = $s->table('order');
@@ -881,6 +883,35 @@ $x      = new StockService();
 $x->write((new ReceiptReversal($x->structureWithKinds()))->reverse($r['best2'], $x->table('order'), $x->table('lot'), $x->table('line'), $x->table('transaction')));
 $nach   = new StockService();
 $pruefe(count($vorher) === 8 && $zeilen($nach) === [] && array_filter($zwei, static fn (int $l): bool => $nach->table('lot')->has($l)) === [], 'a receipt whose lot was only moved goes back, its Umbuchung lines with it');
+
+// D-1260 for the sales module: a sale leaves as «Verkauf»; an old sale without stock is backfilled and leaves in one act.
+$s       = new StockService();
+$kinds   = static fn (StockService $s, int $deal): int => (int) $s->table('transaction')->first($deal, $s->structure()->field('transaction_kind'));
+$reste   = apply_filters(TaxmodStock\WordPress\Plugin::LOTS_OF, null, ['materials' => [$r['t1']]]);
+$losLot  = is_array($reste) ? (int) array_key_first($reste[$r['t1']] ?? []) : 0;
+$pruefe(is_array($reste) && $losLot > 0 && abs($reste[$r['t1']][$losLot] - $s->ledger()->restOf($losLot)) < 1e-9, 'D-1260: lots_of answers material → lot → rest');
+$vorher  = $s->ledger()->stockOf($r['t1']);
+$verkauf = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_SALE, null, ['sale' => $auftrag, 'lines' => [$losLot => '1'], 'date' => '2026-11-05', 'title' => 'Verkauf Test']);
+$s       = new StockService();
+$pruefe(is_int($verkauf) && $s->ledger()->stockOf($r['t1']) === $vorher - 1.0 && $kinds($s, $verkauf) === $r['k_vk']
+    && (int) $s->table('transaction')->first($verkauf, $s->structure()->field('transaction_reference')) === $auftrag, 'D-1260: a sale leaves as one Vorgang «Verkauf» naming the sale' . ($verkauf instanceof WP_Error ? ': ' . $verkauf->get_error_message() : ''));
+$storno  = is_int($verkauf) ? apply_filters(TaxmodStock\WordPress\Plugin::CANCEL_SALE, null, ['deal' => $verkauf, 'who' => 'check']) : null;
+$pruefe(is_int($storno) && (new StockService())->ledger()->stockOf($r['t1']) === $vorher, 'D-1260: the Storno of a sale puts the piece back' . ($storno instanceof WP_Error ? ': ' . $storno->get_error_message() : ''));
+$zuviel  = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_SALE, null, ['sale' => $auftrag, 'lines' => [$losLot => '9999'], 'date' => '2026-11-05']);
+$pruefe($zuviel instanceof WP_Error && $zuviel->get_error_code() === 'taxmod_stock_sale_too_large' && (new StockService())->ledger()->stockOf($r['t1']) === $vorher, 'D-1260: a sale larger than the lot is refused, nothing booked');
+$vorher  = (new StockService())->ledger()->stockOf($r['t1']);
+$nach    = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_BACKFILL, null, ['material' => $r['t1'], 'quantity' => '2', 'date' => '2024-03-01', 'reference' => $auftrag, 'value' => '4.5', 'place' => $schrank, 'title' => 'Altverkauf']);
+$s       = new StockService();
+$deals   = $s->table('transaction');
+$both    = array_values(array_filter($deals->ids(), static fn (int $d): bool => (int) $deals->first($d, $s->structure()->field('transaction_reference')) === $auftrag && substr((string) $deals->first($d, $s->structure()->field('transaction_date')), 0, 10) === '2024-03-01'));
+$pruefe(is_int($nach) && $s->ledger()->stockOf($r['t1']) === $vorher && $s->ledger()->restOf($nach) === 0.0 && $s->ledger()->thingOf($nach) === $r['t1']
+    && array_map(static fn (int $d): int => $kinds($s, $d), $both) === [$r['k_we'], $r['k_vk']], 'D-1260: an old sale is backfilled on its day and leaves at once — «Nacherfassung» in, «Verkauf» out, the stock of today unchanged' . ($nach instanceof WP_Error ? ': ' . $nach->get_error_message() : ''));
+$amOrt   = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_BACKFILL, null, ['material' => $r['t1'], 'quantity' => '1', 'date' => '2024-03-02', 'reference' => $auftrag]);
+$pruefe(is_int($amOrt) && (int) (new StockService())->table('lot')->first($amOrt, $von->field('lot_location')) === $r['platz'], 'D-1260: without a place given, the backfill lies at the group\'s «Standard-Lagerort» (D-1259)');
+(new StockService())->setGroupProperty($r['teile'], StockService::PLACE_PROPERTY, null);
+update_option(StockService::LOCATIONS, ['unreferenced' => null]);
+$ohne    = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_BACKFILL, null, ['material' => $r['t1'], 'quantity' => '1', 'date' => '2024-03-02', 'reference' => $auftrag]);
+$pruefe($ohne instanceof WP_Error && $ohne->get_error_code() === 'taxmod_stock_no_backfill_place', 'D-1260: without any place to backfill at, it is refused and no place is made up');
 
 // D-1209: the stock as an ability — at a place and inside it, and per material, the same numbers as the ledger.
 $frage = wp_get_ability('taxmod-stock/stock');

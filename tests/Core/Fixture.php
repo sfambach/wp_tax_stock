@@ -37,7 +37,7 @@ final class Fixture
             'values' => [
                 'kind_receipt' => 201, 'kind_consumption' => 202, 'kind_count' => 203, 'source_manual' => 204,
                 'status_partial' => 205, 'status_received' => 206, 'location_default' => 207, 'currency_default' => 208,
-                'kind_transfer' => 209, 'kind_reservation' => 210, 'kind_relocation' => 211,
+                'kind_transfer' => 209, 'kind_reservation' => 210, 'kind_relocation' => 211, 'kind_sale' => 212,
             ],
         ]);
     }

@@ -134,6 +134,7 @@ final class PeriodPage
             'kind_transfer'    => __('Umbuchung', 'taxmod-stock'),
             'kind_relocation'  => __('Box-Umlagerung', 'taxmod-stock'),
             'kind_reservation' => __('Reservierung', 'taxmod-stock'),
+            'kind_sale'        => __('Verkauf', 'taxmod-stock'),
         ];
         $out   = [];
 

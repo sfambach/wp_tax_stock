@@ -224,6 +224,32 @@ final class BookingsTest extends TestCase
     }
 
     #[Test]
+    public function an_old_sale_is_backfilled_and_leaves_in_one_act(): void
+    {
+        $s       = Fixture::structure();
+        $changes = (new Bookings($s, '2024-03-01'))->backfill('Nacherfassung: X', 40, '2', '4,5', 5, 900, 'Verkauf');
+        $deals   = array_values(array_filter($changes, static fn (array $c): bool => $c['op'] === 'set_values' && isset($c['values'][(string) $s->field('transaction_kind')])));
+        $lines   = array_values(array_filter($changes, static fn (array $c): bool => $c['op'] === 'set_values' && isset($c['values'][(string) $s->field('line_quantity')])));
+
+        // D-1260: «Nacherfassung» in, «Verkauf» out, both naming the sale, the lot at the place on the day of the sale.
+        self::assertSame(['201', '212'], array_map(static fn (array $c): string => $c['values'][(string) $s->field('transaction_kind')], $deals));
+        self::assertSame(['900', '900'], array_map(static fn (array $c): string => $c['values'][(string) $s->field('transaction_reference')], $deals));
+        self::assertSame(['2', '-2'], array_map(static fn (array $c): string => $c['values'][(string) $s->field('line_quantity')], $lines));
+        self::assertSame('2024-03-01', $this->valuesByNode($changes)[2][(string) $s->field('lot_date')]);
+    }
+
+    #[Test]
+    public function a_sale_is_a_kind_that_takes_like_a_consumption(): void
+    {
+        $s      = Fixture::structure();
+        $values = $this->valuesByNode((new Bookings($s, '2026-11-09'))->sale([['lot' => 11, 'place' => 5, 'quantity' => '1']], 900, 'Verkauf'));
+
+        self::assertSame('212', $values[3][(string) $s->field('transaction_kind')]);
+        self::assertSame('-1', $values[4][(string) $s->field('line_quantity')]);
+        self::assertSame([202, 212], $s->consumptionKinds());
+    }
+
+    #[Test]
     public function a_lot_purchase_split_becomes_its_first_part_and_further_purchases_of_the_order(): void
     {
         $s                    = Fixture::structure();

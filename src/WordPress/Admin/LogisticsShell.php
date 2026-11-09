@@ -57,7 +57,7 @@ final class LogisticsShell
         check_admin_referer(self::FULLSCREEN_ACTION);
 
         update_user_meta(get_current_user_id(), self::FULLSCREEN_META, self::isFullscreen() ? '0' : '1');
-        wp_safe_redirect(wp_validate_redirect(esc_url_raw(wp_unslash((string) ($_POST['return'] ?? ''))), admin_url('admin.php?page=' . CockpitPage::PAGE)));
+        wp_safe_redirect(wp_validate_redirect(esc_url_raw(wp_unslash((string) ($_POST['return'] ?? ''))), admin_url('admin.php?page=' . Pages::COCKPIT)));
         exit;
     }
     public static function navigation(): Navigation
@@ -68,38 +68,38 @@ final class LogisticsShell
             // D-1241, his word 2026-11-09: «… unter Cockpit angezeigt werden. Und auch das Zeitraum würde ich einfach unten drunter
             // packen … Sodass wir nur noch Cockpit haben.» — one item, what is due and the period on one page.
             ['key' => 'cockpit', 'label' => __('Cockpit', 'taxmod-stock'), 'items' => [
-                $item('cockpit', __('Cockpit', 'taxmod-stock'), CockpitPage::PAGE),
+                $item('cockpit', __('Cockpit', 'taxmod-stock'), Pages::COCKPIT),
             ]],
             ['key' => 'purchasing', 'label' => __('Einkauf', 'taxmod-stock'), 'items' => [
                 // D-1242, his word 2026-11-09: «Mindestbestand unterschritten wäre, glaube ich, besser» — the list says what it holds.
-                $item('reorder', __('Mindestbestand unterschritten', 'taxmod-stock'), PurchasePage::PAGE, 'nachbestellen'),
-                $item('demand', __('Bedarf', 'taxmod-stock'), PurchasePage::PAGE, 'bedarf'),
-                $item('to-order', __('Zu bestellen', 'taxmod-stock'), PurchasePage::PAGE, 'bestellen'),
-                $item('ordered', __('Bestellt', 'taxmod-stock'), PurchasePage::PAGE, 'bestellt'),
-                $item('dropped', __('Verworfen', 'taxmod-stock'), PurchasePage::PAGE, 'verworfen'),
+                $item('reorder', __('Mindestbestand unterschritten', 'taxmod-stock'), Pages::PURCHASE, 'nachbestellen'),
+                $item('demand', __('Bedarf', 'taxmod-stock'), Pages::PURCHASE, 'bedarf'),
+                $item('to-order', __('Zu bestellen', 'taxmod-stock'), Pages::PURCHASE, 'bestellen'),
+                $item('ordered', __('Bestellt', 'taxmod-stock'), Pages::PURCHASE, 'bestellt'),
+                $item('dropped', __('Verworfen', 'taxmod-stock'), Pages::PURCHASE, 'verworfen'),
             ]],
             ['key' => 'inbound', 'label' => __('Wareneingang', 'taxmod-stock'), 'items' => [
                 // In the order of the process, like the tabs of the page (his question 2026-11-01: «die reihenfolge im menü stimmt nicht mit dem ablauf in den tabs überein»).
-                $item('awaited', __('Bestellt', 'taxmod-stock'), InboundPage::PAGE, 'ordered'),
-                $item('on-the-way', __('Versendet', 'taxmod-stock'), InboundPage::PAGE, 'shipped'),
-                $item('arrived', __('Angekommen', 'taxmod-stock'), InboundPage::PAGE, 'arrived'),
-                $item('book', __('Einbuchen', 'taxmod-stock'), StockPage::PAGE, 'wareneingang'),
-                $item('booked', __('Eingebucht', 'taxmod-stock'), InboundPage::PAGE, 'booked'),
-                $item('test', __('Zu testen', 'taxmod-stock'), InboundPage::PAGE, 'test'),
-                $item('archive', __('Archiv', 'taxmod-stock'), InboundPage::PAGE, 'archived'),
+                $item('awaited', __('Bestellt', 'taxmod-stock'), Pages::INBOUND, 'ordered'),
+                $item('on-the-way', __('Versendet', 'taxmod-stock'), Pages::INBOUND, 'shipped'),
+                $item('arrived', __('Angekommen', 'taxmod-stock'), Pages::INBOUND, 'arrived'),
+                $item('book', __('Einbuchen', 'taxmod-stock'), Pages::STOCK, 'wareneingang'),
+                $item('booked', __('Eingebucht', 'taxmod-stock'), Pages::INBOUND, 'booked'),
+                $item('test', __('Zu testen', 'taxmod-stock'), Pages::INBOUND, 'test'),
+                $item('archive', __('Archiv', 'taxmod-stock'), Pages::INBOUND, 'archived'),
             ]],
             ['key' => 'stock', 'label' => __('Bestand', 'taxmod-stock'), 'items' => [
-                $item('material', __('Material', 'taxmod-stock'), StockPage::PAGE, 'material'),
+                $item('material', __('Material', 'taxmod-stock'), Pages::STOCK, 'material'),
                 // D-1174: a node of the material tree is a group; its stock holds every group below it.
-                $item('group-stock', __('Gruppenbestand', 'taxmod-stock'), StockPage::PAGE, 'gruppenbestand'),
-                $item('count', __('Inventur', 'taxmod-stock'), StockPage::PAGE, 'inventur'),
-                $item('use', __('Verbrauch', 'taxmod-stock'), StockPage::PAGE, 'verbrauch'),
-                $item('reservations', __('Reservierungen', 'taxmod-stock'), StockPage::PAGE, 'reservierungen'),
-                $item('places', __('Platzbestand', 'taxmod-stock'), StockPage::PAGE, 'lagerorte'),
+                $item('group-stock', __('Gruppenbestand', 'taxmod-stock'), Pages::STOCK, 'gruppenbestand'),
+                $item('count', __('Inventur', 'taxmod-stock'), Pages::STOCK, 'inventur'),
+                $item('use', __('Verbrauch', 'taxmod-stock'), Pages::STOCK, 'verbrauch'),
+                $item('reservations', __('Reservierungen', 'taxmod-stock'), Pages::STOCK, 'reservierungen'),
+                $item('places', __('Platzbestand', 'taxmod-stock'), Pages::STOCK, 'lagerorte'),
             ]],
             // D-957 names «Fertigung» among the module's areas; D-1139 is its first page.
             ['key' => 'production', 'label' => __('Fertigung', 'taxmod-stock'), 'items' => [
-                $item('project-boxes', __('Projekt-Gebinde', 'taxmod-stock'), StockPage::PAGE, 'fertigung'),
+                $item('project-boxes', __('Projekt-Gebinde', 'taxmod-stock'), Pages::STOCK, 'fertigung'),
                 // D-1142: the manufacturing module (wp_tax_manufacturing) hangs its pages here.
                 ...self::modules('production'),
             ]],
@@ -110,10 +110,10 @@ final class LogisticsShell
             // His word 2026-11-01: «einen Punkt Einstellung … die API-Konfiguration, die Grundeinstellung und ja, die Lagerstruktur».
             ['key' => 'settings', 'label' => __('Einstellungen', 'taxmod-stock'), 'items' => [
                 // D-1085: the business settings inside the navigation; the technical structure stays on the modeller's Configuration.
-                $item('basics', __('Grundeinstellungen', 'taxmod-stock'), SettingsPage::PAGE),
+                $item('basics', __('Grundeinstellungen', 'taxmod-stock'), Pages::SETTINGS),
                 // His words 2026-11-03 (D-1129): «sollte eigener punkt in einstellungen sein vielleicht lagerstrukut platzarten, layout».
-                ['path' => [__('Lagerstruktur', 'taxmod-stock')]] + $item('structure', __('Layout', 'taxmod-stock'), StockPage::PAGE, 'lagerstruktur'),
-                ['path' => [__('Lagerstruktur', 'taxmod-stock')]] + $item('place-types', __('Platzarten', 'taxmod-stock'), StockPage::PAGE, 'platzarten'),
+                ['path' => [__('Lagerstruktur', 'taxmod-stock')]] + $item('structure', __('Layout', 'taxmod-stock'), Pages::STOCK, 'lagerstruktur'),
+                ['path' => [__('Lagerstruktur', 'taxmod-stock')]] + $item('place-types', __('Platzarten', 'taxmod-stock'), Pages::STOCK, 'platzarten'),
                 // D-1193, his word 2026-11-06: «kontakte nochmal in einstellungen ? finde sie da gut aber dann sollten sie aus dem andren
                 // menü raus» — the contact group stands under Einstellungen only; its head opens all contacts.
                 ...self::contactItems(),
@@ -121,12 +121,12 @@ final class LogisticsShell
                 // His words 2026-11-03: «pack mal das menü drucken unter einstellungen», «warum hat das nur zwei ebenen», «kannst du
                 // das so bauen das es n ebenen zulässt» — an item's `path` puts it any depth below its area (D-1121).
                 // D-1153: label templates are records; their list sits with the print pages.
-                ['path' => [__('Druck', 'taxmod-stock')]] + $item('label-templates', __('Etiketten', 'taxmod-stock'), StockPage::PAGE, 'etikettenvorlagen'),
+                ['path' => [__('Druck', 'taxmod-stock')]] + $item('label-templates', __('Etiketten', 'taxmod-stock'), Pages::STOCK, 'etikettenvorlagen'),
                 // D-1192: the printers, the roll each holds, «Rolle wechseln».
-                ['path' => [__('Druck', 'taxmod-stock')]] + $item('printers', __('Drucker', 'taxmod-stock'), StockPage::PAGE, 'drucker'),
+                ['path' => [__('Druck', 'taxmod-stock')]] + $item('printers', __('Drucker', 'taxmod-stock'), Pages::STOCK, 'drucker'),
                 ...array_map(static fn (array $item): array => ['path' => [__('Druck', 'taxmod-stock'), ...$item['path']]] + $item, self::modules('print')),
                 // D-1232, his question 2026-11-08: «was ist eigentlich mit dem Benutzereinstellungen los? Die sind noch nicht sichtbar».
-                $item('user', __('Benutzereinstellungen', 'taxmod-stock'), SettingsPage::PAGE, SettingsPage::USER_TAB),
+                $item('user', __('Benutzereinstellungen', 'taxmod-stock'), Pages::SETTINGS, SettingsPage::USER_TAB),
             ]],
         ]);
     }
@@ -146,14 +146,14 @@ final class LogisticsShell
         }
 
         $group = __('Kontakte', 'taxmod-stock');
-        $items = [['key' => 'contacts', 'label' => $group, 'page' => ContactsPage::PAGE, 'tab' => '', 'path' => [$group], 'head' => true]];
+        $items = [['key' => 'contacts', 'label' => $group, 'page' => Pages::CONTACTS, 'tab' => '', 'path' => [$group], 'head' => true]];
 
         try {
             $stock = new StockService();
             $tree  = $stock->contactTree();
 
             foreach (Contacts::menu($tree, $stock->contactRoot()) as $node) {
-                $items[] = ['key' => 'contact-' . $node['node'], 'label' => $node['label'], 'page' => ContactsPage::PAGE, 'tab' => (string) $node['node'],
+                $items[] = ['key' => 'contact-' . $node['node'], 'label' => $node['label'], 'page' => Pages::CONTACTS, 'tab' => (string) $node['node'],
                     'path' => [$group, ...$node['path']], 'head' => $node['head']];
             }
         } catch (StockError) {
@@ -174,7 +174,7 @@ final class LogisticsShell
 
         foreach (ModulePage::all() as $module) {
             if ($module['area'] === $area) {
-                $items[] = ['key' => 'module-' . sanitize_key($module['slug']), 'label' => $module['label'], 'page' => ModulePage::PAGE, 'tab' => '', 'module' => $module['slug'], 'path' => $module['path']];
+                $items[] = ['key' => 'module-' . sanitize_key($module['slug']), 'label' => $module['label'], 'page' => Pages::MODULE, 'tab' => '', 'module' => $module['slug'], 'path' => $module['path']];
             }
         }
 
@@ -189,10 +189,10 @@ final class LogisticsShell
     {
         $navigation = self::navigation();
         $tab        = sanitize_key((string) ($_GET['tab'] ?? ''));
-        $overview   = $page === CockpitPage::PAGE ? sanitize_key((string) ($_GET[CockpitPage::AREA] ?? '')) : '';
+        $overview   = $page === Pages::COCKPIT ? sanitize_key((string) ($_GET[CockpitPage::AREA] ?? '')) : '';
         // D-1128: an area's overview opens its area in the navigation, no item marked; D-1134: a group's overview opens the group.
         $group      = $overview === '' ? '' : sanitize_text_field(wp_unslash((string) ($_GET[CockpitPage::GROUP] ?? '')));
-        $active     = $overview !== '' && $overview !== 'cockpit' ? ['area' => $overview, 'item' => '', 'group' => $group] : $navigation->active($page, $tab, $page === ModulePage::PAGE ? ModulePage::requested() : '');
+        $active     = $overview !== '' && $overview !== 'cockpit' ? ['area' => $overview, 'item' => '', 'group' => $group] : $navigation->active($page, $tab, $page === Pages::MODULE ? ModulePage::requested() : '');
 
         if ($active === null) {
             return $side . $html;

@@ -10,6 +10,7 @@ use TaxmodStock\WordPress\Admin\InboundPage;
 use TaxmodStock\WordPress\Admin\LogisticsShell;
 use TaxmodStock\WordPress\Admin\Messages;
 use TaxmodStock\WordPress\Admin\ModulePage;
+use TaxmodStock\WordPress\Admin\Pages;
 use TaxmodStock\WordPress\Admin\PurchasePage;
 use TaxmodStock\WordPress\Admin\SettingsPage;
 use TaxmodStock\WordPress\Admin\SettingsTab;
@@ -22,7 +23,7 @@ use TaxmodStock\WordPress\Admin\StockPage;
 final class Plugin
 {
     /** The slug of the goods receipt cockpit; kept from the former menu «Logistik» so bookmarks and links still work (D-1028). */
-    public const MENU = 'taxmod-logistik';
+    public const MENU = Admin\Pages::INBOUND;
 
     /** The modeller's menu, which every Taxmod module hangs its pages under (D-1028). */
     public const PARENT = 'taxmod';
@@ -68,7 +69,8 @@ final class Plugin
     {
         // *The one door into the model and the shared confirm dialog (D-1186) came with the modeller 0.1.175; an older one is named
         // rather than failing on a page.*
-        if (! class_exists(\Taxmod\WordPress\ModelDoor::class) || ! method_exists(\Taxmod\WordPress\Admin\ListPage::class, 'confirm')) {
+        // Asked by version, not by loading the classes: method_exists() compiled the 43 KB list page on every page view (D-1187).
+        if (! class_exists(\Taxmod\WordPress\Plugin::class, false) || version_compare(\Taxmod\WordPress\Plugin::VERSION, '0.1.175', '<')) {
             add_action('admin_notices', static function (): void {
                 echo '<div class="notice notice-error"><p>' . esc_html__('Taxmod Stock braucht den aktiven Taxonomy Modeller ab 0.1.175.', 'taxmod-stock') . '</p></div>';
             });
@@ -81,8 +83,10 @@ final class Plugin
         add_action('wp_abilities_api_init', static fn () => (new StockAbility())->register());
         // D-1239: the labels read, created, changed and removed over MCP, with a PDF to look at instead of a test print.
         add_action('wp_abilities_api_init', static fn () => (new LabelAbilities())->register());
-        // On admin_init and rest_api_init, where settings are saved: on init it compiled the stock service on every page view (D-1187).
-        add_action('admin_init', [$this, 'registerSettings']);
+        // Only where a setting is saved (options.php) or read over REST: naming the options compiled the 100 KB stock service on every page view (D-1187).
+        if (($GLOBALS['pagenow'] ?? '') === 'options.php') {
+            add_action('admin_init', [$this, 'registerSettings']);
+        }
         add_action('rest_api_init', [$this, 'registerSettings']);
         // After the modeller (priority 10) has created its menu.
         add_action('admin_menu', [$this, 'registerMenu'], 20);
@@ -132,7 +136,7 @@ final class Plugin
     public static function scanLinks(array $links, string $kind, int $record): array
     {
         return $links + match ($kind) {
-            'O', 'K' => [__('Lagerort öffnen', 'taxmod-stock') => add_query_arg(['page' => StockPage::PAGE, 'tab' => 'lagerstruktur', 'ort' => $record], admin_url('admin.php'))],
+            'O', 'K' => [__('Lagerort öffnen', 'taxmod-stock') => add_query_arg(['page' => Pages::STOCK, 'tab' => 'lagerstruktur', 'ort' => $record], admin_url('admin.php'))],
             'M'      => [__('Material im Lager öffnen', 'taxmod-stock') => StockPage::thingUrl($record, 'bestand')],
             // D-1223: a lot label opens the stock of its material, where the lot stands with its places.
             'P'      => self::lotLink($record),
@@ -464,19 +468,19 @@ final class Plugin
         };
 
         $hooks = [
-            add_submenu_page(self::PARENT, __('Logistik', 'taxmod-stock'), __('Logistik', 'taxmod-stock'), 'manage_options', CockpitPage::PAGE, $page(CockpitPage::PAGE, static fn (): string => (new CockpitPage())->render())),
+            add_submenu_page(self::PARENT, __('Logistik', 'taxmod-stock'), __('Logistik', 'taxmod-stock'), 'manage_options', Pages::COCKPIT, $page(Pages::COCKPIT, static fn (): string => (new CockpitPage())->render())),
             // D-1027: demand, source, order per supplier — he orders at the shop himself.
-            add_submenu_page(self::PARENT, __('Einkauf', 'taxmod-stock'), __('Einkauf', 'taxmod-stock'), 'manage_options', PurchasePage::PAGE, $page(PurchasePage::PAGE, static fn (): string => (new PurchasePage())->render())),
+            add_submenu_page(self::PARENT, __('Einkauf', 'taxmod-stock'), __('Einkauf', 'taxmod-stock'), 'manage_options', Pages::PURCHASE, $page(Pages::PURCHASE, static fn (): string => (new PurchasePage())->render())),
             add_submenu_page(self::PARENT, __('Wareneingang', 'taxmod-stock'), __('Wareneingang', 'taxmod-stock'), 'manage_options', self::MENU, $page(self::MENU, static fn (): string => (new InboundPage())->render())),
-            add_submenu_page(self::PARENT, __('Lager', 'taxmod-stock'), __('Lager', 'taxmod-stock'), 'manage_options', StockPage::PAGE, $page(StockPage::PAGE, static fn (): array => (new StockPage())->parts())),
+            add_submenu_page(self::PARENT, __('Lager', 'taxmod-stock'), __('Lager', 'taxmod-stock'), 'manage_options', Pages::STOCK, $page(Pages::STOCK, static fn (): array => (new StockPage())->parts())),
             // D-1184: Logistik › Kontakte, the model's contact branch.
-            add_submenu_page(self::PARENT, __('Kontakte', 'taxmod-stock'), __('Kontakte', 'taxmod-stock'), 'manage_options', ContactsPage::PAGE, $page(ContactsPage::PAGE, static fn (): array => (new ContactsPage())->render())),
+            add_submenu_page(self::PARENT, __('Kontakte', 'taxmod-stock'), __('Kontakte', 'taxmod-stock'), 'manage_options', Pages::CONTACTS, $page(Pages::CONTACTS, static fn (): array => (new ContactsPage())->render())),
             // D-1085: Logistik › Einstellungen › Grundeinstellungen, inside the navigation.
-            add_submenu_page(self::PARENT, __('Grundeinstellungen', 'taxmod-stock'), __('Grundeinstellungen', 'taxmod-stock'), 'manage_options', SettingsPage::PAGE, $page(SettingsPage::PAGE, static fn (): string => (new SettingsPage())->render())),
+            add_submenu_page(self::PARENT, __('Grundeinstellungen', 'taxmod-stock'), __('Grundeinstellungen', 'taxmod-stock'), 'manage_options', Pages::SETTINGS, $page(Pages::SETTINGS, static fn (): string => (new SettingsPage())->render())),
         ];
 
         // D-1085: a connection module's page inside the navigation; one address for all of them, the module named in the query.
-        $moduleHook = add_submenu_page(self::PARENT, __('Logistik', 'taxmod-stock'), __('Logistik', 'taxmod-stock'), 'manage_options', ModulePage::PAGE, $page(ModulePage::PAGE, static fn (): string => (new ModulePage())->render(ModulePage::requested())));
+        $moduleHook = add_submenu_page(self::PARENT, __('Logistik', 'taxmod-stock'), __('Logistik', 'taxmod-stock'), 'manage_options', Pages::MODULE, $page(Pages::MODULE, static fn (): string => (new ModulePage())->render(ModulePage::requested())));
         $hooks[]    = $moduleHook;
 
         if (is_string($moduleHook) && $moduleHook !== '') {
@@ -494,7 +498,7 @@ final class Plugin
         // Removed only when the menu is drawn: WordPress checks access to a page against the submenu, so removing them here
         // would lock the pages. D-1085: the modules' entries go too — the menu keeps Modeller, Logistik, maintenance, Configuration.
         add_action('admin_head', static function (): void {
-            foreach ([self::MENU, StockPage::PAGE, PurchasePage::PAGE, SettingsPage::PAGE, ContactsPage::PAGE, ModulePage::PAGE, ...ModulePage::menuEntries()] as $hidden) {
+            foreach ([self::MENU, Pages::STOCK, Pages::PURCHASE, Pages::SETTINGS, Pages::CONTACTS, Pages::MODULE, ...ModulePage::menuEntries()] as $hidden) {
                 remove_submenu_page(self::PARENT, $hidden);
             }
         });
@@ -502,14 +506,14 @@ final class Plugin
         // The modeller's forms (record editor, choosers, dialogs) on a logistics page need its stylesheet in the head: enqueued late,
         // from inside the filter, it came too late, and a chosen project showed its hidden search field beside it (2026-11-03).
         add_action('admin_enqueue_scripts', static function (): void {
-            if (in_array(sanitize_key((string) ($_GET['page'] ?? '')), [self::MENU, CockpitPage::PAGE, StockPage::PAGE, PurchasePage::PAGE, SettingsPage::PAGE, ModulePage::PAGE, InboundPage::PAGE, ContactsPage::PAGE], true)) {
+            if (in_array(sanitize_key((string) ($_GET['page'] ?? '')), [self::MENU, Pages::COCKPIT, Pages::STOCK, Pages::PURCHASE, Pages::SETTINGS, Pages::MODULE, Pages::INBOUND, Pages::CONTACTS], true)) {
                 do_action('taxmod_enqueue_admin_style');
             }
         });
 
         // D-1069: the material page inside a goods receipt dialog shows only itself — no admin menu, bar or logistics navigation.
         add_action('admin_enqueue_scripts', static function (): void {
-            if (! in_array(sanitize_key((string) ($_GET['page'] ?? '')), [StockPage::PAGE, 'taxmod'], true)) {
+            if (! in_array(sanitize_key((string) ($_GET['page'] ?? '')), [Pages::STOCK, 'taxmod'], true)) {
                 return;
             }
 
@@ -523,6 +527,6 @@ final class Plugin
         });
 
         // On a page behind «Logistik» the menu still marks «Logistik».
-        add_filter('submenu_file', static fn (?string $file): ?string => in_array(sanitize_key((string) ($_GET['page'] ?? '')), [self::MENU, StockPage::PAGE, PurchasePage::PAGE, SettingsPage::PAGE, ModulePage::PAGE], true) ? CockpitPage::PAGE : $file);
+        add_filter('submenu_file', static fn (?string $file): ?string => in_array(sanitize_key((string) ($_GET['page'] ?? '')), [self::MENU, Pages::STOCK, Pages::PURCHASE, Pages::SETTINGS, Pages::MODULE], true) ? Pages::COCKPIT : $file);
     }
 }

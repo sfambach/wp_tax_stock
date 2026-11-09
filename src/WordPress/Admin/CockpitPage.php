@@ -17,7 +17,7 @@ use TaxmodStock\WordPress\InboundService;
  */
 final class CockpitPage
 {
-    public const PAGE = 'taxmod-lager-cockpit';
+    public const PAGE = Pages::COCKPIT;
 
     public function __construct(private readonly InboundService $inbound = new InboundService())
     {

@@ -27,7 +27,7 @@ use TaxmodStock\WordPress\InboundService;
 final class InboundPage
 {
     /** The cockpit keeps the slug of the former menu «Logistik» (D-1004, D-1028). */
-    public const PAGE   = \TaxmodStock\WordPress\Plugin::MENU;
+    public const PAGE   = Pages::INBOUND;
     public const ACTION = 'taxmod_stock_inbound';
 
     /** The value of `back` with which a receipt booked here returns here. */

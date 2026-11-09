@@ -58,7 +58,7 @@ final class StockPage
     /** The codes «print-label» may ask this page for (D-1235, D-1238): material, lot, place, box. */
     public const LABEL_PREFIXES = ['M', 'P', 'O', 'K'];
 
-    public const PAGE       = 'taxmod-stock';
+    public const PAGE       = Pages::STOCK;
     public const ACTION     = 'taxmod_stock_book';
     public const POSITIONS  = 'taxmod_stock_positions';
     /** The notice after a booking; the goods receipt cockpit shows it too, when the booking came from there. */

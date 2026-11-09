@@ -29,7 +29,7 @@ use TaxmodStock\WordPress\Plugin;
  */
 final class ModulePage
 {
-    public const PAGE = 'taxmod-lager-modul';
+    public const PAGE = Pages::MODULE;
 
     /**
      * Filter: `list<array{slug: string, label: string, area?: 'settings'|'outbound'|'print', path?: list<string>, capability?: string, render?: callable(): string}>`.
@@ -42,7 +42,7 @@ final class ModulePage
     private const AREAS = ['settings', 'outbound', 'print', 'production'];
 
     /** Pages of the Taxmod menu that are not modules: the modeller's (D-1085 level 1) and ours. */
-    private const NOT_MODULES = [Plugin::PARENT, 'taxmod-inbox', 'taxmod-cleanup', 'taxmod-backup', 'taxmod-settings', CockpitPage::PAGE, InboundPage::PAGE, StockPage::PAGE, PurchasePage::PAGE, SettingsPage::PAGE, ContactsPage::PAGE, self::PAGE];
+    private const NOT_MODULES = [Plugin::PARENT, 'taxmod-inbox', 'taxmod-cleanup', 'taxmod-backup', 'taxmod-settings', Pages::COCKPIT, Pages::INBOUND, Pages::STOCK, Pages::PURCHASE, Pages::SETTINGS, Pages::CONTACTS, Pages::MODULE];
 
     /** Kept from the D-1053 navigation: the eBay shipping page stands under «Warenausgang», the other modules under «Einstellungen». */
     private const OUTBOUND = ['taxebay-shipping'];

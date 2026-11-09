@@ -25,7 +25,7 @@ use TaxmodStock\WordPress\StockService;
  */
 final class ContactsPage
 {
-    public const PAGE    = 'taxmod-lager-kontakte';
+    public const PAGE    = Pages::CONTACTS;
     public const ACTION  = 'taxmod_stock_contacts';
     public const DETAILS = 'stock-contact';
 

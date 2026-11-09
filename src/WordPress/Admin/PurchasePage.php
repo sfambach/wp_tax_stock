@@ -25,7 +25,7 @@ use TaxmodStock\WordPress\StockService;
  */
 final class PurchasePage
 {
-    public const PAGE   = 'taxmod-stock-einkauf';
+    public const PAGE   = Pages::PURCHASE;
     public const ACTION = 'taxmod_stock_purchase';
 
     private const TABS      = ['nachbestellen', 'bedarf', 'bestellen', 'bestellt', 'verworfen'];

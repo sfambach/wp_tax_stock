@@ -20,7 +20,7 @@ use TaxmodStock\WordPress\StockService;
  */
 final class SettingsPage
 {
-    public const PAGE   = 'taxmod-lager-einstellungen';
+    public const PAGE   = Pages::SETTINGS;
     public const ACTION = 'taxmod_stock_basics';
     public const USER_TAB = 'benutzer';
     public const USER_ACTION = 'taxmod_stock_user_settings';

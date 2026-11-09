@@ -465,6 +465,11 @@ $pruefe(str_contains($html, 'value="' . StockPage::GROUP_PROPERTIES . '"') && st
 (new StockService())->setGroupProperty($r['teile'], StockService::TEST_PROPERTY, true);
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, '<option value="1" selected=\'selected\'>Ja</option>'), 'D-1259: a group\'s own «Ja» stands chosen');
+$above = (new StockService())->groupParents()[$r['teile']] ?? 0;
+$above > 0 ? (new StockService())->setGroupProperty($above, StockService::TEST_PROPERTY, true) : null;
+$html = (new StockPage())->render();
+$pruefe($above > 0 && str_contains($html, '<option value="1" selected=\'selected\'>Ja</option>'), 'D-1259: an own «Ja» equal to the one above still stands as its own, so saving keeps it');
+$above > 0 ? (new StockService())->setGroupProperty($above, StockService::TEST_PROPERTY, null) : null;
 (new StockService())->setGroupProperty($r['teile'], StockService::TEST_PROPERTY, null);
 
 // Laid out as the eBay shipping page (2026-10-25): «Wareneingang» first and default, list tables with search, filter and sorting.

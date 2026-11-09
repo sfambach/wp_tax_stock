@@ -600,9 +600,8 @@ final class StockPage
         $tested = $this->stock->groupProperty(StockService::TEST_PROPERTY);
         $places = $this->stock->groupProperty(StockService::PLACE_PROPERTY);
         $label  = static fn (bool|int|null $on): string => $on === true ? __('Ja', 'taxmod-stock') : __('Nein', 'taxmod-stock');
-        $own    = static fn (array $values): bool|int|null => ($values[$group] ?? null) !== ($values[$parent] ?? null) ? ($values[$group] ?? null) : null;
-        $test   = $own($tested);
-        $place  = $own($places);
+        $test   = $this->stock->ownGroupProperty($group, StockService::TEST_PROPERTY);
+        $place  = $this->stock->ownGroupProperty($group, StockService::PLACE_PROPERTY);
         $above  = $places[$parent] ?? null;
         $names  = $this->stock->places();
         $choice = static fn (string $value, string $text, bool $on): string => '<option value="' . esc_attr($value) . '"' . selected($on, true, false) . '>' . esc_html($text) . '</option>';

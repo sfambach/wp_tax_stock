@@ -406,7 +406,16 @@ $pruefe(get_option(StockService::TESTS) === ['place' => $r['ortTest']] && ($rest
 update_option(StockService::TESTS, ['place' => $r['ortTest']]);
 update_option(StockService::LOCATIONS, ['branches' => [$r['gk'] => $r['ortRegal']], 'unreferenced' => null]);
 (new StockService())->moveBranchSettingsToGroups();
-$pruefe(((new StockService())->groupProperty(StockService::PLACE_PROPERTY, [$r['gk']])[$r['gk']] ?? null) === $r['ortRegal'] && (get_option(StockService::LOCATIONS)['branches'] ?? null) === [], 'D-1259: a branch → place row of the old option becomes the group\'s «Standard-Lagerort» and leaves the option');
+$pruefe(((new StockService())->groupProperty(StockService::PLACE_PROPERTY, [$r['gk']])[$r['gk']] ?? null) === $r['ortRegal'] && ! array_key_exists('branches', (array) get_option(StockService::LOCATIONS)), 'D-1259: a branch → place row of the old option becomes the group\'s «Standard-Lagerort» and leaves the option');
+// The option as an older version stored it, past today's sanitizer, which no longer keeps branch rows.
+$GLOBALS['wpdb']->update($GLOBALS['wpdb']->options, ['option_value' => maybe_serialize(['branches' => [(string) $r['gk']]])], ['option_name' => StockService::TESTS]);
+wp_cache_delete('alloptions', 'options');
+wp_cache_delete(StockService::TESTS, 'options');
+(new StockService())->moveBranchSettingsToGroups();
+$pruefe(get_option(StockService::TESTS, 'gone') === 'gone' && ((new StockService())->ownGroupProperty($r['gk'], StockService::TEST_PROPERTY)) === true, 'D-1259: an option the move empties is deleted, the group holds its own «Ja»');
+(new StockService())->moveBranchSettingsToGroups();
+$pruefe(get_option(StockService::TESTS, 'gone') === 'gone' && ((new StockService())->ownGroupProperty($r['gk'], StockService::TEST_PROPERTY)) === true, 'D-1259: a second run of the move changes nothing');
+update_option(StockService::TESTS, ['place' => $r['ortTest']]);
 (new StockService())->setGroupProperty($r['gk'], StockService::PLACE_PROPERTY, null);
 (new StockService())->setGroupProperty($r['gk'], StockService::TEST_PROPERTY, true);
 

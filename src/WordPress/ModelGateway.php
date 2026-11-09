@@ -63,11 +63,22 @@ final class ModelGateway
         return $nodes !== [] && method_exists($this->door, 'propertiesOf') ? $this->ask(fn (): array => $this->door->propertiesOf($nodes, $key)) : [];
     }
 
+    /**
+     * D-1259: only the values set at these nodes themselves, nothing inherited (modeller 0.2.43).
+     *
+     * @param list<int> $nodes
+     * @return array<int, bool|int> node → own value; a node without one is missing
+     */
+    public function ownProperties(array $nodes, string $key): array
+    {
+        return $nodes !== [] && method_exists($this->door, 'ownPropertiesOf') ? $this->ask(fn (): array => $this->door->ownPropertiesOf($nodes, $key)) : [];
+    }
+
     /** D-1259: one act, undoable; null lets the node inherit again. */
     public function setProperty(int $node, string $key, bool|int|null $value): void
     {
-        if (! method_exists($this->door, 'setProperty')) {
-            throw StockError::fromModel('The Taxonomy Modeller is too old for group properties (0.2.42).');
+        if (! method_exists($this->door, 'ownPropertiesOf')) {
+            throw StockError::fromModel('The Taxonomy Modeller is too old for group properties (0.2.43).');
         }
 
         $this->ask(function () use ($node, $key, $value): array {

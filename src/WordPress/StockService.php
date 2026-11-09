@@ -60,6 +60,7 @@ final class StockService
 
     /** D-1259: the group properties the stock declares — tested after the goods receipt, and the group's usual place. */
     public const TEST_PROPERTY  = 'stock_test_after_inbound';
+    private const MOVE_FAILURES = 'taxmod_stock_branch_move_failures';
     public const PLACE_PROPERTY = 'stock_default_place';
 
     /**
@@ -787,10 +788,16 @@ final class StockService
         return $this->groupProperties[$key] ??= $this->model->properties(array_keys($this->tree()), $key);
     }
 
+    /** D-1259: the value set at this group itself, null when it inherits — what its form shows, so saving keeps it. */
+    public function ownGroupProperty(int $group, string $key): bool|int|null
+    {
+        return $this->model->ownProperties([$group], $key)[$group] ?? null;
+    }
+
     /**
      * D-1259, once: the branch rows the Grundeinstellungen held (branch → place, tested branches) become the groups' own
-     * properties, then leave the options. Nothing happens on a modeller without group properties; a row that cannot be
-     * written stays in the option and is tried again.
+     * properties. Each row leaves the option as soon as it is written, an emptied option is deleted, so a second run finds
+     * nothing. A row that cannot be written stays and is tried again; its failure is logged once, not on every page.
      */
     public function moveBranchSettingsToGroups(): void
     {
@@ -802,24 +809,48 @@ final class StockService
         foreach ($moves as $option => [$key, $row]) {
             $raw = get_option($option, []);
 
-            if (! is_array($raw) || ! is_array($raw['branches'] ?? null) || $raw['branches'] === []) {
+            if (! is_array($raw) || ! is_array($raw['branches'] ?? null)) {
                 continue;
             }
-
-            $left = [];
 
             foreach ($raw['branches'] as $at => $value) {
                 [$node, $set] = $row($at, $value);
 
                 try {
                     $node > 0 && $set !== 0 ? $this->setGroupProperty($node, $key, $set) : null;
-                } catch (StockError) {
-                    $left[$at] = $value;
+                } catch (StockError $error) {
+                    $this->logMoveFailureOnce($option . ':' . $at, $error);
+                    continue;
                 }
+
+                unset($raw['branches'][$at]);
+                $this->storeOrDelete($option, $raw);
             }
 
-            update_option($option, ['branches' => $left] + $raw, false);
+            $raw['branches'] === [] ? $this->storeOrDelete($option, $raw) : null;
         }
+    }
+
+    /** @param array<string, mixed> $raw */
+    private function storeOrDelete(string $option, array $raw): void
+    {
+        if ($raw['branches'] === []) {
+            unset($raw['branches']);
+        }
+
+        $raw === [] ? delete_option($option) : update_option($option, $raw, false);
+    }
+
+    private function logMoveFailureOnce(string $row, StockError $error): void
+    {
+        $logged = (array) get_option(self::MOVE_FAILURES, []);
+
+        if (in_array($row, $logged, true)) {
+            return;
+        }
+
+        error_log('taxmod-stock D-1259: branch row ' . $row . ' not moved to its group: ' . $error->getMessage()); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- a once-only operator note.
+        update_option(self::MOVE_FAILURES, [...$logged, $row], false);
     }
 
     /** D-1259: set a group's own value; null lets it inherit again. */

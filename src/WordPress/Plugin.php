@@ -88,7 +88,7 @@ final class Plugin
         if (($GLOBALS['pagenow'] ?? '') === 'options.php') {
             add_action('admin_init', [$this, 'registerSettings']);
             // D-1259: the old branch rows move to the groups once, as soon as the modeller can hold them.
-            add_action('admin_init', static fn () => method_exists(\Taxmod\WordPress\ModelDoor::class, 'setProperty') && current_user_can('manage_options') ? (new StockService())->moveBranchSettingsToGroups() : null);
+            add_action('admin_init', static fn () => method_exists(\Taxmod\WordPress\ModelDoor::class, 'ownPropertiesOf') && current_user_can('manage_options') ? (new StockService())->moveBranchSettingsToGroups() : null);
         }
         add_action('rest_api_init', [$this, 'registerSettings']);
         // After the modeller (priority 10) has created its menu.

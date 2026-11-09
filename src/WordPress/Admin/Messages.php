@@ -113,6 +113,7 @@ final class Messages
             'not_enough_free'           => sprintf(__('Posten #%s hat nicht so viel frei — ein Teil liegt in einem reservierten Bereich oder ist schon reserviert.', 'taxmod-stock'), $error->detail),
             'sale_too_large'            => sprintf(__('Posten #%s hat nicht so viel Rest für diesen Verkauf.', 'taxmod-stock'), $error->detail),
             'no_backfill_place'         => sprintf(__('Kein Lagerort für die Nacherfassung von Material #%s: weder angegeben noch am Material, an seiner Gruppe oder als «Lagerort für Käufe ohne Material» eingestellt.', 'taxmod-stock'), $error->detail),
+            'place_in_use'              => sprintf(__('Dieser Lagerort wird noch gebraucht: %s', 'taxmod-stock'), $error->detail),
             'no_subject'                => __('Kein gültiger Bezug: ein Projekt oder ein Verkauf.', 'taxmod-stock'),
             /* translators: %s: what was typed */
             'not_a_date'                => sprintf(__('«%s» ist kein gültiges Datum.', 'taxmod-stock'), $error->detail),

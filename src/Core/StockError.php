@@ -94,6 +94,12 @@ final class StockError extends \RuntimeException
     }
 
     /** D-972: the chosen place is not a record of «Lagerorte». */
+    /** D-1267: a place that is still used is not deleted; the detail names why. */
+    public static function placeInUse(string $reasons): self
+    {
+        return new self('place_in_use', $reasons);
+    }
+
     public static function notALocation(int $recordId): self
     {
         return new self('not_a_location', (string) $recordId);

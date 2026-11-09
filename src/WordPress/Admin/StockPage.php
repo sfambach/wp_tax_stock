@@ -181,7 +181,7 @@ final class StockPage
 
         $kind  = sanitize_key((string) ($_POST['booking'] ?? ''));
         // D-1058: the row buttons carry their purchase in the value, «nichteinlagern-<id>» and «einlagern-<id>».
-        $rowPurchase = preg_match('/^(nichteinlagern|einlagern|umhaengen|reservieren|freigeben|ortkopieren|artkopieren|vorlagekopieren|rollewechseln)-(\d+)$/', $kind, $m) === 1 ? (int) $m[2] : 0;
+        $rowPurchase = preg_match('/^(nichteinlagern|einlagern|umhaengen|reservieren|freigeben|ortkopieren|ortloeschen|artkopieren|vorlagekopieren|rollewechseln)-(\d+)$/', $kind, $m) === 1 ? (int) $m[2] : 0;
         $kind        = $rowPurchase > 0 ? $m[1] : $kind;
         $today = current_time('Y-m-d');
         // The goods receipt sends «thing» as a list (one per purchase); only the other forms send one thing.
@@ -296,6 +296,8 @@ final class StockPage
                 'platzart'     => $this->stock->createPlaceType(sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? '')))),
                 'rollewechseln' => $this->stock->changeRoll($rowPurchase, absint($_POST['roll'] ?? 0)),
                 'vorlagekopieren' => $copy = $this->stock->copyLabelTemplate($rowPurchase, sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? '')))),
+                // D-1267: the page goes back to the parent of the place deleted.
+                'ortloeschen'  => $copy = $this->stock->deletePlace($rowPurchase),
                 'artkopieren'  => $copy = $this->stock->copyPlaceType($rowPurchase, sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? '')))),
                 // D-1130: «Kopieren» — the copy's id is what the page goes back to.
                 'ortkopieren'  => $copy = $this->stock->copyPlace($rowPurchase, sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? ''))), ! empty($_POST['below'])),
@@ -327,6 +329,7 @@ final class StockPage
                 'vorlagekopieren' => __('Kopiert: die neue Vorlage trägt Format, Layout und Anzahl der alten; die Platzarten bleiben bei der alten.', 'taxmod-stock'),
                 'artkopieren'    => __('Kopiert: die neue Platzart trägt Felder und Teile der alten; die Plätze bleiben bei der alten.', 'taxmod-stock'),
                 'ortkopieren'    => __('Kopiert: der neue Ort trägt die Felder des alten, aber nichts von dem, was dort liegt.', 'taxmod-stock'),
+                'ortloeschen'    => __('Gelöscht. Rückgängig geht es oben über die Liste der letzten Änderungen.', 'taxmod-stock'),
                 'kopieren'       => __('Kopiert: das neue Material trägt Daten und Lagersicht des alten, aber keinen Bestand; Bestellnummern bitte neu eintragen.', 'taxmod-stock'),
                 'reservieren'    => __('Reserviert für Produktion: alles, was dort und darunter liegt, ist reserviert.', 'taxmod-stock'),
                 'freigeben'      => __('Kennzeichen entfernt: was dort liegt, ist nicht mehr reserviert.', 'taxmod-stock'),
@@ -393,7 +396,7 @@ final class StockPage
         $returnTab = sanitize_key((string) ($_POST['return_tab'] ?? ''));
 
         if (in_array($returnTab, ['lagerorte', 'lagerstruktur'], true)) {
-            $back = [$returnTab, array_filter(['ort' => $kind === 'ortkopieren' && $copy > 0 ? $copy : absint($_POST['return_ort'] ?? 0)])];
+            $back = [$returnTab, array_filter(['ort' => in_array($kind, ['ortkopieren', 'ortloeschen'], true) ? $copy : absint($_POST['return_ort'] ?? 0)])];
         }
 
         // An Umbuchung started in the material list goes back to that very list, search and page included.
@@ -2689,6 +2692,7 @@ final class StockPage
             . $this->movePlaceDialog($place, $tree) . ' '
             . $this->newPlaceDialog($place, 'lagerstruktur') . ' '
             . $this->copyPlaceDialog($place, $tree, count($below) - 1) . ' '
+            . $this->deletePlaceDialog($place, $tree) . ' '
             . $this->formStart('lagerstruktur') . $this->returnFields('lagerstruktur', $place)
             . $this->reserveDialog($place, $flags->isFlagged($place), $all) . '</form>'
             . ($label === '' ? '' : ' ' . $label) . '</div>'
@@ -3435,6 +3439,28 @@ final class StockPage
                 'ort',
                 __('Anlegen', 'taxmod-stock')
             ) . '</form>';
+    }
+
+    /**
+     * D-1267, his report 2026-11-09 «ich kann einen lagerort nicht mehr löschen»: the bin of a place nothing uses; one that is
+     * still used shows it greyed, the reasons as its tooltip.
+     */
+    private function deletePlaceDialog(int $place, LocationTree $tree): string
+    {
+        $blockers = $this->stock->placeBlockers($place);
+        $icon     = defined(ListPage::class . '::ICON_DELETE') ? ListPage::ICON_DELETE : 'trash';
+
+        if ($blockers !== []) {
+            $why = sprintf(/* translators: %s: the reasons */ __('Nicht löschbar: %s', 'taxmod-stock'), implode(', ', $blockers));
+
+            return '<button type="button" class="button" disabled title="' . esc_attr($why) . '"><span class="dashicons dashicons-' . esc_attr($icon) . '" aria-hidden="true"></span><span class="screen-reader-text">' . esc_html($why) . '</span></button>';
+        }
+
+        $body = '<p>' . esc_html(sprintf(/* translators: %s: the place, by its path */ __('«%s» löschen? Er ist leer und wird nirgends gebraucht. Rückgängig geht über die letzten Änderungen.', 'taxmod-stock'), $tree->pathOf($place))) . '</p>';
+
+        return $this->formStart('lagerstruktur') . $this->returnFields('lagerstruktur', $place)
+            . ListPage::dialogAction('taxmod-stock-delete-place-' . $place, __('Löschen', 'taxmod-stock'), __('Lagerort löschen', 'taxmod-stock'), $body, 'booking', 'ortloeschen-' . $place, __('Löschen', 'taxmod-stock'), '', $icon)
+            . '</form>';
     }
 
     /** D-1130: «Kopieren» of a place — its name proposed with «(Kopie)», the places inside it on request. */

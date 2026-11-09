@@ -870,6 +870,19 @@ try {
 
 // D-1158: without sizes on the kinds of place nothing is said — the warning never stands in the way of a move.
 $ohneMass = $ort('Passt-Regal', 0);
+// D-1267, his report 2026-11-09 «ich kann einen lagerort nicht mehr löschen»: an unused place is deleted, a used one refused with its reasons.
+$leer    = $ort('__Leer', $ohneMass);
+$_GET    = ['page' => StockPage::PAGE, 'tab' => 'lagerstruktur', 'ort' => (string) $ohneMass];
+$pruefe(str_contains((new StockPage())->render(), 'Nicht löschbar: 1 Unterort'), 'D-1267: a place with a place inside shows the bin greyed, the reason as its tooltip');
+$_GET    = ['page' => StockPage::PAGE, 'tab' => 'lagerstruktur', 'ort' => (string) $leer];
+$pruefe(str_contains((new StockPage())->render(), 'value="ortloeschen-' . $leer . '"'), 'D-1267: an unused place offers «Löschen»');
+$pruefe((new StockService())->deletePlace($leer) === $ohneMass && ! (new StockService())->table('location')->has($leer), 'D-1267: deleting an unused place removes it and answers its parent');
+try {
+    (new StockService())->deletePlace($schrank);
+    $pruefe(false, 'D-1267: a place in use is refused');
+} catch (StockError $e) {
+    $pruefe($e->reason === 'place_in_use' && (new StockService())->table('location')->has($schrank), 'D-1267: a place in use is refused, naming why: ' . $e->detail);
+}
 $pruefe((new StockService())->misfits([$ort('Passt-Box', $ohneMass, true)], $ohneMass) === [] && (new StockService())->fitsNew(0, $ohneMass) === null, 'D-1158: places without a kind or sizes give no fit warning');
 
 // The Configuration tab: the modeller lists it, and pasting structure-live.json stores those ids.

@@ -1544,6 +1544,65 @@ final class StockService
      *
      * @return int the copy of the place
      */
+    /**
+     * D-1267: why a place cannot be deleted — empty when nothing uses it. Read from what this request holds already (the
+     * place tree, the lots, the lines, the Lager views, the group places), no query per reason.
+     *
+     * @return list<string> the reasons, each a short phrase
+     */
+    public function placeBlockers(int $place): array
+    {
+        $s       = $this->structure();
+        $tree    = $this->locationTree();
+        $uses    = static fn (Table $table, string $field): int => $s->hasField($field) ? count(array_filter($table->ids(), static fn (int $id): bool => (int) $table->first($id, $s->field($field)) === $place)) : 0;
+        $here    = array_sum(array_map(static fn (array $at): float => $at[$place] ?? 0.0, $this->ledger()->stockByPlace()));
+        $groups  = count(array_filter($this->groupProperty(self::PLACE_PROPERTY), static fn (bool|int|null $at): bool => $at === $place));
+        $options = [(int) ($this->locationSettings([])->unreferenced ?? 0), (int) ($this->testSettings([])->place ?? 0), ...array_values($this->plannedPlaces())];
+        $reasons = [
+            /* translators: %d: count */
+            [count($tree->childrenOf($place)), _n('%d Unterort', '%d Unterorte', count($tree->childrenOf($place)), 'taxmod-stock')],
+            [$here > 0.0 ? 1 : 0, __('es liegt Bestand dort', 'taxmod-stock')],
+            /* translators: %d: count */
+            [$n = $uses($this->table('lot'), 'lot_location'), _n('%d Posten kam dort an', '%d Posten kamen dort an', $n, 'taxmod-stock')],
+            /* translators: %d: count */
+            [$m = $uses($this->table('line'), 'line_location'), _n('%d Buchung nennt ihn', '%d Buchungen nennen ihn', $m, 'taxmod-stock')],
+            /* translators: %d: count */
+            [$k = $uses($this->table('lager'), 'lager_location'), _n('%d Material hat ihn als Standard-Lagerort', '%d Materialien haben ihn als Standard-Lagerort', $k, 'taxmod-stock')],
+            [$groups, __('eine Materialgruppe hat ihn als Standard-Lagerort', 'taxmod-stock')],
+            [in_array($place, $options, true) ? 1 : 0, __('er ist in den Grundeinstellungen oder im Wareneingang gewählt', 'taxmod-stock')],
+        ];
+        $out = [];
+
+        foreach ($reasons as [$count, $text]) {
+            if ($count > 0) {
+                $out[] = str_contains($text, '%d') ? sprintf($text, $count) : $text;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * D-1267: deletes an unused place in one act, undoable; answers its parent, where the page goes back to.
+     */
+    public function deletePlace(int $place): int
+    {
+        if (! $this->table('location')->has($place)) {
+            throw StockError::notALocation($place);
+        }
+
+        $blockers = $this->placeBlockers($place);
+
+        if ($blockers !== []) {
+            throw StockError::placeInUse(implode(', ', $blockers));
+        }
+
+        $parent = $this->locationTree()->parentOf($place);
+        $this->model->write([['op' => 'remove_record', 'record' => (string) $place]]);
+
+        return $parent;
+    }
+
     public function copyPlace(int $place, string $name, bool $withBelow): int
     {
         $answer = $this->model->write((new LocationChanges($this->structure()))->copy($place, $name, $withBelow, $this->locationTree(), $this->table('location')));

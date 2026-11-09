@@ -292,8 +292,8 @@ $pruefe(str_contains($html, 'name="thing[' . $r['kaufC'] . ']" value="' . $r['t1
     && str_contains($html, 'name="thing[' . $r['kaufD'] . ']" value="" checked') && ! str_contains($html, 'name="group[' . $r['kaufD'] . ']"'), 'the receipt row holds the modeller\'s chooser with the Modell, and no field for a new thing');
 $pruefe(str_contains($html, '<span class="description">3 Stück</span>'), 'each purchase says how many were bought, under its label');
 
-// D-972 · the branch of the purchase's thing decides the place; the thing's own place would win.
-update_option(StockService::LOCATIONS, ['branches' => [$r['teile'] => $r['platz']], 'unreferenced' => null]);
+// D-972, D-1259 · the group's «Standard-Lagerort» (own or inherited) decides the place; the thing's own place would win.
+(new StockService())->setGroupProperty($r['teile'], StockService::PLACE_PROPERTY, $r['platz']);
 $orte = (new StockService())->receiptLocations($plan);
 $pruefe(($orte[$r['kaufC']] ?? 0) === $r['platz'], 'the receipt proposes the place mapped to the branch the Modell lies in');
 $html = (new StockPage())->render();
@@ -460,6 +460,12 @@ $_GET = ['page' => StockPage::PAGE, 'tab' => 'gruppenbestand', 'group' => (strin
 $html = (new StockPage())->render();
 $pruefe(! class_exists(Taxmod\Core\Renderer\DialogMarkup::class) || str_contains($html, 'value="materialetiketten-pdf"'), 'D-1202: the group stock offers the same bulk label print');
 $pruefe(str_contains($html, 'LM2930T-5.0') && str_contains($html, 'Menge gesamt') && str_contains($html, 'data-source="' . StockPage::DETAILS_MATERIAL . '"') && ! str_contains($html, 'notice-error'), 'D-1174: a group shows its materials, the totals as tiles and lots loaded when a row opens');
+// D-1259, his word «wir müssen einstellungen auch an der material gruppe ermöglichen»: the group's Lager view sets its properties.
+$pruefe(str_contains($html, 'value="' . StockPage::GROUP_PROPERTIES . '"') && str_contains($html, 'id="taxmod-stock-group-test"') && str_contains($html, 'name="place"'), 'D-1259: the group\'s Lager view offers «Nach Wareneingang testen» and «Standard-Lagerort»');
+(new StockService())->setGroupProperty($r['teile'], StockService::TEST_PROPERTY, true);
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, '<option value="1" selected=\'selected\'>Ja</option>'), 'D-1259: a group\'s own «Ja» stands chosen');
+(new StockService())->setGroupProperty($r['teile'], StockService::TEST_PROPERTY, null);
 
 // Laid out as the eBay shipping page (2026-10-25): «Wareneingang» first and default, list tables with search, filter and sorting.
 $_GET = ['page' => StockPage::PAGE];
@@ -852,10 +858,9 @@ $pruefe(array_key_exists('version', TaxmodStock\WordPress\Admin\SettingsTab::reg
 $pruefe((new StockService())->structure()->node('lager') === 149000110147 && (new StockService())->structure()->field('lot_thing') === 149000110118, 'pasting structure-live.json stores the live ids');
 ($reiter['stock']['save'])(['taxmod_stock_structure' => '{"nodes": {}}']);
 $pruefe((new StockService())->structure()->node('lager') === 149000110147, 'an incomplete structure is refused and the old one stays');
-// D-1085: branch → place moved from the Configuration tab to Logistik › Einstellungen › Grundeinstellungen.
-(new TaxmodStock\WordPress\Admin\SettingsPage())->save(['taxmod_stock_branch' => [['node' => '500', 'location' => '7'], ['node' => '', 'location' => '3'], ['node' => '501', 'location' => '']], 'taxmod_stock_unreferenced' => '9']);
-$orte = (new StockService())->locationSettings();
-$pruefe($orte->branches === [500 => 7] && $orte->unreferenced === 9, 'Grundeinstellungen store branch → place rows, half-filled rows are dropped (D-972, D-1085)');
+// D-1259: the Grundeinstellungen keep the place for purchases without material; the place of a group is a group property.
+(new TaxmodStock\WordPress\Admin\SettingsPage())->save(['taxmod_stock_places_sent' => '1', 'taxmod_stock_unreferenced' => '9']);
+$pruefe(get_option(StockService::LOCATIONS) === ['unreferenced' => 9], 'Grundeinstellungen store the place for purchases without material, no branch rows (D-972, D-1259)');
 
 // His report 2026-11-05: «zurückbuchen … nicht möglich» on a card only moved — an Umbuchung does not keep the receipt.
 update_option(StockService::OPTION, $struktur);

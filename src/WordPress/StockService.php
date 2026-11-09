@@ -55,8 +55,12 @@ final class StockService
 
     public const PLANNED_PLACES = 'taxmod_stock_planned_places';
 
-    /** D-972: which branch of `Model` goes to which place. */
+    /** D-972: the place for a purchase without material; the place per group is a group property since D-1259. */
     public const LOCATIONS = 'taxmod_stock_locations';
+
+    /** D-1259: the group properties the stock declares — tested after the goods receipt, and the group's usual place. */
+    public const TEST_PROPERTY  = 'stock_test_after_inbound';
+    public const PLACE_PROPERTY = 'stock_default_place';
 
     /**
      * The branches under `Model` that hold no material — sources, page templates, price records — and so are no group of
@@ -65,7 +69,7 @@ final class StockService
      */
     public const NOT_MATERIAL = 'taxmod_stock_not_material';
 
-    /** D-1002: the branches under `Model` whose lots are tested after the goods receipt. */
+    /** D-1111: «Lagerort für Test»; which groups are tested is the group property {@see TEST_PROPERTY} (D-1259). */
     public const TESTS = 'taxmod_stock_tests';
 
     /** The goods receipt cockpit's start day (Y-m-d): older orders are history and stand only under «Alle». */
@@ -104,6 +108,9 @@ final class StockService
 
     /** @var list<string>|null D-1097: the position lists the model holds as compositions, read once */
     private ?array $composed = null;
+
+    /** @var array<string, array<int, bool|int|null>> D-1259: group properties, read once per key */
+    private array $groupProperties = [];
 
     public function __construct(private readonly ModelGateway $model = new ModelGateway())
     {
@@ -739,38 +746,91 @@ final class StockService
         return new InboundArchive($this->inboundSince(), $this->inboundArchiveDays(), $today);
     }
 
-    public function testSettings(): TestSettings
+    /**
+     * D-1111 place from the option; D-1259 the tested groups, each with the property own or inherited.
+     *
+     * @param list<int>|null $nodes the groups asked about; null for every group of the material tree
+     */
+    public function testSettings(?array $nodes = null): TestSettings
     {
-        $raw = get_option(self::TESTS, []);
+        $raw    = get_option(self::TESTS, []);
+        $tested = array_keys(array_filter($this->groupProperty(self::TEST_PROPERTY, $nodes), static fn (bool|int|null $on): bool => $on === true));
 
-        return TestSettings::fromArray(is_array($raw) ? $raw : []);
-    }
-
-    public function locationSettings(): LocationSettings
-    {
-        $raw = get_option(self::LOCATIONS, []);
-
-        return LocationSettings::fromArray(is_array($raw) ? $raw : []);
+        return TestSettings::fromArray(['branches' => $tested, 'place' => is_array($raw) ? ($raw['place'] ?? null) : null]);
     }
 
     /**
-     * The tab's branches with their names and subtrees — one `read-tree` per listed branch.
+     * D-972 the place for purchases without material from the option; D-1259 the place of each group, own or inherited.
      *
-     * @return array<int, array{name: string, steps: array<int, int>}>
+     * @param list<int>|null $nodes the groups asked about; null for every group of the material tree
      */
-    public function branches(): array
+    public function locationSettings(?array $nodes = null): LocationSettings
     {
-        $out = [];
+        $raw    = get_option(self::LOCATIONS, []);
+        $places = array_filter($this->groupProperty(self::PLACE_PROPERTY, $nodes), static fn (bool|int|null $place): bool => is_int($place) && $place > 0);
 
-        foreach (array_keys($this->locationSettings()->branches) as $branch) {
-            $out[$branch] = $this->model->subtree($branch);
+        return LocationSettings::fromArray(['branches' => $places, 'unreferenced' => is_array($raw) ? ($raw['unreferenced'] ?? null) : null]);
+    }
+
+    /**
+     * D-1259: a group property for every group of material, resolved by the modeller in one read.
+     *
+     * @param list<int>|null $nodes the groups asked about; null for every group of the material tree
+     * @return array<int, bool|int|null> node → value, own or inherited
+     */
+    public function groupProperty(string $key, ?array $nodes = null): array
+    {
+        if ($nodes !== null) {
+            return $this->model->properties(array_values(array_unique(array_filter($nodes))), $key);
         }
 
-        return $out;
+        return $this->groupProperties[$key] ??= $this->model->properties(array_keys($this->tree()), $key);
     }
 
     /**
-     * D-972: the place proposed for each purchase of the plan — the thing's own Standard-Lagerort, else its branch's.
+     * D-1259, once: the branch rows the Grundeinstellungen held (branch → place, tested branches) become the groups' own
+     * properties, then leave the options. Nothing happens on a modeller without group properties; a row that cannot be
+     * written stays in the option and is tried again.
+     */
+    public function moveBranchSettingsToGroups(): void
+    {
+        $moves = [
+            self::LOCATIONS => [self::PLACE_PROPERTY, static fn (int|string $node, mixed $place): array => [(int) $node, (int) $place]],
+            self::TESTS     => [self::TEST_PROPERTY, static fn (int|string $key, mixed $node): array => [(int) $node, true]],
+        ];
+
+        foreach ($moves as $option => [$key, $row]) {
+            $raw = get_option($option, []);
+
+            if (! is_array($raw) || ! is_array($raw['branches'] ?? null) || $raw['branches'] === []) {
+                continue;
+            }
+
+            $left = [];
+
+            foreach ($raw['branches'] as $at => $value) {
+                [$node, $set] = $row($at, $value);
+
+                try {
+                    $node > 0 && $set !== 0 ? $this->setGroupProperty($node, $key, $set) : null;
+                } catch (StockError) {
+                    $left[$at] = $value;
+                }
+            }
+
+            update_option($option, ['branches' => $left] + $raw, false);
+        }
+    }
+
+    /** D-1259: set a group's own value; null lets it inherit again. */
+    public function setGroupProperty(int $node, string $key, bool|int|null $value): void
+    {
+        $this->model->setProperty($node, $key, $value);
+        unset($this->groupProperties[$key]);
+    }
+
+    /**
+     * D-972: the place proposed for each purchase of the plan — the thing's own Standard-Lagerort, else its group's (D-1259).
      * D-1111: «Lagerort für Test» instead, where the lot will wait for its test (D-1002); a place saved with «Zuordnung
      * speichern» is his own choice and stays.
      *
@@ -780,15 +840,16 @@ final class StockService
     public function receiptLocations(array $plan): array
     {
         $s        = $this->structure();
-        $settings = $this->locationSettings();
-        $rules    = new LocationRules($settings->branches, array_map(static fn (array $b): array => $b['steps'], $this->branches()), $settings->unreferenced, $s->value('location_default'));
-        $lager    = $this->table('lager');
-        $things   = $this->things();
         $models   = array_values(array_unique(array_filter(array_column($plan, 'model'))));
         $nodes    = $this->model->nodesOf($models);
+        $settings = $this->locationSettings(array_values($nodes));
+        // D-1259: every group carries its place already resolved, so the nearest one is its own.
+        $rules    = new LocationRules($settings->branches, array_map(static fn (int $place): array => [], $settings->branches), $settings->unreferenced, $s->value('location_default'));
+        $lager    = $this->table('lager');
+        $things   = $this->things();
         $out      = [];
         $planned  = $this->plannedPlaces();
-        $tests    = $this->testSettings();
+        $tests    = $this->testSettings(array_values($nodes));
         // A test place that is no place any more proposes nothing; the tree is read only when there is one.
         $testing  = $tests->place !== null && $this->table('location')->has($tests->place);
         $queue    = new TestQueue($s);

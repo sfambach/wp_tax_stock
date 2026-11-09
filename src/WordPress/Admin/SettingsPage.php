@@ -11,7 +11,7 @@ use TaxmodStock\WordPress\StockService;
 
 /**
  * Logistik › Einstellungen › Grundeinstellungen (D-1085): the business settings of the stock, inside the stock interface —
- * branches without material, branch → place proposals (D-972), tests after the goods receipt (D-1002) with their place
+ * branches without material, the place for purchases without material (D-972), the test place (D-1111); the place and the test of a group are group properties (D-1259)
  * (D-1111) and the view of the tabs. The technical structure ids stay on the modeller's Configuration tab «Lager» ({@see SettingsTab}).
  *
  * The options are the ones the Configuration tab wrote before, so nothing set there is lost.
@@ -128,35 +128,15 @@ final class SettingsPage
             . esc_html__('Diese Reiter haben keine Zeilen zum Aufklappen.', 'taxmod-stock') . '</p></td></tr></tbody></table>';
     }
 
-    /** D-972: branch under `Model` → place; the nearest listed branch wins. Empty rows add a branch, an emptied one drops it. */
+    /** D-972: the place for a purchase without material; the place of a group is set in its Lager view (D-1259). */
     private function placesSection(): string
     {
-        try {
-            $stock    = new StockService();
-            $branches = $stock->branches();
-        } catch (StockError $e) {
-            return '<h2>' . esc_html__('Einlagerung nach Typ', 'taxmod-stock') . '</h2><p>' . esc_html(Messages::of($e)) . '</p>';
-        }
+        $stock = new StockService();
 
-        $settings = $stock->locationSettings();
-        $select   = static fn (string $name, ?int $chosen): string => $stock->placeChooser($name, (int) $chosen);
-
-        $html = '<h2>' . esc_html__('Einlagerung nach Typ', 'taxmod-stock') . '</h2>'
-            . '<p>' . esc_html__('Der Wareneingang schlägt den Standard-Lagerort des Materials vor, sonst den Ort des Zweigs unter Model, in dem das Material des Kaufs liegt (der nächste eingetragene Zweig gewinnt), sonst den Standard-Ort der Struktur.', 'taxmod-stock') . '</p>'
-            . '<table class="widefat striped" style="max-width:48em"><thead><tr><th>' . esc_html__('Zweig (Knoten-Id)', 'taxmod-stock') . '</th><th>' . esc_html__('Name', 'taxmod-stock') . '</th><th>' . esc_html__('Lagerort', 'taxmod-stock') . '</th></tr></thead><tbody>';
-        $row  = 0;
-
-        $rows = array_map(null, array_keys($settings->branches), array_values($settings->branches));
-
-        foreach ([...$rows, [null, null], [null, null], [null, null]] as [$node, $location]) {
-            $html .= '<tr><td><input type="number" min="1" name="taxmod_stock_branch[' . $row . '][node]" value="' . esc_attr((string) ($node ?? '')) . '" style="width:12em"></td>'
-                . '<td>' . esc_html($node === null ? '' : ($branches[$node]['name'] ?? '')) . '</td>'
-                . '<td>' . $select('taxmod_stock_branch[' . $row . '][location]', $location) . '</td></tr>';
-            ++$row;
-        }
-
-        return $html . '<tr><td colspan="2"><strong>' . esc_html__('ohne Material', 'taxmod-stock') . '</strong></td><td>'
-            . $select('taxmod_stock_unreferenced', $settings->unreferenced) . '</td></tr></tbody></table>';
+        return '<h2>' . esc_html__('Einlagerung', 'taxmod-stock') . '</h2>'
+            . '<p>' . esc_html__('Der Wareneingang schlägt den Lagerort des Materials vor, sonst den Standard-Lagerort seiner Gruppe (gesetzt in der Lager-Ansicht der Gruppe, vererbt nach unten), sonst den Standard-Ort der Struktur.', 'taxmod-stock') . '</p>'
+            . '<p><label>' . esc_html__('Lagerort für Käufe ohne Material', 'taxmod-stock') . ' ' . $stock->placeChooser('taxmod_stock_unreferenced', (int) $stock->locationSettings()->unreferenced) . '</label></p>'
+            . '<input type="hidden" name="taxmod_stock_places_sent" value="1">';
     }
 
     /** The branches under `Model` that hold no material: left out of the material search, the tree and the groups. */
@@ -184,37 +164,24 @@ final class SettingsPage
         return $html . '</tbody></table>';
     }
 
-    /** D-1002: the branches under `Model` whose used goods are tested after the goods receipt (Wareneingang › Zu testen). */
+    /** D-1002, D-1111: the goods receipt's test place and its archive; which groups are tested is a group property (D-1259). */
     private function testsSection(): string
     {
         $stock    = new StockService();
         $settings = $stock->testSettings();
-        $rows     = $settings->branches;
-
-        try {
-            $tree = $stock->tree();
-        } catch (StockError) {
-            $tree = [];
-        }
 
         $html = '<h2>' . esc_html__('Test nach dem Wareneingang', 'taxmod-stock') . '</h2>'
-            . '<p>' . esc_html__('Bestandsposten aus diesen Zweigen (mit allem darunter) stehen nach dem Wareneingang unter Logistik › Wareneingang › Zu testen, egal von welcher Plattform; Neuware nicht. Eine leere Zeile fügt einen Zweig hinzu, eine geleerte entfernt ihn.', 'taxmod-stock') . '</p>'
+            . '<p>' . esc_html__('Gebrauchte Bestandsposten aus Gruppen mit «Nach Wareneingang testen» (gesetzt in der Lager-Ansicht der Gruppe, vererbt nach unten) stehen nach dem Wareneingang unter Logistik › Wareneingang › Zu testen; Neuware nicht.', 'taxmod-stock') . '</p>'
             . '<p><label>' . esc_html__('Wareneingang ab', 'taxmod-stock') . ' <input type="date" name="taxmod_stock_inbound_since" value="' . esc_attr($stock->inboundSince()) . '"></label> '
             . '<span class="description">' . esc_html__('Ältere Bestellungen gelten als Kaufhistorie und stehen gleich unter «Archiviert».', 'taxmod-stock') . '</span></p>'
             . '<p><label>' . esc_html__('Archivieren nach', 'taxmod-stock') . ' <input type="number" min="1" name="taxmod_stock_inbound_archive_days" value="' . esc_attr((string) $stock->inboundArchiveDays()) . '" style="width:6em"> ' . esc_html__('Tagen', 'taxmod-stock') . '</label> '
             . '<span class="description">' . esc_html__('Eingebuchte Bestellungen wandern so viele Tage nach «Eingegangen am» unter «Archiviert».', 'taxmod-stock') . '</span></p>'
             // D-1111: an ordinary place the setting names, never a name in code.
             . '<p><label>' . esc_html__('Lagerort für Test', 'taxmod-stock') . ' ' . $stock->placeChooser('taxmod_stock_test_place', (int) $settings->place) . '</label> '
-            . '<span class="description">' . esc_html__('Der Wareneingang schlägt diesen Ort für Gebrauchtware aus den Zweigen unten vor (nicht für Neuware); leer: der übliche Vorschlag.', 'taxmod-stock') . '</span></p>'
-            . '<input type="hidden" name="taxmod_stock_tests_sent" value="1">'
-            . '<table class="widefat striped" style="max-width:40em"><thead><tr><th>' . esc_html__('Zweig (Knoten-Id)', 'taxmod-stock') . '</th><th>' . esc_html__('Name', 'taxmod-stock') . '</th></tr></thead><tbody>';
+            . '<span class="description">' . esc_html__('Der Wareneingang schlägt diesen Ort für Gebrauchtware aus diesen Gruppen vor (nicht für Neuware); leer: der übliche Vorschlag.', 'taxmod-stock') . '</span></p>'
+            . '<input type="hidden" name="taxmod_stock_tests_sent" value="1">';
 
-        foreach ([...$rows, null, null, null] as $i => $node) {
-            $html .= '<tr><td><input type="number" min="1" name="taxmod_stock_tests[' . $i . ']" value="' . esc_attr((string) ($node ?? '')) . '" style="width:12em"></td>'
-                . '<td>' . esc_html($node === null ? '' : ($tree[$node]['name'] ?? '')) . '</td></tr>';
-        }
-
-        return $html . '</tbody></table>';
+        return $html;
     }
 
     /** @param array<string, mixed> $post already unslashed */
@@ -231,20 +198,9 @@ final class SettingsPage
             update_option(StockService::VIEWS, ViewSettings::fromArray($views)->toArray(), false);
         }
 
-        if (isset($post['taxmod_stock_branch']) && is_array($post['taxmod_stock_branch'])) {
-            $branches = [];
-
-            foreach ($post['taxmod_stock_branch'] as $row) {
-                $node     = absint(is_array($row) ? ($row['node'] ?? 0) : 0);
-                $location = absint(is_array($row) ? ($row['location'] ?? 0) : 0);
-
-                if ($node > 0 && $location > 0) {
-                    $branches[$node] = $location;
-                }
-            }
-
-            $settings = LocationSettings::fromArray(['branches' => $branches, 'unreferenced' => absint($post['taxmod_stock_unreferenced'] ?? 0)]);
-            update_option(StockService::LOCATIONS, $settings->toArray(), false);
+        if (! empty($post['taxmod_stock_places_sent'])) {
+            $settings = LocationSettings::fromArray(['unreferenced' => absint($post['taxmod_stock_unreferenced'] ?? 0)]);
+            update_option(StockService::LOCATIONS, ['unreferenced' => $settings->unreferenced], false);
         }
 
         if (! empty($post['taxmod_stock_not_material_sent'])) {
@@ -253,7 +209,6 @@ final class SettingsPage
         }
 
         if (! empty($post['taxmod_stock_tests_sent'])) {
-            $nodes = array_map('absint', is_array($post['taxmod_stock_tests'] ?? null) ? $post['taxmod_stock_tests'] : []);
             $place = absint($post['taxmod_stock_test_place'] ?? 0);
 
             try {
@@ -262,7 +217,7 @@ final class SettingsPage
                 $place = 0;
             }
 
-            update_option(StockService::TESTS, TestSettings::fromArray(['branches' => array_values($nodes), 'place' => $place])->toArray(), false);
+            update_option(StockService::TESTS, ['place' => TestSettings::fromArray(['place' => $place])->place], false);
             $since = sanitize_text_field((string) ($post['taxmod_stock_inbound_since'] ?? ''));
 
             if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $since) === 1) {

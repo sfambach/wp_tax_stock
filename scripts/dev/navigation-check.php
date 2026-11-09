@@ -214,7 +214,7 @@ $_GET = ['page' => SettingsPage::PAGE];
 $html = LogisticsShell::wrap(SettingsPage::PAGE, (new SettingsPage())->render());
 $pruefe(str_contains($html, 'aria-current="page">Grundeinstellungen</a>'), 'the page stands inside the navigation');
 $pruefe(! str_contains($html, 'class="taxmod-shell-side"') && str_contains($html, 'class="taxmod-shell"'), 'a page without a box under the navigation keeps the plain navigation (D-1092)');
-$pruefe(str_contains($html, 'name="taxmod_stock_not_material[0]"') && str_contains($html, 'name="taxmod_stock_tests[0]"') && str_contains($html, 'name="taxmod_stock_views[material]"'), 'it carries the business settings');
+$pruefe(str_contains($html, 'name="taxmod_stock_not_material[0]"') && str_contains($html, 'name="taxmod_stock_test_place"') && ! str_contains($html, 'name="taxmod_stock_tests[0]"') && str_contains($html, 'name="taxmod_stock_views[material]"'), 'it carries the business settings');
 $pruefe(str_contains($html, 'value="' . SettingsPage::ACTION . '"') && str_contains($html, 'name="_wpnonce"'), 'it posts to its own handler with a nonce');
 $pruefe(! str_contains($html, 'taxmod_stock_structure'), 'the structure JSON is not on it');
 
@@ -222,7 +222,6 @@ $pruefe(! str_contains($html, 'taxmod_stock_structure'), 'the structure JSON is 
     'taxmod_stock_not_material_sent'    => '1',
     'taxmod_stock_not_material'         => ['77', 'x', '', '77'],
     'taxmod_stock_tests_sent'           => '1',
-    'taxmod_stock_tests'                => ['88'],
     'taxmod_stock_inbound_since'        => '2026-01-02',
     'taxmod_stock_inbound_archive_days' => '9',
     'taxmod_stock_views_sent'           => '1',
@@ -230,7 +229,7 @@ $pruefe(! str_contains($html, 'taxmod_stock_structure'), 'the structure JSON is 
 ]);
 $pruefe(get_option(StockService::NOT_MATERIAL) === [77], 'saved on the same option names: branches without material, sanitized (' . wp_json_encode(get_option(StockService::NOT_MATERIAL)) . ')');
 $pruefe(get_option(StockService::INBOUND_SINCE) === '2026-01-02' && (int) get_option(StockService::INBOUND_ARCHIVE_DAYS) === 9, 'goods receipt since and archive days');
-$pruefe((new StockService())->testSettings()->branches === [88], 'branches tested after the goods receipt');
+$pruefe(get_option(StockService::TESTS) === ['place' => null], 'D-1259: the test settings hold the test place only; the tested groups are a group property');
 $pruefe((new StockService())->viewSettings()->expanded('material'), 'the view of the tabs');
 
 $tab = new TaxmodStock\WordPress\Admin\SettingsTab();

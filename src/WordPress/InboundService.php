@@ -282,7 +282,7 @@ final class InboundService
             $nodes[$lot] = $thing === null ? null : $things->nodeOf($thing);
         }
 
-        $lots = $this->tests()->waiting($ledger, $stock->table('lot'), $nodes, $parents, $stock->testSettings());
+        $lots = $this->tests()->waiting($ledger, $stock->table('lot'), $nodes, $parents, $stock->testSettings(array_values(array_filter($nodes))));
         $date = $stock->structure()->field('lot_date');
         usort($lots, static fn (int $a, int $b): int => strcmp((string) $stock->table('lot')->first($b, $date), (string) $stock->table('lot')->first($a, $date)) ?: $b <=> $a);
 

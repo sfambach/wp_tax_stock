@@ -3,13 +3,14 @@
 namespace TaxmodStock\Core;
 
 /**
- * The Lager tab's assignment of branches under `Model` to places, as stored in one option (D-972).
+ * Where the goods receipt puts things (D-972): each group's «Standard-Lagerort», own or inherited (a group property since
+ * D-1259), and the place for purchases without material from the option.
  *
  * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/lager/konzept.md §3.1
  */
 final class LocationSettings
 {
-    /** @param array<int, int> $branches branch node → location record */
+    /** @param array<int, int> $branches group node → location record, already resolved for every group (D-1259) */
     private function __construct(public readonly array $branches, public readonly ?int $unreferenced)
     {
     }

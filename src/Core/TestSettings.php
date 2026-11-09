@@ -3,15 +3,15 @@
 namespace TaxmodStock\Core;
 
 /**
- * Which branches under `Model` are tested after the goods receipt (D-1002), and the place that holds what waits for its
- * test (D-1111) — as stored in one option.
+ * Which groups are tested after the goods receipt (D-1002; a group property since D-1259), and the place that holds what
+ * waits for its test (D-1111, from the option).
  *
  * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/lager/cockpit-wareneingang.md WC7
  */
 final class TestSettings
 {
     /**
-     * @param list<int> $branches
+     * @param list<int> $branches the groups tested, each already resolved from the group property (D-1259)
      * @param int|null  $place    D-1111: the location record «Lagerort für Test»; null when none is set
      */
     private function __construct(public readonly array $branches, public readonly ?int $place = null)

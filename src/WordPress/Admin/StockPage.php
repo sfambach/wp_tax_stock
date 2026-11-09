@@ -67,6 +67,9 @@ final class StockPage
 
     /** INF-116: the choice of material saved from an order not yet arrived, answered without a reload. */
     public const ASSIGN     = 'taxmod_stock_assign';
+
+    /** D-1259: a group's properties, set in its Lager view. */
+    public const GROUP_PROPERTIES = 'taxmod_stock_group_properties';
     /** The notice after a booking; the goods receipt cockpit shows it too, when the booking came from there. */
     public const NOTICE     = 'taxmod_stock_notice';
     private const LAST_LIST = 'taxmod_stock_last_list_';
@@ -583,7 +586,66 @@ final class StockPage
                     . '<select name="group" style="width:100%" onchange="this.form.submit()">' . $this->groupOptions($group) . '</select></form>')
                 . '</div>' . $this->placeTreeScript();
 
-        return ($group > 0 ? '<h2>' . esc_html($this->stock->path($group)) . '</h2>' : '') . $this->materialList($list, true);
+        return ($group > 0 ? '<h2>' . esc_html($this->stock->path($group)) . '</h2>' . $this->groupProperties($group) : '') . $this->materialList($list, true);
+    }
+
+    /**
+     * D-1259, his word «wir müssen einstellungen auch an der material gruppe ermöglichen … so etwas wie hazardous»: what the
+     * group carries for the stock, inherited from the group above unless set here. A value equal to the parent's reads as
+     * inherited, since the modeller answers the resolved value only.
+     */
+    private function groupProperties(int $group): string
+    {
+        $parent = $this->stock->groupParents()[$group] ?? 0;
+        $tested = $this->stock->groupProperty(StockService::TEST_PROPERTY);
+        $places = $this->stock->groupProperty(StockService::PLACE_PROPERTY);
+        $label  = static fn (bool|int|null $on): string => $on === true ? __('Ja', 'taxmod-stock') : __('Nein', 'taxmod-stock');
+        $own    = static fn (array $values): bool|int|null => ($values[$group] ?? null) !== ($values[$parent] ?? null) ? ($values[$group] ?? null) : null;
+        $test   = $own($tested);
+        $place  = $own($places);
+        $above  = $places[$parent] ?? null;
+        $names  = $this->stock->places();
+        $choice = static fn (string $value, string $text, bool $on): string => '<option value="' . esc_attr($value) . '"' . selected($on, true, false) . '>' . esc_html($text) . '</option>';
+
+        $rows = [
+            ['label' => __('Nach Wareneingang testen', 'taxmod-stock'), 'for' => 'taxmod-stock-group-test', 'control' => '<select id="taxmod-stock-group-test" name="test">'
+                . $choice('', sprintf(/* translators: %s: Ja or Nein, from the group above */ __('wie darüber (%s)', 'taxmod-stock'), $label($tested[$parent] ?? null)), $test === null)
+                . $choice('1', __('Ja', 'taxmod-stock'), $test === true) . $choice('0', __('Nein', 'taxmod-stock'), $test === false) . '</select>',
+                'hint' => __('Gebrauchte Ware dieser Gruppe und aller Gruppen darunter steht nach dem Wareneingang unter «Zu testen».', 'taxmod-stock')],
+            ['label' => __('Standard-Lagerort', 'taxmod-stock'), 'control' => $this->stock->placeChooser('place', is_int($place) ? $place : 0),
+                'hint' => is_int($above) && isset($names[$above])
+                    ? sprintf(/* translators: %s: the place of the group above */ __('Leer: wie darüber, %s. Ein Lagerort am Material geht vor.', 'taxmod-stock'), $names[$above])
+                    : __('Leer: wie darüber, sonst der Standard-Ort. Ein Lagerort am Material geht vor.', 'taxmod-stock')],
+        ];
+
+        return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" class="taxmod-stock-group-properties">'
+            . '<input type="hidden" name="action" value="' . esc_attr(self::GROUP_PROPERTIES) . '"><input type="hidden" name="group" value="' . esc_attr((string) $group) . '">'
+            . wp_nonce_field(self::GROUP_PROPERTIES, '_wpnonce', true, false)
+            . self::actForm($rows, get_submit_button(__('Gruppe speichern', 'taxmod-stock'), 'secondary', 'submit', false))
+            . '</form>';
+    }
+
+    /** D-1259: admin-post — set the group's own values; «wie darüber» and an empty place let it inherit again. */
+    public function saveGroupProperties(): never
+    {
+        if (! current_user_can('manage_options')) {
+            Acts::deny(__('Keine Berechtigung.', 'taxmod-stock'));
+        }
+
+        Acts::nonce(self::GROUP_PROPERTIES);
+        $group = absint($_POST['group'] ?? 0);
+
+        if (! isset($this->stock->tree()[$group])) {
+            throw StockError::fromModel(__('Diese Gruppe gibt es nicht.', 'taxmod-stock'));
+        }
+
+        $test  = sanitize_key((string) ($_POST['test'] ?? ''));
+        $place = absint($_POST['place'] ?? 0);
+        $this->stock->setGroupProperty($group, StockService::TEST_PROPERTY, $test === '' ? null : $test === '1');
+        $this->stock->setGroupProperty($group, StockService::PLACE_PROPERTY, $place > 0 && isset($this->stock->places()[$place]) ? $place : null);
+
+        wp_safe_redirect(add_query_arg(['page' => self::PAGE, 'tab' => 'gruppenbestand', 'group' => $group], admin_url('admin.php')));
+        exit;
     }
 
     /**

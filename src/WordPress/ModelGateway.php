@@ -52,6 +52,31 @@ final class ModelGateway
         return method_exists($this->door, 'typed') ? $this->door->typed($node, $submitted) : [];
     }
 
+    /**
+     * D-1259: a group property of these nodes, own or inherited; empty on a modeller without group properties.
+     *
+     * @param list<int> $nodes
+     * @return array<int, bool|int|null> node → value
+     */
+    public function properties(array $nodes, string $key): array
+    {
+        return $nodes !== [] && method_exists($this->door, 'propertiesOf') ? $this->ask(fn (): array => $this->door->propertiesOf($nodes, $key)) : [];
+    }
+
+    /** D-1259: one act, undoable; null lets the node inherit again. */
+    public function setProperty(int $node, string $key, bool|int|null $value): void
+    {
+        if (! method_exists($this->door, 'setProperty')) {
+            throw StockError::fromModel('The Taxonomy Modeller is too old for group properties (0.2.42).');
+        }
+
+        $this->ask(function () use ($node, $key, $value): array {
+            $this->door->setProperty($node, $key, $value);
+
+            return [];
+        });
+    }
+
     /** @return array<int, array{name: string, parent: int, class: string, hidden: bool}> */
     public function tree(int $root): array
     {

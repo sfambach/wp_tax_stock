@@ -87,6 +87,8 @@ final class Plugin
         // Only where a setting is saved (options.php) or read over REST: naming the options compiled the 100 KB stock service on every page view (D-1187).
         if (($GLOBALS['pagenow'] ?? '') === 'options.php') {
             add_action('admin_init', [$this, 'registerSettings']);
+            // D-1259: the old branch rows move to the groups once, as soon as the modeller can hold them.
+            add_action('admin_init', static fn () => method_exists(\Taxmod\WordPress\ModelDoor::class, 'setProperty') && current_user_can('manage_options') ? (new StockService())->moveBranchSettingsToGroups() : null);
         }
         add_action('rest_api_init', [$this, 'registerSettings']);
         // After the modeller (priority 10) has created its menu.
@@ -97,6 +99,7 @@ final class Plugin
             add_action('admin_post_' . StockPage::ACTION, static fn () => Acts::run(static fn () => self::serially(static fn () => (new StockPage())->handle())));
             add_action('admin_post_' . StockPage::POSITIONS, static fn () => Acts::json(static fn () => (new StockPage())->positions()));
             add_action('admin_post_' . StockPage::ASSIGN, static fn () => Acts::json(static fn () => self::serially(static fn () => (new StockPage())->assign(), true)));
+            add_action('admin_post_' . StockPage::GROUP_PROPERTIES, static fn () => Acts::run(static fn () => (new StockPage())->saveGroupProperties()));
             add_action('admin_post_' . StockPage::MAKER, static fn () => Acts::json(static fn () => (new StockPage())->maker()));
             add_action('admin_post_' . StockPage::THING_SEARCH, static fn () => Acts::json(static fn () => (new StockPage())->thingSearch()));
             add_action('admin_post_' . StockPage::THING_NODES, static fn () => Acts::json(static fn () => (new StockPage())->thingNodes()));
@@ -110,6 +113,11 @@ final class Plugin
         }
         // D-1235, D-1238: the print thread asks for one material, lot or place label, as the dialog would build it.
         add_filter('taxmod_label_for', static fn (?array $found, string $prefix, int $id, int $template, int $printer): ?array => $found ?? (in_array($prefix, StockPage::LABEL_PREFIXES, true) ? (new StockPage())->labelFor($prefix, $id, $template, $printer) : null), 10, 5);
+        // D-1259: what a group of material carries for the stock, inherited down the tree and set in its Lager view.
+        add_filter('taxmod_node_properties', static fn (array $properties): array => $properties + [
+            StockService::TEST_PROPERTY  => __('Nach Wareneingang testen', 'taxmod-stock'),
+            StockService::PLACE_PROPERTY => ['label' => __('Standard-Lagerort', 'taxmod-stock'), 'type' => 'id'],
+        ]);
         add_filter(self::BOOK_BUILD, [self::class, 'bookBuild'], 10, 2);
         add_filter(self::PLACES_OF, [self::class, 'placesOf'], 10, 2);
         add_filter(self::BOOK_PICK, [self::class, 'bookPick'], 10, 2);
@@ -452,14 +460,13 @@ final class Plugin
             'show_in_rest'      => ['schema' => ['type' => 'array', 'items' => ['type' => 'integer']]],
         ]);
 
-        // D-1111: the tested branches and «Lagerort für Test», so the place can be named over REST once it is created.
+        // D-1111: «Lagerort für Test» (the tested groups are a group property since D-1259), so the place can be named over REST once it is created.
         register_setting('taxmod_stock', StockService::TESTS, [
             'type'              => 'object',
-            'default'           => ['branches' => [], 'place' => null],
-            'sanitize_callback' => static fn ($value): array => TestSettings::fromArray(is_array($value) ? $value : [])->toArray(),
+            'default'           => ['place' => null],
+            'sanitize_callback' => static fn ($value): array => ['place' => TestSettings::fromArray(is_array($value) ? $value : [])->place],
             'show_in_rest'      => ['schema' => ['type' => 'object', 'properties' => [
-                'branches' => ['type' => 'array', 'items' => ['type' => 'integer']],
-                'place'    => ['type' => ['integer', 'null']],
+                'place' => ['type' => ['integer', 'null']],
             ]]],
         ]);
     }

@@ -346,8 +346,10 @@ $pruefe((new InboundService())->refreshTracking([$r['o1']]) === 1 && $asked === 
 (new InboundService())->removeTracking($r['o1'], 'ZQ123GLS');
 
 // D-1002 · the test after the goods receipt.
-$pruefe((new InboundService())->lotsToTest() === [], 'no tested branch, nothing to test');
-update_option(StockService::TESTS, ['branches' => [$r['gk']]]);
+$pruefe((new InboundService())->lotsToTest() === [], 'no tested group, nothing to test');
+// D-1259: «Nach Wareneingang testen» is a group property, set at the group, inherited below.
+(new StockService())->setGroupProperty($r['gk'], StockService::TEST_PROPERTY, true);
+$pruefe(((new StockService())->groupProperty(StockService::TEST_PROPERTY, [$r['gk']])[$r['gk']] ?? null) === true, 'D-1259: the group carries «Nach Wareneingang testen»');
 $pruefe((new InboundService())->lotsToTest() === [$r['lotA']], 'the «ungetestet» lot of a tested group waits; the new one does not');
 
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'test'];
@@ -374,8 +376,9 @@ $pruefe($stock->receiptLocations($plan) === [$r['kaufT'] => $r['ortRegal'], $r['
 $settings = new \TaxmodStock\WordPress\Admin\SettingsPage();
 $_GET     = ['page' => \TaxmodStock\WordPress\Admin\SettingsPage::PAGE];
 $pruefe(str_contains($settings->render(), 'name="taxmod_stock_test_place"'), 'Einstellungen › Test nach dem Wareneingang offers «Lagerort für Test»');
-$settings->save(['taxmod_stock_tests_sent' => '1', 'taxmod_stock_tests' => [(string) $r['gk'], ''], 'taxmod_stock_test_place' => (string) $r['ortTest']]);
-$pruefe((new StockService())->testSettings()->toArray() === ['branches' => [$r['gk']], 'place' => $r['ortTest']], 'it is stored with the tested branches in ' . StockService::TESTS);
+$pruefe(! str_contains($settings->render(), 'taxmod_stock_tests[') && ! str_contains($settings->render(), 'taxmod_stock_branch['), 'D-1259: no table of node ids in the Grundeinstellungen any more');
+$settings->save(['taxmod_stock_tests_sent' => '1', 'taxmod_stock_test_place' => (string) $r['ortTest']]);
+$pruefe(get_option(StockService::TESTS) === ['place' => $r['ortTest']] && (new StockService())->testSettings([$r['gk']])->toArray() === ['branches' => [$r['gk']], 'place' => $r['ortTest']], 'the test place is stored in ' . StockService::TESTS . ', the tested groups come from the group property');
 $pruefe(str_contains($settings->render(), 'value="' . $r['ortTest'] . '" selected'), 'the page shows the chosen test place');
 
 $stock = new StockService();
@@ -392,11 +395,20 @@ $stock->planPlaces([$r['kaufT'] => $r['ortRegal']]);
 $pruefe((new StockService())->receiptLocations($plan)[$r['kaufT']] === $r['ortRegal'], 'a place saved with «Zuordnung speichern» stays his choice');
 $stock->planPlaces([$r['kaufT'] => 0]);
 
-update_option(StockService::TESTS, ['branches' => [$r['gk']], 'place' => 999999999]);
+update_option(StockService::TESTS, ['place' => 999999999]);
 $pruefe((new StockService())->receiptLocations($plan)[$r['kaufT']] === $r['ortRegal'], 'a test place that is no place proposes nothing');
-update_option(StockService::TESTS, ['branches' => [(string) $r['gk'], 'x'], 'place' => (string) $r['ortTest']]);
+update_option(StockService::TESTS, ['branches' => [(string) $r['gk']], 'place' => (string) $r['ortTest']]);
 $rest = rest_do_request(new WP_REST_Request('GET', '/wp/v2/settings'))->get_data();
-$pruefe(get_option(StockService::TESTS) === ['branches' => [$r['gk']], 'place' => $r['ortTest']] && ($rest[StockService::TESTS] ?? null) === ['branches' => [$r['gk']], 'place' => $r['ortTest']], 'the option is cleaned on write and readable over REST (/wp/v2/settings)');
+$pruefe(get_option(StockService::TESTS) === ['place' => $r['ortTest']] && ($rest[StockService::TESTS] ?? null) === ['place' => $r['ortTest']], 'the option is cleaned on write and readable over REST (/wp/v2/settings)');
+
+// D-1259 · the old branch rows move to the groups once.
+(new StockService())->setGroupProperty($r['gk'], StockService::TEST_PROPERTY, null);
+update_option(StockService::TESTS, ['place' => $r['ortTest']]);
+update_option(StockService::LOCATIONS, ['branches' => [$r['gk'] => $r['ortRegal']], 'unreferenced' => null]);
+(new StockService())->moveBranchSettingsToGroups();
+$pruefe(((new StockService())->groupProperty(StockService::PLACE_PROPERTY, [$r['gk']])[$r['gk']] ?? null) === $r['ortRegal'] && (get_option(StockService::LOCATIONS)['branches'] ?? null) === [], 'D-1259: a branch → place row of the old option becomes the group\'s «Standard-Lagerort» and leaves the option');
+(new StockService())->setGroupProperty($r['gk'], StockService::PLACE_PROPERTY, null);
+(new StockService())->setGroupProperty($r['gk'], StockService::TEST_PROPERTY, true);
 
 // D-1009 · back from «Eingebucht».
 $pruefe((new InboundService())->orders()[$r['o8']]->stage((new StockService())->structure()) === InboundStage::Booked, 'a booked order stands under «Eingebucht»');

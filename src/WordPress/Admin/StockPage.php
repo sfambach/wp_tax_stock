@@ -649,7 +649,7 @@ final class StockPage
         return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" class="taxmod-stock-group-properties">'
             . '<input type="hidden" name="action" value="' . esc_attr(self::GROUP_PROPERTIES) . '"><input type="hidden" name="group" value="' . esc_attr((string) $group) . '">'
             . wp_nonce_field(self::GROUP_PROPERTIES, '_wpnonce', true, false)
-            . self::actForm($rows, get_submit_button(__('Gruppe speichern', 'taxmod-stock'), 'secondary', 'submit', false))
+            . self::actForm($rows, self::saveButton(__('Gruppe speichern', 'taxmod-stock')))
             . '</form>';
     }
 
@@ -1237,7 +1237,7 @@ final class StockPage
                 . '<p class="description">' . esc_html__('Worin das Lager zählt, z. B. milli + Liter für ml. Ohne Angabe: Stück.', 'taxmod-stock') . '</p></td></tr>';
         }
 
-        return $html . '</tbody></table>' . $this->sourcesTable($record) . get_submit_button(__('Speichern', 'taxmod-stock')) . '</form>';
+        return $html . '</tbody></table>' . $this->sourcesTable($record) . '<p class="submit">' . self::saveButton() . '</p></form>';
     }
 
     /**
@@ -3500,6 +3500,14 @@ final class StockPage
         ]);
 
         return $moves === [] ? '<p>' . esc_html__('Der Ort ist leer.', 'taxmod-stock') . '</p>' : '<ul style="list-style:disc;margin-left:1.5em">' . implode('', array_map(static fn (string $m): string => '<li>' . esc_html($m) . '</li>', $moves)) . '</ul>';
+    }
+
+    /** His report 2026-11-09 «speichern knopf … immer noch text nicht icon»: the modeller's one save button, the diskette, the word its tooltip. */
+    public static function saveButton(string $word = ''): string
+    {
+        $word = $word === '' ? __('Speichern', 'taxmod-stock') : $word;
+
+        return \Taxmod\Core\Renderer\ControlMarkup::button(\Taxmod\Core\Renderer\Control::saving('submit', '1', $word, $word));
     }
 
     /** D-1273, his wish «icon für kopieren»: every «Kopieren» is the modeller's copy icon, the word its tooltip (modeller 0.2.49). */

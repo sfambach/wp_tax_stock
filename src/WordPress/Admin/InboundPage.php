@@ -292,7 +292,7 @@ final class InboundPage
             ['label' => __('Ergebnis', 'taxmod-stock'), 'control' => $radios],
             ['label' => __('Begründung', 'taxmod-stock'), 'for' => 'taxmod-stock-test-reason-' . $lot, 'control' => '<textarea id="taxmod-stock-test-reason-' . esc_attr((string) $lot) . '" name="reason" rows="2" class="large-text"></textarea>',
                 'hint' => __('Bei «Teilweise OK» und «Wartung nötig» Pflicht, z. B. «Kondensatoren tauschen».', 'taxmod-stock')],
-        ], get_submit_button(__('Ergebnis speichern', 'taxmod-stock'), 'primary', '', false)) . '</form>';
+        ], StockPage::saveButton(__('Ergebnis speichern', 'taxmod-stock'))) . '</form>';
     }
 
     private function bulkBar(string $tab, string $filter, int $count): string

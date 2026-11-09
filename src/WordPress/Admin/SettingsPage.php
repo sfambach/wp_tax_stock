@@ -40,7 +40,7 @@ final class SettingsPage
             . '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">'
             . wp_nonce_field(self::ACTION, '_wpnonce', true, false) . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
             . $this->notMaterialSection() . $this->placesSection() . $this->testsSection() . $this->viewsSection()
-            . get_submit_button(__('Speichern', 'taxmod-stock')) . '</form></div>';
+            . '<p class="submit">' . StockPage::saveButton() . '</p>' . '</form></div>';
     }
 
     /** admin-post: capability → nonce → validate and sanitize per field (in {@see save()}) → keep → back to the page. */
@@ -77,7 +77,7 @@ final class SettingsPage
             // His wish 2026-11-09: the trees on the left open as he left them; this forgets it.
             . (method_exists(ListPage::class, 'resetTreeStates') ? '<tr><th scope="row">' . esc_html__('Bäume links', 'taxmod-stock') . '</th><td><label><input type="checkbox" name="reset_trees" value="1"> '
                 . esc_html__('Gemerkten Ast und offene Äste aller Bäume vergessen', 'taxmod-stock') . '</label></td></tr>' : '')
-            . '</tbody></table>' . get_submit_button(__('Speichern', 'taxmod-stock')) . '</form></div>';
+            . '</tbody></table>' . '<p class="submit">' . StockPage::saveButton() . '</p>' . '</form></div>';
     }
 
     /** admin-post for Benutzereinstellungen: logged in with access to the stock → nonce → keep for this user → back. */

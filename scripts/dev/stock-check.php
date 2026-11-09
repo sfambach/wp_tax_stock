@@ -909,6 +909,10 @@ try {
 (new StockService())->moveLotsWhole([[$posten, $oben]], (int) $wo, '2026-11-09', 'zurück');
 $pruefe((new StockService())->misfits([$ort('Passt-Box', $ohneMass, true)], $ohneMass) === [] && (new StockService())->fitsNew(0, $ohneMass) === null, 'D-1158: places without a kind or sizes give no fit warning');
 
+// His report 2026-11-09 «speichern knopf lager ansicht materil imme noch text nicht icon»: every save is the modeller's diskette.
+$quelle = implode('', array_map('file_get_contents', glob(dirname(__DIR__, 2) . '/src/WordPress/Admin/*.php')));
+$pruefe(preg_match("/get_submit_button\\([^)]*speichern/i", $quelle) === 0 && str_contains(StockPage::saveButton(), 'taxmod-save'), 'D-1275: every «Speichern» of the module is the save icon, the word its tooltip');
+
 // The Configuration tab: the modeller lists it, and pasting structure-live.json stores those ids.
 add_filter('taxmod_config_tabs', [TaxmodStock\WordPress\Admin\SettingsTab::class, 'register']);
 $reiter = Taxmod\WordPress\Admin\SettingsScreen::moduleTabs();

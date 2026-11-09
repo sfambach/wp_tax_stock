@@ -410,7 +410,7 @@ final class PurchasePage
         return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="white-space:nowrap">' . $this->hidden('quantity', $tab)
             . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '"><input type="hidden" name="purchase" value="' . esc_attr((string) $purchase) . '">'
             . '<input type="number" min="1" step="1" name="quantity" style="width:6em" value="' . esc_attr($quantity) . '"> '
-            . get_submit_button('✓', 'small', '', false, ['title' => __('Menge speichern', 'taxmod-stock')]) . '</form>';
+            . StockPage::saveButton(__('Menge speichern', 'taxmod-stock')) . '</form>';
     }
 
     /**

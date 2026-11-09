@@ -542,14 +542,14 @@ final class InboundPage
     }
 
     /**
-     * The article number alone, linked to the product at the platform (D-1249) — his word 2026-11-09 «auf den kauf soll nur
-     * noch bestellnummer mit link»; INFERRED: his «Bestellnummer» is the purchase's article number, the order's stands above.
+     * The order number, linked to the order at the platform (D-1249) — his word 2026-11-09 «auf den kauf soll nur noch
+     * bestellnummer mit link eingefügt werden», and again «anstatt auf die bestellung geht der link auf das material ?»: the
+     * article number linked to the product was a misreading (D-1283).
      */
-    private function purchaseNumber(Table $table, int $order, int $purchase): string
+    private function purchaseNumber(int $order): string
     {
-        $s     = $this->inbound->stock()->structure();
-        $value = $s->hasField('purchase_number') ? trim((string) ($table->first($purchase, $s->field('purchase_number')) ?? '')) : '';
-        $link  = $value === '' ? null : $this->inbound->productLink($order, $value);
+        $value = $this->inbound->orderNumber($order);
+        $link  = $value === '' ? null : $this->inbound->orderLink($order);
 
         return match (true) {
             $value === ''   => '',
@@ -622,7 +622,7 @@ final class InboundPage
             // His wish 2026-11-09: once booked, the purchase is named by its number only; where it went stands in its own columns.
             $went  = $done ? $this->whereItWent($purchase) : null;
             $rows .= '<tr><th scope="row" class="check-column"></th><td style="white-space:normal">' . ($pictures[$purchase] ?? '') . ' ' . esc_html($labels[$purchase] ?? '#' . $purchase)
-                . ($done ? $this->purchaseNumber($table, $order->id, $purchase) : $this->purchaseFacts($table, $order->id, $purchase)) . '</td>'
+                . ($done ? $this->purchaseNumber($order->id) : $this->purchaseFacts($table, $order->id, $purchase)) . '</td>'
                 . ($went === null ? '' : '<td>' . $went['material'] . '</td><td>' . $went['place'] . '</td><td>' . $went['date'] . '</td>')
                 . '<td style="text-align:right">' . esc_html($count > 0.0 ? (string) (0 + $count) : '—') . '</td>'
                 . '<td style="text-align:right">' . esc_html($shown($each)) . '</td>'

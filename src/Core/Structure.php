@@ -40,8 +40,8 @@ final class Structure
         'dimension',
         // D-1184: the contact branch (firms, suppliers, manufacturers, persons) shown under Logistik › Kontakte.
         'contact',
-        // D-1255: the node that declares the manufacturer field; its controls are drawn from there.
-        'thing_manufacturer_at'];
+        // D-1255, D-1256: the list of manufacturers; a group's manufacturer field is the one that points at it.
+        'manufacturer'];
 
     /** Fields the module uses when they are there and leaves out when they are not. */
     private const OPTIONAL_FIELDS = [
@@ -84,8 +84,6 @@ final class Structure
         'contact_first_name',
         // D-1249: a firm's link templates with {nr} — to an order by its number, to a product by its article number.
         'firm_order_link', 'firm_product_link',
-        // D-1255: the manufacturer of a material, asked when a new one is made in the goods receipt or the count.
-        'thing_manufacturer',
         // D-1151: the unit name a line of a place type's parts gives the places it brings.
         'part_unit_name',
         // D-1153: label formats and templates as records; a place type names its template and how many labels.

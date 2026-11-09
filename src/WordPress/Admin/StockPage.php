@@ -62,6 +62,9 @@ final class StockPage
     public const ACTION     = 'taxmod_stock_book';
     public const POSITIONS  = 'taxmod_stock_positions';
 
+    /** D-1256: the manufacturer control of the group chosen in a «Neues Material» dialog. */
+    public const MAKER      = 'taxmod_stock_maker';
+
     /** INF-116: the choice of material saved from an order not yet arrived, answered without a reload. */
     public const ASSIGN     = 'taxmod_stock_assign';
     /** The notice after a booking; the goods receipt cockpit shows it too, when the booking came from there. */
@@ -1917,6 +1920,29 @@ final class StockPage
             . (method_exists(ListPage::class, 'form') ? ListPage::form([], $submit) : '<p class="submit">' . $submit . '</p>') . '</form>';
     }
 
+    /**
+     * D-1256: an empty place for the manufacturer; once a group is chosen in the same dialog, the page asks for that group's
+     * own manufacturer control ({@see maker()}) and hides the row where the group has none.
+     */
+    private function manufacturerControl(string $prefix, string $groupField): string
+    {
+        return $this->stock->structure()->hasNode('manufacturer')
+            ? '<span class="taxmod-stock-maker" data-group-field="' . esc_attr($groupField) . '" data-prefix="' . esc_attr($prefix) . '"></span>'
+            : '';
+    }
+
+    /** ajax: the manufacturer control of one group (D-1256), or nothing. */
+    public function maker(): void
+    {
+        if (! current_user_can('manage_options')) {
+            wp_send_json_error(['html' => ''], 403);
+        }
+
+        Acts::ajaxNonce(self::MAKER);
+        $prefix = (string) preg_replace('/[^A-Za-z0-9_]/', '', (string) ($_GET['prefix'] ?? ''));
+        wp_send_json_success(['html' => $prefix === '' ? '' : $this->stock->manufacturerControl(absint($_GET['group'] ?? 0), $prefix)]);
+    }
+
     /** D-1072 in the count: group and name asked in the row's dialog; the material is made when the count is booked. */
     private function inventoryNewThing(int $row, string $groups): string
     {
@@ -1925,7 +1951,7 @@ final class StockPage
             ['label' => __('Gruppe', 'taxmod-stock'), 'control' => $chooser !== '' ? $chooser : '<select name="rows[' . esc_attr((string) $row) . '][group]" style="width:100%">' . $groups . '</select>'],
             ['label' => __('Bezeichnung', 'taxmod-stock'), 'control' => '<input type="text" name="rows[' . esc_attr((string) $row) . '][name]" style="width:100%">',
                 'hint' => __('Angelegt wird mit «Inventur buchen».', 'taxmod-stock')],
-            ...(($maker = $this->stock->manufacturerControl('countfields_' . $row)) === '' ? [] : [['label' => __('Hersteller', 'taxmod-stock'), 'control' => $maker]]),
+            ...(($maker = $this->manufacturerControl('countfields_' . $row, 'rows[' . $row . '][group]')) === '' ? [] : [['label' => __('Hersteller', 'taxmod-stock'), 'control' => $maker]]),
         ]);
 
         if (! class_exists(\Taxmod\Core\Renderer\DialogMarkup::class)) {
@@ -3679,7 +3705,7 @@ final class StockPage
 
         foreach ($this->assignedGroups() as $purchase => $node) {
             $out[$purchase] = $this->stock->newThingFor($purchase, $node, absint($_POST['order'] ?? 0), ($places[$purchase] ?? 0) ?: null,
-                $this->stock->manufacturerTyped((array) wp_unslash($_POST['newfields_' . $purchase] ?? [])));
+                $this->stock->manufacturerTyped((array) wp_unslash($_POST['newfields_' . $purchase] ?? []), $node));
         }
 
         return $out;
@@ -3818,9 +3844,18 @@ final class StockPage
 
         return $this->modellerAssets($receipt) . '<script>(function(){'
             . 'var url=' . wp_json_encode($search) . ',pos=' . wp_json_encode($positions) . ',post=' . wp_json_encode(admin_url('admin-post.php')) . ';'
+            // D-1256: the manufacturer row asks for the chosen group's own field; a group without one hides the row.
+            . 'var mk=' . wp_json_encode(add_query_arg(['action' => self::MAKER, '_ajax_nonce' => wp_create_nonce(self::MAKER)], admin_url('admin-post.php'))) . ';'
+            . 'function maker(m){var d=m.closest(".taxmod-dialog-panel")||document,n=m.dataset.groupField,'
+            . 'f=d.querySelector("input[name=\\""+n+"\\"]:checked")||d.querySelector("select[name=\\""+n+"\\"]"),g=f?String(f.value):"",r=m.closest(".taxmod-form-row")||m;'
+            . 'if(m.dataset.group===g){return;}m.dataset.group=g;if(!g||g==="0"){m.innerHTML="";r.hidden=true;return;}'
+            . 'fetch(mk+"&group="+encodeURIComponent(g)+"&prefix="+encodeURIComponent(m.dataset.prefix),{credentials:"same-origin"}).then(function(x){return x.json();})'
+            . '.then(function(j){if(m.dataset.group!==g){return;}m.innerHTML=(j.data&&j.data.html)||"";r.hidden=m.innerHTML==="";});}'
+            . 'function makers(){document.querySelectorAll(".taxmod-stock-maker").forEach(maker);}'
+            . 'document.addEventListener("change",function(e){if(!e.target.closest||!e.target.closest(".taxmod-stock-maker")){makers();}});makers();'
             // D-1203: a message in the field beside the heading; a page without it keeps the browser's own.
             . 'function say(t,ok){if(window.taxmodMessage){window.taxmodMessage(t,ok?"ok":"bad");}else{window.alert(t);}}'
-            . 'function bind(root){'
+            . 'function bind(root){if(root!==document){makers();}'
             . 'root.querySelectorAll(".taxmod-stock-filter").forEach(function(f){var s=document.getElementById(f.dataset.for);if(!s){return;}var o=Array.prototype.slice.call(s.options);'
             . 'f.addEventListener("input",function(){var q=f.value.toLowerCase(),first=null;o.forEach(function(x){var fix=x.value===""||x.value==="new"||x.value==="keep"||x.value==="search";x.hidden=q!==""&&!fix&&x.text.toLowerCase().indexOf(q)<0;if(!fix&&!x.hidden&&!first){first=x;}});if(q!==""&&first){s.value=first.value;}});});'
             . 'root.querySelectorAll(".taxmod-stock-thing-search").forEach(function(f){var t=document.getElementById(f.dataset.for),l=document.getElementById(f.getAttribute("list")),w;'
@@ -3870,7 +3905,7 @@ final class StockPage
 
             $rows[] = new InventoryRow(
                 $thing,
-                $thing === null ? new NewThing($group, $name, null, $this->stock->manufacturerTyped((array) wp_unslash($_POST['countfields_' . absint($index)] ?? []))) : null,
+                $thing === null ? new NewThing($group, $name, null, $this->stock->manufacturerTyped((array) wp_unslash($_POST['countfields_' . absint($index)] ?? []), $group)) : null,
                 $name,
                 $quantity,
                 sanitize_text_field((string) ($row['value'] ?? '')),
@@ -3950,7 +3985,7 @@ final class StockPage
 
         // D-1075: the modeller's node chooser — search and tree, the one view he set for choosing in the tree; a plain list without it.
         $chooser = $this->stock->groupChooser('newgroup[' . $purchase . ']');
-        $maker   = $this->stock->manufacturerControl('newfields_' . $purchase);
+        $maker   = $this->manufacturerControl('newfields_' . $purchase, 'newgroup[' . $purchase . ']');
         $field   = self::actForm(array_merge([['label' => __('Gruppe', 'taxmod-stock'),
             'control' => $chooser !== '' ? $chooser : '<select name="newgroup[' . esc_attr((string) $purchase) . ']" style="width:100%">' . $groups . '</select>',
             'hint' => __('Das Material heißt wie der Kauf; Lagerort und Bezugsquelle kommen aus der Bestellung.', 'taxmod-stock')]],

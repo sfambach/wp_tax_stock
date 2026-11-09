@@ -1825,35 +1825,46 @@ final class StockService
     }
 
     /**
-     * D-1255, his word 2026-11-09 «evtl herstelleer gleich in wareneingang mit angeben … gleich ins material übernehmen»: the
-     * manufacturer control for a new material, drawn by the modeller (choice with «Neu hier …»); '' where the structure names none.
+     * D-1256: a group's manufacturer field — the field of that group that points at the list of manufacturers, whichever branch
+     * declares it (Bauteile, Hardware …); 0 where the group has none. One read of the group's fields.
      */
-    public function manufacturerControl(string $prefix, string $formId = ''): string
+    public function manufacturerField(int $group): int
     {
         $s = $this->structure();
 
-        if (! $s->hasField('thing_manufacturer') || ! $s->hasNode('thing_manufacturer_at')) {
-            return '';
+        if ($group < 1 || ! $s->hasNode('manufacturer')) {
+            return 0;
         }
 
-        return $this->model->controls($s->node('thing_manufacturer_at'), [$s->field('thing_manufacturer')], $prefix, $formId)[$s->field('thing_manufacturer')] ?? '';
+        foreach ($this->model->fields($group) as $relation => $field) {
+            if ($field['target'] === $s->node('manufacturer') && $field['kind'] === 'aggregation') {
+                return (int) $relation;
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * D-1255, his word 2026-11-09 «evtl herstelleer gleich in wareneingang mit angeben … gleich ins material übernehmen»: the
+     * group's manufacturer control, drawn by the modeller (choice with «Neu hier …»); '' where the group has no such field.
+     */
+    public function manufacturerControl(int $group, string $prefix): string
+    {
+        $field = $this->manufacturerField($group);
+
+        return $field === 0 ? '' : ($this->model->controls($group, [$field], $prefix)[$field] ?? '');
     }
 
     /**
      * @param array<int|string, mixed> $submitted `$_POST[$prefix]`; `mixed`: as posted
-     * @return array<int, string> the manufacturer as a raw value for the new material, or nothing
+     * @return array<int, string> the manufacturer as a raw value for a new material in `$group`, or nothing
      */
-    public function manufacturerTyped(array $submitted): array
+    public function manufacturerTyped(array $submitted, int $group): array
     {
-        $s = $this->structure();
+        $field = $this->manufacturerField($group);
 
-        if (! $s->hasField('thing_manufacturer') || ! $s->hasNode('thing_manufacturer_at')) {
-            return [];
-        }
-
-        $field = $s->field('thing_manufacturer');
-
-        return array_intersect_key($this->model->typed($s->node('thing_manufacturer_at'), $submitted), [$field => true]);
+        return $field === 0 || $submitted === [] ? [] : array_intersect_key($this->model->typed($group, $submitted), [$field => true]);
     }
 
     /** D-1184: the root of the contact branch — its own node, or the firms' node on a structure that does not name it. */

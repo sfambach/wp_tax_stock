@@ -97,6 +97,7 @@ final class Plugin
             add_action('admin_post_' . StockPage::ACTION, static fn () => Acts::run(static fn () => self::serially(static fn () => (new StockPage())->handle())));
             add_action('admin_post_' . StockPage::POSITIONS, static fn () => Acts::json(static fn () => (new StockPage())->positions()));
             add_action('admin_post_' . StockPage::ASSIGN, static fn () => Acts::json(static fn () => self::serially(static fn () => (new StockPage())->assign(), true)));
+            add_action('admin_post_' . StockPage::MAKER, static fn () => Acts::json(static fn () => (new StockPage())->maker()));
             add_action('admin_post_' . StockPage::THING_SEARCH, static fn () => Acts::json(static fn () => (new StockPage())->thingSearch()));
             add_action('admin_post_' . StockPage::THING_NODES, static fn () => Acts::json(static fn () => (new StockPage())->thingNodes()));
             add_action('admin_post_' . StockPage::THING_BRANCH, static fn () => Acts::json(static fn () => (new StockPage())->thingBranch()));

@@ -1847,7 +1847,7 @@ final class StockPage
 
         for ($i = 0; $i < self::ROWS; $i++) {
             $html .= '<tr><td>' . $this->thingField('rows[' . $i . '][thing]', 'taxmod-stock-split-' . $i, null) . '</td>'
-                . '<td>' . ($this->stock->groupChooser('rows[' . $i . '][group]') ?: '<select name="rows[' . $i . '][group]">' . $groups . '</select>') . '</td>'
+                . '<td>' . ($this->stock->groupChooser('rows[' . $i . '][group]', 0, '', '', true) ?: '<select name="rows[' . $i . '][group]">' . $groups . '</select>') . '</td>'
                 . '<td><input type="text" name="rows[' . $i . '][name]"></td>'
                 . '<td><input type="number" min="1" name="rows[' . $i . '][quantity]" style="width:5em"></td>'
                 . '<td><input type="text" inputmode="decimal" name="rows[' . $i . '][price]" style="width:6em"></td></tr>';
@@ -1946,7 +1946,7 @@ final class StockPage
     /** D-1072 in the count: group and name asked in the row's dialog; the material is made when the count is booked. */
     private function inventoryNewThing(int $row, string $groups): string
     {
-        $chooser = $this->stock->groupChooser('rows[' . $row . '][group]');
+        $chooser = $this->stock->groupChooser('rows[' . $row . '][group]', 0, '', '', true);
         $body    = self::actForm([
             ['label' => __('Gruppe', 'taxmod-stock'), 'control' => $chooser !== '' ? $chooser : '<select name="rows[' . esc_attr((string) $row) . '][group]" style="width:100%">' . $groups . '</select>'],
             ['label' => __('Bezeichnung', 'taxmod-stock'), 'control' => '<input type="text" name="rows[' . esc_attr((string) $row) . '][name]" style="width:100%">',
@@ -3984,7 +3984,7 @@ final class StockPage
         }
 
         // D-1075: the modeller's node chooser — search and tree, the one view he set for choosing in the tree; a plain list without it.
-        $chooser = $this->stock->groupChooser('newgroup[' . $purchase . ']');
+        $chooser = $this->stock->groupChooser('newgroup[' . $purchase . ']', 0, '', '', true);
         $maker   = $this->manufacturerControl('newfields_' . $purchase, 'newgroup[' . $purchase . ']');
         $field   = self::actForm(array_merge([['label' => __('Gruppe', 'taxmod-stock'),
             'control' => $chooser !== '' ? $chooser : '<select name="newgroup[' . esc_attr((string) $purchase) . ']" style="width:100%">' . $groups . '</select>',

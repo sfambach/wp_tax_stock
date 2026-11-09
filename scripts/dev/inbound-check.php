@@ -293,6 +293,7 @@ $plugin = (string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Plugi
 $pruefe(str_contains($plugin, "'admin_post_' . StockPage::ASSIGN"), 'the choice is saved without a reload, under its own action');
 $stockPage = (string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Admin/StockPage.php');
 $pruefe(substr_count($stockPage, '$this->manufacturerControl(') === 2 && substr_count($stockPage, '$this->stock->manufacturerTyped(') === 2 && str_contains((string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Plugin.php'), "'admin_post_' . StockPage::MAKER"), 'D-1255, D-1256: both «Neues Material» dialogs ask the manufacturer of the chosen group with the modeller\'s control and pass it into the new material');
+$pruefe(substr_count($stockPage, "[group]', 0, '', '', true)") === 2 && str_contains($stockPage, "groupChooser('newgroup[' . \$purchase . ']', 0, '', '', true)"), 'D-1257: every «Neues Material» chooses its group under «Material»');
 // D-1254: no act ends on an empty page.
 preg_match_all("/add_action\('admin_post_' \. [A-Za-z]+::[A-Z_]+, (.*)\);/", $plugin, $handlers);
 $pruefe($handlers[1] !== [] && array_filter($handlers[1], static fn (string $h): bool => ! str_starts_with($h, 'static fn () => Acts::run(') && ! str_starts_with($h, 'static fn () => Acts::json(')) === [], 'D-1254: every handler runs through Acts, a failure becomes a message on the page it came from');

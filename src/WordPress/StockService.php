@@ -454,10 +454,11 @@ final class StockService
      * (the Lager's own branch, and those he names) left out with everything under them. With `$pickUrl` it is the tree
      * fixed on the page (D-1174).
      */
-    public function groupChooser(string $name, int $preselected = 0, string $form = '', string $pickUrl = ''): string
+    public function groupChooser(string $name, int $preselected = 0, string $form = '', string $pickUrl = '', bool $new = false): string
     {
         $s    = $this->structure();
-        $root = $this->model->fields($s->node('lager'))[$s->field('lager_thing')]['target'] ?? 0;
+        // D-1257: a new material is made under «Material»; the views keep the whole root, where older material still lies.
+        $root = $new && $s->hasNode('material') ? $s->node('material') : ($this->model->fields($s->node('lager'))[$s->field('lager_thing')]['target'] ?? 0);
 
         if ($root === 0) {
             return '';

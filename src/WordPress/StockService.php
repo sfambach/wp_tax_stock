@@ -458,7 +458,7 @@ final class StockService
     {
         $s    = $this->structure();
         // D-1257: a new material is made under «Material»; the views keep the whole root, where older material still lies.
-        $root = $new && $s->hasNode('material') ? $s->node('material') : ($this->model->fields($s->node('lager'))[$s->field('lager_thing')]['target'] ?? 0);
+        $root = $new && $s->hasNode('material_root') ? $s->node('material_root') : ($this->model->fields($s->node('lager'))[$s->field('lager_thing')]['target'] ?? 0);
 
         if ($root === 0) {
             return '';

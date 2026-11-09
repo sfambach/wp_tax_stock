@@ -23,6 +23,17 @@ final class StructureTest extends TestCase
     }
 
     #[Test]
+    public function the_bundled_file_reuses_no_former_key(): void
+    {
+        $bundled = json_decode((string) file_get_contents(dirname(__DIR__, 2) . '/structure-live.json'), true);
+        $former  = (new \ReflectionClassConstant(Structure::class, 'FORMER_KEYS'))->getValue();
+
+        foreach ($former as $group => $keys) {
+            self::assertSame([], array_values(array_intersect(array_keys($keys), array_keys($bundled[$group] ?? []))), 'a former key in ' . $group . ' makes an old pasted structure read as another site');
+        }
+    }
+
+    #[Test]
     public function the_kind_of_a_position_list_is_told_not_stored(): void
     {
         $s = Fixture::structure();

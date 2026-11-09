@@ -42,8 +42,9 @@ final class Structure
         'contact',
         // D-1255, D-1256: the list of manufacturers; a group's manufacturer field is the one that points at it.
         'manufacturer',
-        // D-1257: the node every group of material lies under; a new material is made below it.
-        'material'];
+        // D-1257: the node every group of material lies under; a new material is made below it. Not «material»: that key
+        // is the former name of «lager» (FORMER_KEYS), and an old pasted structure holding it would read as another site.
+        'material_root'];
 
     /** Fields the module uses when they are there and leaves out when they are not. */
     private const OPTIONAL_FIELDS = [

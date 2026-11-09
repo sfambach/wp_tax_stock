@@ -69,6 +69,7 @@ $order = static fn (string $ref, string $label, array $values): array => [
 $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'create_node', 'ref' => 'stock', 'name' => '__Stock', 'parent' => 402],
     $field('label', 402, 'Bezeichnung', $text, 'composition', '0..1'),
+    $field('bilder', 402, '__Bilder', $text, 'composition', '0..*'),
     ['op' => 'create_node', 'ref' => 'mat', 'name' => 'Lager', 'parent' => '@stock'],
     ['op' => 'create_node', 'ref' => 'lot', 'name' => 'Bestandsposten', 'parent' => '@stock'],
     ['op' => 'create_node', 'ref' => 'vg', 'name' => 'Vorgänge', 'parent' => '@stock'],
@@ -201,7 +202,7 @@ update_option(StockService::OPTION, [
         'lot_date' => $r['l_dat'], 'line_lot' => $r['p_lot'], 'line_quantity' => $r['p_menge'],
         'transaction_kind' => $r['v_art'], 'transaction_order' => $r['v_best'], 'transaction_lines' => $r['v_pos'],
         'lot_tested_on' => $r['l_tdat'], 'lot_test_note' => $r['l_tbef'], 'lot_condition' => $r['l_zust'],
-        'label' => $r['label'], 'lot_thing' => $r['l_mat'], 'lot_purchase' => $r['l_kauf'], 'order_status' => $r['o_stat'], 'order_lines' => $r['o_pos'],
+        'label' => $r['label'], 'images' => $r['bilder'], 'lot_thing' => $r['l_mat'], 'lot_purchase' => $r['l_kauf'], 'order_status' => $r['o_stat'], 'order_lines' => $r['o_pos'],
         'purchase_undetermined' => $r['k_offen'], 'purchase_model' => $r['k_mod'], 'money_amount' => 4234, 'money_unit' => 4236,
         'description' => $r['k_desc'], 'purchase_number' => $r['k_nr'],
         'firm_name' => $r['f_name'], 'firm_order_link' => $r['f_ol'], 'firm_product_link' => $r['f_pl'],
@@ -271,7 +272,15 @@ $details = static function (string $tab): string {
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'booked'];
 $html = (new InboundPage())->render();
 $pruefe(! str_contains($html, 'button taxmod-list-toggle') && ! str_contains($html, 'Expand all') && str_contains($html, 'order=' . $r['o5']), '«Eingebucht» lists its orders without opening rows, each linked to its own view');
+// His wish 2026-11-09: «bei eingebucht auch die materialbilder anzeigen … rechts neben der box oben» — a real picture of the library.
+$png  = wp_upload_bits('taxmod-check-' . wp_generate_password(6, false) . '.png', null, (string) base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='));
+$bild = (int) wp_insert_attachment(['post_mime_type' => 'image/png', 'post_title' => 'taxmod check', 'post_status' => 'inherit'], $png['file']);
+require_once ABSPATH . 'wp-admin/includes/image.php';
+wp_update_attachment_metadata($bild, wp_generate_attachment_metadata($bild, $png['file']));
+(new StockService())->write([['op' => 'set_values', 'record' => (string) $r['et4000'], 'values' => [(string) $r['bilder'] => ['values' => ['media:' . $bild]]]]]);
 $html .= $details('booked');
+$pruefe(! \Taxmod\WordPress\Admin\ListPage::showsImages() || (str_contains($html, 'taxmod-stock-material-pictures') && str_contains($html, basename($png['file']) . '" class="taxmod-list-thumb"') && substr_count($html, 'taxmod-stock-material-pictures') <= count((new InboundService())->orders())), '«Eingebucht»: the material\'s title picture stands beside the box, linked to the material');
+wp_delete_attachment($bild, true);
 $pruefe(str_contains($html, 'Ladegerät') && str_contains($html, 'thing=' . $r['et4000']) && str_contains($html, 'view=bestand'), '«Eingebucht» shows where each purchase went, linked to its material');
 // His wish 2026-11-09, his choice «Als Spalten in der Käufe-Tabelle»: material, place and day as columns, the purchase named by its number only.
 $pruefe(str_contains($html, '>Material</th>') && str_contains($html, '>Lagerort</th>') && str_contains($html, '>Eingebucht am</th>')

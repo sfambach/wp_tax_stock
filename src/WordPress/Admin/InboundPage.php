@@ -358,7 +358,8 @@ final class InboundPage
             . '<div><h2 style="margin:.2em 0">' . esc_html($label) . ($late ? ' <span style="color:#b32d2e;font-size:.8em">' . esc_html__('überfällig', 'taxmod-stock') . '</span>' : '') . '</h2>'
             . ($about === '' ? '' : '<p class="description" style="margin-top:0">' . esc_html($about) . '</p>') . '</div>'
             . '<div style="text-align:right">' . $this->buttons($order, $stage, $counts['booked'], $tab) . '</div></div>'
-            . '<table class="widefat" style="max-width:40em;margin-bottom:1em"><tbody>'
+            . '<div style="display:flex;gap:1em;align-items:flex-start;flex-wrap:wrap;margin-bottom:1em">'
+            . '<table class="widefat" style="max-width:40em"><tbody>'
             . $fact(__('Stufe', 'taxmod-stock'), esc_html(self::stageName($stage)))
             . $fact(__('Bestellt am', 'taxmod-stock'), esc_html(substr((string) $order->orderedOn, 0, 10)))
             // D-1249: the order at its platform, from the firm's template — built here, never stored.
@@ -367,6 +368,7 @@ final class InboundPage
             . $fact(__('Angekommen', 'taxmod-stock'), esc_html(substr((string) $order->receivedOn, 0, 10)))
             . $fact(__('Käufe', 'taxmod-stock'), esc_html(sprintf(/* translators: 1: purchases, 2: of them in stock */ __('%1$d, davon %2$d gebucht', 'taxmod-stock'), $counts['total'], $counts['booked'])))
             . '</tbody></table>'
+            . (in_array($stage, [InboundStage::Booked, InboundStage::Archived], true) ? $this->materialPictures($order->id) : '') . '</div>'
             . $this->details($order, $stage, $tab, true)
             . (new StockPage($this->inbound->stock()))->script(true);
     }
@@ -454,6 +456,36 @@ final class InboundPage
     }
 
     /** «Angekommen»: the Lager page's booking form, loaded once it shows; else the purchases, the carrier's events and a tracking field. */
+    /**
+     * His wish 2026-11-09: «bei eingebucht auch die materialbilder anzeigen … rechts neben der box oben» — the title picture of
+     * each material the order went in as, once each, linked to the material; none when lists show no pictures (one switch).
+     */
+    private function materialPictures(int $order): string
+    {
+        $stock  = $this->inbound->stock();
+        $s      = $stock->structure();
+        $ledger = $this->ledger ??= $stock->ledger();
+        $things = [];
+
+        foreach (array_map('intval', $stock->table('order')->all($order, $s->field('order_lines'))) as $purchase) {
+            foreach ($this->inbound->lotsOf($purchase) as $lot) {
+                $thing = $ledger->thingOf($lot);
+                $thing === null ? null : $things[$thing] = true;
+            }
+        }
+
+        $pictures = array_filter(ListPage::thumbnails($stock->titleImages(array_keys($things))));
+        $names    = $stock->things();
+        $out      = '';
+
+        foreach ($pictures as $thing => $img) {
+            $name = $names->word($thing);
+            $out .= '<a href="' . esc_url(StockPage::thingUrl($thing, 'daten')) . '" title="' . esc_attr($name) . '" aria-label="' . esc_attr($name) . '">' . $img . '</a>';
+        }
+
+        return $out === '' ? '' : '<div class="taxmod-stock-material-pictures" style="display:flex;gap:.5em;flex-wrap:wrap">' . $out . '</div>';
+    }
+
     /**
      * His question of 2026-10-28 on a booked order: «wo befinden die?» — per lot its material, its place and the day it came
      * in, each a link (his wish 2026-11-09, his choice «Als Spalten in der Käufe-Tabelle»): the material to the material, the

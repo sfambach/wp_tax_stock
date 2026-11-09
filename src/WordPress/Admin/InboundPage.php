@@ -6,6 +6,7 @@ use Taxmod\WordPress\Admin\ListPage;
 use TaxmodStock\Core\InboundOrder;
 use TaxmodStock\Core\InboundStage;
 use TaxmodStock\Core\StockError;
+use TaxmodStock\Core\Table;
 use TaxmodStock\Core\TestResult;
 use TaxmodStock\WordPress\InboundService;
 
@@ -461,6 +462,26 @@ final class InboundPage
         return $out === [] ? '' : ' → ' . implode(', ', $out);
     }
 
+    /**
+     * INF-116: what tells two purchases apart before they arrive — the description (variant, pack) and the article number,
+     * in full under the name. The links to the platform wait for his decision where the link templates live.
+     */
+    private function purchaseFacts(Table $table, int $purchase): string
+    {
+        $s     = $this->inbound->stock()->structure();
+        $facts = [];
+
+        foreach (['description' => '', 'purchase_number' => __('Artikelnummer', 'taxmod-stock')] as $key => $name) {
+            $value = $s->hasField($key) ? trim((string) ($table->first($purchase, $s->field($key)) ?? '')) : '';
+
+            if ($value !== '') {
+                $facts[] = ($name === '' ? '' : $name . ': ') . $value;
+            }
+        }
+
+        return $facts === [] ? '' : '<br><span class="description">' . esc_html(implode(' · ', $facts)) . '</span>';
+    }
+
     private function details(InboundOrder $order, InboundStage $stage, string $tab, bool $open): string
     {
         if ($stage === InboundStage::Arrived) {
@@ -500,6 +521,10 @@ final class InboundPage
         $stock   = $this->inbound->stock();
         $closing = $stock->canCloseWithoutStock();
         $booked  = $stock->receivedPurchases();
+        // His wish 2026-11-09 (INF-116): «um zu entscheiden ob etwas angekommen ist ist das wenig info» — the picture (D-1204),
+        // and what the purchase already says, read from the one table of this order's purchases (CD-7).
+        $ids      = array_map('intval', $purchases);
+        $pictures = method_exists(ListPage::class, 'thumbnails') ? ListPage::thumbnails($stock->titleImages($ids)) : [];
 
         foreach ($purchases as $purchase) {
             $purchase = (int) $purchase;
@@ -514,7 +539,8 @@ final class InboundPage
             $each  = $amountOf($table->first($purchase, $s->field('purchase_unit_price')));
             $total = $s->hasField('purchase_total_price') ? $amountOf($table->first($purchase, $s->field('purchase_total_price'))) : null;
             $total ??= $each === null || $count <= 0.0 ? null : $each * $count;
-            $html .= '<tr><td style="white-space:normal">' . esc_html($labels[$purchase] ?? '#' . $purchase) . $this->whereItWent($purchase) . '</td>'
+            $html .= '<tr><td style="white-space:normal">' . ($pictures[$purchase] ?? '') . ' ' . esc_html($labels[$purchase] ?? '#' . $purchase)
+                . $this->purchaseFacts($table, $purchase) . $this->whereItWent($purchase) . '</td>'
                 . '<td style="text-align:right">' . esc_html($count > 0.0 ? (string) (0 + $count) : '—') . '</td>'
                 . '<td style="text-align:right">' . esc_html($shown($each)) . '</td>'
                 . '<td style="text-align:right">' . esc_html($shown($total)) . '</td>'

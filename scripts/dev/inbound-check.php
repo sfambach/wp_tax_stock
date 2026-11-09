@@ -128,7 +128,12 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'create_record', 'ref' => 'kauf', 'node' => '@pur'],
     ['op' => 'set_values', 'record' => '@kauf', 'values' => ['@label' => 'ISA FDC', '@k_offen' => '1']],
     ...$order('o1', 'Bestellt', ['@o_best' => '2026-10-01', '@o_plat' => 'eBay', '@o_hand' => 'retro-shop', '@o_nr' => '12-345']),
-    ...$order('o2', 'Unterwegs', ['@o_best' => '2026-10-20', '@o_sn' => ['values' => ['00340434AA']]]),
+    // INF-116: a purchase that says more than its name — description and article number, shown before it arrives.
+    $field('k_desc', '@pur', 'Beschreibung', $text, 'composition', '0..1'),
+    $field('k_nr', '@pur', 'Artikelnummer', $text, 'composition', '0..1'),
+    ['op' => 'create_record', 'ref' => 'kaufE', 'node' => '@pur'],
+    ['op' => 'set_values', 'record' => '@kaufE', 'values' => ['@label' => 'Edge Card Connector S...', '@k_desc' => 'Variante: Right Angle, 62P', '@k_nr' => '1005003647067417']],
+    ...$order('o2', 'Unterwegs', ['@o_best' => '2026-10-20', '@o_sn' => ['values' => ['00340434AA']], '@o_pos' => ['values' => ['@kaufE']]]),
     ...$order('o3', 'DHL zugestellt', ['@o_sn' => ['values' => ['00340434BB']]]),
     ...$order('o4', 'Per Mail zugestellt', ['@o_ein' => '2026-10-25', '@o_pos' => ['values' => ['@kauf']]]),
     ...$order('o5', 'Eingebucht', ['@o_stat' => '@s_ganz', '@o_pos' => ['values' => ['@kauf5']]]),
@@ -190,6 +195,7 @@ update_option(StockService::OPTION, [
         'lot_tested_on' => $r['l_tdat'], 'lot_test_note' => $r['l_tbef'], 'lot_condition' => $r['l_zust'],
         'label' => $r['label'], 'lot_thing' => $r['l_mat'], 'lot_purchase' => $r['l_kauf'], 'order_status' => $r['o_stat'], 'order_lines' => $r['o_pos'],
         'purchase_undetermined' => $r['k_offen'], 'purchase_model' => $r['k_mod'], 'money_amount' => 4234, 'money_unit' => 4236,
+        'description' => $r['k_desc'], 'purchase_number' => $r['k_nr'],
     ],
     'values' => ['kind_receipt' => $r['a_we'], 'kind_consumption' => 1, 'kind_count' => 1, 'source_manual' => 1, 'location_default' => $r['ortRegal'],
         'status_partial' => $r['s_teil'], 'status_received' => $r['s_ganz'], 'status_draft' => $r['s_entw'],
@@ -263,6 +269,7 @@ $html = (new InboundPage())->render();
 $html .= $details('shipped');
 $pruefe(str_contains($html, 'Unterwegs') && ! str_contains($html, '>Bestellt</strong>'), 'the tab «Versendet» shows only its orders');
 $pruefe(str_contains($html, '00340434AA') && str_contains($html, 'unterwegs') && str_contains($html, 'Köln'), 'it shows the number, DHL\'s stage and its last event');
+$pruefe(str_contains($html, 'Variante: Right Angle, 62P') && str_contains($html, 'Artikelnummer: 1005003647067417'), 'INF-116, his word «um zu entscheiden ob etwas angekommen ist ist das wenig info»: a purchase shows its description and article number');
 $pruefe($asked === 0, 'drawing the page never asks DHL');
 
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'arrived', 'order' => $r['o4']];

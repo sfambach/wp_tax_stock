@@ -579,7 +579,7 @@ final class StockService
     public function searchThings(string $term, int $limit = 30, bool $groups = false): array
     {
         $tree  = $this->tree();
-        // D-1286, his wish 2026-11-09 «material nummern eingabe sollte auch möglich sein»: a number («45704», «#45704», «M-45704»
+        // D-1287, his wish 2026-11-09 «material nummern eingabe sollte auch möglich sein»: a number («45704», «#45704», «M-45704»
         // as on the label) finds the material with that id first; the text is searched as well, and «0603» stays text. The
         // number is shown with the hit as the label writes it, never written into the name.
         $number = preg_match('/^(?:#|M-)?([1-9][0-9]{0,18})$/i', trim($term), $m) === 1 ? (int) $m[1] : 0;

@@ -70,6 +70,7 @@ final class StockPage
 
     /** D-1259: a group's properties, set in its Lager view. */
     public const GROUP_PROPERTIES = 'taxmod_stock_group_properties';
+    public const FORM_LABELS      = 'taxmod_stock_form_labels';
     /** The notice after a booking; the goods receipt cockpit shows it too, when the booking came from there. */
     public const NOTICE     = 'taxmod_stock_notice';
     private const LAST_LIST = 'taxmod_stock_last_list_';
@@ -879,13 +880,33 @@ final class StockPage
         return $input . ' <span class="description">' . esc_html($emptyMeans) . '</span>';
     }
 
+    /**
+     * D-1284: where the preselected label comes from, for the dialog to say — the Bauform or the group, by name; nothing when
+     * neither asked for it, or the label asked for is not the one preselected.
+     *
+     * @return array{origin?: string}
+     */
+    private function labelOrigin(int $thing, string $key, int $first): array
+    {
+        [$label, $from, $node] = $this->stock->labelSourceOf($thing, $key);
+        if ($label <= 0 || $label !== $first) {
+            return [];
+        }
+        $name = $from === 'form' ? (string) ($this->stock->formTree()[$node]['name'] ?? '') : (string) ($this->stock->tree()[$node]['name'] ?? '');
+
+        return ['origin' => $from === 'form'
+            ? sprintf(/* translators: %s: the Bauform */ __('Vorgewählt nach Bauform: %s', 'taxmod-stock'), $name)
+            : sprintf(/* translators: %s: the material group */ __('Vorgewählt nach Gruppe: %s', 'taxmod-stock'), $name)];
+    }
+
     private function lotLabel(int $thing, int $lot, string $label, string $charge): string
     {
         $s         = $this->stock->structure();
         $templates = $this->stock->labelTemplates();
         $first     = $s->hasNode('label_materials') ? $templates->preferredIn($s->node('label_materials'), $this->stock->groupLabelOf($thing, StockService::LOT_LABEL_PROPERTY)) : 0;
+        $origin    = $this->labelOrigin($thing, StockService::LOT_LABEL_PROPERTY, $first);
         $chosen    = $first > 0 ? $templates->get($first) : null;
-        $template  = $chosen === null ? [] : $templates->dialog($first, ['record' => $thing, 'values' => [self::CHARGE_FIELD => sprintf(/* translators: %s: batch number */ __('Charge: %s', 'taxmod-stock'), $charge)]]);
+        $template  = $chosen === null ? [] : $templates->dialog($first, $origin + ['record' => $thing, 'values' => [self::CHARGE_FIELD => sprintf(/* translators: %s: batch number */ __('Charge: %s', 'taxmod-stock'), $charge)]]);
 
         return (string) apply_filters('taxmod_label_button', '', 'P', $lot, $label === '' ? '#' . $thing : $label, '', $chosen['copies'] ?? 1, $template);
     }
@@ -992,8 +1013,9 @@ final class StockPage
         $s         = $this->stock->structure();
         $templates = $this->stock->labelTemplates();
         $first     = $s->hasNode('label_materials') ? $templates->preferredIn($s->node('label_materials'), $this->stock->groupLabelOf($thing, StockService::MATERIAL_LABEL_PROPERTY)) : 0;
+        $origin    = $this->labelOrigin($thing, StockService::MATERIAL_LABEL_PROPERTY, $first);
         $chosen    = $first > 0 ? $templates->get($first) : null;
-        $template  = $chosen === null ? [] : $templates->dialog($first, ['record' => $thing]);
+        $template  = $chosen === null ? [] : $templates->dialog($first, $origin + ['record' => $thing]);
 
         return (string) apply_filters('taxmod_label_button', '', 'M', $thing, $label === '' ? '#' . $thing : $label, '', $chosen['copies'] ?? 1, $template);
     }
@@ -3110,7 +3132,96 @@ final class StockPage
                 . '<td style="text-align:right;white-space:nowrap">' . $this->copyTemplateDialog($id, $template['name']) . ' <a class="button" href="' . $link . '">' . esc_html__('Öffnen', 'taxmod-stock') . '</a></td></tr>';
         }
 
-        return $html . ListPage::table([[__('Kategorie', 'taxmod-stock'), '14em'], [__('Etikett', 'taxmod-stock'), ''], [__('Größe', 'taxmod-stock'), '16em'], [__('Platzarten', 'taxmod-stock'), '']], $body === '' ? $this->noItems(4) : $body);
+        return $html . ListPage::table([[__('Kategorie', 'taxmod-stock'), '14em'], [__('Etikett', 'taxmod-stock'), ''], [__('Größe', 'taxmod-stock'), '16em'], [__('Platzarten', 'taxmod-stock'), '']], $body === '' ? $this->noItems(4) : $body)
+            . $this->formLabels();
+    }
+
+    /**
+     * D-1284, his word 2026-11-09 «smd is eine eigenschaft»: the default labels by Bauform — each form inherits from the one above
+     * unless set here («SMD» for «0603»), and goes before the group's (D-1266).
+     */
+    private function formLabels(): string
+    {
+        $s    = $this->stock->structure();
+        $tree = $this->stock->formTree();
+        if ($tree === [] || ! $s->hasNode('label_materials')) {
+            return '';
+        }
+        $category = $s->node('label_materials');
+        $labels   = array_filter($this->stock->labelTemplates()->all(), static fn (array $t): bool => ($t['node'] ?? 0) === $category);
+        $keys     = [StockService::MATERIAL_LABEL_PROPERTY, StockService::LOT_LABEL_PROPERTY];
+        $own      = [];
+        $resolved = [];
+        foreach ($keys as $key) {
+            $own[$key]      = $this->stock->ownFormProperty($key);
+            $resolved[$key] = $this->stock->formProperty($key);
+        }
+        $children = [];
+        foreach ($tree as $id => $node) {
+            $children[isset($tree[$node['parent']]) ? $node['parent'] : 0][] = $id;
+        }
+        $rows = [];
+        $walk = static function (int $parent, int $depth) use (&$walk, &$rows, $children): void {
+            foreach ($children[$parent] ?? [] as $id) {
+                $rows[] = [$id, $depth];
+                $walk($id, $depth + 1);
+            }
+        };
+        $walk(0, 0);
+
+        $body = '';
+        foreach ($rows as [$id, $depth]) {
+            $cells = '';
+            foreach ($keys as $key) {
+                $above   = $resolved[$key][$tree[$id]['parent']] ?? null;
+                $named   = is_int($above) ? (string) ($labels[$above]['name'] ?? '') : '';
+                $mine    = $own[$key][$id] ?? null;
+                $options = '<option value=""' . selected(! is_int($mine), true, false) . '>' . esc_html($named === '' ? __('wie darüber', 'taxmod-stock') : sprintf(/* translators: %s: the label of the form above */ __('wie darüber (%s)', 'taxmod-stock'), $named)) . '</option>';
+                foreach ($labels as $label => $template) {
+                    $options .= '<option value="' . esc_attr((string) $label) . '"' . selected($mine === $label, true, false) . '>' . esc_html((string) $template['name']) . '</option>';
+                }
+                $cells .= '<td><select name="' . esc_attr($key . '[' . $id . ']') . '" aria-label="' . esc_attr($tree[$id]['name']) . '">' . $options . '</select></td>';
+            }
+            $body .= '<tr><th scope="row" class="check-column"></th><td style="padding-left:' . esc_attr((string) (8 + 20 * $depth)) . 'px">' . esc_html($tree[$id]['name']) . '</td>' . $cells . '</tr>';
+        }
+
+        return '<h2>' . esc_html__('Etikett nach Bauform', 'taxmod-stock') . '</h2>'
+            . '<p class="description">' . esc_html__('Wird im Druckdialog vorgewählt und geht vor dem Etikett der Gruppe; eine Bauform gilt für alle darunter.', 'taxmod-stock') . '</p>'
+            . '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">'
+            . '<input type="hidden" name="action" value="' . esc_attr(self::FORM_LABELS) . '">'
+            . wp_nonce_field(self::FORM_LABELS, '_wpnonce', true, false)
+            . ListPage::table([[__('Bauform', 'taxmod-stock'), ''], [__('Standard-Etikett Material', 'taxmod-stock'), '18em'], [__('Standard-Etikett Posten', 'taxmod-stock'), '18em']], $body)
+            . '<p>' . self::saveButton(__('Etiketten speichern', 'taxmod-stock')) . '</p></form>';
+    }
+
+    /** D-1284: admin-post — each Bauform's own default labels; «wie darüber» lets it inherit again. Only what changed is written. */
+    public function saveFormLabels(): never
+    {
+        if (! current_user_can('manage_options')) {
+            Acts::deny(__('Keine Berechtigung.', 'taxmod-stock'));
+        }
+
+        Acts::nonce(self::FORM_LABELS);
+        $s    = $this->stock->structure();
+        $tree = $this->stock->formTree();
+        if ($s->hasNode('label_materials')) {
+            $category  = $s->node('label_materials');
+            $templates = $this->stock->labelTemplates();
+            foreach ([StockService::MATERIAL_LABEL_PROPERTY, StockService::LOT_LABEL_PROPERTY] as $key) {
+                $own = $this->stock->ownFormProperty($key);
+                foreach ((array) ($_POST[$key] ?? []) as $node => $value) {
+                    $node  = absint($node);
+                    $label = absint($value);
+                    $label = $label > 0 && ($templates->get($label)['node'] ?? 0) === $category ? $label : null;
+                    if (isset($tree[$node]) && ($own[$node] ?? null) !== $label) {
+                        $this->stock->setGroupProperty($node, $key, $label);
+                    }
+                }
+            }
+        }
+
+        wp_safe_redirect(add_query_arg(['page' => self::PAGE, 'tab' => 'etikettenvorlagen'], admin_url('admin.php')));
+        exit;
     }
 
     /**

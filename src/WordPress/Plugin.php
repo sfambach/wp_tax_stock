@@ -112,6 +112,7 @@ final class Plugin
             add_action('admin_post_' . StockPage::POSITIONS, static fn () => Acts::json(static fn () => (new StockPage())->positions()));
             add_action('admin_post_' . StockPage::ASSIGN, static fn () => Acts::json(static fn () => self::serially(static fn () => (new StockPage())->assign(), true)));
             add_action('admin_post_' . StockPage::GROUP_PROPERTIES, static fn () => Acts::run(static fn () => (new StockPage())->saveGroupProperties()));
+            add_action('admin_post_' . StockPage::FORM_LABELS, static fn () => Acts::run(static fn () => (new StockPage())->saveFormLabels()));
             add_action('admin_post_' . StockPage::MAKER, static fn () => Acts::json(static fn () => (new StockPage())->maker()));
             add_action('admin_post_' . StockPage::THING_SEARCH, static fn () => Acts::json(static fn () => (new StockPage())->thingSearch()));
             add_action('admin_post_' . StockPage::THING_NODES, static fn () => Acts::json(static fn () => (new StockPage())->thingNodes()));

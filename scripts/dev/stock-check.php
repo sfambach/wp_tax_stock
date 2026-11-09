@@ -938,6 +938,33 @@ if (is_array($opt) && ! $st->hasField('description')) {
 $genannt  = (new StockService())->recordLabels([$ohneName])[$ohneName] ?? '';
 $pruefe(str_starts_with($genannt, 'Laut AliExpress-Angebot: 100 Stück') && str_ends_with($genannt, '…') && mb_strlen($genannt) <= 60, 'D-1279: a material without «Bezeichnung» is named by the start of its «Beschreibung»');
 
+// His word 2026-11-09 «smd is eine eigenschaft»: the default label follows the Bauform, «SMD» for «0603», before the group's.
+$apply = static fn (array $changes): array => (array) wp_get_ability('taxmod/apply')->execute(['changes' => $changes]);
+$bf    = $apply([
+    ['op' => 'create_node', 'ref' => 'root', 'name' => '__Bauformen', 'parent' => 402],
+    ['op' => 'create_node', 'ref' => 'smd', 'name' => '__SMD', 'parent' => '@root'],
+    ['op' => 'create_node', 'ref' => 'f0603', 'name' => '__0603', 'parent' => '@smd'],
+])['refs'] ?? [];
+$bfFeld = (int) ($apply([['op' => 'add_field', 'ref' => 'f', 'node' => (string) $r['teile'], 'name' => '__Bauform', 'target' => (int) $bf['root'], 'kind' => 'aggregation', 'multiplicity' => '0..1']])['refs']['f'] ?? 0);
+$apply([['op' => 'set_values', 'record' => (string) $r['t1'], 'values' => [(string) $bfFeld => (string) $bf['f0603']]]]);
+$opt = get_option('taxmod_stock_structure');
+if (is_array($opt)) {
+    $opt['fields']['thing_form'] = $bfFeld;
+    update_option('taxmod_stock_structure', $opt);
+}
+(new StockService())->setGroupProperty($r['teile'], StockService::LOT_LABEL_PROPERTY, $r['etk40']);
+$pruefe((new StockService())->formRoot() === (int) $bf['root'] && (new StockService())->labelSourceOf($r['t1'], StockService::LOT_LABEL_PROPERTY) === [$r['etk40'], 'group', $r['teile']], 'D-1284: without a label at the Bauform the group\'s stands, and says so');
+(new StockService())->setGroupProperty((int) $bf['smd'], StockService::LOT_LABEL_PROPERTY, $r['etk40'] + 0);
+$quelle = (new StockService())->labelSourceOf($r['t1'], StockService::LOT_LABEL_PROPERTY);
+$pruefe($quelle === [$r['etk40'], 'form', (int) $bf['f0603']], 'D-1284: a label set at «SMD» is read for a material of «0603», before the group\'s');
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'etikettenvorlagen'];
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'value="' . StockPage::FORM_LABELS . '"') && str_contains($html, '__0603') && preg_match('/name="' . StockService::LOT_LABEL_PROPERTY . '\[' . $bf['smd'] . '\]".{0,400}?value="' . $r['etk40'] . '" selected/s', $html) === 1,
+    'D-1284: the Etiketten page lists the Bauformen with their own labels to choose');
+$pruefe(str_contains((string) file_get_contents(WP_PLUGIN_DIR . '/wp-taxonomy-modeler/src/WordPress/Printing/LabelButton.php'), "\$template['origin']"), 'D-1284: the modeller\'s label dialog says where the preselection comes from');
+(new StockService())->setGroupProperty((int) $bf['smd'], StockService::LOT_LABEL_PROPERTY, null);
+(new StockService())->setGroupProperty($r['teile'], StockService::LOT_LABEL_PROPERTY, null);
+
 // The Configuration tab: the modeller lists it, and pasting structure-live.json stores those ids.
 add_filter('taxmod_config_tabs', [TaxmodStock\WordPress\Admin\SettingsTab::class, 'register']);
 $reiter = Taxmod\WordPress\Admin\SettingsScreen::moduleTabs();

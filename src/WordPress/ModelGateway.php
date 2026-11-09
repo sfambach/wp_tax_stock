@@ -90,6 +90,12 @@ final class ModelGateway
         return $records === [] ? [] : $this->ask(fn (): array => $this->door->referrersOf($records));
     }
 
+    /** D-1284: the node a field points to (modeller 0.2.56); 0 before, so a label by Bauform simply stays away. */
+    public function targetOf(int $relation): int
+    {
+        return method_exists($this->door, 'targetOf') ? $this->ask(fn (): array => [$this->door->targetOf($relation)])[0] : 0;
+    }
+
     /** D-1259: one act, undoable; null lets the node inherit again. */
     public function setProperty(int $node, string $key, bool|int|null $value): void
     {

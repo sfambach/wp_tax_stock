@@ -87,6 +87,8 @@ final class Structure
         'contact_first_name',
         // D-1249: a firm's link templates with {nr} — to an order by its number, to a product by its article number.
         'firm_order_link', 'firm_product_link',
+        // D-1284: the field naming a material's Bauform — its nodes carry a default label, inherited like a group's.
+        'thing_form',
         // D-1151: the unit name a line of a place type's parts gives the places it brings.
         'part_unit_name',
         // D-1153: label formats and templates as records; a place type names its template and how many labels.

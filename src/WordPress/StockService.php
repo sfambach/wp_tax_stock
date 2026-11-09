@@ -120,6 +120,14 @@ final class StockService
     /** @var array<string, array<int, bool|int|null>> D-1259: group properties, read once per key */
     private array $groupProperties = [];
 
+    /** @var array<string, array<int, bool|int|null>> D-1284: Bauform properties, read once per key */
+    private array $formProperties = [];
+
+    private ?int $formRoot = null;
+
+    /** @var array<int, array{name: string, parent: int, class: string, hidden: bool}>|null */
+    private ?array $formTree = null;
+
     public function __construct(private readonly ModelGateway $model = new ModelGateway())
     {
     }
@@ -864,10 +872,76 @@ final class StockService
      */
     public function groupLabelOf(int $thing, string $key): int
     {
-        $node  = $this->things()->nodeOf($thing);
-        $label = $node === null ? null : ($this->groupProperty($key)[$node] ?? null);
+        return $this->labelSourceOf($thing, $key)[0];
+    }
 
-        return is_int($label) ? $label : 0;
+    /**
+     * D-1284, his word 2026-11-09 «smd is eine eigenschaft»: the label a thing starts with and where that comes from — its
+     * Bauform (the node itself or one above it, «SMD» for «0603»), else its group (D-1266), else none.
+     *
+     * @return array{0: int, 1: string, 2: int} label, `form`|`group`|'' and the node it was read at
+     */
+    public function labelSourceOf(int $thing, string $key): array
+    {
+        $node = $this->things()->nodeOf($thing);
+        if ($node === null) {
+            return [0, '', 0];
+        }
+        $s    = $this->structure();
+        $form = $s->hasField('thing_form') ? (int) $this->tableOf($node)->first($thing, $s->field('thing_form')) : 0;
+        if ($form > 0) {
+            $label = $this->formProperty($key)[$form] ?? null;
+            if (is_int($label) && $label > 0) {
+                return [$label, 'form', $form];
+            }
+        }
+        $label = $this->groupProperty($key)[$node] ?? null;
+
+        return is_int($label) && $label > 0 ? [$label, 'group', $node] : [0, '', 0];
+    }
+
+    /** D-1284: the root of the Bauformen — the node the structure's Bauform field points to; 0 where none is named. */
+    public function formRoot(): int
+    {
+        $s = $this->structure();
+
+        return $this->formRoot ??= $s->hasField('thing_form') ? $this->model->targetOf($s->field('thing_form')) : 0;
+    }
+
+    /**
+     * D-1284: the Bauformen as a tree, for the form that sets their labels.
+     *
+     * @return array<int, array{name: string, parent: int, class: string, hidden: bool}>
+     */
+    public function formTree(): array
+    {
+        $root = $this->formRoot();
+
+        return $this->formTree ??= $root > 0 ? $this->model->tree($root) : [];
+    }
+
+    /**
+     * D-1284: a label property for every Bauform, inherited, read once per key (CD-7).
+     *
+     * @return array<int, bool|int|null>
+     */
+    public function formProperty(string $key): array
+    {
+        $nodes = array_keys($this->formTree());
+
+        return $this->formProperties[$key] ??= $nodes === [] ? [] : $this->model->properties($nodes, $key);
+    }
+
+    /**
+     * D-1284: the label property each Bauform carries itself, without inheritance — one read.
+     *
+     * @return array<int, bool|int>
+     */
+    public function ownFormProperty(string $key): array
+    {
+        $nodes = array_keys($this->formTree());
+
+        return $nodes === [] ? [] : $this->model->ownProperties($nodes, $key);
     }
 
     /** D-1259: the value set at this group itself, null when it inherits — what its form shows, so saving keeps it. */
@@ -939,7 +1013,7 @@ final class StockService
     public function setGroupProperty(int $node, string $key, bool|int|null $value): void
     {
         $this->model->setProperty($node, $key, $value);
-        unset($this->groupProperties[$key]);
+        unset($this->groupProperties[$key], $this->formProperties[$key]);
     }
 
     /**

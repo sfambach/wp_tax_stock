@@ -215,6 +215,15 @@ final class LabelTemplates
         return $ids[0] ?? 0;
     }
 
+    /**
+     * D-1266: the label a group asks for, when it is one of this category that some printer's roll allows; else as before,
+     * the first of the category ({@see firstIn()}).
+     */
+    public function preferredIn(int $node, int $wanted): int
+    {
+        return $wanted > 0 && ($this->templates[$wanted]['node'] ?? 0) === $node && isset($this->templates[$wanted]['printer']) ? $wanted : $this->firstIn($node);
+    }
+
     public function has(int $id): bool
     {
         return isset($this->templates[$id]);

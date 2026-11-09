@@ -64,6 +64,12 @@ final class StockService
     private const MOVE_FAILURES = 'taxmod_stock_branch_move_failures';
     public const PLACE_PROPERTY = 'stock_default_place';
 
+    /** D-1266: the label a group's materials are printed on by default. */
+    public const MATERIAL_LABEL_PROPERTY = 'stock_material_label';
+
+    /** D-1266: the label a group's lots are printed on by default. */
+    public const LOT_LABEL_PROPERTY = 'stock_lot_label';
+
     /**
      * The branches under `Model` that hold no material — sources, page templates, price records — and so are no group of
      * things (his report 2026-10-28: «LD1111V33 wird zweimal angezeigt einmal als spannungsregler und einmal als quellen
@@ -840,6 +846,18 @@ final class StockService
         }
 
         return $this->groupProperties[$key] ??= $this->model->properties(array_keys($this->tree()), $key);
+    }
+
+    /**
+     * D-1266: the label a thing's group asks for as its default (`MATERIAL_LABEL_PROPERTY` or `LOT_LABEL_PROPERTY`), 0 for
+     * none — read once for the whole material tree, so a list asks once (CD-7).
+     */
+    public function groupLabelOf(int $thing, string $key): int
+    {
+        $node  = $this->things()->nodeOf($thing);
+        $label = $node === null ? null : ($this->groupProperty($key)[$node] ?? null);
+
+        return is_int($label) ? $label : 0;
     }
 
     /** D-1259: the value set at this group itself, null when it inherits — what its form shows, so saving keeps it. */

@@ -129,6 +129,8 @@ final class Plugin
         add_filter('taxmod_node_properties', static fn (array $properties): array => $properties + [
             StockService::TEST_PROPERTY  => __('Nach Wareneingang testen', 'taxmod-stock'),
             StockService::PLACE_PROPERTY => ['label' => __('Standard-Lagerort', 'taxmod-stock'), 'type' => 'id'],
+            StockService::MATERIAL_LABEL_PROPERTY => ['label' => __('Standard-Etikett Material', 'taxmod-stock'), 'type' => 'id'],
+            StockService::LOT_LABEL_PROPERTY      => ['label' => __('Standard-Etikett Posten', 'taxmod-stock'), 'type' => 'id'],
         ]);
         add_filter(self::BOOK_BUILD, [self::class, 'bookBuild'], 10, 2);
         add_filter(self::PLACES_OF, [self::class, 'placesOf'], 10, 2);

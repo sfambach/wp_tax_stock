@@ -65,6 +65,19 @@ final class LabelTemplatesTest extends TestCase
     }
 
     #[Test]
+    public function a_group_label_is_chosen_only_when_it_is_of_the_category_and_can_print(): void
+    {
+        $labels = $this->withPrinters();
+
+        // D-1266: 2 is a printable label of the category; 3 no roll allows; 9 is none; 0 asks for nothing.
+        self::assertSame(2, $labels->preferredIn(40, 2));
+        self::assertSame($labels->firstIn(40), $labels->preferredIn(40, 3));
+        self::assertSame($labels->firstIn(40), $labels->preferredIn(40, 9));
+        self::assertSame($labels->firstIn(40), $labels->preferredIn(40, 0));
+        self::assertSame($labels->firstIn(41), $labels->preferredIn(41, 2), 'a label of another category is not chosen');
+    }
+
+    #[Test]
     public function the_dialog_offers_the_labels_of_the_category_and_every_printer_with_what_its_roll_allows(): void
     {
         $labels = $this->withPrinters();

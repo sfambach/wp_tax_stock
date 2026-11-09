@@ -483,6 +483,11 @@ $html = (new StockPage())->render();
 $pruefe($above > 0 && str_contains($html, '<option value="1" selected=\'selected\'>Ja</option>'), 'D-1259: an own «Ja» equal to the one above still stands as its own, so saving keeps it');
 $above > 0 ? (new StockService())->setGroupProperty($above, StockService::TEST_PROPERTY, null) : null;
 (new StockService())->setGroupProperty($r['teile'], StockService::TEST_PROPERTY, null);
+// D-1266, his choice «Material- und Posten-Etikett»: the group's Lager view chooses both default labels from «Materialetiketten».
+$pruefe(str_contains($html, 'name="' . StockService::MATERIAL_LABEL_PROPERTY . '"') && str_contains($html, 'name="' . StockService::LOT_LABEL_PROPERTY . '"') && str_contains($html, '<option value="' . $r['etk40'] . '"'), 'D-1266: the group\'s Lager view offers «Standard-Etikett Material» and «Standard-Etikett Posten» from the label category');
+(new StockService())->setGroupProperty($r['teile'], StockService::MATERIAL_LABEL_PROPERTY, $r['etk40']);
+$pruefe((new StockService())->groupLabelOf($r['t1'], StockService::MATERIAL_LABEL_PROPERTY) === $r['etk40'] && (new StockService())->groupLabelOf($r['t1'], StockService::LOT_LABEL_PROPERTY) === 0, 'D-1266: a material reads its group\'s default label, the lot label stays unset');
+(new StockService())->setGroupProperty($r['teile'], StockService::MATERIAL_LABEL_PROPERTY, null);
 
 // Laid out as the eBay shipping page (2026-10-25): «Wareneingang» first and default, list tables with search, filter and sorting.
 $_GET = ['page' => StockPage::PAGE];

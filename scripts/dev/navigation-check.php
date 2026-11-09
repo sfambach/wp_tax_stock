@@ -136,11 +136,11 @@ $pruefe(str_contains($uebersicht, '>Layout</span>') && str_contains($uebersicht,
 $nav = LogisticsShell::wrap(CockpitPage::PAGE, $uebersicht);
 $pruefe(str_contains($nav, 'taxmod-shell-group is-open"><a href="' . esc_url(add_query_arg(LogisticsShell::VIA_MENU, '1', CockpitPage::overviewUrl('settings', 'Lagerstruktur'))) . '" style="padding-left:24px" class="is-current"'), 'D-1134: the group\'s overview opens the group in the navigation, its sub-items shown');
 $pruefe(substr_count($uebersicht, 'class="taxmod-tile-figure"') === 2, 'D-1134: Layout and Platzarten show how many there are');
-// D-1167: «Zeitraum» is the second item of the cockpit and marks itself when open.
-$_GET = ['page' => CockpitPage::PAGE, 'tab' => 'period'];
-$pruefe(in_array('period', array_column(LogisticsShell::navigation()->areas()[0]['items'], 'key'), true) && str_contains(LogisticsShell::wrap(CockpitPage::PAGE, ''), 'class="is-current" aria-current="page">Zeitraum</a>'), 'D-1167: Zeitraum is an item of the cockpit, marked when open');
-$_GET = ['page' => CockpitPage::PAGE];
-$pruefe(str_contains((new CockpitPage())->render(), 'Angekommen, einbuchen'), 'the cockpit itself still shows what is due');
+// D-1241: the cockpit is one item; what is due and the period (D-1167) stand on its one page, the period below.
+$_GET    = ['page' => CockpitPage::PAGE];
+$cockpit = (new CockpitPage())->render();
+$pruefe(array_column(LogisticsShell::navigation()->areas()[0]['items'], 'key') === ['cockpit'], 'D-1241: the cockpit area has one item, «Was ansteht» and «Zeitraum» are gone from the menu');
+$pruefe(str_contains($cockpit, 'Angekommen, einbuchen') && str_contains($cockpit, 'id="taxmod-period"') && strpos($cockpit, 'Angekommen, einbuchen') < strpos($cockpit, 'id="taxmod-period"') && str_contains($cockpit, 'class="taxmod-period"'), 'D-1241: the cockpit shows what is due, the period below it with its switch');
 $_GET = [];
 
 echo "WP menu\n";

@@ -29,8 +29,6 @@ use TaxmodStock\WordPress\StockService;
  */
 final class PeriodPage
 {
-    public const TAB = 'period';
-
     /** How many Vorgänge the list shows; a day rarely has more, a year always. */
     private const LIST_LIMIT = 50;
 
@@ -41,9 +39,13 @@ final class PeriodPage
     {
     }
 
+    /** Where the period stands on the cockpit (D-1241). */
+    public const ANCHOR = 'taxmod-period';
+
+    /** The cockpit at its period; the switch adds span and day to it, the browser jumps to the period. */
     public static function url(): string
     {
-        return add_query_arg(['page' => CockpitPage::PAGE, 'tab' => self::TAB], admin_url('admin.php'));
+        return add_query_arg(['page' => CockpitPage::PAGE], admin_url('admin.php')) . '#' . self::ANCHOR;
     }
 
     public function render(): string

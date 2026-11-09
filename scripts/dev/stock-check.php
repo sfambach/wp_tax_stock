@@ -564,7 +564,7 @@ $pruefe(str_contains($kachel, '<span class="taxmod-tile-label">Layout</span><spa
 
 // D-1167, his word «eine Zeitraumübersicht … Umschalter über den Zeitraum … Tage vor- und zurückwählen»: the day of the
 // receipts above shows them, against the day before, with a chart and the list of what happened.
-$_GET     = ['page' => TaxmodStock\WordPress\Admin\CockpitPage::PAGE, 'tab' => 'period', 'span' => 'day', 'day' => '2026-10-21'];
+$_GET     = ['page' => TaxmodStock\WordPress\Admin\CockpitPage::PAGE, 'span' => 'day', 'day' => '2026-10-21'];
 $zeitraum = (new TaxmodStock\WordPress\Admin\CockpitPage())->render();
 $_GET     = [];
 $pruefe(! str_contains($zeitraum, 'notice-error') && str_contains($zeitraum, '<span class="taxmod-tile-label">Wareneingang</span>') && str_contains($zeitraum, 'class="taxmod-chart"'), 'Zeitraum: the day of the receipts has its tiles and its chart (D-1167)');

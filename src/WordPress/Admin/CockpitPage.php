@@ -36,17 +36,17 @@ final class CockpitPage
         $group = sanitize_text_field(wp_unslash((string) ($_GET[self::GROUP] ?? '')));
         $found = $area === '' || $area === 'cockpit' ? null : self::areaOf($area);
 
-        // D-1167: the period view is an item of the cockpit area, on the cockpit's own page.
-        if ($found === null && sanitize_key((string) ($_GET['tab'] ?? '')) === PeriodPage::TAB) {
-            return '<div class="wrap">' . ListPage::heading(__('Zeitraum', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . (new PeriodPage($this->inbound->stock()))->render() . '</div>';
-        }
-
         $title = $found === null ? __('Logistik', 'taxmod-stock') : $found['label'] . ($group === '' ? '' : ' › ' . str_replace('/', ' › ', $group));
         $html  = '<div class="wrap">' . ListPage::heading($title, (string) TAXMOD_STOCK_VERSION);
 
         try {
             // *The cockpit adds the key figures chosen on any node of the model (D-1149); an overview keeps to its items.*
-            $html .= $found === null ? $this->tiles($this->dueTiles()) . Tiles::metricsGrid() : $this->tiles($this->overviewTiles($found, $group));
+            // D-1241: the period (D-1167) stands below what is due, on the same page; it is no longer an item of its own.
+            $html .= $found === null
+                ? $this->tiles($this->dueTiles()) . Tiles::metricsGrid()
+                    . '<h2 id="' . esc_attr(PeriodPage::ANCHOR) . '" class="taxmod-tiles-heading">' . esc_html__('Zeitraum', 'taxmod-stock') . '</h2>'
+                    . (new PeriodPage($this->inbound->stock()))->render()
+                : $this->tiles($this->overviewTiles($found, $group));
         } catch (StockError $e) {
             $html .= '<div class="notice notice-error"><p>' . esc_html(Messages::of($e)) . '</p></div>';
         }

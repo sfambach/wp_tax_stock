@@ -65,9 +65,10 @@ final class LogisticsShell
         $item = static fn (string $key, string $label, string $page, string $tab = ''): array => ['key' => $key, 'label' => $label, 'page' => $page, 'tab' => $tab];
 
         return new Navigation([
+            // D-1241, his word 2026-11-09: «… unter Cockpit angezeigt werden. Und auch das Zeitraum würde ich einfach unten drunter
+            // packen … Sodass wir nur noch Cockpit haben.» — one item, what is due and the period on one page.
             ['key' => 'cockpit', 'label' => __('Cockpit', 'taxmod-stock'), 'items' => [
-                $item('cockpit', __('Was ansteht', 'taxmod-stock'), CockpitPage::PAGE),
-                $item('period', __('Zeitraum', 'taxmod-stock'), CockpitPage::PAGE, PeriodPage::TAB),
+                $item('cockpit', __('Cockpit', 'taxmod-stock'), CockpitPage::PAGE),
             ]],
             ['key' => 'purchasing', 'label' => __('Einkauf', 'taxmod-stock'), 'items' => [
                 $item('reorder', __('Nachbestellen', 'taxmod-stock'), PurchasePage::PAGE, 'nachbestellen'),

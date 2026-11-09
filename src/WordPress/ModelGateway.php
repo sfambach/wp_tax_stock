@@ -32,6 +32,26 @@ final class ModelGateway
         return $this->ask(fn (): array => $this->door->fields($node));
     }
 
+    /**
+     * D-1250: the modeller's own controls for these fields, posted as `$prefix[relation]`; nothing on a modeller without them.
+     *
+     * @param list<int> $relations
+     * @return array<int, string> relation id → markup, escaped
+     */
+    public function controls(int $node, array $relations, string $prefix, string $formId = ''): array
+    {
+        return method_exists($this->door, 'controls') ? $this->door->controls($node, $relations, $prefix, $formId) : [];
+    }
+
+    /**
+     * @param array<int|string, mixed> $submitted `$_POST[$prefix]`; `mixed`: as posted
+     * @return array<int, string> relation id → raw value, empty ones left out
+     */
+    public function typed(int $node, array $submitted): array
+    {
+        return method_exists($this->door, 'typed') ? $this->door->typed($node, $submitted) : [];
+    }
+
     /** @return array<int, array{name: string, parent: int, class: string, hidden: bool}> */
     public function tree(int $root): array
     {

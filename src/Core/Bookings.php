@@ -660,7 +660,13 @@ final class Bookings
         $ref = $this->ref('d');
 
         $this->changes[] = ['op' => 'create_record', 'ref' => $ref, 'node' => $new->node];
-        $this->changes[] = ['op' => 'set_values', 'record' => '@' . $ref, 'values' => [(string) $this->structure->field('label') => trim($new->name)]];
+        $values = [(string) $this->structure->field('label') => trim($new->name)];
+
+        foreach ($new->values as $relation => $value) {
+            $values[(string) $relation] = $value;
+        }
+
+        $this->changes[] = ['op' => 'set_values', 'record' => '@' . $ref, 'values' => $values];
 
         if ($new->lager !== null) {
             array_push($this->changes, ...(new LagerChanges($this->structure))->save('@' . $ref, null, $new->lager, $this->ref('l')));

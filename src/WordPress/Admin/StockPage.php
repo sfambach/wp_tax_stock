@@ -1925,6 +1925,7 @@ final class StockPage
             ['label' => __('Gruppe', 'taxmod-stock'), 'control' => $chooser !== '' ? $chooser : '<select name="rows[' . esc_attr((string) $row) . '][group]" style="width:100%">' . $groups . '</select>'],
             ['label' => __('Bezeichnung', 'taxmod-stock'), 'control' => '<input type="text" name="rows[' . esc_attr((string) $row) . '][name]" style="width:100%">',
                 'hint' => __('Angelegt wird mit «Inventur buchen».', 'taxmod-stock')],
+            ...(($maker = $this->stock->manufacturerControl('countfields_' . $row)) === '' ? [] : [['label' => __('Hersteller', 'taxmod-stock'), 'control' => $maker]]),
         ]);
 
         if (! class_exists(\Taxmod\Core\Renderer\DialogMarkup::class)) {
@@ -3677,7 +3678,8 @@ final class StockPage
         $places = $this->assignedPlaces();
 
         foreach ($this->assignedGroups() as $purchase => $node) {
-            $out[$purchase] = $this->stock->newThingFor($purchase, $node, absint($_POST['order'] ?? 0), ($places[$purchase] ?? 0) ?: null);
+            $out[$purchase] = $this->stock->newThingFor($purchase, $node, absint($_POST['order'] ?? 0), ($places[$purchase] ?? 0) ?: null,
+                $this->stock->manufacturerTyped((array) wp_unslash($_POST['newfields_' . $purchase] ?? [])));
         }
 
         return $out;
@@ -3854,7 +3856,7 @@ final class StockPage
     {
         $rows = [];
 
-        foreach ((array) ($_POST['rows'] ?? []) as $row) {
+        foreach ((array) ($_POST['rows'] ?? []) as $index => $row) {
             $row      = is_array($row) ? wp_unslash($row) : [];
             $thing    = absint($row['thing'] ?? 0) ?: null;
             $group    = absint($row['group'] ?? 0);
@@ -3868,7 +3870,7 @@ final class StockPage
 
             $rows[] = new InventoryRow(
                 $thing,
-                $thing === null ? new NewThing($group, $name) : null,
+                $thing === null ? new NewThing($group, $name, null, $this->stock->manufacturerTyped((array) wp_unslash($_POST['countfields_' . absint($index)] ?? []))) : null,
                 $name,
                 $quantity,
                 sanitize_text_field((string) ($row['value'] ?? '')),
@@ -3948,9 +3950,12 @@ final class StockPage
 
         // D-1075: the modeller's node chooser — search and tree, the one view he set for choosing in the tree; a plain list without it.
         $chooser = $this->stock->groupChooser('newgroup[' . $purchase . ']');
-        $field   = self::actForm([['label' => __('Gruppe', 'taxmod-stock'),
+        $maker   = $this->stock->manufacturerControl('newfields_' . $purchase);
+        $field   = self::actForm(array_merge([['label' => __('Gruppe', 'taxmod-stock'),
             'control' => $chooser !== '' ? $chooser : '<select name="newgroup[' . esc_attr((string) $purchase) . ']" style="width:100%">' . $groups . '</select>',
-            'hint' => __('Das Material heißt wie der Kauf; Lagerort und Bezugsquelle kommen aus der Bestellung.', 'taxmod-stock')]]);
+            'hint' => __('Das Material heißt wie der Kauf; Lagerort und Bezugsquelle kommen aus der Bestellung.', 'taxmod-stock')]],
+            // D-1255: the manufacturer goes into the new material, through the modeller's own control.
+            $maker === '' ? [] : [['label' => __('Hersteller', 'taxmod-stock'), 'control' => $maker]]));
 
         return ListPage::dialogAction('taxmod-stock-new-' . $purchase, __('Neues Material', 'taxmod-stock'), __('Neues Material anlegen', 'taxmod-stock'), $field, 'booking', 'zuordnen', __('Anlegen', 'taxmod-stock')) . ' ';
     }

@@ -319,9 +319,10 @@ final class StockService
      * D-1062, D-1069: the new material a purchase gets in `$node`, named like the purchase — a placeholder he fills in the
      * material view («das material nicht nur als dummy anlegen und dann einfach über die material sicht füllen»).
      */
-    public function newThingFor(int $purchase, int $node, int $order = 0, ?int $place = null): NewThing
+    /** @param array<int, string> $values D-1255: further fields asked in the dialog, relation id → raw value */
+    public function newThingFor(int $purchase, int $node, int $order = 0, ?int $place = null, array $values = []): NewThing
     {
-        $thing = new NewThing($node, (string) ($this->table('purchase')->first($purchase, $this->structure()->field('label')) ?? '#' . $purchase), $this->lagerFromPurchase($purchase, $order, $place));
+        $thing = new NewThing($node, (string) ($this->table('purchase')->first($purchase, $this->structure()->field('label')) ?? '#' . $purchase), $this->lagerFromPurchase($purchase, $order, $place), $values);
         $this->checkGroups([$thing]);
 
         return $thing;
@@ -1821,6 +1822,38 @@ final class StockService
         }
 
         return $shop === '' ? ['order' => '', 'product' => ''] : ($this->linkTemplates[$shop] ?? ['order' => '', 'product' => '']);
+    }
+
+    /**
+     * D-1255, his word 2026-11-09 «evtl herstelleer gleich in wareneingang mit angeben … gleich ins material übernehmen»: the
+     * manufacturer control for a new material, drawn by the modeller (choice with «Neu hier …»); '' where the structure names none.
+     */
+    public function manufacturerControl(string $prefix, string $formId = ''): string
+    {
+        $s = $this->structure();
+
+        if (! $s->hasField('thing_manufacturer') || ! $s->hasNode('thing_manufacturer_at')) {
+            return '';
+        }
+
+        return $this->model->controls($s->node('thing_manufacturer_at'), [$s->field('thing_manufacturer')], $prefix, $formId)[$s->field('thing_manufacturer')] ?? '';
+    }
+
+    /**
+     * @param array<int|string, mixed> $submitted `$_POST[$prefix]`; `mixed`: as posted
+     * @return array<int, string> the manufacturer as a raw value for the new material, or nothing
+     */
+    public function manufacturerTyped(array $submitted): array
+    {
+        $s = $this->structure();
+
+        if (! $s->hasField('thing_manufacturer') || ! $s->hasNode('thing_manufacturer_at')) {
+            return [];
+        }
+
+        $field = $s->field('thing_manufacturer');
+
+        return array_intersect_key($this->model->typed($s->node('thing_manufacturer_at'), $submitted), [$field => true]);
     }
 
     /** D-1184: the root of the contact branch — its own node, or the firms' node on a structure that does not name it. */

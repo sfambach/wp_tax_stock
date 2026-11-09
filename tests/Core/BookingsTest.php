@@ -112,6 +112,16 @@ final class BookingsTest extends TestCase
     }
 
     #[Test]
+    public function a_new_thing_carries_the_fields_asked_in_its_dialog(): void
+    {
+        $s      = Fixture::structure();
+        $values = $this->valuesByNode((new Bookings($s, '2026-11-09'))->inventory([new InventoryRow(null, new NewThing(3640, 'CH340N', null, [555 => '777']), 'CH340N', '1', null, '')], 'Inventur'));
+
+        self::assertSame('777', $values[3640]['555'], 'D-1255: the manufacturer chosen in the dialog goes into the new material');
+        self::assertSame('CH340N', $values[3640][(string) $s->field('label')]);
+    }
+
+    #[Test]
     public function an_undetermined_purchase_is_not_received(): void
     {
         [$orders, $purchases] = $this->order(['1', '0']);

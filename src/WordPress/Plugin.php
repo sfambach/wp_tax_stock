@@ -96,7 +96,7 @@ final class Plugin
         if (self::handlesAdminActions()) {
             add_action('admin_post_' . StockPage::ACTION, static fn () => Acts::run(static fn () => self::serially(static fn () => (new StockPage())->handle())));
             add_action('admin_post_' . StockPage::POSITIONS, static fn () => Acts::json(static fn () => (new StockPage())->positions()));
-            add_action('admin_post_' . StockPage::ASSIGN, static fn () => Acts::json(static fn () => self::serially(static fn () => (new StockPage())->assign())));
+            add_action('admin_post_' . StockPage::ASSIGN, static fn () => Acts::json(static fn () => self::serially(static fn () => (new StockPage())->assign(), true)));
             add_action('admin_post_' . StockPage::THING_SEARCH, static fn () => Acts::json(static fn () => (new StockPage())->thingSearch()));
             add_action('admin_post_' . StockPage::THING_NODES, static fn () => Acts::json(static fn () => (new StockPage())->thingNodes()));
             add_action('admin_post_' . StockPage::THING_BRANCH, static fn () => Acts::json(static fn () => (new StockPage())->thingBranch()));
@@ -267,12 +267,18 @@ final class Plugin
      * The second waits for the first, then reads the stock again inside its own request and is refused if it is no longer there.
      * The lock lasts one request and is dropped with the connection, so a closed browser holds nothing; it is the modeller's,
      * through its one door (D-1186).
+     *
+     * @param bool $answers in an ajax answer: a booking in progress is thrown on, for `ListPage::json()` to say (D-1254)
      */
-    public static function serially(callable $work): void
+    public static function serially(callable $work, bool $answers = false): void
     {
         try {
             \Taxmod\WordPress\ModelDoor::serially('stock', $work);
         } catch (\Taxmod\Core\Exception\ConcurrentChange $e) {
+            if ($answers) {
+                throw $e;
+            }
+
             Acts::deny($e->getMessage(), 409);
         }
     }

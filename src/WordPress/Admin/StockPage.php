@@ -4124,7 +4124,7 @@ final class StockPage
         return '<span hidden id="taxmod-words" data-record-search="' . $search . '"'
             . ' data-record-nodes="' . $address(self::THING_NODES) . '" data-record-branch="' . $address(self::THING_BRANCH) . '"'
             . ' data-browse-title="' . esc_attr__('Material im Baum wählen', 'taxmod-stock') . '"'
-            . ' data-browse-filter="' . esc_attr__('Gruppe suchen …', 'taxmod-stock') . '"'
+            . ' data-browse-filter="' . esc_attr__('Material oder Gruppe suchen …', 'taxmod-stock') . '"'
             . ' data-no-hits="' . esc_attr__('Nichts gefunden.', 'taxmod-stock') . '"></span>';
     }
 

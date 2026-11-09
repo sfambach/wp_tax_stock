@@ -965,6 +965,10 @@ $pruefe(str_contains((string) file_get_contents(WP_PLUGIN_DIR . '/wp-taxonomy-mo
 (new StockService())->setGroupProperty((int) $bf['smd'], StockService::LOT_LABEL_PROPERTY, null);
 (new StockService())->setGroupProperty($r['teile'], StockService::LOT_LABEL_PROPERTY, null);
 
+// His report 2026-11-09 «findet kostanten aber nicht jst-xh stecker»: the search in the tree dialog finds materials too.
+$pruefe(str_contains((string) file_get_contents(WP_PLUGIN_DIR . '/wp-taxonomy-modeler/assets/admin.js'), 'saetzeSuchen( dialog, this )')
+    && str_contains((string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Admin/StockPage.php'), "'Material oder Gruppe suchen …'"), 'D-1285: the tree dialog\'s search field finds materials, not only groups');
+
 // The Configuration tab: the modeller lists it, and pasting structure-live.json stores those ids.
 add_filter('taxmod_config_tabs', [TaxmodStock\WordPress\Admin\SettingsTab::class, 'register']);
 $reiter = Taxmod\WordPress\Admin\SettingsScreen::moduleTabs();

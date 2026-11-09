@@ -263,11 +263,15 @@ final class LogisticsShell
 
         foreach ($navigation->areas() as $area) {
             $here  = $area['key'] === $active['area'];
-            // D-1128: the area itself opens its overview with a tile per item; the cockpit is that overview already.
-            $link  = $area['url'] ?? ($area['key'] === 'cockpit' ? self::url($area['items'][0]) : CockpitPage::overviewUrl($area['key']));
-            $html .= '<li class="taxmod-shell-area' . ($here ? ' is-open' : '') . '"><a href="' . esc_url(add_query_arg(self::VIA_MENU, '1', $link)) . '">' . esc_html($area['label']) . '</a>';
+            // D-1241, his word 2026-11-09: «cock pit nun in weiteren unterpunkt cockpit ds sollte so nicht sein nur cockpit einmal» —
+            // an area with exactly one item is that item: no list below it, the area opens it. A second item brings both back.
+            $single = count($area['items']) === 1 && ! isset($area['items'][0]['path']);
+            // D-1128: the area itself opens its overview with a tile per item.
+            $link  = $area['url'] ?? ($single ? self::url($area['items'][0]) : CockpitPage::overviewUrl($area['key']));
+            $html .= '<li class="taxmod-shell-area' . ($here ? ' is-open' : '') . '"><a href="' . esc_url(add_query_arg(self::VIA_MENU, '1', $link)) . '"'
+                . ($here && $single ? ' class="is-current" aria-current="page"' : '') . '>' . esc_html($area['label']) . '</a>';
 
-            if ($here || count($area['items']) > 1) {
+            if (! $single && $area['items'] !== []) {
                 $html .= self::items($area['items'], 0, $here ? $active['item'] : '', $area['key'], $here ? (string) ($active['group'] ?? '') : '');
             }
 

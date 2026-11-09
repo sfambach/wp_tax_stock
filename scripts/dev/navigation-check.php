@@ -168,6 +168,19 @@ $html = LogisticsShell::wrap(ModulePage::PAGE, (new ModulePage())->render(Module
 $pruefe(str_contains($html, 'JLC übergeben') && str_contains($html, 'aria-current="page">JLCPCB</a>'), 'a module that hands over a render callback is drawn from it, inside the frame');
 $pruefe(! in_array('__navcheck-jlc', ModulePage::menuEntries(), true), 'a module announced only through the filter has no menu entry to hide');
 
+echo "Bereich mit einem Punkt\n";
+// D-1241, his word 2026-11-09: «cock pit nun in weiteren unterpunkt cockpit ds sollte so nicht sein nur cockpit einmal».
+$_GET   = ['page' => CockpitPage::PAGE];
+$navi   = LogisticsShell::wrap(CockpitPage::PAGE, (new CockpitPage())->render());
+$pruefe(substr_count($navi, '>Cockpit</a>') === 1 && str_contains($navi, 'class="is-current" aria-current="page">Cockpit</a>'), 'D-1241: Cockpit stands once, as the current area, with no item «Cockpit» below it');
+$zwei   = new \TaxmodStock\Core\Navigation([['key' => 'one', 'label' => 'Eins', 'items' => [['key' => 'a', 'label' => 'A', 'page' => 'p', 'tab' => '']]],
+    ['key' => 'two', 'label' => 'Zwei', 'items' => [['key' => 'b', 'label' => 'B', 'page' => 'p', 'tab' => 'b'], ['key' => 'c', 'label' => 'C', 'page' => 'p', 'tab' => 'c']]]]);
+$menu   = new ReflectionMethod(LogisticsShell::class, 'menu');
+$menu->setAccessible(true);
+$gezeigt = (string) $menu->invoke(null, $zwei, ['area' => 'two', 'item' => 'b', 'group' => '']);
+$pruefe(! str_contains($gezeigt, '>A</a>') && str_contains($gezeigt, '>B</a>') && str_contains($gezeigt, '>C</a>') && str_contains($gezeigt, esc_url(add_query_arg(LogisticsShell::VIA_MENU, '1', CockpitPage::overviewUrl('two')))),
+    'the rule is the count of items, not a name: one item shows no list, a second brings the list and the overview back');
+
 echo "Benutzereinstellungen\n";
 // D-1232, his question 2026-11-08: «was ist eigentlich mit dem Benutzereinstellungen los? Die sind noch nicht sichtbar in den Einstellungsmenü.»
 $_GET = ['page' => SettingsPage::PAGE, 'tab' => SettingsPage::USER_TAB];

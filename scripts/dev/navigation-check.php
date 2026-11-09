@@ -136,6 +136,9 @@ $pruefe(str_contains($uebersicht, '>Layout</span>') && str_contains($uebersicht,
 $nav = LogisticsShell::wrap(CockpitPage::PAGE, $uebersicht);
 $pruefe(str_contains($nav, 'taxmod-shell-group is-open"><a href="' . esc_url(add_query_arg(LogisticsShell::VIA_MENU, '1', CockpitPage::overviewUrl('settings', 'Lagerstruktur'))) . '" style="padding-left:24px" class="is-current"'), 'D-1134: the group\'s overview opens the group in the navigation, its sub-items shown');
 $pruefe(substr_count($uebersicht, 'class="taxmod-tile-figure"') === 2, 'D-1134: Layout and Platzarten show how many there are');
+// D-1242: the reorder list is named for what it holds.
+$pruefe(in_array('Mindestbestand unterschritten', array_column(LogisticsShell::navigation()->areas()[1]['items'], 'label'), true), 'D-1242: «Nachbestellen» in the menu reads «Mindestbestand unterschritten»');
+
 // D-1241: the cockpit is one item; what is due and the period (D-1167) stand on its one page, the period below.
 $_GET    = ['page' => CockpitPage::PAGE];
 $cockpit = (new CockpitPage())->render();

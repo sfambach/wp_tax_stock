@@ -163,7 +163,7 @@ final class PurchasePage
 
         $reorder = $this->reorderRows($orders, $purchases);
         $tabs    = [
-            ['nachbestellen', __('Nachbestellen', 'taxmod-stock'), count($reorder)],
+            ['nachbestellen', __('Mindestbestand unterschritten', 'taxmod-stock'), count($reorder)],
             ['bedarf', __('Bedarf', 'taxmod-stock'), count($groups['bedarf'])],
             ['bestellen', __('Bestellen', 'taxmod-stock'), count($groups['bestellen'])],
             ['bestellt', __('Bestellt', 'taxmod-stock'), count($groups['bestellt'])],

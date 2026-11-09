@@ -71,7 +71,8 @@ final class LogisticsShell
                 $item('cockpit', __('Cockpit', 'taxmod-stock'), CockpitPage::PAGE),
             ]],
             ['key' => 'purchasing', 'label' => __('Einkauf', 'taxmod-stock'), 'items' => [
-                $item('reorder', __('Nachbestellen', 'taxmod-stock'), PurchasePage::PAGE, 'nachbestellen'),
+                // D-1242, his word 2026-11-09: «Mindestbestand unterschritten wäre, glaube ich, besser» — the list says what it holds.
+                $item('reorder', __('Mindestbestand unterschritten', 'taxmod-stock'), PurchasePage::PAGE, 'nachbestellen'),
                 $item('demand', __('Bedarf', 'taxmod-stock'), PurchasePage::PAGE, 'bedarf'),
                 $item('to-order', __('Zu bestellen', 'taxmod-stock'), PurchasePage::PAGE, 'bestellen'),
                 $item('ordered', __('Bestellt', 'taxmod-stock'), PurchasePage::PAGE, 'bestellt'),

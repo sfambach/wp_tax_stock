@@ -2089,7 +2089,7 @@ final class StockPage
             . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
             . '<input type="hidden" name="thing" value="' . esc_attr((string) $thing) . '">'
             . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
-            . ListPage::dialogAction('taxmod-stock-copy-' . $thing, __('Kopieren', 'taxmod-stock'), __('Material kopieren', 'taxmod-stock'), $body, 'booking', 'kopieren', __('Kopieren', 'taxmod-stock'))
+            . ListPage::dialogAction('taxmod-stock-copy-' . $thing, __('Kopieren', 'taxmod-stock'), __('Material kopieren', 'taxmod-stock'), $body, 'booking', 'kopieren', __('Kopieren', 'taxmod-stock'), '', $this->copyIcon())
             . '</form>';
     }
 
@@ -3182,7 +3182,7 @@ final class StockPage
             . '<p class="description">' . esc_html__('Die Kopie trägt Format, Layout und Anzahl dieser Vorlage. Platzarten, die sie nutzen, bleiben bei der alten.', 'taxmod-stock') . '</p>';
 
         return $this->formStart('etikettenvorlagen')
-            . ListPage::dialogAction('taxmod-stock-copy-template-' . $template, __('Kopieren', 'taxmod-stock'), __('Etikettenvorlage kopieren', 'taxmod-stock'), $body, 'booking', 'vorlagekopieren-' . $template, __('Kopieren', 'taxmod-stock'))
+            . ListPage::dialogAction('taxmod-stock-copy-template-' . $template, __('Kopieren', 'taxmod-stock'), __('Etikettenvorlage kopieren', 'taxmod-stock'), $body, 'booking', 'vorlagekopieren-' . $template, __('Kopieren', 'taxmod-stock'), '', $this->copyIcon())
             . '</form>';
     }
 
@@ -3327,7 +3327,7 @@ final class StockPage
             . '<p class="description">' . esc_html__('Die Kopie trägt alle Felder und Teile dieser Platzart. Plätze dieser Art bleiben bei der alten.', 'taxmod-stock') . '</p>';
 
         return $this->formStart('platzarten')
-            . ListPage::dialogAction('taxmod-stock-copy-type-' . $type, __('Kopieren', 'taxmod-stock'), __('Platzart kopieren', 'taxmod-stock'), $body, 'booking', 'artkopieren-' . $type, __('Kopieren', 'taxmod-stock'))
+            . ListPage::dialogAction('taxmod-stock-copy-type-' . $type, __('Kopieren', 'taxmod-stock'), __('Platzart kopieren', 'taxmod-stock'), $body, 'booking', 'artkopieren-' . $type, __('Kopieren', 'taxmod-stock'), '', $this->copyIcon())
             . '</form>';
     }
 
@@ -3502,6 +3502,12 @@ final class StockPage
         return $moves === [] ? '<p>' . esc_html__('Der Ort ist leer.', 'taxmod-stock') . '</p>' : '<ul style="list-style:disc;margin-left:1.5em">' . implode('', array_map(static fn (string $m): string => '<li>' . esc_html($m) . '</li>', $moves)) . '</ul>';
     }
 
+    /** D-1273, his wish «icon für kopieren»: every «Kopieren» is the modeller's copy icon, the word its tooltip (modeller 0.2.49). */
+    private function copyIcon(): string
+    {
+        return defined(ListPage::class . '::ICON_COPY') ? ListPage::ICON_COPY : '';
+    }
+
     /** D-1130: «Kopieren» of a place — its name proposed with «(Kopie)», the places inside it on request. */
     private function copyPlaceDialog(int $place, LocationTree $tree, int $inside): string
     {
@@ -3516,7 +3522,7 @@ final class StockPage
             . '<p class="description">' . esc_html__('Die Kopie steht neben dem Original, mit denselben Feldern. Was dort liegt, wird nicht kopiert.', 'taxmod-stock') . '</p>';
 
         return $this->formStart('lagerstruktur') . $this->returnFields('lagerstruktur', $place)
-            . ListPage::dialogAction('taxmod-stock-copy-place-' . $place, __('Kopieren', 'taxmod-stock'), __('Lagerort kopieren', 'taxmod-stock'), $body, 'booking', 'ortkopieren-' . $place, __('Kopieren', 'taxmod-stock'))
+            . ListPage::dialogAction('taxmod-stock-copy-place-' . $place, __('Kopieren', 'taxmod-stock'), __('Lagerort kopieren', 'taxmod-stock'), $body, 'booking', 'ortkopieren-' . $place, __('Kopieren', 'taxmod-stock'), '', $this->copyIcon())
             . '</form>';
     }
 

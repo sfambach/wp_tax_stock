@@ -893,6 +893,7 @@ $blatt = $ort('__Blatt', $ast);
 $_GET  = ['page' => StockPage::PAGE, 'tab' => 'lagerstruktur', 'ort' => (string) $baum];
 $html  = (new StockPage())->render();
 $pruefe(str_contains($html, 'name="below" value="1"') && str_contains($html, '2 Unterorte werden mitgelöscht'), 'D-1093: with places inside, the dialog offers both ways and says what each does');
+$pruefe(preg_match('/taxmod-stock-copy-place-' . $baum . '.{0,600}?dashicons-' . preg_quote(ListPage::ICON_COPY, '/') . '/s', $html) === 1, 'D-1273: «Kopieren» of a place is the copy icon, the word its tooltip');
 (new StockService())->deletePlace($baum, '2026-11-09', 'Lagerort gelöscht', true);
 $s     = new StockService();
 $pruefe(! $s->table('location')->has($baum) && ! $s->table('location')->has($ast) && ! $s->table('location')->has($blatt) && abs(($s->ledger()->placesOf($posten)[$r['lager']] ?? 0.0) - $rest) < 1e-9 && ! isset($s->ledger()->placesOf($posten)[$blatt]),

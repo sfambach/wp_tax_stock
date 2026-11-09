@@ -21,6 +21,7 @@ require_once ABSPATH . 'wp-admin/includes/template.php';
 require_once ABSPATH . 'wp-admin/includes/plugin.php';
 require __DIR__ . '/../../vendor/autoload.php';
 
+use Taxmod\WordPress\Admin\ListPage;
 use TaxmodStock\WordPress\Admin\CockpitPage;
 use TaxmodStock\WordPress\Admin\LogisticsShell;
 use TaxmodStock\WordPress\Admin\ModulePage;
@@ -176,6 +177,15 @@ $pruefe(str_contains($html, 'aria-current="page">Benutzereinstellungen</a>') && 
 $pruefe(LogisticsShell::isFullscreen(), 'D-1232: «Vollbild» set there is the same switch as the one under the navigation');
 (new SettingsPage())->saveUser(false, false);
 $pruefe(! LogisticsShell::isFullscreen(), 'D-1232: and it can be switched off again');
+$pruefe(! method_exists(ListPage::class, 'resetTreeStates') || str_contains($html, 'name="reset_trees"'), 'his wish 2026-11-09: the kept trees can be forgotten there');
+
+echo "Baum links\n";
+// His wish 2026-11-09: «hier fange ich immer neu an … button wie collapse all usw fehlen» — the modeller's one side tree.
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'gruppenbestand'];
+$parts = (new StockPage())->parts();
+$html  = LogisticsShell::wrap(StockPage::PAGE, $parts['main'], $parts['side']);
+$pruefe(! method_exists(ListPage::class, 'sideTree') || ! str_contains($parts['side'], 'class="taxmod-chooser') || (str_contains($parts['side'], 'data-taxmod-tree="taxmod_stock_groups"') && str_contains($parts['side'], 'taxmod-side-tree-collapse')), 'Gruppenbestand: the tree on the left is the modeller\'s side tree, with «Alle aufklappen / zuklappen» and the kept state');
+$pruefe(str_contains($html, 'grid-template-columns:300px'), 'his word «das genaze menü etwas breiter machen 1,5 mal so viel»: the left column is 300 px');
 
 echo "Grundeinstellungen\n";
 $_GET = ['page' => SettingsPage::PAGE];

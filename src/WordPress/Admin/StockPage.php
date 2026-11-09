@@ -88,6 +88,10 @@ final class StockPage
     public const THING_NODES  = 'taxmod_stock_thing_nodes';
     public const THING_BRANCH = 'taxmod_stock_thing_branch';
 
+    /** The side trees' names for the state the modeller keeps per user (`ListPage::sideTree()`). */
+    private const PLACE_TREE = 'taxmod_stock_places';
+    private const GROUP_TREE = 'taxmod_stock_groups';
+
     /** What {@see parts()} puts beside the navigation; filled while the page is drawn. */
     private string $side = '';
 
@@ -556,19 +560,21 @@ final class StockPage
      */
     private function groupStock(StockList $list): string
     {
-        $group  = absint($_GET['group'] ?? 0);
+        $group  = $this->sideChosen(self::GROUP_TREE, absint($_GET['group'] ?? 0));
         $group  = isset($this->stock->tree()[$group]) ? $group : 0;
         $pick   = add_query_arg(['page' => self::PAGE, 'tab' => 'gruppenbestand', 'group' => '{id}'], admin_url('admin.php'));
         // The fixed tree needs the modeller from 0.1.167; before that the groups stand in a choice list.
         $inline = version_compare((string) \Taxmod\WordPress\Plugin::VERSION, '0.1.167', '>=');
         $tree   = $inline ? $this->stock->groupChooser('taxmod_stock_group', $group, '', $pick) : '';
 
-        $this->side = '<div class="taxmod-stock-places"><div class="taxmod-stock-places-head"><p class="taxmod-shell-title">'
-            . esc_html__('Materialgruppen', 'taxmod-stock') . '</p></div>'
-            . ($tree !== '' ? $tree : '<form method="get" action="' . esc_url(admin_url('admin.php')) . '">'
-                . '<input type="hidden" name="page" value="' . esc_attr(self::PAGE) . '"><input type="hidden" name="tab" value="gruppenbestand">'
-                . '<select name="group" style="width:100%" onchange="this.form.submit()">' . $this->groupOptions($group) . '</select></form>')
-            . '</div>' . $this->placeTreeScript();
+        $this->side = $tree !== '' && method_exists(ListPage::class, 'sideTree')
+            ? ListPage::sideTree(self::GROUP_TREE, __('Materialgruppen', 'taxmod-stock'), $tree, '', 'taxmod-stock-places')
+            : '<div class="taxmod-stock-places"><div class="taxmod-stock-places-head"><p class="taxmod-shell-title">'
+                . esc_html__('Materialgruppen', 'taxmod-stock') . '</p></div>'
+                . ($tree !== '' ? $tree : '<form method="get" action="' . esc_url(admin_url('admin.php')) . '">'
+                    . '<input type="hidden" name="page" value="' . esc_attr(self::PAGE) . '"><input type="hidden" name="tab" value="gruppenbestand">'
+                    . '<select name="group" style="width:100%" onchange="this.form.submit()">' . $this->groupOptions($group) . '</select></form>')
+                . '</div>' . $this->placeTreeScript();
 
         return ($group > 0 ? '<h2>' . esc_html($this->stock->path($group)) . '</h2>' : '') . $this->materialList($list, true);
     }
@@ -2350,7 +2356,7 @@ final class StockPage
         $tab   = $edit ? 'lagerstruktur' : 'lagerorte';
         $tree  = $this->stock->locationTree();
         $rows  = LocationStock::of($this->stock->structure(), $this->stock->table('lot'), $this->stock->ledger(), $this->stock->places());
-        $place = absint($_GET['ort'] ?? 0);
+        $place = $this->sideChosen(self::PLACE_TREE, absint($_GET['ort'] ?? 0));
         $place = $this->stock->table('location')->has($place) ? $place : 0;
         $left  = $this->placeTree($tab, $place, $tree, $rows);
 
@@ -2366,11 +2372,13 @@ final class StockPage
         };
 
         // D-1092: the tree is the left column's second box, under the navigation; the right side is only the place.
-        $this->side = '<div class="taxmod-stock-places">'
-            . '<div class="taxmod-stock-places-head"><p class="taxmod-shell-title">' . esc_html__('Lagerorte', 'taxmod-stock') . '</p>'
-            . ($edit ? '<label class="button button-small" for="taxmod-stock-new-place-0">' . esc_html__('+ Neuer Lagerort', 'taxmod-stock') . '</label>' : '') . '</div>'
-            . ($edit ? '<div class="taxmod-stock-places-top" data-taxmod-drop-record="0">' . esc_html__('— oberste Ebene —', 'taxmod-stock') . '</div>' : '')
-            . $left . '</div>' . $this->placeTreeScript();
+        $newPlace = $edit ? '<label class="button button-small" for="taxmod-stock-new-place-0">' . esc_html__('+ Neuer Lagerort', 'taxmod-stock') . '</label>' : '';
+        $top      = $edit ? '<div class="taxmod-stock-places-top" data-taxmod-drop-record="0">' . esc_html__('— oberste Ebene —', 'taxmod-stock') . '</div>' : '';
+        // The architecture thread 2026-11-09: the side tree is the modeller's one building block (expand/collapse all, kept state).
+        $this->side = method_exists(ListPage::class, 'sideTree')
+            ? ListPage::sideTree(self::PLACE_TREE, __('Lagerorte', 'taxmod-stock'), $top . $left, $newPlace, 'taxmod-stock-places')
+            : '<div class="taxmod-stock-places"><div class="taxmod-stock-places-head"><p class="taxmod-shell-title">' . esc_html__('Lagerorte', 'taxmod-stock') . '</p>'
+                . $newPlace . '</div>' . $top . $left . '</div>' . $this->placeTreeScript();
 
         return '<div class="taxmod-stock-split">' . $right . '</div>'
             // The opener of «Neuer Lagerort» stands in the tree's box; its dialog stays here, outside the sticky column.
@@ -2379,8 +2387,17 @@ final class StockPage
     }
 
     /**
+     * His word 2026-11-09: «hier fange ich immer neu an» — the branch named by the request, else the one he left (modeller
+     * 0.2.34); an older modeller only knows the request.
+     */
+    private function sideChosen(string $tree, int $chosen): int
+    {
+        return method_exists(ListPage::class, 'treeChosen') ? ListPage::treeChosen($tree, $chosen) : $chosen;
+    }
+
+    /**
      * D-1092: in the narrow column a long name ends in «…» and shows whole on hover; the chosen place is scrolled into view
-     * inside the tree's box, not the page.
+     * inside the tree's box, not the page. Only for a modeller before `ListPage::sideTree()`, which does the same.
      */
     private function placeTreeScript(): string
     {

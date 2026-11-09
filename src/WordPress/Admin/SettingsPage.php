@@ -74,6 +74,9 @@ final class SettingsPage
             . esc_html__('Logistik ohne WordPress-Leisten zeigen', 'taxmod-stock') . '</label></td></tr>'
             . (method_exists(ListPage::class, 'resetColumns') ? '<tr><th scope="row">' . esc_html__('Spalten der Listen', 'taxmod-stock') . '</th><td><label><input type="checkbox" name="reset_columns" value="1"> '
                 . esc_html__('Eigene Spaltenwahl aller Listen zurücksetzen', 'taxmod-stock') . '</label></td></tr>' : '')
+            // His wish 2026-11-09: the trees on the left open as he left them; this forgets it.
+            . (method_exists(ListPage::class, 'resetTreeStates') ? '<tr><th scope="row">' . esc_html__('Bäume links', 'taxmod-stock') . '</th><td><label><input type="checkbox" name="reset_trees" value="1"> '
+                . esc_html__('Gemerkten Ast und offene Äste aller Bäume vergessen', 'taxmod-stock') . '</label></td></tr>' : '')
             . '</tbody></table>' . get_submit_button(__('Speichern', 'taxmod-stock')) . '</form></div>';
     }
 
@@ -85,15 +88,19 @@ final class SettingsPage
         }
 
         check_admin_referer(self::USER_ACTION);
-        $this->saveUser(! empty($_POST['fullscreen']), ! empty($_POST['reset_columns']));
+        $this->saveUser(! empty($_POST['fullscreen']), ! empty($_POST['reset_columns']), ! empty($_POST['reset_trees']));
         set_transient(StockPage::NOTICE . get_current_user_id(), ['type' => 'success', 'text' => __('Gespeichert.', 'taxmod-stock')], 60);
         wp_safe_redirect(add_query_arg('tab', self::USER_TAB, self::url()));
         exit;
     }
 
-    public function saveUser(bool $fullscreen, bool $resetColumns): void
+    public function saveUser(bool $fullscreen, bool $resetColumns, bool $resetTrees = false): void
     {
         LogisticsShell::setFullscreen($fullscreen);
+
+        if ($resetTrees && method_exists(ListPage::class, 'resetTreeStates')) {
+            ListPage::resetTreeStates();
+        }
 
         if ($resetColumns && method_exists(ListPage::class, 'resetColumns')) {
             ListPage::resetColumns();

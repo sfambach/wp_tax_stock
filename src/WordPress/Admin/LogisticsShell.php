@@ -356,8 +356,10 @@ final class LogisticsShell
     private static function style(): string
     {
         // The current item is marked by weight and a bar, not by colour alone (design 29).
+        // His word 2026-11-09: «das genaze menü etwas breiter machen 1,5 mal so viel» — 300 px. Inline because the module has
+        // no stylesheet of its own yet (G3, noted for the architecture thread).
         return '<style>'
-            . '.taxmod-shell{display:grid;grid-template-columns:200px minmax(0,1fr);gap:20px;margin-top:10px}'
+            . '.taxmod-shell{display:grid;grid-template-columns:300px minmax(0,1fr);gap:20px;margin-top:10px}'
             . '.taxmod-shell-column{align-self:start;position:sticky;top:42px;display:flex;flex-direction:column;gap:12px;min-width:0}'
             . '.taxmod-shell-nav{background:#fff;border:1px solid #c3c4c7;padding:8px 0;flex:none}'
             . '.taxmod-shell-title{margin:0 12px 6px;font-weight:600;font-size:14px}'

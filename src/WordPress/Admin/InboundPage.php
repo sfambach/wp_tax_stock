@@ -271,14 +271,18 @@ final class InboundPage
         $html = '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">'
             . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"><input type="hidden" name="op" value="test">'
             . '<input type="hidden" name="lot" value="' . esc_attr((string) $lot) . '"><input type="hidden" name="tab" value="' . esc_attr(self::TEST) . '">'
-            . wp_nonce_field(self::ACTION, '_wpnonce', true, false) . '<p>';
+            . wp_nonce_field(self::ACTION, '_wpnonce', true, false);
+        $radios = '';
 
         foreach ($choices as $value => $label) {
-            $html .= '<label style="margin-right:1.5em"><input type="radio" name="result" value="' . esc_attr($value) . '" required> ' . esc_html($label) . '</label>';
+            $radios .= '<label style="margin-right:1.5em"><input type="radio" name="result" value="' . esc_attr($value) . '" required> ' . esc_html($label) . '</label>';
         }
 
-        return $html . '</p><p><label>' . esc_html__('Begründung (bei «Teilweise OK» und «Wartung nötig» Pflicht), z. B. «Kondensatoren tauschen»', 'taxmod-stock')
-            . '<br><textarea name="reason" rows="2" class="large-text"></textarea></label></p>' . get_submit_button(__('Ergebnis speichern', 'taxmod-stock'), 'primary', '', false) . '</form>';
+        return $html . StockPage::actForm([
+            ['label' => __('Ergebnis', 'taxmod-stock'), 'control' => $radios],
+            ['label' => __('Begründung', 'taxmod-stock'), 'for' => 'taxmod-stock-test-reason-' . $lot, 'control' => '<textarea id="taxmod-stock-test-reason-' . esc_attr((string) $lot) . '" name="reason" rows="2" class="large-text"></textarea>',
+                'hint' => __('Bei «Teilweise OK» und «Wartung nötig» Pflicht, z. B. «Kondensatoren tauschen».', 'taxmod-stock')],
+        ], get_submit_button(__('Ergebnis speichern', 'taxmod-stock'), 'primary', '', false)) . '</form>';
     }
 
     private function bulkBar(string $tab, string $filter, int $count): string
@@ -411,7 +415,7 @@ final class InboundPage
 
     private function trackingButton(int $order, string $tab): string
     {
-        $field = '<label style="display:block">' . esc_html__('Sendungsnummer', 'taxmod-stock') . '<br><input type="text" name="number" style="width:100%"></label>';
+        $field = StockPage::actForm([['label' => __('Sendungsnummer', 'taxmod-stock'), 'control' => '<input type="text" name="number" style="width:100%">']]);
         $form  = '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'
             . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
             . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '"><input type="hidden" name="tab" value="' . esc_attr($tab) . '">' . $this->stay()

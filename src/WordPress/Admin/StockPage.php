@@ -1233,9 +1233,12 @@ final class StockPage
             // D-1181: a line standing for several lots of the same data moves from them oldest first.
             . (count($merged) > 1 ? '<input type="hidden" name="lots" value="' . esc_attr(implode(',', array_map('intval', $merged))) . '">' : '')
             . '<input type="hidden" name="from" value="' . esc_attr((string) $from) . '">'
-            . '<label style="display:block">' . esc_html__('Menge', 'taxmod-stock') . '<br><input type="text" inputmode="decimal" name="quantity" style="width:7em" value="' . esc_attr(str_replace(',', '.', rtrim(rtrim(number_format($quantity, 3, '.', ''), '0'), '.'))) . '"></label>'
-            . '<label style="display:block;margin-top:.5em">' . esc_html__('Nach', 'taxmod-stock') . '<br>' . $this->stock->placeChooser('location', 0, '', [$from]) . '</label>'
-            . '<p class="description">' . esc_html__('Bucht die Menge vom bisherigen Ort ab und am neuen zu, als Vorgang «Umbuchung». Weniger als alles teilt den Posten auf zwei Orte; «Stornieren» bei den Vorgängen nimmt es zurück.', 'taxmod-stock') . '</p>';
+            . self::actForm([
+                ['label' => __('Menge', 'taxmod-stock'), 'control' => '<input type="text" inputmode="decimal" name="quantity" style="width:7em" value="' . esc_attr(str_replace(',', '.', rtrim(rtrim(number_format($quantity, 3, '.', ''), '0'), '.'))) . '">',
+                    'hint' => __('Weniger als alles teilt den Posten auf zwei Orte.', 'taxmod-stock')],
+                ['label' => __('Nach', 'taxmod-stock'), 'control' => $this->stock->placeChooser('location', 0, '', [$from]),
+                    'hint' => __('Bucht die Menge vom bisherigen Ort ab und am neuen zu, als Vorgang «Umbuchung»; «Stornieren» bei den Vorgängen nimmt es zurück.', 'taxmod-stock')],
+            ]);
 
         return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'
             . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">' . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
@@ -1256,9 +1259,9 @@ final class StockPage
             return [];
         }
 
-        $body = '<label style="display:block">' . esc_html__('Nach', 'taxmod-stock') . '<br>' . $this->stock->placeChooser('location', 0, self::BULK_FORM) . '</label>'
-            . '<input type="hidden" name="return_tab" value="' . esc_attr(self::BACK_TO_LIST) . '" form="' . esc_attr(self::BULK_FORM) . '">'
-            . '<p class="description">' . esc_html__('Bucht alles von den angehakten Materialien, jeden Posten von jedem Ort, an den gewählten Ort um: ein Vorgang «Umbuchung», «Stornieren» bei den Vorgängen nimmt ihn zurück.', 'taxmod-stock') . '</p>';
+        $body = self::actForm([['label' => __('Nach', 'taxmod-stock'), 'control' => $this->stock->placeChooser('location', 0, self::BULK_FORM),
+                'hint' => __('Bucht alles von den angehakten Materialien, jeden Posten von jedem Ort, an den gewählten Ort um: ein Vorgang «Umbuchung», «Stornieren» bei den Vorgängen nimmt ihn zurück.', 'taxmod-stock')]])
+            . '<input type="hidden" name="return_tab" value="' . esc_attr(self::BACK_TO_LIST) . '" form="' . esc_attr(self::BULK_FORM) . '">';
 
         return ['taxmod-stock-bulk-transfer' => [__('Umbuchen nach …', 'taxmod-stock'), '<div class="alignleft actions">' . ListPage::dialogAction('taxmod-stock-bulk-transfer', __('Umbuchen nach …', 'taxmod-stock'), __('Ausgewählte umbuchen', 'taxmod-stock'), $body, 'booking', 'sammelumbuchen', __('Umbuchen', 'taxmod-stock'), self::BULK_FORM) . '</div>']];
     }
@@ -1883,32 +1886,36 @@ final class StockPage
     private function inventoryForm(): string
     {
         $groups = $this->groupOptions();
-        $head   = static fn (string $word, string $width = ''): string => '<th scope="col" class="manage-column"' . ($width === '' ? '' : ' style="width:' . esc_attr($width) . '"') . '>' . esc_html($word) . '</th>';
-        $html   = $this->formStart('inventur')
-            . '<p>' . esc_html__('Gezählter Bestand ohne Kauf. Jede Zeile wird ein Bestandsposten. Wert je Stück oder Gesamtwert; der Gesamtwert wird auf die Menge umgerechnet.', 'taxmod-stock') . '</p>'
-            . '<table class="wp-list-table widefat striped table-view-list"><thead><tr>'
-            . $head(__('Material', 'taxmod-stock')) . $head(__('Menge', 'taxmod-stock'), '7em') . $head(__('Wert je Stück', 'taxmod-stock'), '7em')
-            . $head(__('oder Gesamtwert', 'taxmod-stock'), '7em') . $head(__('Hinweis', 'taxmod-stock')) . '</tr></thead><tbody>';
+        $rows   = '';
 
         for ($i = 0; $i < self::ROWS; $i++) {
-            $html .= '<tr><td>' . $this->recordPicker('rows[' . $i . '][thing]', null, '') . ' ' . $this->inventoryNewThing($i, $groups) . '</td>'
+            $rows .= '<tr><th scope="row" class="check-column"></th><td>' . $this->recordPicker('rows[' . $i . '][thing]', null, '') . '</td>'
                 . '<td><input type="text" inputmode="decimal" name="rows[' . $i . '][quantity]" style="width:6em"></td>'
                 . '<td><input type="text" inputmode="decimal" name="rows[' . $i . '][value]" style="width:6em"></td>'
                 . '<td><input type="text" inputmode="decimal" name="rows[' . $i . '][total]" style="width:6em"></td>'
-                . '<td><input type="text" name="rows[' . $i . '][note]"></td></tr>';
+                . '<td><input type="text" name="rows[' . $i . '][note]" style="width:100%"></td>'
+                . '<td style="text-align:right">' . $this->inventoryNewThing($i, $groups) . '</td></tr>';
         }
 
-        return $html . '</tbody></table>' . get_submit_button(__('Inventur buchen', 'taxmod-stock')) . '</form>';
+        $intro  = '<p>' . esc_html__('Gezählter Bestand ohne Kauf. Jede Zeile wird ein Bestandsposten. Wert je Stück oder Gesamtwert; der Gesamtwert wird auf die Menge umgerechnet.', 'taxmod-stock') . '</p>';
+        $submit = get_submit_button(__('Inventur buchen', 'taxmod-stock'), 'primary', 'submit', false);
+        $table  = ListPage::table([[__('Material', 'taxmod-stock'), ''], [__('Menge', 'taxmod-stock'), '7em'], [__('Wert je Stück', 'taxmod-stock'), '7em'],
+            [__('oder Gesamtwert', 'taxmod-stock'), '7em'], [__('Hinweis', 'taxmod-stock'), '']], $rows);
+
+        // The architecture thread 2026-11-09: the repeated rows in the list table, the act's button through the shared form block (modeller 0.2.33).
+        return $this->formStart('inventur') . $intro . $table
+            . (method_exists(ListPage::class, 'form') ? ListPage::form([], $submit) : '<p class="submit">' . $submit . '</p>') . '</form>';
     }
 
     /** D-1072 in the count: group and name asked in the row's dialog; the material is made when the count is booked. */
     private function inventoryNewThing(int $row, string $groups): string
     {
         $chooser = $this->stock->groupChooser('rows[' . $row . '][group]');
-        $body    = ($chooser !== '' ? '<span style="display:block">' . esc_html__('Gruppe', 'taxmod-stock') . '<br>' . $chooser . '</span>'
-                : '<label style="display:block">' . esc_html__('Gruppe', 'taxmod-stock') . '<br><select name="rows[' . esc_attr((string) $row) . '][group]" style="width:100%">' . $groups . '</select></label>')
-            . '<label style="display:block">' . esc_html__('Bezeichnung', 'taxmod-stock') . '<br><input type="text" name="rows[' . esc_attr((string) $row) . '][name]" style="width:100%"></label>'
-            . '<p class="description">' . esc_html__('Angelegt wird mit «Inventur buchen».', 'taxmod-stock') . '</p>';
+        $body    = self::actForm([
+            ['label' => __('Gruppe', 'taxmod-stock'), 'control' => $chooser !== '' ? $chooser : '<select name="rows[' . esc_attr((string) $row) . '][group]" style="width:100%">' . $groups . '</select>'],
+            ['label' => __('Bezeichnung', 'taxmod-stock'), 'control' => '<input type="text" name="rows[' . esc_attr((string) $row) . '][name]" style="width:100%">',
+                'hint' => __('Angelegt wird mit «Inventur buchen».', 'taxmod-stock')],
+        ]);
 
         if (! class_exists(\Taxmod\Core\Renderer\DialogMarkup::class)) {
             return '<details style="display:inline-block"><summary class="button button-small">' . esc_html__('+ Neues Material', 'taxmod-stock') . '</summary>' . $body . '</details>';
@@ -2598,8 +2605,8 @@ final class StockPage
      */
     private function placeLotsBar(int $place, int $count): string
     {
-        $body  = '<label style="display:block">' . esc_html__('Nach', 'taxmod-stock') . '<br>' . $this->stock->placeChooser('location', 0, self::PLACE_FORM) . '</label>'
-            . '<p class="description">' . esc_html__('Bucht jeden angehakten Posten ganz vom Ort, an dem er liegt, an den gewählten Ort um: ein Vorgang «Umbuchung», «Stornieren» bei den Vorgängen nimmt ihn zurück.', 'taxmod-stock') . '</p>';
+        $body  = self::actForm([['label' => __('Nach', 'taxmod-stock'), 'control' => $this->stock->placeChooser('location', 0, self::PLACE_FORM),
+            'hint' => __('Bucht jeden angehakten Posten ganz vom Ort, an dem er liegt, an den gewählten Ort um: ein Vorgang «Umbuchung», «Stornieren» bei den Vorgängen nimmt ihn zurück.', 'taxmod-stock')]]);
         $move  = ['taxmod-stock-place-lots-move' => [__('Umbuchen nach …', 'taxmod-stock'), '<div class="alignleft actions">' . ListPage::dialogAction('taxmod-stock-place-lots-move', __('Umbuchen nach …', 'taxmod-stock'), __('Ausgewählte umbuchen', 'taxmod-stock'),
             $body, 'booking', 'postenumbuchen', __('Umbuchen', 'taxmod-stock'), self::PLACE_FORM) . '</div>']];
         $label = $this->materialLabelsAsk(self::PLACE_FORM, __('Ein Etikett je angehaktem Posten: mit den Feldern seines Materials, seiner Charge und dem Code P-…', 'taxmod-stock'));
@@ -3316,8 +3323,8 @@ final class StockPage
             . '<p class="description taxmod-stock-drop-box" hidden>' . esc_html__('Der Umzug wird als Vorgang «Umlagerung» festgehalten.', 'taxmod-stock') . '</p>';
         $lotBody  = '<input type="hidden" name="thing" value=""><input type="hidden" name="lot" value=""><input type="hidden" name="from" value=""><input type="hidden" name="location" value="">'
             . '<p style="margin-top:0" class="taxmod-stock-drop-text"></p>'
-            . '<label style="display:block">' . esc_html__('Menge', 'taxmod-stock') . '<br><input type="text" inputmode="decimal" name="quantity" style="width:7em"></label>'
-            . '<p class="description">' . esc_html__('Bucht die Menge vom bisherigen Ort ab und am neuen zu, als Vorgang «Umbuchung».', 'taxmod-stock') . '</p>';
+            . self::actForm([['label' => __('Menge', 'taxmod-stock'), 'control' => '<input type="text" inputmode="decimal" name="quantity" style="width:7em">',
+                'hint' => __('Bucht die Menge vom bisherigen Ort ab und am neuen zu, als Vorgang «Umbuchung».', 'taxmod-stock')]]);
 
         $texts = [
             'hang' => __('«%1$s» nach «%2$s» verschieben? Alles, was darin liegt, zieht mit.', 'taxmod-stock'),
@@ -3410,27 +3417,46 @@ final class StockPage
             }
         }
 
-        return $this->formStart('verbrauch')
-            . '<p><label>' . esc_html__('Material', 'taxmod-stock') . ' <select name="thing" required>' . $this->options($have, '', $preset) . '</select></label></p>'
-            . '<p><label>' . esc_html__('Menge', 'taxmod-stock') . ' <input type="text" inputmode="decimal" name="quantity" required style="width:6em"></label></p>'
-            . '<p><label>' . esc_html__('Bestandsposten', 'taxmod-stock') . ' <select name="lot">' . $choice . '</select></label></p>'
-            // D-1039: «Ausbuchen» on a row of the Bestand tab takes from that row's place.
-            . ($presetPlace > 0 ? '<input type="hidden" name="place" value="' . esc_attr((string) $presetPlace) . '"><p class="description">' . esc_html(sprintf(
-                /* translators: %s: the place, by its path */
-                __('Ausgebucht wird am Ort %s.', 'taxmod-stock'),
-                $this->stock->places()[$presetPlace] ?? '#' . $presetPlace
-            )) . '</p>' : '')
-            . $this->purposeField($presetPlace)
-            . '<p><label>' . esc_html__('Grund (optional)', 'taxmod-stock') . ' <input type="text" name="reason" list="taxmod-stock-consumption-reasons" style="width:20em"></label>'
-            . '<datalist id="taxmod-stock-consumption-reasons">' . implode('', array_map(static fn (string $r): string => '<option value="' . esc_attr($r) . '">', self::consumptionReasons())) . '</datalist></p>'
-            . get_submit_button(__('Verbrauch buchen', 'taxmod-stock')) . '</form>';
+        // D-1039: «Ausbuchen» on a row of the Bestand tab takes from that row's place.
+        $at   = $presetPlace > 0 ? sprintf(/* translators: %s: the place, by its path */ __('Ausgebucht wird am Ort %s.', 'taxmod-stock'), $this->stock->places()[$presetPlace] ?? '#' . $presetPlace) : '';
+        $rows = [
+            ['label' => __('Material', 'taxmod-stock'), 'for' => 'taxmod-stock-consumption-thing', 'control' => '<select id="taxmod-stock-consumption-thing" name="thing" required>' . $this->options($have, '', $preset) . '</select>'],
+            ['label' => __('Menge', 'taxmod-stock'), 'for' => 'taxmod-stock-consumption-quantity', 'control' => '<input type="text" inputmode="decimal" id="taxmod-stock-consumption-quantity" name="quantity" required style="width:6em">'],
+            ['label' => __('Bestandsposten', 'taxmod-stock'), 'for' => 'taxmod-stock-consumption-lot', 'control' => '<select id="taxmod-stock-consumption-lot" name="lot">' . $choice . '</select>'
+                . ($presetPlace > 0 ? '<input type="hidden" name="place" value="' . esc_attr((string) $presetPlace) . '">' : ''), 'hint' => $at],
+            $this->purposeRow($presetPlace),
+            ['label' => __('Grund (optional)', 'taxmod-stock'), 'for' => 'taxmod-stock-consumption-reason', 'control' => '<input type="text" id="taxmod-stock-consumption-reason" name="reason" list="taxmod-stock-consumption-reasons" style="width:20em">'
+                . '<datalist id="taxmod-stock-consumption-reasons">' . implode('', array_map(static fn (string $r): string => '<option value="' . esc_attr($r) . '">', self::consumptionReasons())) . '</datalist>'],
+        ];
+        $submit = get_submit_button(__('Verbrauch buchen', 'taxmod-stock'), 'primary', 'submit', false);
+
+        return $this->formStart('verbrauch') . self::actForm($rows, $submit) . '</form>';
+    }
+
+    /**
+     * The architecture thread 2026-11-09: a form for an act, not a record, through the modeller's shared form block
+     * (`ListPage::form`, modeller 0.2.33) — label left, the hint as «?», the buttons below; plain labels on an older one.
+     *
+     * @param list<array{label: string, control: string, hint?: string, for?: string}> $rows
+     */
+    public static function actForm(array $rows, string $actions = ''): string
+    {
+        if (method_exists(ListPage::class, 'form')) {
+            return ListPage::form($rows, $actions);
+        }
+
+        return implode('', array_map(static fn (array $row): string => '<p><label style="display:block">' . esc_html($row['label']) . '<br>' . $row['control'] . '</label>'
+            . (($row['hint'] ?? '') === '' ? '' : '<span class="description">' . esc_html($row['hint']) . '</span>') . '</p>', $rows))
+            . ($actions === '' ? '' : '<p class="submit">' . $actions . '</p>');
     }
 
     /**
      * D-1088: the purpose of a consumption — a subject, «für Produktion», or none. Taken from a reserved place, its Bezug
-     * is preselected: reserved goods go only for exactly that purpose.
+     * is preselected: reserved goods go only for exactly that purpose. One row of the shared form block.
+     *
+     * @return array{label: string, control: string, hint: string, for: string}
      */
-    private function purposeField(int $place): string
+    private function purposeRow(int $place): array
     {
         $preset   = $this->stock->purposeAt($place);
         $selected = $preset === null ? '' : ($preset->production ? 'produktion' : (string) $preset->subject);
@@ -3447,8 +3473,8 @@ final class StockPage
             $choices .= '</optgroup>';
         }
 
-        return '<p><label>' . esc_html__('Bezug', 'taxmod-stock') . ' <select name="purpose">' . $choices . '</select></label></p>'
-            . '<p class="description">' . esc_html__('Reservierte Ware darf nur für genau ihren Bezug verbraucht werden; der Verbrauch mindert dann die offene Reservierung. Für jeden anderen Zweck erst aus dem reservierten Bereich umbuchen.', 'taxmod-stock') . '</p>';
+        return ['label' => __('Bezug', 'taxmod-stock'), 'for' => 'taxmod-stock-consumption-purpose', 'control' => '<select id="taxmod-stock-consumption-purpose" name="purpose">' . $choices . '</select>',
+            'hint' => __('Reservierte Ware darf nur für genau ihren Bezug verbraucht werden; der Verbrauch mindert dann die offene Reservierung. Für jeden anderen Zweck erst aus dem reservierten Bereich umbuchen.', 'taxmod-stock')];
     }
 
     /** D-1088: «produktion», a record id, or nothing — as the form sends it. */
@@ -3836,9 +3862,9 @@ final class StockPage
 
         // D-1075: the modeller's node chooser — search and tree, the one view he set for choosing in the tree; a plain list without it.
         $chooser = $this->stock->groupChooser('newgroup[' . $purchase . ']');
-        $field   = ($chooser !== '' ? '<span style="display:block">' . esc_html__('Gruppe', 'taxmod-stock') . '<br>' . $chooser . '</span>'
-            : '<label style="display:block">' . esc_html__('Gruppe', 'taxmod-stock') . '<br><select name="newgroup[' . esc_attr((string) $purchase) . ']" style="width:100%">' . $groups . '</select></label>')
-            . '<p class="description">' . esc_html__('Das Material heißt wie der Kauf; Lagerort und Bezugsquelle kommen aus der Bestellung.', 'taxmod-stock') . '</p>';
+        $field   = self::actForm([['label' => __('Gruppe', 'taxmod-stock'),
+            'control' => $chooser !== '' ? $chooser : '<select name="newgroup[' . esc_attr((string) $purchase) . ']" style="width:100%">' . $groups . '</select>',
+            'hint' => __('Das Material heißt wie der Kauf; Lagerort und Bezugsquelle kommen aus der Bestellung.', 'taxmod-stock')]]);
 
         return ListPage::dialogAction('taxmod-stock-new-' . $purchase, __('Neues Material', 'taxmod-stock'), __('Neues Material anlegen', 'taxmod-stock'), $field, 'booking', 'zuordnen', __('Anlegen', 'taxmod-stock')) . ' ';
     }
@@ -3846,7 +3872,7 @@ final class StockPage
     private function closeControls(int $purchase): string
     {
         $id     = (string) $purchase;
-        $field  = '<label style="display:block">' . esc_html__('Grund', 'taxmod-stock') . '<br><input type="text" list="taxmod-stock-reasons" name="reason[' . esc_attr($id) . ']" style="width:100%"></label>';
+        $field  = self::actForm([['label' => __('Grund', 'taxmod-stock'), 'control' => '<input type="text" list="taxmod-stock-reasons" name="reason[' . esc_attr($id) . ']" style="width:100%">']]);
         $action = 'nichteinlagern-' . $id;
 
         // D-1063: the reason is asked in the one dialog every list uses; an older modeller keeps the field in the row.

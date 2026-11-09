@@ -1184,7 +1184,12 @@ final class StockPage
             return $amount === null ? '—' : number_format_i18n((float) $amount, 2);
         };
 
-        $html = '<table class="widefat striped"><thead><tr><th>' . esc_html__('Kauf', 'taxmod-stock') . '</th><th>' . esc_html__('Lieferant', 'taxmod-stock') . '</th><th>'
+        // D-1249 on the material's purchases too (his report 2026-11-09 «habe kein link zur bestellung wie wirs vereinbart hatten»).
+        $inbound = new \TaxmodStock\WordPress\InboundService($this->stock);
+        $linked  = static fn (string $text, ?string $url): string => $text === '' ? '—' : ($url === null ? esc_html($text)
+            : '<a href="' . esc_url($url) . '" target="_blank" rel="noopener noreferrer">' . esc_html($text) . '</a>');
+
+        $html = '<table class="widefat striped"><thead><tr><th>' . esc_html__('Kauf', 'taxmod-stock') . '</th><th>' . esc_html__('Bestellung', 'taxmod-stock') . '</th><th>' . esc_html__('Lieferant', 'taxmod-stock') . '</th><th>'
             . esc_html__('Datum', 'taxmod-stock') . '</th><th>' . esc_html__('Menge', 'taxmod-stock') . '</th><th>' . esc_html__('Preis je Stück', 'taxmod-stock') . '</th><th>'
             . esc_html__('Gesamtpreis', 'taxmod-stock') . '</th></tr></thead><tbody>';
 
@@ -1198,7 +1203,11 @@ final class StockPage
             $each     = $unit === null ? null : $money->first((int) $unit, $s->field('money_amount'));
             // Without a total of its own, the price per piece times the quantity.
             $sum      = $total !== null ? $amountOf($total) : ($each === null || $count <= 0.0 ? '—' : number_format_i18n((float) $each * $count, 2));
-            $html    .= '<tr><td>' . esc_html((string) $purchases->first($id, $s->field('label'))) . ' <span class="description">#' . esc_html((string) $id) . '</span></td>'
+            $article  = $s->hasField('purchase_number') ? trim((string) ($purchases->first($id, $s->field('purchase_number')) ?? '')) : '';
+            $number   = $order === null ? '' : $inbound->orderNumber($order);
+            $html    .= '<tr><td>' . esc_html((string) $purchases->first($id, $s->field('label')))
+                . ($article === '' ? '' : '<br><span class="description">' . $linked($article, $order === null ? null : $inbound->productLink($order, $article)) . '</span>') . '</td>'
+                . '<td>' . $linked($number, $order === null ? null : $inbound->orderLink($order)) . '</td>'
                 . '<td>' . esc_html($merchant === '' ? '—' : $merchant) . '</td>'
                 . '<td>' . esc_html(($date = substr($orderValue($order, 'order_date'), 0, 10)) === '' ? '—' : $date) . '</td>'
                 . '<td>' . esc_html((string) ($purchases->first($id, $s->field('purchase_quantity')) ?? '—')) . '</td>'

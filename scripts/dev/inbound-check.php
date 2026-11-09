@@ -297,6 +297,11 @@ $pruefe(str_contains($html, 'Variante: Right Angle, 62P') && preg_match('#Artike
 $pruefe($asked === 0, 'drawing the page never asks DHL');
 $pruefe(str_contains($html, 'href="https://shop.test/order?id=8199"') && str_contains($html, 'href="https://shop.test/item/1005003647067417.html"'), 'D-1249: the order and the article number link to the platform, from the template of the firm its «Plattform» names');
 $pruefe(! str_contains($html, '{nr}'), 'a template is never shown as it stands');
+// His report 2026-11-09 «habe kein link zur bestellung wie wirs vereinbart hatten»: the material's «Einkauf» links them too.
+wp_get_ability('taxmod/apply')->execute(['changes' => [['op' => 'set_values', 'record' => (string) $r['kaufE'], 'values' => [(string) $r['k_mod'] => (string) $r['kabel']]]]]);
+$einkauf = (string) (new ReflectionMethod(StockPage::class, 'purchaseView'))->invoke(new StockPage(), $r['kabel']);
+wp_get_ability('taxmod/apply')->execute(['changes' => [['op' => 'set_values', 'record' => (string) $r['kaufE'], 'values' => [(string) $r['k_mod'] => '']]]]);
+$pruefe(str_contains($einkauf, 'href="https://shop.test/order?id=8199"') && str_contains($einkauf, 'href="https://shop.test/item/1005003647067417.html"') && ! str_contains($einkauf, '#' . $r['kaufE']), 'D-1282: a material\'s purchases link the order and the article at the platform (D-1249), no bare record number');
 $pruefe(preg_match('/data-order="' . $r['o2'] . '" data-back="' . InboundPage::BACK . '" data-assign="1"/', $html) === 1, 'his choice «Material schon am Kauf wählen»: an order on its way offers the choice of material before it arrives');
 $assignForm = (new \ReflectionMethod(StockPage::class, 'receiptPositions'))->invoke(new StockPage(), $r['o2'], InboundPage::BACK, true);
 $pruefe(str_contains($assignForm, 'class="taxmod-stock-assign"') && str_contains($assignForm, 'value="zuordnen"') && ! str_contains($assignForm, 'value="Wareneingang buchen"') && str_contains($assignForm, 'thing[' . $r['kaufE'] . ']'), 'it only keeps the choice: nothing can be booked before the order arrives');

@@ -105,6 +105,12 @@ final class InboundService
         )));
     }
 
+    /** The order's number as its platform gave it, '' without one. */
+    public function orderNumber(int $order): string
+    {
+        return trim((string) ($this->stock->table('order')->first($order, $this->fields()['order_number']) ?? ''));
+    }
+
     /** D-1249: the link to the order at its platform, built from the firm's template and the order number; null without either. */
     public function orderLink(int $order): ?string
     {

@@ -93,6 +93,9 @@ final class StockService
 
     private ?Things $things = null;
 
+    /** @var array<string, array{order: string, product: string}>|null firm name (lower case) → its link templates (D-1249), read once per request */
+    private ?array $linkTemplates = null;
+
     private ?LocationTree $locationTree = null;
 
     private ?PlaceTypes $placeTypes = null;
@@ -1786,6 +1789,38 @@ final class StockService
         }
 
         return $out;
+    }
+
+    /**
+     * D-1249: the link templates of the firm whose name is `$shop`, read once per request for all firms — the order carries the
+     * shop as text («Plattform»), so the firm is found by its name; no firm or no template gives empty strings.
+     *
+     * @return array{order: string, product: string}
+     */
+    public function linkTemplates(string $shop): array
+    {
+        $s    = $this->structure();
+        $shop = mb_strtolower(trim($shop));
+
+        if ($this->linkTemplates === null) {
+            $this->linkTemplates = [];
+
+            if ($s->hasNode('firm') && ($s->hasField('firm_order_link') || $s->hasField('firm_product_link'))) {
+                $name = $s->hasField('firm_name') ? $s->field('firm_name') : $s->field('label');
+                $read = static fn (Table $table, int $id, string $key): string => $s->hasField($key) ? trim((string) ($table->first($id, $s->field($key)) ?? '')) : '';
+
+                foreach (array_keys($this->model->tree($s->node('firm'))) as $node) {
+                    $table = $this->tableOf((int) $node);
+
+                    foreach ($table->ids() as $id) {
+                        $key = mb_strtolower(trim((string) ($table->first($id, $name) ?? '')));
+                        $this->linkTemplates[$key] ??= ['order' => $read($table, $id, 'firm_order_link'), 'product' => $read($table, $id, 'firm_product_link')];
+                    }
+                }
+            }
+        }
+
+        return $shop === '' ? ['order' => '', 'product' => ''] : ($this->linkTemplates[$shop] ?? ['order' => '', 'product' => '']);
     }
 
     /** D-1184: the root of the contact branch — its own node, or the firms' node on a structure that does not name it. */

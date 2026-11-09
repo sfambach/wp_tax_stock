@@ -80,6 +80,8 @@ final class Structure
         'location_short',
         // D-1184: a person's first name, put before the name in the contact list.
         'contact_first_name',
+        // D-1249: a firm's link templates with {nr} — to an order by its number, to a product by its article number.
+        'firm_order_link', 'firm_product_link',
         // D-1151: the unit name a line of a place type's parts gives the places it brings.
         'part_unit_name',
         // D-1153: label formats and templates as records; a place type names its template and how many labels.

@@ -61,6 +61,9 @@ final class StockPage
     public const PAGE       = Pages::STOCK;
     public const ACTION     = 'taxmod_stock_book';
     public const POSITIONS  = 'taxmod_stock_positions';
+
+    /** INF-116: the choice of material saved from an order not yet arrived, answered without a reload. */
+    public const ASSIGN     = 'taxmod_stock_assign';
     /** The notice after a booking; the goods receipt cockpit shows it too, when the booking came from there. */
     public const NOTICE     = 'taxmod_stock_notice';
     private const LAST_LIST = 'taxmod_stock_last_list_';
@@ -2161,13 +2164,38 @@ final class StockPage
         }
 
         check_ajax_referer(self::POSITIONS);
-        $order = absint($_GET['order'] ?? 0);
-        $back  = sanitize_key((string) ($_GET['back'] ?? ''));
+        $order  = absint($_GET['order'] ?? 0);
+        $back   = sanitize_key((string) ($_GET['back'] ?? ''));
+        $assign = ! empty($_GET['assign']);
 
         try {
-            wp_send_json_success(['html' => $this->receiptPositions($order, $back === InboundPage::BACK ? $back : '')]);
+            wp_send_json_success(['html' => $this->receiptPositions($order, $back === InboundPage::BACK ? $back : '', $assign)]);
         } catch (StockError $e) {
             wp_send_json_error(['html' => '<div class="notice notice-error inline"><p>' . esc_html(Messages::of($e)) . '</p></div>']);
+        }
+    }
+
+    /**
+     * INF-116, his choice 2026-11-09 «Material schon am Kauf wählen»: the material and place of an order's purchases, kept before it
+     * arrives — the receipt's «zuordnen», answered as the message and the form drawn again (D-1203: no reload).
+     */
+    public function assign(): void
+    {
+        if (! current_user_can('manage_options')) {
+            wp_send_json_error(['message' => __('Keine Berechtigung.', 'taxmod-stock')], 403);
+        }
+
+        check_ajax_referer(self::ACTION);
+        $order = absint($_POST['order'] ?? 0);
+
+        try {
+            $this->stock->assignPurchases($order, $this->assignedThings(), $this->assignedPlaces(), $this->newThings(), $this->receiptQuantities());
+            wp_send_json_success([
+                'message' => __('Zuordnung gespeichert: Material und Lagerort bleiben stehen, noch nichts eingebucht.', 'taxmod-stock'),
+                'html'    => $this->receiptPositions($order, InboundPage::BACK, true),
+            ]);
+        } catch (StockError $e) {
+            wp_send_json_error(['message' => Messages::of($e)]);
         }
     }
 
@@ -2196,8 +2224,9 @@ final class StockPage
      * The purchases of one order with their thing and place, as one booking form (D-995).
      *
      * @param string $back where the booking returns to: '' the Lager page, {@see InboundPage::BACK} the cockpit (D-1001)
+     * @param bool   $assign an order not yet arrived (INF-116): the choice is kept, nothing can be booked
      */
-    private function receiptPositions(int $order, string $back = ''): string
+    private function receiptPositions(int $order, string $back = '', bool $assign = false): string
     {
         $orders = $this->stock->labels('order');
 
@@ -2213,12 +2242,15 @@ final class StockPage
         $closing = $this->stock->canCloseWithoutStock();
         $bought  = $this->stock->table('purchase');
         $amount  = $this->stock->structure()->field('purchase_quantity');
-        $html  = $this->formStart('wareneingang') . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
+        $first = $assign ? 'zuordnen' : 'wareneingang';
+        $html  = ($assign ? str_replace('<form ', '<form class="taxmod-stock-assign" ', $this->formStart($first)) : $this->formStart($first))
+            . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
             . ($back === '' ? '' : '<input type="hidden" name="back" value="' . esc_attr($back) . '">')
             // ⚠️ *Enter in a reason field must book, not close the first row: the browser presses the first submit button.*
-            . '<button type="submit" name="booking" value="wareneingang" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px"></button>'
+            . '<button type="submit" name="booking" value="' . esc_attr($first) . '" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px"></button>'
             . ($closing ? '<datalist id="taxmod-stock-reasons">' . implode('', array_map(static fn (string $r): string => '<option value="' . esc_attr($r) . '">', self::notStockedReasons())) . '</datalist>' : '')
-            . '<p>' . esc_html__('Je Kauf das Material: vorgeschlagen ist das «Modell» des Kaufs; «Zurücksetzen» (Pfeil) gibt die Suche frei; «Neues Material» (oder eine Gruppe in der Suche) legt ein neues Material in der Gruppe an. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seiner Gruppe; Gebrauchtware aus einem Zweig mit Test nach dem Wareneingang geht an den «Lagerort für Test», wenn einer eingestellt ist. Der Materialtext öffnet das Material wie der Knopf «Material». Die Menge ist die gekaufte Anzahl (bei Ware in Packungen: Packungen); geändert wird sie beim Buchen oder Speichern in den Kauf geschrieben.', 'taxmod-stock') . '</p>'
+            . ($assign ? '<p>' . esc_html__('Schon vor dem Eintreffen je Kauf das Material wählen oder als «Neues Material» in seiner Gruppe anlegen; die Felder kommen aus der Gruppe. Gespeichert wird nur die Zuordnung, eingebucht wird erst beim Wareneingang.', 'taxmod-stock') . '</p>' : '')
+            . ($assign ? '' : '<p>' . esc_html__('Je Kauf das Material: vorgeschlagen ist das «Modell» des Kaufs; «Zurücksetzen» (Pfeil) gibt die Suche frei; «Neues Material» (oder eine Gruppe in der Suche) legt ein neues Material in der Gruppe an. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seiner Gruppe; Gebrauchtware aus einem Zweig mit Test nach dem Wareneingang geht an den «Lagerort für Test», wenn einer eingestellt ist. Der Materialtext öffnet das Material wie der Knopf «Material». Die Menge ist die gekaufte Anzahl (bei Ware in Packungen: Packungen); geändert wird sie beim Buchen oder Speichern in den Kauf geschrieben.', 'taxmod-stock') . '</p>')
             . '<div class="tablenav top"><div class="tablenav-pages one-page"><span class="displaying-num">' . esc_html(sprintf(
                 /* translators: %d: number of purchases */
                 _n('%d Kauf', '%d Käufe', count($plan), 'taxmod-stock'),
@@ -2272,8 +2304,8 @@ final class StockPage
         }
 
         // His word 2026-10-28: «zwischenstände speichern … ohne we» — the second button keeps the chosen material, books nothing.
-        return $html . '</tbody></table><p class="submit" style="text-align:right">' . get_submit_button(__('Wareneingang buchen', 'taxmod-stock'), 'primary', 'submit', false)
-            . ' <button type="submit" class="button" name="booking" value="zuordnen">' . esc_html__('Zuordnung speichern', 'taxmod-stock') . '</button></p></form>';
+        return $html . '</tbody></table><p class="submit" style="text-align:right">' . ($assign ? '' : get_submit_button(__('Wareneingang buchen', 'taxmod-stock'), 'primary', 'submit', false))
+            . ' <button type="submit" class="button' . ($assign ? ' button-primary' : '') . '" name="booking" value="zuordnen">' . esc_html__('Zuordnung speichern', 'taxmod-stock') . '</button></p></form>';
     }
 
     /**
@@ -3750,19 +3782,26 @@ final class StockPage
     {
         $search    = add_query_arg(['action' => self::THING_SEARCH, '_ajax_nonce' => wp_create_nonce(self::THING_SEARCH)], admin_url('admin-post.php'));
         $positions = add_query_arg(['action' => self::POSITIONS, '_ajax_nonce' => wp_create_nonce(self::POSITIONS)], admin_url('admin-post.php'));
+        $failed    = __('Speichern fehlgeschlagen.', 'taxmod-stock');
 
         return $this->modellerAssets($receipt) . '<script>(function(){'
-            . 'var url=' . wp_json_encode($search) . ',pos=' . wp_json_encode($positions) . ';'
+            . 'var url=' . wp_json_encode($search) . ',pos=' . wp_json_encode($positions) . ',post=' . wp_json_encode(admin_url('admin-post.php')) . ';'
+            // D-1203: a message in the field beside the heading; a page without it keeps the browser's own.
+            . 'function say(t,ok){if(window.taxmodMessage){window.taxmodMessage(t,ok?"ok":"bad");}else{window.alert(t);}}'
             . 'function bind(root){'
             . 'root.querySelectorAll(".taxmod-stock-filter").forEach(function(f){var s=document.getElementById(f.dataset.for);if(!s){return;}var o=Array.prototype.slice.call(s.options);'
             . 'f.addEventListener("input",function(){var q=f.value.toLowerCase(),first=null;o.forEach(function(x){var fix=x.value===""||x.value==="new"||x.value==="keep"||x.value==="search";x.hidden=q!==""&&!fix&&x.text.toLowerCase().indexOf(q)<0;if(!fix&&!x.hidden&&!first){first=x;}});if(q!==""&&first){s.value=first.value;}});});'
             . 'root.querySelectorAll(".taxmod-stock-thing-search").forEach(function(f){var t=document.getElementById(f.dataset.for),l=document.getElementById(f.getAttribute("list")),w;'
             . 'f.addEventListener("input",function(){var m=f.value.match(/^#(\\d+)/);if(m){t.value=m[1];return;}t.value="";clearTimeout(w);if(f.value.trim().length<2){return;}'
             . 'w=setTimeout(function(){fetch(url+"&term="+encodeURIComponent(f.value),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){l.innerHTML="";(j.data||[]).forEach(function(h){var x=document.createElement("option");x.value="#"+h.id+" · "+h.word+(h.node?" ("+h.node+")":"");l.appendChild(x);});});},250);});});'
+            // INF-116: an order not yet arrived keeps its choice without a reload; the form comes back drawn anew.
+            . 'root.querySelectorAll("form.taxmod-stock-assign").forEach(function(f){f.addEventListener("submit",function(e){e.preventDefault();var fd=new FormData(f);fd.set("action",' . wp_json_encode(self::ASSIGN) . ');fd.set("booking","zuordnen");'
+            . 'var box=f.closest(".taxmod-stock-positions")||f.parentNode;fetch(post,{method:"POST",body:fd,credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){var d=j.data||{};if(j.success&&d.html){box.innerHTML=d.html;bind(box);}say(d.message||' . wp_json_encode($failed) . ',!!j.success);})'
+            . '.catch(function(){say(' . wp_json_encode($failed) . ',false);});});});'
             . 'root.querySelectorAll("tr").forEach(function(tr){var cb=tr.querySelector("input[name=\\"purchases[]\\"]");if(!cb||cb.disabled){return;}tr.querySelectorAll("select,input[type=text],input[type=search]").forEach(function(f){f.addEventListener("change",function(){cb.checked=true;});});});'
             . '}bind(document);'
             . 'function load(box){if(box.dataset.loaded){return;}box.dataset.loaded="1";var cell=box;cell.textContent="…";'
-            . 'fetch(pos+"&order="+encodeURIComponent(box.dataset.order)+(box.dataset.back?"&back="+encodeURIComponent(box.dataset.back):""),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){cell.innerHTML=(j.data&&j.data.html)||"";bind(cell);})'
+            . 'fetch(pos+"&order="+encodeURIComponent(box.dataset.order)+(box.dataset.back?"&back="+encodeURIComponent(box.dataset.back):"")+(box.dataset.assign?"&assign=1":""),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){cell.innerHTML=(j.data&&j.data.html)||"";bind(cell);})'
             . '.catch(function(){delete box.dataset.loaded;cell.textContent=' . wp_json_encode(__('Positionen konnten nicht geladen werden.', 'taxmod-stock')) . ';});}'
             // An order's purchases load once its details row shows: opened by hand, by «Expand all», or open from the start.
             . 'var seen="IntersectionObserver" in window?new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){seen.unobserve(e.target);load(e.target);}});},{rootMargin:"200px"}):null;'

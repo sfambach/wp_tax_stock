@@ -153,16 +153,26 @@ final class InboundPage
             $tabs[] = [self::TEST, __('Zu testen', 'taxmod-stock'), count($toTest)];
         }
 
-        // D-1197: the stages are the process and drawn as arrows; «Zu testen», «Archiviert» and «Alle» stand beside it.
+        // D-1197: the stages are the process and drawn as arrows.
         // D-1008: «Archiviert» after the working tabs; «Alle» is everything not archived.
         $archived = $counts[InboundStage::Archived->value] ?? 0;
         $tabs[]   = [InboundStage::Archived->value, $this->stageName(InboundStage::Archived), $archived];
         $tabs[]   = [self::ALL, __('Alle', 'taxmod-stock'), count($orders) - $archived];
 
-        $steps = count(InboundStage::tabs());
+        // His word 2026-11-09: «oben ist der blaue Pfeil ist immer noch bei bestellt» — an opened order stands at its own stage.
+        if ($open > 0 && isset($stages[$open]) && in_array($stages[$open]->value, array_column($tabs, 0), true)) {
+            $tab = $stages[$open]->value;
+        }
+
         $url   = static fn (string $slug): string => self::url(['tab' => $slug]);
-        // The arrows came with the modeller 0.1.186; an older one draws plain tabs.
-        $bar   = method_exists(ListPage::class, 'steps') ? ListPage::steps(array_slice($tabs, 0, $steps), $tab, $url, array_slice($tabs, $steps)) : ListPage::tabs($tabs, $tab, $url);
+        // His wish 2026-11-09: «Zu testen» and «Archiviert» are arrows after «Eingebucht»; «Alle» a narrow arrow under them all.
+        // The arrows came with the modeller 0.1.186, the arrow under them with 0.2.36; an older one draws tabs beside.
+        $all   = array_pop($tabs);
+        $bar   = match (true) {
+            ! method_exists(ListPage::class, 'steps')                                   => ListPage::tabs([...$tabs, $all], $tab, $url),
+            (new \ReflectionMethod(ListPage::class, 'steps'))->getNumberOfParameters() >= 5 => ListPage::steps($tabs, $tab, $url, [], $all),
+            default                                                                     => ListPage::steps(array_slice($tabs, 0, count(InboundStage::tabs())), $tab, $url, [...array_slice($tabs, count(InboundStage::tabs())), $all]),
+        };
 
         if ($tab === self::TEST) {
             return $bar . $this->testList($toTest);
@@ -340,9 +350,11 @@ final class InboundPage
         $counts = $this->inbound->purchaseCounts($order->id);
         $about  = $this->inbound->about($order->id);
         $late   = $order->overdue($this->inbound->stock()->structure(), $today, $this->inbound->stock()->inboundArchive($today));
+        $orderLink = $this->inbound->orderLink($order->id);
         $fact   = static fn (string $name, string $value): string => $value === '' ? '' : '<tr><th scope="row" style="width:10em">' . esc_html($name) . '</th><td>' . $value . '</td></tr>';
 
-        return '<p><a href="' . esc_url(self::url(['tab' => $tab])) . '">← ' . esc_html(sprintf(/* translators: %s: name of the tab */ __('Zurück zu «%s»', 'taxmod-stock'), $this->tabName($tab))) . '</a></p>'
+        // His mark 2026-11-09: no empty line between the arrows and the way back — the arrows keep their own margin.
+        return '<p style="margin-top:0"><a href="' . esc_url(self::url(['tab' => $tab])) . '">← ' . esc_html(sprintf(/* translators: %s: name of the tab */ __('Zurück zu «%s»', 'taxmod-stock'), $this->tabName($tab))) . '</a></p>'
             . '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1em;flex-wrap:wrap">'
             . '<div><h2 style="margin:.2em 0">' . esc_html($label) . ($late ? ' <span style="color:#b32d2e;font-size:.8em">' . esc_html__('überfällig', 'taxmod-stock') . '</span>' : '') . '</h2>'
             . ($about === '' ? '' : '<p class="description" style="margin-top:0">' . esc_html($about) . '</p>') . '</div>'
@@ -350,6 +362,8 @@ final class InboundPage
             . '<table class="widefat" style="max-width:40em;margin-bottom:1em"><tbody>'
             . $fact(__('Stufe', 'taxmod-stock'), esc_html($this->stageName($stage)))
             . $fact(__('Bestellt am', 'taxmod-stock'), esc_html(substr((string) $order->orderedOn, 0, 10)))
+            // D-1249: the order at its platform, from the firm's template — built here, never stored.
+            . $fact(__('Bestellung', 'taxmod-stock'), $orderLink === null ? '' : '<a href="' . esc_url($orderLink) . '" target="_blank" rel="noopener noreferrer">' . esc_html__('Bei der Plattform öffnen', 'taxmod-stock') . '</a>')
             . $fact(__('Sendung', 'taxmod-stock'), $this->trackingCell($order))
             . $fact(__('Angekommen', 'taxmod-stock'), esc_html(substr((string) $order->receivedOn, 0, 10)))
             . $fact(__('Käufe', 'taxmod-stock'), esc_html(sprintf(/* translators: 1: purchases, 2: of them in stock */ __('%1$d, davon %2$d gebucht', 'taxmod-stock'), $counts['total'], $counts['booked'])))
@@ -464,9 +478,9 @@ final class InboundPage
 
     /**
      * INF-116: what tells two purchases apart before they arrive — the description (variant, pack) and the article number,
-     * in full under the name. The links to the platform wait for his decision where the link templates live.
+     * in full under the name; the number links to the product at the platform where its firm has a template (D-1249).
      */
-    private function purchaseFacts(Table $table, int $purchase): string
+    private function purchaseFacts(Table $table, int $order, int $purchase): string
     {
         $s     = $this->inbound->stock()->structure();
         $facts = [];
@@ -474,12 +488,16 @@ final class InboundPage
         foreach (['description' => '', 'purchase_number' => __('Artikelnummer', 'taxmod-stock')] as $key => $name) {
             $value = $s->hasField($key) ? trim((string) ($table->first($purchase, $s->field($key)) ?? '')) : '';
 
-            if ($value !== '') {
-                $facts[] = ($name === '' ? '' : $name . ': ') . $value;
+            if ($value === '') {
+                continue;
             }
+
+            $link    = $key === 'purchase_number' ? $this->inbound->productLink($order, $value) : null;
+            $facts[] = ($name === '' ? '' : esc_html($name) . ': ')
+                . ($link === null ? esc_html($value) : '<a href="' . esc_url($link) . '" target="_blank" rel="noopener noreferrer">' . esc_html($value) . '</a>');
         }
 
-        return $facts === [] ? '' : '<br><span class="description">' . esc_html(implode(' · ', $facts)) . '</span>';
+        return $facts === [] ? '' : '<br><span class="description">' . implode(' · ', $facts) . '</span>';
     }
 
     private function details(InboundOrder $order, InboundStage $stage, string $tab, bool $open): string
@@ -540,14 +558,23 @@ final class InboundPage
             $total = $s->hasField('purchase_total_price') ? $amountOf($table->first($purchase, $s->field('purchase_total_price'))) : null;
             $total ??= $each === null || $count <= 0.0 ? null : $each * $count;
             $html .= '<tr><td style="white-space:normal">' . ($pictures[$purchase] ?? '') . ' ' . esc_html($labels[$purchase] ?? '#' . $purchase)
-                . $this->purchaseFacts($table, $purchase) . $this->whereItWent($purchase) . '</td>'
+                . $this->purchaseFacts($table, $order->id, $purchase) . $this->whereItWent($purchase) . '</td>'
                 . '<td style="text-align:right">' . esc_html($count > 0.0 ? (string) (0 + $count) : '—') . '</td>'
                 . '<td style="text-align:right">' . esc_html($shown($each)) . '</td>'
                 . '<td style="text-align:right">' . esc_html($shown($total)) . '</td>'
                 . '<td style="text-align:right;white-space:nowrap">' . $button . '</td></tr>';
         }
 
-        $html .= '</tbody></table>' . $this->events($order);
+        $html .= '</tbody></table>';
+
+        // His choice 2026-11-09 (INF-116): «Material schon am Kauf wählen» — the receipt's own choosing, before anything arrives;
+        // it keeps the choice and books nothing.
+        if ($purchases !== [] && in_array($stage, [InboundStage::Ordered, InboundStage::Shipped], true)) {
+            $html .= '<h4 style="margin-bottom:.3em">' . esc_html__('Material zuordnen', 'taxmod-stock') . '</h4>'
+                . '<div class="taxmod-stock-positions" data-order="' . esc_attr((string) $order->id) . '" data-back="' . esc_attr(self::BACK) . '" data-assign="1"></div>';
+        }
+
+        $html .= $this->events($order);
 
         if (! in_array($stage, [InboundStage::Booked, InboundStage::Archived], true)) {
             // D-1009: every step can be taken back — a number added by mistake comes off here.

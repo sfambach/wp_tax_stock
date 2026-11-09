@@ -95,6 +95,7 @@ final class Plugin
         if (self::handlesAdminActions()) {
             add_action('admin_post_' . StockPage::ACTION, static fn () => self::serially(static fn () => (new StockPage())->handle()));
             add_action('admin_post_' . StockPage::POSITIONS, static fn () => (new StockPage())->positions());
+            add_action('admin_post_' . StockPage::ASSIGN, static fn () => self::serially(static fn () => (new StockPage())->assign()));
             add_action('admin_post_' . StockPage::THING_SEARCH, static fn () => (new StockPage())->thingSearch());
             add_action('admin_post_' . StockPage::THING_NODES, static fn () => (new StockPage())->thingNodes());
             add_action('admin_post_' . StockPage::THING_BRANCH, static fn () => (new StockPage())->thingBranch());

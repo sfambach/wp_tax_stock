@@ -5,6 +5,7 @@ namespace TaxmodStock\WordPress;
 use TaxmodStock\Core\InboundChanges;
 use TaxmodStock\Core\InboundOrder;
 use TaxmodStock\Core\NotStocked;
+use TaxmodStock\Core\PlatformLink;
 use TaxmodStock\Core\ReceiptReversal;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\TestQueue;
@@ -102,6 +103,27 @@ final class InboundService
             static fn (string $role): string => trim((string) $table->first($order, $fields[$role])),
             ['platform', 'merchant', 'order_number']
         )));
+    }
+
+    /** D-1249: the link to the order at its platform, built from the firm's template and the order number; null without either. */
+    public function orderLink(int $order): ?string
+    {
+        $table  = $this->stock->table('order');
+        $fields = $this->fields();
+
+        return PlatformLink::filled($this->templates($order)['order'], (string) ($table->first($order, $fields['order_number']) ?? ''));
+    }
+
+    /** D-1249: the link to a purchase's product at the order's platform, from its article number; null without template or number. */
+    public function productLink(int $order, string $articleNumber): ?string
+    {
+        return PlatformLink::filled($this->templates($order)['product'], $articleNumber);
+    }
+
+    /** @return array{order: string, product: string} the templates of the firm named in the order's «Plattform» */
+    private function templates(int $order): array
+    {
+        return $this->stock->linkTemplates((string) ($this->stock->table('order')->first($order, $this->fields()['platform']) ?? ''));
     }
 
     /**

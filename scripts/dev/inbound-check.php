@@ -45,6 +45,7 @@ require __DIR__ . '/../../vendor/autoload.php';
 use TaxmodStock\Core\InboundStage;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\WordPress\Admin\InboundPage;
+use TaxmodStock\WordPress\Admin\StockPage;
 use TaxmodStock\WordPress\Admin\Messages;
 use TaxmodStock\WordPress\InboundService;
 use TaxmodStock\WordPress\StockService;
@@ -133,7 +134,14 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     $field('k_nr', '@pur', 'Artikelnummer', $text, 'composition', '0..1'),
     ['op' => 'create_record', 'ref' => 'kaufE', 'node' => '@pur'],
     ['op' => 'set_values', 'record' => '@kaufE', 'values' => ['@label' => 'Edge Card Connector S...', '@k_desc' => 'Variante: Right Angle, 62P', '@k_nr' => '1005003647067417']],
-    ...$order('o2', 'Unterwegs', ['@o_best' => '2026-10-20', '@o_sn' => ['values' => ['00340434AA']], '@o_pos' => ['values' => ['@kaufE']]]),
+    // D-1249: a firm with its link templates, named by the order's «Plattform».
+    ['op' => 'create_node', 'ref' => 'firm', 'name' => '__Firmen', 'parent' => 410, 'class' => 'Choice'],
+    $field('f_name', '@firm', 'Name', $text, 'composition', '0..1'),
+    $field('f_ol', '@firm', 'Bestell-Link', $text, 'composition', '0..1'),
+    $field('f_pl', '@firm', 'Produkt-Link', $text, 'composition', '0..1'),
+    ['op' => 'create_record', 'ref' => 'ali', 'node' => '@firm'],
+    ['op' => 'set_values', 'record' => '@ali', 'values' => ['@f_name' => '__Ali', '@f_ol' => 'https://shop.test/order?id={nr}', '@f_pl' => 'https://shop.test/item/{nr}.html']],
+    ...$order('o2', 'Unterwegs', ['@o_best' => '2026-10-20', '@o_plat' => '__ali', '@o_nr' => '8199', '@o_sn' => ['values' => ['00340434AA']], '@o_pos' => ['values' => ['@kaufE']]]),
     ...$order('o3', 'DHL zugestellt', ['@o_sn' => ['values' => ['00340434BB']]]),
     ...$order('o4', 'Per Mail zugestellt', ['@o_ein' => '2026-10-25', '@o_pos' => ['values' => ['@kauf']]]),
     ...$order('o5', 'Eingebucht', ['@o_stat' => '@s_ganz', '@o_pos' => ['values' => ['@kauf5']]]),
@@ -186,7 +194,7 @@ if ($kind === 'composition') {
 
 // Only what the cockpit reads; the rest of the structure is required by the reader and points at unused fields.
 update_option(StockService::OPTION, [
-    'nodes'  => ['lager' => $r['mat'], 'lot' => $r['lot'], 'transaction' => $r['vg'], 'line' => $r['vp'], 'location' => $r['lo'], 'order' => $r['ord'], 'purchase' => $r['pur'], 'money' => $money],
+    'nodes'  => ['lager' => $r['mat'], 'lot' => $r['lot'], 'transaction' => $r['vg'], 'line' => $r['vp'], 'location' => $r['lo'], 'order' => $r['ord'], 'purchase' => $r['pur'], 'money' => $money, 'firm' => $r['firm']],
     'fields' => array_fill_keys(['lager_thing', 'lager_single', 'lager_min', 'lot_location', 'lot_value', 'transaction_date',
         'transaction_source', 'line_counted', 'purchase_quantity',
         'purchase_landed_price', 'purchase_unit_price'], 1) + [
@@ -196,6 +204,7 @@ update_option(StockService::OPTION, [
         'label' => $r['label'], 'lot_thing' => $r['l_mat'], 'lot_purchase' => $r['l_kauf'], 'order_status' => $r['o_stat'], 'order_lines' => $r['o_pos'],
         'purchase_undetermined' => $r['k_offen'], 'purchase_model' => $r['k_mod'], 'money_amount' => 4234, 'money_unit' => 4236,
         'description' => $r['k_desc'], 'purchase_number' => $r['k_nr'],
+        'firm_name' => $r['f_name'], 'firm_order_link' => $r['f_ol'], 'firm_product_link' => $r['f_pl'],
     ],
     'values' => ['kind_receipt' => $r['a_we'], 'kind_consumption' => 1, 'kind_count' => 1, 'source_manual' => 1, 'location_default' => $r['ortRegal'],
         'status_partial' => $r['s_teil'], 'status_received' => $r['s_ganz'], 'status_draft' => $r['s_entw'],
@@ -269,12 +278,23 @@ $html = (new InboundPage())->render();
 $html .= $details('shipped');
 $pruefe(str_contains($html, 'Unterwegs') && ! str_contains($html, '>Bestellt</strong>'), 'the tab «Versendet» shows only its orders');
 $pruefe(str_contains($html, '00340434AA') && str_contains($html, 'unterwegs') && str_contains($html, 'Köln'), 'it shows the number, DHL\'s stage and its last event');
-$pruefe(str_contains($html, 'Variante: Right Angle, 62P') && str_contains($html, 'Artikelnummer: 1005003647067417'), 'INF-116, his word «um zu entscheiden ob etwas angekommen ist ist das wenig info»: a purchase shows its description and article number');
+$pruefe(str_contains($html, 'Variante: Right Angle, 62P') && preg_match('#Artikelnummer: (<a [^>]+>)?1005003647067417#', $html) === 1, 'INF-116, his word «um zu entscheiden ob etwas angekommen ist ist das wenig info»: a purchase shows its description and article number');
 $pruefe($asked === 0, 'drawing the page never asks DHL');
+$pruefe(str_contains($html, 'href="https://shop.test/order?id=8199"') && str_contains($html, 'href="https://shop.test/item/1005003647067417.html"'), 'D-1249: the order and the article number link to the platform, from the template of the firm its «Plattform» names');
+$pruefe(! str_contains($html, '{nr}'), 'a template is never shown as it stands');
+$pruefe(preg_match('/data-order="' . $r['o2'] . '" data-back="' . InboundPage::BACK . '" data-assign="1"/', $html) === 1, 'his choice «Material schon am Kauf wählen»: an order on its way offers the choice of material before it arrives');
+$assignForm = (new \ReflectionMethod(StockPage::class, 'receiptPositions'))->invoke(new StockPage(), $r['o2'], InboundPage::BACK, true);
+$pruefe(str_contains($assignForm, 'class="taxmod-stock-assign"') && str_contains($assignForm, 'value="zuordnen"') && ! str_contains($assignForm, 'Wareneingang buchen') && str_contains($assignForm, 'thing[' . $r['kaufE'] . ']'), 'it only keeps the choice: nothing can be booked before the order arrives');
+$plugin = (string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Plugin.php');
+$pruefe(str_contains($plugin, "'admin_post_' . StockPage::ASSIGN"), 'the choice is saved without a reload, under its own action');
 
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'arrived', 'order' => $r['o4']];
 $html = (new InboundPage())->render();
 $pruefe(str_contains($html, 'data-back="' . InboundPage::BACK . '"') && str_contains($html, 'data-order="' . $r['o4'] . '"') && str_contains($html, 'Zurück zu «Angekommen»'), 'the view of an arrived order holds the Lager booking form, returning here');
+$_GET = ['page' => InboundPage::PAGE, 'tab' => 'ordered', 'order' => $r['o4']];
+$html = (new InboundPage())->render();
+$pruefe(str_contains($html, 'Zurück zu «Angekommen»') && preg_match('/is-active[^"]*" href="[^"]*tab=arrived[^"]*" aria-current="step"/', $html) === 1, 'his word «der blaue Pfeil ist immer noch bei bestellt»: an opened order stands at its own stage');
+$pruefe(! str_contains($html, 'data-assign'), 'an arrived order has the booking form, not the choice alone');
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'arrived'];
 $html = (new InboundPage())->render();
 $pruefe(str_contains($html, '1 unbestimmt'), 'it counts the purchases not yet determined (R1)');

@@ -925,6 +925,19 @@ $pruefe((new StockService())->misfits([$ort('Passt-Box', $ohneMass, true)], $ohn
 $quelle = implode('', array_map('file_get_contents', glob(dirname(__DIR__, 2) . '/src/WordPress/Admin/*.php')));
 $pruefe(preg_match("/get_submit_button\\([^)]*speichern/i", $quelle) === 0 && str_contains(StockPage::saveButton(), 'taxmod-save'), 'D-1275: every «Speichern» of the module is the save icon, the word its tooltip');
 
+// His report 2026-11-09 «bestand ohne material ?»: a material without «Bezeichnung» is named by the start of its «Beschreibung».
+$ohneName = (new StockService())->createThing('__ohne Namen', $r['teile']);
+$st       = (new StockService())->structure();
+$beschr   = $st->hasField('description') ? $st->field('description') : (int) (wp_get_ability('taxmod/apply')->execute(['changes' => [['op' => 'add_field', 'ref' => 'b', 'node' => (string) $r['teile'], 'name' => '__Beschreibung', 'target' => 1175, 'kind' => 'composition', 'multiplicity' => '0..1']]])['refs']['b'] ?? 0);
+wp_get_ability('taxmod/apply')->execute(['changes' => [['op' => 'set_values', 'record' => (string) $ohneName, 'values' => [(string) $st->field('label') => '', (string) $beschr => str_repeat('Laut AliExpress-Angebot: 100 Stück 0805 ', 3)]]]]);
+$opt      = get_option('taxmod_stock_structure');
+if (is_array($opt) && ! $st->hasField('description')) {
+    $opt['fields']['description'] = $beschr;
+    update_option('taxmod_stock_structure', $opt);
+}
+$genannt  = (new StockService())->recordLabels([$ohneName])[$ohneName] ?? '';
+$pruefe(str_starts_with($genannt, 'Laut AliExpress-Angebot: 100 Stück') && str_ends_with($genannt, '…') && mb_strlen($genannt) <= 60, 'D-1279: a material without «Bezeichnung» is named by the start of its «Beschreibung»');
+
 // The Configuration tab: the modeller lists it, and pasting structure-live.json stores those ids.
 add_filter('taxmod_config_tabs', [TaxmodStock\WordPress\Admin\SettingsTab::class, 'register']);
 $reiter = Taxmod\WordPress\Admin\SettingsScreen::moduleTabs();

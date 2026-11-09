@@ -255,7 +255,9 @@ final class StockService
     }
 
     /**
-     * The labels of records anywhere in the model, grouped by node so that each node is read once.
+     * The labels of records anywhere in the model, grouped by node so that each node is read once. A record whose «Bezeichnung» is
+     * empty is named by the start of its «Beschreibung» — his report 2026-11-09 «bestand ohne material ?»: imported resistors
+     * had only a description, and the list showed «—».
      *
      * @param list<int>            $records
      * @param array<int, int>|null $nodes record → node, when already known
@@ -263,9 +265,17 @@ final class StockService
      */
     public function recordLabels(array $records, ?array $nodes = null): array
     {
-        $field  = $this->structure()->field('label');
+        $s      = $this->structure();
+        $field  = $s->field('label');
+        $about  = $s->hasField('description') ? $s->field('description') : 0;
         $byNode = [];
         $out    = [];
+        $name   = static function (Table $table, int $id) use ($field, $about): string {
+            $label = trim((string) $table->first($id, $field));
+            $text  = $label === '' && $about > 0 ? trim((string) $table->first($id, $about)) : '';
+
+            return $label !== '' || $text === '' ? $label : (mb_strlen($text) > 60 ? rtrim(mb_substr($text, 0, 59)) . '…' : $text);
+        };
 
         foreach ($nodes ?? $this->model->nodesOf($records) as $record => $node) {
             $byNode[$node][] = $record;
@@ -282,7 +292,7 @@ final class StockService
             }
 
             foreach ($ids as $id) {
-                $out[$id] = (string) $this->tables[$node]->first($id, $field);
+                $out[$id] = $name($this->tables[$node], $id);
             }
         }
 
@@ -290,7 +300,7 @@ final class StockService
             $table = $this->model->records(array_values(array_unique($rest))) ?? new Table([]);
 
             foreach ($rest as $id) {
-                $out[$id] = (string) $table->first($id, $field);
+                $out[$id] = $name($table, $id);
             }
         }
 

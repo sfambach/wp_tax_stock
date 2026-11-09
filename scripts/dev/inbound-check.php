@@ -253,6 +253,7 @@ $_GET = ['page' => InboundPage::PAGE, 'tab' => 'archived'];
 $pruefe(str_contains((new InboundPage())->render(), 'Amazon-Historie 2004'), 'it stands under «Archiviert»');
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'all'];
 $pruefe(! str_contains((new InboundPage())->render(), 'Amazon-Historie 2004'), '«Alle» shows what is not archived');
+$pruefe(str_contains($bar = (new InboundPage())->render(), 'taxmod-step') && ! str_contains($bar, 'taxmod-steps-all'), 'His word 2026-11-09: the stages are arrows, «Alle» is no arrow any more');
 
 // His word 2026-11-05: no rows to open any more — a click on an order opens its own view with its purchases.
 $details = static function (string $tab): string {

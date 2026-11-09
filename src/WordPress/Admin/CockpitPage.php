@@ -27,6 +27,9 @@ final class CockpitPage
     public const AREA  = 'area';
     public const GROUP = 'group';
 
+    /** Filter `(string $html, string $area): string` — the process bar a module draws atop an area's overview (D-1258). */
+    public const PROCESS_BAR = 'taxmod_logistics_process_bar';
+
     /** How many of the last created records a tile names (D-1134: «od er5»). */
     private const LATEST = 5;
 
@@ -46,12 +49,32 @@ final class CockpitPage
                 ? $this->tiles($this->dueTiles()) . Tiles::metricsGrid()
                     . '<h2 id="' . esc_attr(PeriodPage::ANCHOR) . '" class="taxmod-tiles-heading">' . esc_html__('Zeitraum', 'taxmod-stock') . '</h2>'
                     . (new PeriodPage($this->inbound->stock()))->render()
-                : $this->tiles($this->overviewTiles($found, $group));
+                : $this->processBar($found['key'], $group) . $this->tiles($this->overviewTiles($found, $group));
         } catch (StockError $e) {
             $html .= '<div class="notice notice-error"><p>' . esc_html(Messages::of($e)) . '</p></div>';
         }
 
         return $html . '</div>';
+    }
+
+    /**
+     * D-1258, his word «auf den hauptseiten mit den tiles sollte als erstes die prozess kette stehen also für we und für wa»:
+     * an area's overview opens with the bar of its process. The goods receipt draws its own; another area's comes from the
+     * module that owns its stages, through the filter {@see self::PROCESS_BAR} (the Warenausgang from the sales module).
+     */
+    private function processBar(string $area, string $group): string
+    {
+        if ($group !== '') {
+            return '';
+        }
+
+        if ($area === 'inbound') {
+            $counts = $this->stageCounts();
+
+            return InboundPage::processBar($counts, $counts['test'] ?? null, '');
+        }
+
+        return (string) apply_filters(self::PROCESS_BAR, '', $area);
     }
 
     /** The address of an area's overview, or of a group inside it (`$group` = its path, joined by «/»). */

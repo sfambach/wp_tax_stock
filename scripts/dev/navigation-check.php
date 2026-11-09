@@ -137,6 +137,15 @@ $pruefe(str_contains($uebersicht, '>Layout</span>') && str_contains($uebersicht,
 $nav = LogisticsShell::wrap(CockpitPage::PAGE, $uebersicht);
 $pruefe(str_contains($nav, 'taxmod-shell-group is-open"><a href="' . esc_url(add_query_arg(LogisticsShell::VIA_MENU, '1', CockpitPage::overviewUrl('settings', 'Lagerstruktur'))) . '" style="padding-left:24px" class="is-current"'), 'D-1134: the group\'s overview opens the group in the navigation, its sub-items shown');
 $pruefe(substr_count($uebersicht, 'class="taxmod-tile-figure"') === 2, 'D-1134: Layout and Platzarten show how many there are');
+// D-1258, his word «auf den hauptseiten mit den tiles sollte als erstes die prozess kette stehen also für we und für wa».
+$_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'inbound'];
+$uebersicht = (new CockpitPage())->render();
+$pruefe(str_contains($uebersicht, 'class="taxmod-steps"') && strpos($uebersicht, 'class="taxmod-steps"') < strpos($uebersicht, 'taxmod-tile-label"') && ! str_contains($uebersicht, 'taxmod-steps-all'), 'D-1258: the Wareneingang overview opens with its process bar, before the tiles, no «Alle» arrow');
+$haken = static fn (string $html, string $area): string => $area === 'outbound' ? '<nav class="taxmod-steps">WA</nav>' : $html;
+add_filter(CockpitPage::PROCESS_BAR, $haken, 10, 2);
+$_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'outbound'];
+$pruefe(str_contains((new CockpitPage())->render(), '<nav class="taxmod-steps">WA</nav>'), 'D-1258: the Warenausgang overview shows the bar its module hands over');
+remove_filter(CockpitPage::PROCESS_BAR, $haken, 10);
 // D-1242: the reorder list is named for what it holds.
 $pruefe(in_array('Mindestbestand unterschritten', array_column(LogisticsShell::navigation()->areas()[1]['items'], 'label'), true), 'D-1242: «Nachbestellen» in the menu reads «Mindestbestand unterschritten»');
 

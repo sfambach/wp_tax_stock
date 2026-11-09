@@ -160,39 +160,15 @@ final class InboundPage
         $filter  = sanitize_key((string) ($_GET['filter'] ?? ''));
         $open    = absint($_GET['order'] ?? 0);
         $counts  = array_count_values(array_map(static fn (InboundStage $st): string => $st->value, $stages));
-        $tabs    = [];
-
-        foreach (InboundStage::tabs() as $stage) {
-            $tabs[] = [$stage->value, $this->stageName($stage), $counts[$stage->value] ?? 0];
-        }
-
         $testing = $this->inbound->tests()->isConfigured();
         $toTest  = $testing ? $this->inbound->lotsToTest() : [];
 
-        if ($testing) {
-            $tabs[] = [self::TEST, __('Zu testen', 'taxmod-stock'), count($toTest)];
-        }
-
-        // D-1197: the stages are the process and drawn as arrows.
-        // D-1008: «Archiviert» after the working tabs; «Alle» is everything not archived.
-        $archived = $counts[InboundStage::Archived->value] ?? 0;
-        $tabs[]   = [InboundStage::Archived->value, $this->stageName(InboundStage::Archived), $archived];
-        $tabs[]   = [self::ALL, __('Alle', 'taxmod-stock'), count($orders) - $archived];
-
         // His word 2026-11-09: «oben ist der blaue Pfeil ist immer noch bei bestellt» — an opened order stands at its own stage.
-        if ($open > 0 && isset($stages[$open]) && in_array($stages[$open]->value, array_column($tabs, 0), true)) {
+        if ($open > 0 && isset($stages[$open]) && in_array($stages[$open]->value, self::tabSlugs(), true)) {
             $tab = $stages[$open]->value;
         }
 
-        $url   = static fn (string $slug): string => self::url(['tab' => $slug]);
-        // His wish 2026-11-09: «Zu testen» and «Archiviert» are arrows after «Eingebucht»; «Alle» a narrow arrow under them all.
-        // The arrows came with the modeller 0.1.186, the arrow under them with 0.2.37; an older one draws tabs beside.
-        $all   = array_pop($tabs);
-        $bar   = match (true) {
-            ! method_exists(ListPage::class, 'steps')                                   => ListPage::tabs([...$tabs, $all], $tab, $url),
-            (new \ReflectionMethod(ListPage::class, 'steps'))->getNumberOfParameters() >= 5 => ListPage::steps($tabs, $tab, $url, [], $all),
-            default                                                                     => ListPage::steps(array_slice($tabs, 0, count(InboundStage::tabs())), $tab, $url, [...array_slice($tabs, count(InboundStage::tabs())), $all]),
-        };
+        $bar = self::processBar($counts, $testing ? count($toTest) : null, $tab);
 
         if ($tab === self::TEST) {
             return $bar . $this->testList($toTest);
@@ -357,7 +333,7 @@ final class InboundPage
         ];
 
         if ($tab === self::ALL) {
-            $cells[] = esc_html($this->stageName($stage));
+            $cells[] = esc_html(self::stageName($stage));
         }
 
         return ListPage::row(self::BULK_FORM, (string) $order->id, $cells, $this->buttons($order, $stage, $counts['booked'], $tab), '');
@@ -380,7 +356,7 @@ final class InboundPage
             . ($about === '' ? '' : '<p class="description" style="margin-top:0">' . esc_html($about) . '</p>') . '</div>'
             . '<div style="text-align:right">' . $this->buttons($order, $stage, $counts['booked'], $tab) . '</div></div>'
             . '<table class="widefat" style="max-width:40em;margin-bottom:1em"><tbody>'
-            . $fact(__('Stufe', 'taxmod-stock'), esc_html($this->stageName($stage)))
+            . $fact(__('Stufe', 'taxmod-stock'), esc_html(self::stageName($stage)))
             . $fact(__('Bestellt am', 'taxmod-stock'), esc_html(substr((string) $order->orderedOn, 0, 10)))
             // D-1249: the order at its platform, from the firm's template — built here, never stored.
             . $fact(__('Bestellung', 'taxmod-stock'), $orderLink === null ? '' : '<a href="' . esc_url($orderLink) . '" target="_blank" rel="noopener noreferrer">' . esc_html__('Bei der Plattform öffnen', 'taxmod-stock') . '</a>')
@@ -399,7 +375,7 @@ final class InboundPage
         return match (true) {
             $tab === self::ALL  => __('Alle', 'taxmod-stock'),
             $tab === self::TEST => __('Zu testen', 'taxmod-stock'),
-            $stage !== null     => $this->stageName($stage),
+            $stage !== null     => self::stageName($stage),
             default             => __('Wareneingang', 'taxmod-stock'),
         };
     }
@@ -673,7 +649,29 @@ final class InboundPage
             : sprintf(__('Gespeichert: %d Änderungen in einem Schritt.', 'taxmod-stock'), $applied);
     }
 
-    private function stageName(InboundStage $stage): string
+    /**
+     * D-1197, D-1258: the stages of the goods receipt as arrows with their counts, each opening its list; the same bar on the
+     * list and on the Wareneingang overview of the cockpit. «Alle» is no arrow (his word 2026-11-09), only a view by address.
+     *
+     * @param array<string, int> $counts orders per stage, by the stage's tab
+     * @param int|null           $toTest the lots waiting for their test, null when testing is not set up
+     */
+    public static function processBar(array $counts, ?int $toTest, string $active): string
+    {
+        $tabs = array_map(static fn (InboundStage $stage): array => [$stage->value, self::stageName($stage), $counts[$stage->value] ?? 0], InboundStage::tabs());
+
+        if ($toTest !== null) {
+            $tabs[] = [self::TEST, __('Zu testen', 'taxmod-stock'), $toTest];
+        }
+
+        // D-1008: «Archiviert» after the working stages.
+        $tabs[] = [InboundStage::Archived->value, self::stageName(InboundStage::Archived), $counts[InboundStage::Archived->value] ?? 0];
+        $url    = static fn (string $slug): string => self::url(['tab' => $slug]);
+
+        return method_exists(ListPage::class, 'steps') ? ListPage::steps($tabs, $active, $url) : ListPage::tabs($tabs, $active, $url);
+    }
+
+    private static function stageName(InboundStage $stage): string
     {
         return match ($stage) {
             InboundStage::Ordered => __('Bestellt', 'taxmod-stock'),

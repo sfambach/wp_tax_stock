@@ -302,6 +302,18 @@ $html = (new StockPage())->render();
 // D-1186, A4 (his word 2026-11-06 «sollte tree chooser mit suche sein»): the place is chosen in the modeller's tree with search.
 $pruefe(str_contains($html, 'name="location[' . $r['kaufC'] . ']" value="' . $r['platz'] . '" checked') && str_contains($html, 'taxmod-tree-filter'), 'the receipt form shows the proposed place in the tree chooser with search, changeable');
 
+// His report 2026-11-09 «wenn ich ein material neu anlege wird der lagerort aus dem neuen material nicht übernommen»: a row left at
+// the place shown before the new material existed takes the new material's own (its group's); a place he changed stays.
+$gezeigt = (int) ((new StockService())->receiptLocations([$r['kaufD'] => $plan[$r['kaufD']]])[$r['kaufD']] ?? 0);
+$plaetze = new ReflectionMethod(StockPage::class, 'assignedPlaces');
+$_POST   = ['order' => (string) $r['best2'], 'location' => [$r['kaufD'] => (string) $gezeigt], 'newgroup' => [$r['kaufD'] => (string) $r['teile']]];
+$frei    = $plaetze->invoke(new StockPage());
+$_POST['location'][$r['kaufD']] = (string) $r['platz'];
+$eigen   = $plaetze->invoke(new StockPage());
+$_POST   = [];
+$pruefe($gezeigt > 0 && $gezeigt !== $r['platz'] && ($frei[$r['kaufD']] ?? -1) === 0 && ($eigen[$r['kaufD']] ?? 0) === $r['platz'],
+    'D-1277: «Neues Material» in a row left at its shown place takes the group\'s place; a place chosen by hand stays');
+
 // His wish 2026-11-05: «Menge 1, geliefert wurden 40» — the quantity is typed in the row and written to the purchase.
 $pruefe(str_contains($html, 'name="quantity[' . $r['kaufD'] . ']" value="2"'), 'each open receipt row holds the purchase quantity, editable');
 (new StockService())->assignPurchases($r['best2'], [], [], [], [$r['kaufD'] => '4']);

@@ -3903,6 +3903,21 @@ final class StockPage
             }
         }
 
+        // His report 2026-11-09 «wenn ich ein material neu anlege wird der lagerort aus dem neuen material nicht übernommen»: the row
+        // showed the place proposed before the new material existed; left as it was, the new material's own (its group's) is taken.
+        $new   = array_intersect_key($this->assignedGroups(), $out);
+        $order = absint($_POST['order'] ?? 0);
+
+        if ($new !== [] && $order > 0) {
+            $shown = $this->stock->receiptLocations(array_intersect_key($this->stock->receiptPlan($order), $new));
+
+            foreach (array_keys($new) as $purchase) {
+                if (($shown[$purchase] ?? -1) === $out[$purchase]) {
+                    $out[$purchase] = 0;
+                }
+            }
+        }
+
         return $out;
     }
 

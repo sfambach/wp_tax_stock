@@ -39,6 +39,20 @@ final class BookingsTest extends TestCase
     }
 
     #[Test]
+    public function a_total_value_without_a_value_per_piece_is_spread_over_the_counted_quantity(): void
+    {
+        $s      = Fixture::structure();
+        $amount = (string) $s->field('money_amount');
+        $total  = $this->valuesByNode((new Bookings($s, '2026-10-21'))->inventory([new InventoryRow(3912, null, 'BC547C', '40', '', '', '2,00')], 'Inventur'));
+        $both   = $this->valuesByNode((new Bookings($s, '2026-10-21'))->inventory([new InventoryRow(3912, null, 'BC547C', '40', '0,10', '', '2,00')], 'Inventur'));
+        $none   = $this->valuesByNode((new Bookings($s, '2026-10-21'))->inventory([new InventoryRow(3912, null, 'BC547C', '40', '', '', '')], 'Inventur'));
+
+        self::assertSame('0.05', $total[2][(string) $s->field('lot_value')]['neu'][$amount], 'his word 2026-11-09: «Es wird dann umgerechnet»');
+        self::assertSame('0.10', $both[2][(string) $s->field('lot_value')]['neu'][$amount], 'the value per piece wins');
+        self::assertArrayNotHasKey((string) $s->field('lot_value'), $none[2]);
+    }
+
+    #[Test]
     public function as_a_composition_the_lines_are_parts_of_the_vorgang_naming_their_lots_by_ref(): void
     {
         $s       = Fixture::composed();

@@ -1875,25 +1875,55 @@ final class StockPage
         return $rows;
     }
 
+    /**
+     * His answer 2026-11-09 (Ja to the simpler form): per row the material in the tree chooser with search, quantity, value
+     * and note; a new material through «+ Neues Material» in the row, created when the count is booked. The value is per
+     * piece or, his word, «als Gesamtwert … Es wird dann umgerechnet».
+     */
     private function inventoryForm(): string
     {
         $groups = $this->groupOptions();
+        $head   = static fn (string $word, string $width = ''): string => '<th scope="col" class="manage-column"' . ($width === '' ? '' : ' style="width:' . esc_attr($width) . '"') . '>' . esc_html($word) . '</th>';
         $html   = $this->formStart('inventur')
-            . '<p>' . esc_html__('Gezählter Bestand ohne Kauf. Jede Zeile wird ein Bestandsposten. Das Material steht im Baum: eines suchen, oder ein neues in einer Materialgruppe anlegen.', 'taxmod-stock') . '</p>'
-            . '<table class="wp-list-table widefat striped table-view-list"><thead><tr><th scope="col" class="manage-column">' . esc_html__('Material', 'taxmod-stock') . '</th><th scope="col" class="manage-column">' . esc_html__('oder neu: Gruppe', 'taxmod-stock')
-            . '</th><th scope="col" class="manage-column">' . esc_html__('und Bezeichnung', 'taxmod-stock') . '</th><th scope="col" class="manage-column">' . esc_html__('Menge', 'taxmod-stock') . '</th><th scope="col" class="manage-column">'
-            . esc_html__('Wert je Stück', 'taxmod-stock') . '</th><th scope="col" class="manage-column">' . esc_html__('Hinweis', 'taxmod-stock') . '</th></tr></thead><tbody>';
+            . '<p>' . esc_html__('Gezählter Bestand ohne Kauf. Jede Zeile wird ein Bestandsposten. Wert je Stück oder Gesamtwert; der Gesamtwert wird auf die Menge umgerechnet.', 'taxmod-stock') . '</p>'
+            . '<table class="wp-list-table widefat striped table-view-list"><thead><tr>'
+            . $head(__('Material', 'taxmod-stock')) . $head(__('Menge', 'taxmod-stock'), '7em') . $head(__('Wert je Stück', 'taxmod-stock'), '7em')
+            . $head(__('oder Gesamtwert', 'taxmod-stock'), '7em') . $head(__('Hinweis', 'taxmod-stock')) . '</tr></thead><tbody>';
 
         for ($i = 0; $i < self::ROWS; $i++) {
-            $html .= '<tr><td>' . $this->thingField('rows[' . $i . '][thing]', 'taxmod-stock-thing-' . $i, null) . '</td>'
-                . '<td>' . ($this->stock->groupChooser('rows[' . $i . '][group]') ?: '<select name="rows[' . $i . '][group]">' . $groups . '</select>') . '</td>'
-                . '<td><input type="text" name="rows[' . $i . '][name]"></td>'
+            $html .= '<tr><td>' . $this->recordPicker('rows[' . $i . '][thing]', null, '') . ' ' . $this->inventoryNewThing($i, $groups) . '</td>'
                 . '<td><input type="text" inputmode="decimal" name="rows[' . $i . '][quantity]" style="width:6em"></td>'
                 . '<td><input type="text" inputmode="decimal" name="rows[' . $i . '][value]" style="width:6em"></td>'
+                . '<td><input type="text" inputmode="decimal" name="rows[' . $i . '][total]" style="width:6em"></td>'
                 . '<td><input type="text" name="rows[' . $i . '][note]"></td></tr>';
         }
 
         return $html . '</tbody></table>' . get_submit_button(__('Inventur buchen', 'taxmod-stock')) . '</form>';
+    }
+
+    /** D-1072 in the count: group and name asked in the row's dialog; the material is made when the count is booked. */
+    private function inventoryNewThing(int $row, string $groups): string
+    {
+        $chooser = $this->stock->groupChooser('rows[' . $row . '][group]');
+        $body    = ($chooser !== '' ? '<span style="display:block">' . esc_html__('Gruppe', 'taxmod-stock') . '<br>' . $chooser . '</span>'
+                : '<label style="display:block">' . esc_html__('Gruppe', 'taxmod-stock') . '<br><select name="rows[' . esc_attr((string) $row) . '][group]" style="width:100%">' . $groups . '</select></label>')
+            . '<label style="display:block">' . esc_html__('Bezeichnung', 'taxmod-stock') . '<br><input type="text" name="rows[' . esc_attr((string) $row) . '][name]" style="width:100%"></label>'
+            . '<p class="description">' . esc_html__('Angelegt wird mit «Inventur buchen».', 'taxmod-stock') . '</p>';
+
+        if (! class_exists(\Taxmod\Core\Renderer\DialogMarkup::class)) {
+            return '<details style="display:inline-block"><summary class="button button-small">' . esc_html__('+ Neues Material', 'taxmod-stock') . '</summary>' . $body . '</details>';
+        }
+
+        return \Taxmod\Core\Renderer\DialogMarkup::of(
+            'taxmod-stock-count-new-' . $row,
+            esc_html__('+ Neues Material', 'taxmod-stock'),
+            esc_html__('Neues Material anlegen', 'taxmod-stock'),
+            $body,
+            '',
+            'button button-small taxmod-dialog-open',
+            __('Übernehmen', 'taxmod-stock'),
+            __('Abbrechen', 'taxmod-stock')
+        );
     }
 
     /** D-1130: «Kopieren» — the material beside itself, asked in the shared dialog because it says what does not come along. */
@@ -3730,7 +3760,8 @@ final class StockPage
                 $name,
                 $quantity,
                 sanitize_text_field((string) ($row['value'] ?? '')),
-                sanitize_text_field((string) ($row['note'] ?? ''))
+                sanitize_text_field((string) ($row['note'] ?? '')),
+                sanitize_text_field((string) ($row['total'] ?? ''))
             );
         }
 

@@ -51,7 +51,7 @@ final class Bookings
         foreach ($rows as $row) {
             $quantity = Quantity::positive($row->quantity);
             $thing    = $row->new !== null ? '@' . $this->newThing($row->new) : (string) ($row->thing ?? throw StockError::nothingToBook());
-            $value    = $row->value === null || $row->value === '' ? null : $this->moneyPart(Quantity::amount($row->value), null);
+            $value    = $this->countedValue($row, $quantity);
             $lot      = $this->lot($row->name, $thing, null, $value, $row->note);
 
             $this->line($row->name, $lot, $quantity, $quantity, $this->homeOf($lot));
@@ -797,6 +797,24 @@ final class Bookings
     }
 
     /** @return array<string, array<string, string>> */
+    /**
+     * The value per piece of a counted row: as given, else the total over the counted quantity; neither is no value.
+     *
+     * @return array<string, array<string, string>>|null
+     */
+    private function countedValue(InventoryRow $row, string $quantity): ?array
+    {
+        if ($row->value !== null && $row->value !== '') {
+            return $this->moneyPart(Quantity::amount($row->value), null);
+        }
+
+        if ($row->total === null || $row->total === '') {
+            return null;
+        }
+
+        return $this->moneyPart(self::signed((float) Quantity::amount($row->total) / (float) $quantity), null);
+    }
+
     private function moneyPart(string $amount, ?string $unit): array
     {
         $s    = $this->structure;

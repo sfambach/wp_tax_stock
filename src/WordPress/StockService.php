@@ -855,7 +855,8 @@ final class StockService
                 $r->new?->name ?? ($labels[(int) $r->thing] ?? ''),
                 $r->quantity,
                 $r->value,
-                $r->note
+                $r->note,
+                $r->total
             ),
             $rows
         );

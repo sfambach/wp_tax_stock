@@ -578,14 +578,26 @@ final class StockService
      */
     public function searchThings(string $term, int $limit = 30, bool $groups = false): array
     {
+        $tree  = $this->tree();
+        // D-1286, his wish 2026-11-09 «material nummern eingabe sollte auch möglich sein»: a number («45704», «#45704», «M-45704»
+        // as on the label) finds the material with that id first; the text is searched as well, and «0603» stays text. The
+        // number is shown with the hit as the label writes it, never written into the name.
+        $number = preg_match('/^(?:#|M-)?([1-9][0-9]{0,18})$/i', trim($term), $m) === 1 ? (int) $m[1] : 0;
+        $byId   = [];
+        if ($number > 0 && $tree !== []) {
+            $node = $this->model->nodesOf([$number])[$number] ?? 0;
+            if (isset($tree[$node])) {
+                $word   = $this->recordLabels([$number], [$number => $node])[$number] ?? '';
+                $byId[] = ['id' => $number, 'word' => $word === '' ? '#' . $number : $word, 'node' => $tree[$node]['name'] . ' · ' . (class_exists(\Taxmod\Core\Printing\LabelPrefix::class) ? \Taxmod\Core\Printing\LabelPrefix::from('M')->code($number) : 'M-' . $number)];
+            }
+        }
         $words = array_slice(array_values(array_filter(
             preg_split('/\s+/u', mb_strtolower(trim($term))) ?: [],
             static fn (string $word): bool => mb_strlen($word) >= 2
         )), 0, 5);
-        $tree  = $this->tree();
 
         if ($words === [] || $tree === []) {
-            return [];
+            return $byId;
         }
 
         $conditions = [];
@@ -599,8 +611,12 @@ final class StockService
         $labels = $this->recordLabels($ids, $nodes);
         $out    = [];
 
+        $out    = $byId;
+
         foreach ($ids as $id) {
-            $out[] = ['id' => $id, 'word' => ($labels[$id] ?? '') === '' ? '#' . $id : $labels[$id], 'node' => $tree[$nodes[$id] ?? 0]['name'] ?? ''];
+            if ($id !== $number) {
+                $out[] = ['id' => $id, 'word' => ($labels[$id] ?? '') === '' ? '#' . $id : $labels[$id], 'node' => $tree[$nodes[$id] ?? 0]['name'] ?? ''];
+            }
         }
 
         // D-1062: in the goods receipt a group is a hit too — a new material there, named like the purchase.

@@ -969,6 +969,14 @@ $pruefe(str_contains((string) file_get_contents(WP_PLUGIN_DIR . '/wp-taxonomy-mo
 $pruefe(str_contains((string) file_get_contents(WP_PLUGIN_DIR . '/wp-taxonomy-modeler/assets/admin.js'), 'saetzeSuchen( dialog, this )')
     && str_contains((string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Admin/StockPage.php'), "'Material oder Gruppe suchen …'"), 'D-1285: the tree dialog\'s search field finds materials, not only groups');
 
+// His wish 2026-11-09 «material nummern eingabe sollte auch möglich sein»: a number finds the material first, «0603» stays text.
+$nr     = (new StockService())->searchThings('#' . $r['t1']);
+$nrM    = (new StockService())->searchThings('M-' . $r['t1']);
+$apply([['op' => 'set_values', 'record' => (string) $r['t1'], 'values' => [(string) (new StockService())->structure()->field('label') => '__Widerstand 0603']]]);
+$text   = (new StockService())->searchThings('0603');
+$pruefe(($nr[0]['id'] ?? 0) === $r['t1'] && str_ends_with((string) $nr[0]['node'], 'M-' . $r['t1']) && ($nrM[0]['id'] ?? 0) === $r['t1']
+    && in_array($r['t1'], array_column($text, 'id'), true) && ! str_contains((string) ($text[0]['node'] ?? ''), 'M-'), 'D-1286: a number finds the material first, written as on the label; «0603» still finds by text');
+
 // The Configuration tab: the modeller lists it, and pasting structure-live.json stores those ids.
 add_filter('taxmod_config_tabs', [TaxmodStock\WordPress\Admin\SettingsTab::class, 'register']);
 $reiter = Taxmod\WordPress\Admin\SettingsScreen::moduleTabs();

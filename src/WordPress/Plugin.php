@@ -56,7 +56,7 @@ final class Plugin
     /** D-1260: the goods of a sale leave as a Vorgang «Verkauf» naming the sale. */
     public const BOOK_SALE = 'taxmod_stock_book_sale';
 
-    /** D-1260: taking a sale back cancels its Vorgang «Verkauf» (D-1036), the same way as a loss. */
+    /** D-1260, D-1262: taking a sale back cancels its Vorgang «Verkauf» (D-1036) — by the Vorgang, or every open one of a sale. */
     public const CANCEL_SALE = 'taxmod_stock_cancel_sale';
 
     /** D-1260: an old sale without stock — «Nacherfassung» in, «Verkauf» out, in one act. */
@@ -139,7 +139,7 @@ final class Plugin
         add_filter(self::BOOK_LOSS, [self::class, 'bookLoss'], 10, 2);
         add_filter(self::CANCEL_LOSS, [self::class, 'cancelLoss'], 10, 2);
         add_filter(self::BOOK_SALE, [self::class, 'bookSale'], 10, 2);
-        add_filter(self::CANCEL_SALE, [self::class, 'cancelLoss'], 10, 2);
+        add_filter(self::CANCEL_SALE, [self::class, 'cancelSale'], 10, 2);
         add_filter(self::BOOK_BACKFILL, [self::class, 'bookBackfill'], 10, 2);
         add_filter(self::LOTS_OF, [self::class, 'lotsOf'], 10, 2);
         // D-1147: the rows of the material and purchase lists draw their details when opened.
@@ -439,6 +439,33 @@ final class Plugin
 
         try {
             return (new StockService())->bookSale(absint($args['sale'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Verkauf', 'taxmod-stock'))));
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1262: `apply_filters('taxmod_stock_cancel_sale', null, ['sale' => id, 'who' => name])` cancels every open Vorgang
+     * «Verkauf» of the sale in one act and answers how many; with ['deal' => id] it cancels that one Vorgang and answers the
+     * Storno's id, as `taxmod_stock_cancel_loss` does.
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     `mixed`: checked here
+     */
+    public static function cancelSale(mixed $previous, mixed $args): int|\WP_Error
+    {
+        $args = is_array($args) ? $args : [];
+
+        if (is_int($previous) || $previous instanceof \WP_Error || ! isset($args['sale'])) {
+            return self::cancelLoss($previous, $args);
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        try {
+            return (new StockService())->cancelSale(absint($args['sale']), current_time('Y-m-d H:i:s'), sanitize_text_field((string) ($args['who'] ?? wp_get_current_user()->display_name)));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }

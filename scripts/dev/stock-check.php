@@ -897,6 +897,11 @@ $pruefe(is_int($verkauf) && $s->ledger()->stockOf($r['t1']) === $vorher - 1.0 &&
     && (int) $s->table('transaction')->first($verkauf, $s->structure()->field('transaction_reference')) === $auftrag, 'D-1260: a sale leaves as one Vorgang «Verkauf» naming the sale' . ($verkauf instanceof WP_Error ? ': ' . $verkauf->get_error_message() : ''));
 $storno  = is_int($verkauf) ? apply_filters(TaxmodStock\WordPress\Plugin::CANCEL_SALE, null, ['deal' => $verkauf, 'who' => 'check']) : null;
 $pruefe(is_int($storno) && (new StockService())->ledger()->stockOf($r['t1']) === $vorher, 'D-1260: the Storno of a sale puts the piece back' . ($storno instanceof WP_Error ? ': ' . $storno->get_error_message() : ''));
+$eins    = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_SALE, null, ['sale' => $auftrag, 'lines' => [$losLot => '1'], 'date' => '2026-11-06']);
+$zwei    = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_SALE, null, ['sale' => $auftrag, 'lines' => [$losLot => '1'], 'date' => '2026-11-07']);
+$alle    = apply_filters(TaxmodStock\WordPress\Plugin::CANCEL_SALE, null, ['sale' => $auftrag, 'who' => 'check']);
+$wieder  = apply_filters(TaxmodStock\WordPress\Plugin::CANCEL_SALE, null, ['sale' => $auftrag, 'who' => 'check']);
+$pruefe(is_int($eins) && is_int($zwei) && $alle === 2 && $wieder === 0 && (new StockService())->ledger()->stockOf($r['t1']) === $vorher, 'D-1262: taking a sale back by the sale cancels its open «Verkauf» Vorgänge in one act, the one cancelled before left out; a second time finds none' . ($alle instanceof WP_Error ? ': ' . $alle->get_error_message() : ''));
 $zuviel  = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_SALE, null, ['sale' => $auftrag, 'lines' => [$losLot => '9999'], 'date' => '2026-11-05']);
 $pruefe($zuviel instanceof WP_Error && $zuviel->get_error_code() === 'taxmod_stock_sale_too_large' && (new StockService())->ledger()->stockOf($r['t1']) === $vorher, 'D-1260: a sale larger than the lot is refused, nothing booked');
 $vorher  = (new StockService())->ledger()->stockOf($r['t1']);

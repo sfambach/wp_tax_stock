@@ -2645,6 +2645,51 @@ final class StockService
         }
     }
 
+    /**
+     * D-1262, D-1010: a sale taken back — every Vorgang «Verkauf» naming it and not yet cancelled, in one Storno act. The
+     * Vorgang is found through its Bezug, never kept at the sale. A backfill stays: it is where the piece came from.
+     *
+     * @return int the number of Vorgänge cancelled; 0 when none was open
+     */
+    public function cancelSale(int $sale, string $now, string $who): int
+    {
+        $s = $this->structure();
+
+        if (! $s->hasValue('kind_sale') || ! $s->hasField('transaction_reference')) {
+            throw StockError::notConfigured('values.kind_sale');
+        }
+
+        $deals  = $this->table('transaction');
+        $lines  = $this->table('line');
+        $storno = new Storno($s);
+        $rows   = [];
+        $count  = 0;
+
+        foreach ($deals->ids() as $deal) {
+            if ((int) $deals->first($deal, $s->field('transaction_kind')) !== $s->value('kind_sale') || (int) $deals->first($deal, $s->field('transaction_reference')) !== $sale) {
+                continue;
+            }
+
+            try {
+                $rows = [...$rows, ...$storno->consumptionRows($deal, $deals, $lines)];
+                $count++;
+            } catch (StockError $e) {
+                if ($e->reason !== 'already_cancelled') {
+                    throw $e;
+                }
+            }
+        }
+
+        if ($rows === []) {
+            return 0;
+        }
+
+        /* translators: %s: record id of the sale taken back */
+        $this->model->write((new Bookings($this->structureWithKinds(), $now))->cancelConsumption($rows, sprintf(__('Storno Verkauf #%s', 'taxmod-stock'), $sale), $who . ', ' . $now));
+
+        return $count;
+    }
+
     /** D-1168: the Storno of a loss booked by {@see bookLoss()}. */
     public function cancelLoss(int $deal, string $now, string $who): int
     {

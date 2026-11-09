@@ -131,8 +131,9 @@ final class StockPage
 
         try {
             $thing = absint($_GET['thing'] ?? 0);
-            // The tabs are the menu group «Bestand»; Einbuchen (Eingang) and the structure (Einstellungen, D-1085) stand alone.
-            $html .= (in_array($tab, ['wareneingang', 'lagerstruktur', 'platzarten', 'etikettenvorlagen', 'drucker', 'fertigung'], true) ? '' : '<div class="taxmod-stock-pagetabs">' . $this->tabBar($tab, $list) . '</div>') . match ($tab) {
+            // D-1243, his word 2026-11-09: «Ich überlege, ob wir die Tabs nicht ganz rausmachen … Kannst du die mal bei Bestand
+            // rausnehmen?» — the pages of «Bestand» are reached through the navigation on the left only.
+            $html .= match ($tab) {
                 // D-1195: one material reads only its own purchases, lots and bookings.
                 'material'  => $thing > 0 ? (new self($this->stock->scopedTo($thing)))->thingView($thing) : $this->materialList($list),
                 'gruppenbestand' => $this->groupStock($list),
@@ -3844,18 +3845,6 @@ final class StockPage
         }
 
         return $html;
-    }
-
-    private function tabBar(string $active, StockList $list): string
-    {
-        return ListPage::tabs([
-            ['material', __('Material', 'taxmod-stock'), count($this->stock->things()->all())],
-            ['gruppenbestand', __('Gruppenbestand', 'taxmod-stock')],
-            ['inventur', __('Inventur', 'taxmod-stock')],
-            ['verbrauch', __('Verbrauch', 'taxmod-stock')],
-            ['reservierungen', __('Reservierungen', 'taxmod-stock')],
-            ['lagerorte', __('Platzbestand', 'taxmod-stock')],
-        ], $active, fn (string $slug): string => $this->listUrl($slug, $slug === $active ? $list : new StockList(), []));
     }
 
     private function listRequest(): StockList

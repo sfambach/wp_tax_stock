@@ -469,7 +469,9 @@ $html = (new StockPage())->render();
 $pruefe(strpos($html, 'nav-tab-active') === false && str_contains($html, 'taxmod-list-details'), 'without a tab the page opens «Wareneingang», without the tabs of «Bestand»');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'material'];
 $tabs = (new StockPage())->render();
-$pruefe(str_contains($tabs, 'tab=lagerorte') && str_contains($tabs, 'tab=reservierungen') && ! str_contains($tabs, 'tab=lagerstruktur') && ! str_contains($tabs, 'tab=wareneingang'), 'the tabs are Material, Inventur, Verbrauch, Reservierungen, Lagerorte');
+// D-1243: the tabs of «Bestand» are gone; every one of its pages is still an item of the navigation on the left.
+$links = array_column(array_merge(...array_column(TaxmodStock\WordPress\Admin\LogisticsShell::navigation()->areas(), 'items')), 'tab');
+$pruefe(! str_contains($tabs, 'nav-tab-wrapper') && array_diff(['material', 'gruppenbestand', 'inventur', 'verbrauch', 'reservierungen', 'lagerorte'], $links) === [], 'D-1243: «Bestand» has no tabs; Material, Gruppenbestand, Inventur, Verbrauch, Reservierungen, Platzbestand stand in the navigation');
 $_GET = ['page' => StockPage::PAGE];
 $pruefe(str_contains($html, 'Bestellung 1') && str_contains($html, 'tr class="taxmod-list-details"><td') && ! str_contains($html, 'tr class="taxmod-list-details" hidden') && ! str_contains($html, 'name="purchases[]"'), 'by default the orders stand open (shared list page, D-989), their purchases load as they scroll into view');
 // D-1085: the view of the tabs is set on Logistik › Einstellungen › Grundeinstellungen, no longer on the Configuration tab.
@@ -484,7 +486,7 @@ $_GET = ['page' => StockPage::PAGE, 'tab' => 'wareneingang', 'order' => $r['best
 $pruefe(str_contains((new StockPage())->render(), 'data-loaded="1"'), 'an order handed in is open and loaded');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'material'];
 $html = (new StockPage())->render();
-$pruefe(str_contains($html, 'taxmod-list') && str_contains($html, 'search-box') && str_contains($html, '<tfoot>') && str_contains($html, 'sortable') && str_contains($html, 'nav-tab-active') && str_contains($html, 'Taxonomy Modeller › Lager'), 'the material list is the shared list page with tabs, search and sortable columns');
+$pruefe(str_contains($html, 'taxmod-list') && str_contains($html, 'search-box') && str_contains($html, '<tfoot>') && str_contains($html, 'sortable') && ! str_contains($html, 'taxmod-stock-pagetabs') && str_contains($html, 'Taxonomy Modeller › Lager'), 'the material list is the shared list page with search and sortable columns, without the tabs of «Bestand» (D-1243)');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 's' => 'LM2930'];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'LM2930T-5.0') && ! str_contains($html, 'BC640'), 'the search narrows the material list');

@@ -2134,7 +2134,12 @@ final class StockService
     {
         $field = $this->manufacturerField($group);
 
-        return $field === 0 ? '' : ($this->model->controls($group, [$field], $prefix)[$field] ?? '');
+        // D-1274: before modeller 0.2.50 the chooser came without its list and offered only «—».
+        if ($field === 0 || version_compare((string) \Taxmod\WordPress\Plugin::VERSION, '0.2.50', '<')) {
+            return '';
+        }
+
+        return $this->model->controls($group, [$field], $prefix)[$field] ?? '';
     }
 
     /**

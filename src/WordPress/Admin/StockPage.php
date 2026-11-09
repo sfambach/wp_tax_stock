@@ -168,10 +168,10 @@ final class StockPage
     public function handle(): void
     {
         if (! current_user_can('manage_options')) {
-            wp_die(esc_html__('Keine Berechtigung.', 'taxmod-stock'), '', ['response' => 403]);
+            Acts::deny(__('Keine Berechtigung.', 'taxmod-stock'));
         }
 
-        check_admin_referer(self::ACTION);
+        Acts::nonce(self::ACTION);
 
         $kind  = sanitize_key((string) ($_POST['booking'] ?? ''));
         // D-1058: the row buttons carry their purchase in the value, «nichteinlagern-<id>» and «einlagern-<id>».
@@ -2116,7 +2116,7 @@ final class StockPage
             wp_send_json_error([], 403);
         }
 
-        check_ajax_referer(self::THING_SEARCH);
+        Acts::ajaxNonce(self::THING_SEARCH);
 
         try {
             wp_send_json_success($this->stock->searchThings(sanitize_text_field(wp_unslash((string) ($_GET['term'] ?? ''))), 30, ! empty($_GET['groups'])));
@@ -2132,7 +2132,7 @@ final class StockPage
             wp_send_json_error([], 403);
         }
 
-        check_ajax_referer(self::THING_NODES);
+        Acts::ajaxNonce(self::THING_NODES);
 
         try {
             wp_send_json_success($this->stock->treeRows());
@@ -2148,7 +2148,7 @@ final class StockPage
             wp_send_json_error([], 403);
         }
 
-        check_ajax_referer(self::THING_BRANCH);
+        Acts::ajaxNonce(self::THING_BRANCH);
 
         try {
             wp_send_json_success($this->stock->branchThings(absint($_GET['node'] ?? 0)));
@@ -2164,7 +2164,7 @@ final class StockPage
             wp_send_json_error(['html' => esc_html__('Keine Berechtigung.', 'taxmod-stock')], 403);
         }
 
-        check_ajax_referer(self::POSITIONS);
+        Acts::ajaxNonce(self::POSITIONS);
         $order  = absint($_GET['order'] ?? 0);
         $back   = sanitize_key((string) ($_GET['back'] ?? ''));
         $assign = ! empty($_GET['assign']);
@@ -2186,7 +2186,7 @@ final class StockPage
             wp_send_json_error(['message' => __('Keine Berechtigung.', 'taxmod-stock')], 403);
         }
 
-        check_ajax_referer(self::ACTION);
+        Acts::ajaxNonce(self::ACTION);
         $order = absint($_POST['order'] ?? 0);
 
         try {

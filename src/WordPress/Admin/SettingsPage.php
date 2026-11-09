@@ -47,10 +47,10 @@ final class SettingsPage
     public function handle(): void
     {
         if (! current_user_can('manage_options')) {
-            wp_die(esc_html__('Keine Berechtigung.', 'taxmod-stock'), '', ['response' => 403]);
+            Acts::deny(__('Keine Berechtigung.', 'taxmod-stock'));
         }
 
-        check_admin_referer(self::ACTION);
+        Acts::nonce(self::ACTION);
 
         $post = wp_unslash($_POST);
         $this->save(is_array($post) ? $post : []);
@@ -84,10 +84,10 @@ final class SettingsPage
     public function handleUser(): void
     {
         if (! current_user_can('manage_options')) {
-            wp_die(esc_html__('Keine Berechtigung.', 'taxmod-stock'), '', ['response' => 403]);
+            Acts::deny(__('Keine Berechtigung.', 'taxmod-stock'));
         }
 
-        check_admin_referer(self::USER_ACTION);
+        Acts::nonce(self::USER_ACTION);
         $this->saveUser(! empty($_POST['fullscreen']), ! empty($_POST['reset_columns']), ! empty($_POST['reset_trees']));
         set_transient(StockPage::NOTICE . get_current_user_id(), ['type' => 'success', 'text' => __('Gespeichert.', 'taxmod-stock')], 60);
         wp_safe_redirect(add_query_arg('tab', self::USER_TAB, self::url()));

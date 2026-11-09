@@ -97,10 +97,10 @@ final class InboundPage
     public function handle(): void
     {
         if (! current_user_can('manage_options')) {
-            wp_die(esc_html__('Keine Berechtigung.', 'taxmod-stock'), '', ['response' => 403]);
+            Acts::deny(__('Keine Berechtigung.', 'taxmod-stock'));
         }
 
-        check_admin_referer(self::ACTION);
+        Acts::nonce(self::ACTION);
 
         // A row's button names its op; the bulk bar sends its choice as «bulk» (see {@see bulkBar()}).
         $op    = sanitize_key((string) ($_POST['op'] ?? '')) ?: sanitize_key((string) ($_POST['bulk'] ?? ''));

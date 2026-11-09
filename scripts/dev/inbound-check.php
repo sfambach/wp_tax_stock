@@ -291,6 +291,11 @@ $pruefe(str_contains($assignForm, 'data-taxmod-fill="location"') && strpos($assi
 $pruefe(str_contains(InboundPage::orderUrl($r['o4'], 'ordered'), 'tab=arrived'), 'his word «sollte dann auf eingebucht oben springen … sollte generell so sein»: after an action the order opens at the stage it stands in now');
 $plugin = (string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Plugin.php');
 $pruefe(str_contains($plugin, "'admin_post_' . StockPage::ASSIGN"), 'the choice is saved without a reload, under its own action');
+// D-1254: no act ends on an empty page.
+preg_match_all("/add_action\('admin_post_' \. [A-Za-z]+::[A-Z_]+, (.*)\);/", $plugin, $handlers);
+$pruefe($handlers[1] !== [] && array_filter($handlers[1], static fn (string $h): bool => ! str_starts_with($h, 'static fn () => Acts::run(') && ! str_starts_with($h, 'static fn () => Acts::json(')) === [], 'D-1254: every handler runs through Acts, a failure becomes a message on the page it came from');
+$admin = implode('', array_map('file_get_contents', glob(dirname(__DIR__, 2) . '/src/WordPress/Admin/*.php')));
+$pruefe(! preg_match('/\bwp_die\(|check_admin_referer\(|check_ajax_referer\(/', str_replace((string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Admin/Acts.php'), '', $admin)), 'refusals (capability, nonce) say why and lead back, no empty page');
 
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'arrived', 'order' => $r['o4']];
 $html = (new InboundPage())->render();

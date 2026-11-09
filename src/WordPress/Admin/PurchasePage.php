@@ -76,10 +76,10 @@ final class PurchasePage
     public function handle(): void
     {
         if (! current_user_can('manage_options')) {
-            wp_die(esc_html__('Keine Berechtigung.', 'taxmod-stock'), '', ['response' => 403]);
+            Acts::deny(__('Keine Berechtigung.', 'taxmod-stock'));
         }
 
-        check_admin_referer(self::ACTION);
+        Acts::nonce(self::ACTION);
 
         $op       = sanitize_key((string) ($_POST['op'] ?? '')) ?: sanitize_key((string) ($_POST['bulk'] ?? ''));
         $tab      = sanitize_key((string) ($_POST['tab'] ?? ''));

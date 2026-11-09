@@ -51,10 +51,10 @@ final class LogisticsShell
     public static function switchFullscreen(): void
     {
         if (! current_user_can('manage_options')) {
-            wp_die(esc_html__('Keine Berechtigung.', 'taxmod-stock'), '', ['response' => 403]);
+            Acts::deny(__('Keine Berechtigung.', 'taxmod-stock'));
         }
 
-        check_admin_referer(self::FULLSCREEN_ACTION);
+        Acts::nonce(self::FULLSCREEN_ACTION);
 
         update_user_meta(get_current_user_id(), self::FULLSCREEN_META, self::isFullscreen() ? '0' : '1');
         wp_safe_redirect(wp_validate_redirect(esc_url_raw(wp_unslash((string) ($_POST['return'] ?? ''))), admin_url('admin.php?page=' . Pages::COCKPIT)));

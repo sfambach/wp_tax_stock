@@ -4,6 +4,7 @@ namespace TaxmodStock\WordPress;
 
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\TestSettings;
+use TaxmodStock\WordPress\Admin\Acts;
 use TaxmodStock\WordPress\Admin\CockpitPage;
 use TaxmodStock\WordPress\Admin\ContactsPage;
 use TaxmodStock\WordPress\Admin\InboundPage;
@@ -93,18 +94,18 @@ final class Plugin
         // Last, when every module has hung its page under the Taxmod menu, and before admin_head takes the entries out.
         add_action('admin_menu', [ModulePage::class, 'capture'], PHP_INT_MAX);
         if (self::handlesAdminActions()) {
-            add_action('admin_post_' . StockPage::ACTION, static fn () => self::serially(static fn () => (new StockPage())->handle()));
-            add_action('admin_post_' . StockPage::POSITIONS, static fn () => (new StockPage())->positions());
-            add_action('admin_post_' . StockPage::ASSIGN, static fn () => self::serially(static fn () => (new StockPage())->assign()));
-            add_action('admin_post_' . StockPage::THING_SEARCH, static fn () => (new StockPage())->thingSearch());
-            add_action('admin_post_' . StockPage::THING_NODES, static fn () => (new StockPage())->thingNodes());
-            add_action('admin_post_' . StockPage::THING_BRANCH, static fn () => (new StockPage())->thingBranch());
-            add_action('admin_post_' . InboundPage::ACTION, static fn () => self::serially(static fn () => (new InboundPage())->handle()));
-            add_action('admin_post_' . PurchasePage::ACTION, static fn () => self::serially(static fn () => (new PurchasePage())->handle()));
-            add_action('admin_post_' . ContactsPage::ACTION, static fn () => (new ContactsPage())->handle());
-            add_action('admin_post_' . SettingsPage::ACTION, static fn () => (new SettingsPage())->handle());
-            add_action('admin_post_' . SettingsPage::USER_ACTION, static fn () => (new SettingsPage())->handleUser());
-            add_action('admin_post_' . LogisticsShell::FULLSCREEN_ACTION, [LogisticsShell::class, 'switchFullscreen']);
+            add_action('admin_post_' . StockPage::ACTION, static fn () => Acts::run(static fn () => self::serially(static fn () => (new StockPage())->handle())));
+            add_action('admin_post_' . StockPage::POSITIONS, static fn () => Acts::json(static fn () => (new StockPage())->positions()));
+            add_action('admin_post_' . StockPage::ASSIGN, static fn () => Acts::json(static fn () => self::serially(static fn () => (new StockPage())->assign())));
+            add_action('admin_post_' . StockPage::THING_SEARCH, static fn () => Acts::json(static fn () => (new StockPage())->thingSearch()));
+            add_action('admin_post_' . StockPage::THING_NODES, static fn () => Acts::json(static fn () => (new StockPage())->thingNodes()));
+            add_action('admin_post_' . StockPage::THING_BRANCH, static fn () => Acts::json(static fn () => (new StockPage())->thingBranch()));
+            add_action('admin_post_' . InboundPage::ACTION, static fn () => Acts::run(static fn () => self::serially(static fn () => (new InboundPage())->handle())));
+            add_action('admin_post_' . PurchasePage::ACTION, static fn () => Acts::run(static fn () => self::serially(static fn () => (new PurchasePage())->handle())));
+            add_action('admin_post_' . ContactsPage::ACTION, static fn () => Acts::run(static fn () => (new ContactsPage())->handle()));
+            add_action('admin_post_' . SettingsPage::ACTION, static fn () => Acts::run(static fn () => (new SettingsPage())->handle()));
+            add_action('admin_post_' . SettingsPage::USER_ACTION, static fn () => Acts::run(static fn () => (new SettingsPage())->handleUser()));
+            add_action('admin_post_' . LogisticsShell::FULLSCREEN_ACTION, static fn () => Acts::run([LogisticsShell::class, 'switchFullscreen']));
         }
         // D-1235, D-1238: the print thread asks for one material, lot or place label, as the dialog would build it.
         add_filter('taxmod_label_for', static fn (?array $found, string $prefix, int $id, int $template, int $printer): ?array => $found ?? (in_array($prefix, StockPage::LABEL_PREFIXES, true) ? (new StockPage())->labelFor($prefix, $id, $template, $printer) : null), 10, 5);
@@ -272,7 +273,7 @@ final class Plugin
         try {
             \Taxmod\WordPress\ModelDoor::serially('stock', $work);
         } catch (\Taxmod\Core\Exception\ConcurrentChange $e) {
-            wp_die(esc_html($e->getMessage()), esc_html__('Gerade wird gebucht', 'taxmod-stock'), ['response' => 409, 'back_link' => true]);
+            Acts::deny($e->getMessage(), 409);
         }
     }
 

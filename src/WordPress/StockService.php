@@ -916,6 +916,31 @@ final class StockService
         return is_int($label) && $label > 0 ? [$label, 'group', $node] : [0, '', 0];
     }
 
+    /**
+     * D-1291: the modeller's words for these fields of these records — a price with its unit — in one run.
+     *
+     * @param list<int>    $records
+     * @param list<string> $fields structure keys
+     * @return array<string, array<int, string>> structure key → record id → word
+     */
+    public function fieldWords(array $records, array $fields): array
+    {
+        $s   = $this->structure();
+        $ids = [];
+        foreach ($fields as $key) {
+            if ($s->hasField($key)) {
+                $ids[$key] = $s->field($key);
+            }
+        }
+        $words = $this->model->fieldWords($records, array_values($ids));
+        $out   = [];
+        foreach ($ids as $key => $relation) {
+            $out[$key] = array_map('strval', array_filter($words[$relation] ?? [], static fn (mixed $w): bool => trim((string) $w) !== ''));
+        }
+
+        return $out;
+    }
+
     /** D-1284: the root of the Bauformen — the node the structure's Bauform field points to; 0 where none is named. */
     public function formRoot(): int
     {
@@ -1153,7 +1178,7 @@ final class StockService
 
         // His wish 2026-11-05: «Menge 1, geliefert wurden 40» — a quantity corrected in the receipt is written to the purchase
         // in the same step, and the receipt counts it.
-        [$fix, $purchases] = $this->quantityChanges($quantities, array_map('intval', $this->table('order')->all($order, $s->field('order_lines'))));
+        [$fix, $purchases, $money] = $this->quantityChanges($quantities, array_map('intval', $this->table('order')->all($order, $s->field('order_lines'))));
 
         $bookings = new Bookings($this->structureWithKinds(), $today);
         $changes  = [...$fix, ...$bookings->receipt(
@@ -1161,7 +1186,7 @@ final class StockService
             $choices,
             $this->table('order'),
             $purchases,
-            $this->table('money'),
+            $money,
             // D-1058: a purchase closed without stock counts as done for the order's status.
             Ledger::receivedPurchases($s, $this->table('lot')) + NotStocked::purchases($s, $this->table('purchase')),
             $title,
@@ -2052,17 +2077,22 @@ final class StockService
     }
 
     /**
-     * The purchase quantities typed in the receipt that differ from the stored ones: their writes, and the purchases as the
-     * booking should read them. Only purchases of $within count; a quantity below 1 is refused.
+     * The purchase quantities typed in the receipt that differ from the stored ones: their writes, and the purchases and
+     * amounts as the booking should read them. Only purchases of $within count; a quantity below 1 is refused.
+     *
+     * D-1290, his report 2026-11-09 «preis pro stück wurde nicht umgerechnet auf 50 stück»: where the purchase has a total
+     * and a quantity before, the total stays and «Preis je Stück» follows it (old ÷ new) in the same act. «Einstandspreis je
+     * Stück» is a computed field (D-1022) and is not written; the booking reads it scaled alike, so the lot's value fits.
      *
      * @param array<int, string> $quantities purchase → typed quantity
      * @param list<int>          $within
-     * @return array{0: list<array<string, mixed>>, 1: Table}
+     * @return array{0: list<array<string, mixed>>, 1: Table, 2: Table}
      */
     private function quantityChanges(array $quantities, array $within): array
     {
         $s         = $this->structure();
         $purchases = $this->table('purchase');
+        $money     = $this->table('money');
         $changes   = [];
         $allowed   = array_flip($within);
 
@@ -2077,15 +2107,35 @@ final class StockService
                 throw StockError::notAQuantity($typed);
             }
 
-            if ((string) (int) $purchases->first($purchase, $s->field('purchase_quantity')) === $typed) {
+            $was = (int) $purchases->first($purchase, $s->field('purchase_quantity'));
+            if ((string) $was === $typed) {
                 continue;
             }
 
-            $changes[] = ['op' => 'set_values', 'record' => (string) $purchase, 'values' => [(string) $s->field('purchase_quantity') => $typed]];
+            $values = [(string) $s->field('purchase_quantity') => $typed];
+            $total  = $s->hasField('purchase_total_price') ? $purchases->first($purchase, $s->field('purchase_total_price')) : null;
+            $unit   = $purchases->first($purchase, $s->field('purchase_unit_price'));
+            if ($was > 0 && $total !== null && $unit !== null) {
+                $factor  = $was / (int) $typed;
+                $scaled  = static fn (?string $part): ?string => $part === null || $money->first((int) $part, $s->field('money_amount')) === null
+                    ? null : rtrim(rtrim(number_format((float) $money->first((int) $part, $s->field('money_amount')) * $factor, 6, '.', ''), '0'), '.');
+                $newUnit = $scaled($unit);
+                if ($newUnit !== null) {
+                    // Key «0»: the money part the purchase already holds is filled, its unit stays.
+                    $values[(string) $s->field('purchase_unit_price')] = ['0' => [(string) $s->field('money_amount') => $newUnit]];
+                    $money = $money->with((int) $unit, $s->field('money_amount'), $newUnit);
+                }
+                $landed = $purchases->first($purchase, $s->field('purchase_landed_price'));
+                if ($landed !== null && $landed !== $unit && ($newLanded = $scaled($landed)) !== null) {
+                    $money = $money->with((int) $landed, $s->field('money_amount'), $newLanded);
+                }
+            }
+
+            $changes[] = ['op' => 'set_values', 'record' => (string) $purchase, 'values' => $values];
             $purchases = $purchases->with($purchase, $s->field('purchase_quantity'), $typed);
         }
 
-        return [$changes, $purchases];
+        return [$changes, $purchases, $money];
     }
 
     /**

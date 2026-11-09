@@ -96,6 +96,19 @@ final class ModelGateway
         return method_exists($this->door, 'targetOf') ? $this->ask(fn (): array => [$this->door->targetOf($relation)])[0] : 0;
     }
 
+    /**
+     * D-1291: the modeller's words for these fields of these records (modeller 0.2.59); none before, and the caller keeps its
+     * plain number.
+     *
+     * @param list<int> $records
+     * @param list<int> $relations
+     * @return array<int, array<int, string>> relation id → record id → word
+     */
+    public function fieldWords(array $records, array $relations): array
+    {
+        return method_exists($this->door, 'fieldWords') ? $this->ask(fn (): array => $this->door->fieldWords($records, $relations)) : [];
+    }
+
     /** D-1259: one act, undoable; null lets the node inherit again. */
     public function setProperty(int $node, string $key, bool|int|null $value): void
     {

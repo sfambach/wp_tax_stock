@@ -977,6 +977,35 @@ $text   = (new StockService())->searchThings('0603');
 $pruefe(($nr[0]['id'] ?? 0) === $r['t1'] && str_ends_with((string) $nr[0]['node'], 'M-' . $r['t1']) && ($nrM[0]['id'] ?? 0) === $r['t1']
     && in_array($r['t1'], array_column($text, 'id'), true) && ! str_contains((string) ($text[0]['node'] ?? ''), 'M-'), 'D-1287: a number finds the material first, written as on the label; «0603» still finds by text');
 
+// His report 2026-11-09 «preis pro stück wurde nicht umgerechnet auf 50 stück»: a pack corrected to pieces at the receipt keeps
+// its total; «Preis je Stück» follows it, and so does the lot's value. «Einstandspreis» is computed live (D-1022), not written.
+$st     = (new StockService())->structure();
+$gesamt = $st->hasField('purchase_total_price') ? $st->field('purchase_total_price') : (int) ($apply([['op' => 'add_field', 'ref' => 'g', 'node' => (string) $r['pur'], 'name' => '__Preis gesamt', 'target' => 4232, 'kind' => 'composition', 'multiplicity' => '0..1']])['refs']['g'] ?? 0);
+$opt    = get_option('taxmod_stock_structure');
+if (is_array($opt) && ! $st->hasField('purchase_total_price')) {
+    $opt['fields']['purchase_total_price'] = $gesamt;
+    update_option('taxmod_stock_structure', $opt);
+}
+$kaufWerte = [(string) $r['label'] => 'Stiftleiste · Packung 50 St', (string) $r['k_offen'] => '0', (string) $r['k_mod'] => (string) $r['t1'], (string) $r['k_anz'] => '1',
+    (string) $r['k_preis'] => ['neu' => ['4234' => '2.2']], (string) $r['k_ein'] => ['neu' => ['4234' => '2.2']], (string) $gesamt => ['neu' => ['4234' => '2.2']]];
+$pack = $apply([['op' => 'create_record', 'ref' => 'k', 'node' => (string) $r['pur']], ['op' => 'set_values', 'record' => '@k', 'values' => $kaufWerte],
+    ['op' => 'create_record', 'ref' => 'b', 'node' => (string) $r['ord']], ['op' => 'set_values', 'record' => '@b', 'values' => [(string) $r['label'] => 'Packung', (string) $r['o_pos'] => ['values' => ['@k']]]]])['refs']
+    // «Positionen» as composition: the purchase is a part of its order.
+    ?? $apply([['op' => 'create_record', 'ref' => 'b', 'node' => (string) $r['ord']], ['op' => 'set_values', 'record' => '@b', 'values' => [(string) $r['label'] => 'Packung', (string) $r['o_pos'] => ['k1' => $kaufWerte]]]])['refs'] ?? [];
+$pack['k'] ??= (int) ((new StockService())->table('order')->all((int) ($pack['b'] ?? 0), $r['o_pos'])[0] ?? 0);
+(new StockService())->bookReceipt((int) $pack['b'], [(int) $pack['k'] => ReceiptChoice::keep()], '2026-11-09', 'WE Packung', [(int) $pack['k'] => '50']);
+$s      = new StockService();
+$betrag = static fn (?string $teil): ?string => $teil === null ? null : $s->table('money')->first((int) $teil, 4234);
+$posten = array_values(array_filter($s->table('lot')->ids(), static fn (int $l): bool => (int) $s->table('lot')->first($l, $r['l_kauf']) === (int) $pack['k']))[0] ?? 0;
+$pruefe($s->table('purchase')->first((int) $pack['k'], $r['k_anz']) === '50' && (float) $betrag($s->table('purchase')->first((int) $pack['k'], $r['k_preis'])) === 0.044
+    && (float) $betrag($s->table('purchase')->first((int) $pack['k'], $gesamt)) === 2.2 && (float) $betrag($s->table('lot')->first($posten, $r['l_wert'])) === 0.044,
+    'D-1290: 1 pack corrected to 50 pieces at the receipt: «Preis je Stück» 0.044, total 2.2, the lot worth 0.044 a piece');
+// His word 2026-11-09 «auch fehlt die einheit (€)»: the receipt's prices as the modeller words them.
+$worte  = $s->fieldWords([(int) $pack['k']], ['purchase_unit_price', 'purchase_total_price']);
+$pruefe(preg_match('/0[.,]044/', $worte['purchase_unit_price'][(int) $pack['k']] ?? '') === 1 && ($worte['purchase_total_price'][(int) $pack['k']] ?? '') !== '', 'D-1291: the prices come as the modeller words them');
+$quelle = (string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Admin/InboundPage.php');
+$pruefe(str_contains($quelle, "\$words['purchase_unit_price'][\$purchase] ?? \$shown(\$each)"), 'D-1291: the receipt\'s purchases show the modeller\'s word, its own number only without one');
+
 // The Configuration tab: the modeller lists it, and pasting structure-live.json stores those ids.
 add_filter('taxmod_config_tabs', [TaxmodStock\WordPress\Admin\SettingsTab::class, 'register']);
 $reiter = Taxmod\WordPress\Admin\SettingsScreen::moduleTabs();

@@ -600,6 +600,9 @@ final class InboundPage
         $models   = array_filter(array_combine($ids, array_map(static fn (int $p): int => (int) $table->first($p, $s->field('purchase_model')), $ids)) ?: []);
         $held     = $stock->picturesOf([...$ids, ...array_values($models)]);
 
+        // D-1291, his word 2026-11-09 «auch fehlt die einheit (€)»: the prices as the modeller words them, with their unit.
+        $words = $stock->fieldWords($ids, ['purchase_unit_price', 'purchase_total_price']);
+
         foreach ($purchases as $purchase) {
             $purchase = (int) $purchase;
             $reason   = $closing ? $stock->notStockedReason($purchase) : '';
@@ -625,8 +628,8 @@ final class InboundPage
                 . ($done ? $this->purchaseNumber($order->id) : $this->purchaseFacts($table, $order->id, $purchase)) . '</td>'
                 . ($went === null ? '' : '<td>' . $went['material'] . '</td><td>' . $went['place'] . '</td><td>' . $went['date'] . '</td>')
                 . '<td style="text-align:right">' . esc_html($count > 0.0 ? (string) (0 + $count) : '—') . '</td>'
-                . '<td style="text-align:right">' . esc_html($shown($each)) . '</td>'
-                . '<td style="text-align:right">' . esc_html($shown($total)) . '</td>'
+                . '<td style="text-align:right">' . esc_html($words['purchase_unit_price'][$purchase] ?? $shown($each)) . '</td>'
+                . '<td style="text-align:right">' . esc_html($words['purchase_total_price'][$purchase] ?? $shown($total)) . '</td>'
                 . '<td style="text-align:right;white-space:nowrap">' . $button . '</td></tr>';
         }
 

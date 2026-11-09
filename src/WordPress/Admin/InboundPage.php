@@ -451,8 +451,14 @@ final class InboundPage
     }
 
     /** «Angekommen»: the Lager page's booking form, loaded once it shows; else the purchases, the carrier's events and a tracking field. */
-    /** His question of 2026-10-28 on a booked order: «wo befinden die?» — each lot's material, linked to its stock, and its place. */
-    private function whereItWent(int $purchase): string
+    /**
+     * His question of 2026-10-28 on a booked order: «wo befinden die?» — per lot its material, its place and the day it came
+     * in, each a link (his wish 2026-11-09, his choice «Als Spalten in der Käufe-Tabelle»): the material to the material, the
+     * place to its stock, the day to the lot.
+     *
+     * @return array{material: string, place: string, date: string} cells, one line per lot
+     */
+    private function whereItWent(int $purchase): array
     {
         $stock  = $this->inbound->stock();
         $s      = $stock->structure();
@@ -460,18 +466,20 @@ final class InboundPage
         $ledger = $this->ledger ??= $stock->ledger();
         $things = $stock->things();
         $places = $stock->places();
-        $out    = [];
+        $out    = ['material' => [], 'place' => [], 'date' => []];
 
         foreach ($this->inbound->lotsOf($purchase) as $lot) {
             $thing = $ledger->thingOf($lot);
             $at    = (int) $lots->first($lot, $s->field('lot_location'));
             $place = $places[$at] ?? '';
+            $date  = substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10);
+            $out['material'][] = $thing === null ? esc_html('#' . $lot) : '<a href="' . esc_url(StockPage::thingUrl($thing, 'daten')) . '">' . esc_html($things->word($thing)) . '</a>';
             // His word 2026-11-09: «weiterhin fehlt der platz auf dem es jetzt liegt mit absprunglink zu platz bestand».
-            $out[] = ($thing === null ? esc_html('#' . $lot) : '<a href="' . esc_url(StockPage::thingUrl($thing, 'bestand')) . '">' . esc_html($things->word($thing)) . '</a>')
-                . ($place === '' ? '' : ' · <a href="' . esc_url(add_query_arg(['page' => StockPage::PAGE, 'tab' => 'lagerorte', 'ort' => $at], admin_url('admin.php'))) . '">' . esc_html($place) . '</a>');
+            $out['place'][]    = $place === '' ? '—' : '<a href="' . esc_url(add_query_arg(['page' => StockPage::PAGE, 'tab' => 'lagerorte', 'ort' => $at], admin_url('admin.php'))) . '">' . esc_html($place) . '</a>';
+            $out['date'][]     = $thing === null || $date === '' ? esc_html($date === '' ? '—' : $date) : '<a href="' . esc_url(StockPage::lotUrl($thing, $lot)) . '">' . esc_html($date) . '</a>';
         }
 
-        return $out === [] ? '' : ' → ' . implode(', ', $out);
+        return array_map(static fn (array $cells): string => implode('<br>', $cells), $out);
     }
 
     /**
@@ -498,6 +506,23 @@ final class InboundPage
         return $facts === [] ? '' : '<br><span class="description">' . implode(' · ', $facts) . '</span>';
     }
 
+    /**
+     * The article number alone, linked to the product at the platform (D-1249) — his word 2026-11-09 «auf den kauf soll nur
+     * noch bestellnummer mit link»; INFERRED: his «Bestellnummer» is the purchase's article number, the order's stands above.
+     */
+    private function purchaseNumber(Table $table, int $order, int $purchase): string
+    {
+        $s     = $this->inbound->stock()->structure();
+        $value = $s->hasField('purchase_number') ? trim((string) ($table->first($purchase, $s->field('purchase_number')) ?? '')) : '';
+        $link  = $value === '' ? null : $this->inbound->productLink($order, $value);
+
+        return match (true) {
+            $value === ''   => '',
+            $link === null  => '<br><span class="description">' . esc_html($value) . '</span>',
+            default         => '<br><span class="description"><a href="' . esc_url($link) . '" target="_blank" rel="noopener noreferrer">' . esc_html($value) . '</a></span>',
+        };
+    }
+
     private function details(InboundOrder $order, InboundStage $stage, string $tab, bool $open): string
     {
         if ($stage === InboundStage::Arrived) {
@@ -507,13 +532,8 @@ final class InboundPage
         $labels    = $this->inbound->stock()->labels('purchase');
         $s         = $this->inbound->stock()->structure();
         $purchases = $this->inbound->stock()->table('order')->all($order->id, $s->field('order_lines'));
-        // His wish 2026-11-01: «wissen wir doch schon anzahl und preis und sowas können wir das nicht schöner anzeigen».
-        $html      = '<h4 style="margin-bottom:.3em">' . esc_html__('Käufe', 'taxmod-stock') . '</h4>'
-            . '<table class="widefat striped" style="margin-bottom:.8em"><thead><tr><th>' . esc_html__('Kauf', 'taxmod-stock') . '</th>'
-            . '<th style="width:5em;text-align:right">' . esc_html__('Menge', 'taxmod-stock') . '</th>'
-            . '<th style="width:8em;text-align:right">' . esc_html__('Preis je Stück', 'taxmod-stock') . '</th>'
-            . '<th style="width:8em;text-align:right">' . esc_html__('Gesamt', 'taxmod-stock') . '</th>'
-            . '<th style="width:16em;text-align:right"></th></tr></thead><tbody>';
+        $done      = in_array($stage, [InboundStage::Booked, InboundStage::Archived], true);
+        $rows      = '';
         $table     = $this->inbound->stock()->table('purchase');
         $parts     = [];
 
@@ -555,15 +575,24 @@ final class InboundPage
             $each  = $amountOf($table->first($purchase, $s->field('purchase_unit_price')));
             $total = $s->hasField('purchase_total_price') ? $amountOf($table->first($purchase, $s->field('purchase_total_price'))) : null;
             $total ??= $each === null || $count <= 0.0 ? null : $each * $count;
-            $html .= '<tr><td style="white-space:normal">' . ($pictures[$purchase] ?? '') . ' ' . esc_html($labels[$purchase] ?? '#' . $purchase)
-                . $this->purchaseFacts($table, $order->id, $purchase) . $this->whereItWent($purchase) . '</td>'
+            // His wish 2026-11-09: once booked, the purchase is named by its number only; where it went stands in its own columns.
+            $went  = $done ? $this->whereItWent($purchase) : null;
+            $rows .= '<tr><th scope="row" class="check-column"></th><td style="white-space:normal">' . ($pictures[$purchase] ?? '') . ' ' . esc_html($labels[$purchase] ?? '#' . $purchase)
+                . ($done ? $this->purchaseNumber($table, $order->id, $purchase) : $this->purchaseFacts($table, $order->id, $purchase)) . '</td>'
+                . ($went === null ? '' : '<td>' . $went['material'] . '</td><td>' . $went['place'] . '</td><td>' . $went['date'] . '</td>')
                 . '<td style="text-align:right">' . esc_html($count > 0.0 ? (string) (0 + $count) : '—') . '</td>'
                 . '<td style="text-align:right">' . esc_html($shown($each)) . '</td>'
                 . '<td style="text-align:right">' . esc_html($shown($total)) . '</td>'
                 . '<td style="text-align:right;white-space:nowrap">' . $button . '</td></tr>';
         }
 
-        $html .= '</tbody></table>';
+        // His wish 2026-11-01: «wissen wir doch schon anzahl und preis und sowas können wir das nicht schöner anzeigen».
+        $columns = array_merge(
+            [[__('Kauf', 'taxmod-stock')]],
+            $done ? [[__('Material', 'taxmod-stock'), '14em'], [__('Lagerort', 'taxmod-stock'), '12em'], [__('Eingebucht am', 'taxmod-stock'), '8em']] : [],
+            [[__('Menge', 'taxmod-stock'), '5em'], [__('Preis je Stück', 'taxmod-stock'), '7em'], [__('Gesamt', 'taxmod-stock'), '7em']]
+        );
+        $html = '<h4 style="margin-bottom:.3em">' . esc_html__('Käufe', 'taxmod-stock') . '</h4>' . ListPage::table($columns, $rows);
 
         // His choice 2026-11-09 (INF-116): «Material schon am Kauf wählen» — the receipt's own choosing, before anything arrives;
         // it keeps the choice and books nothing.

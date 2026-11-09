@@ -273,6 +273,9 @@ $html = (new InboundPage())->render();
 $pruefe(! str_contains($html, 'button taxmod-list-toggle') && ! str_contains($html, 'Expand all') && str_contains($html, 'order=' . $r['o5']), '«Eingebucht» lists its orders without opening rows, each linked to its own view');
 $html .= $details('booked');
 $pruefe(str_contains($html, 'Ladegerät') && str_contains($html, 'thing=' . $r['et4000']) && str_contains($html, 'view=bestand'), '«Eingebucht» shows where each purchase went, linked to its material');
+// His wish 2026-11-09, his choice «Als Spalten in der Käufe-Tabelle»: material, place and day as columns, the purchase named by its number only.
+$pruefe(str_contains($html, '>Material</th>') && str_contains($html, '>Lagerort</th>') && str_contains($html, '>Eingebucht am</th>')
+    && preg_match('/thing=\\d+&(amp;|#038;)?view=daten/', $html) === 1 && str_contains($html, '#taxmod-stock-lot-'), '«Eingebucht»: Material, Lagerort and «Eingebucht am» as columns; the material links to the material, the day to the lot');
 // The fixture's lots lie nowhere, so the link is read from the source.
 $pruefe(str_contains((string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Admin/InboundPage.php'), "'tab' => 'lagerorte', 'ort' => \$at"), 'his word «weiterhin fehlt der platz auf dem es jetzt liegt mit absprunglink zu platz bestand»: the place links to its stock');
 

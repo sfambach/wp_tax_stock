@@ -84,12 +84,12 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'create_node', 'ref' => 'ord', 'name' => 'Bestellungen', 'parent' => '@stock'],
     ['op' => 'create_node', 'ref' => 'pur', 'name' => 'Käufe', 'parent' => '@stock'],
     ['op' => 'create_node', 'ref' => 'arten', 'name' => '__Vorgangsarten', 'parent' => 410, 'class' => 'Choice'],
-    ['op' => 'create_node', 'ref' => 'k_we', 'name' => 'Wareneingang', 'parent' => '@arten'],
-    ['op' => 'create_node', 'ref' => 'k_vb', 'name' => 'Verbrauch', 'parent' => '@arten'],
-    ['op' => 'create_node', 'ref' => 'k_in', 'name' => 'Inventur', 'parent' => '@arten'],
-    ['op' => 'create_node', 'ref' => 'k_um', 'name' => 'Umbuchung', 'parent' => '@arten'],
-    ['op' => 'create_node', 'ref' => 'k_ul', 'name' => 'Umlagerung', 'parent' => '@arten'],
-    ['op' => 'create_node', 'ref' => 'k_vk', 'name' => 'Verkauf', 'parent' => '@arten'],
+    ['op' => 'create_node', 'ref' => 'k_we', 'name' => 'Wareneingang', 'parent' => '@arten', 'class' => 'Constant'],
+    ['op' => 'create_node', 'ref' => 'k_vb', 'name' => 'Verbrauch', 'parent' => '@arten', 'class' => 'Choice'],
+    ['op' => 'create_node', 'ref' => 'k_in', 'name' => 'Inventur', 'parent' => '@arten', 'class' => 'Constant'],
+    ['op' => 'create_node', 'ref' => 'k_um', 'name' => 'Umbuchung', 'parent' => '@arten', 'class' => 'Constant'],
+    ['op' => 'create_node', 'ref' => 'k_ul', 'name' => 'Umlagerung', 'parent' => '@arten', 'class' => 'Constant'],
+    ['op' => 'create_node', 'ref' => 'k_vk', 'name' => 'Verkauf', 'parent' => '@arten', 'class' => 'Constant'],
     ['op' => 'create_node', 'ref' => 'stat', 'name' => '__Bestellstatus', 'parent' => 410, 'class' => 'Choice'],
     ['op' => 'create_node', 'ref' => 's_teil', 'name' => 'teilweise eingegangen', 'parent' => '@stat'],
     ['op' => 'create_node', 'ref' => 's_ganz', 'name' => 'eingegangen', 'parent' => '@stat'],
@@ -379,7 +379,7 @@ $ledger = (new StockService())->ledger();
 $pruefe($ledger->restAt($lot, $r['platz']) === 1.0 && (new StockService())->table('lot')->first($lot, $r['l_lo']) !== (string) $r['platz'], '«Umbuchen» moves one piece to the chosen place as a Vorgang, the lot keeps its own place');
 
 // The page renders its tabs from the same data.
-foreach (['material' => '>' . $r['lm'] . '</a></td>', 'inventur' => 'Material suchen', 'wareneingang' => 'Bestellung 1', 'verbrauch' => 'Rest 25'] as $tab => $erwartet) {
+foreach (['material' => '>' . $r['lm'] . '</a></td>', 'inventur' => 'Material suchen', 'wareneingang' => 'Bestellung 1', 'verbrauch' => 'Bestandsposten'] as $tab => $erwartet) {
     // D-1147: the material list waits for a search; «Alle anzeigen» draws it all.
     $_GET = ['page' => StockPage::PAGE, 'tab' => $tab, 'order' => $r['best']] + ($tab === 'material' ? [ListPage::SHOW_ALL => '1'] : []);
     $html = (new StockPage())->render();
@@ -1090,9 +1090,9 @@ $pruefe(is_wp_error($frage?->execute(['limit' => 0]) ?? new WP_Error()), 'a wron
 $vorBau = (new StockService())->ledger()->stockOf($r['t1']);
 $alt    = ConsumptionByKind::from((new StockService())->structureWithKinds(), (new StockService())->table('transaction'), (new StockService())->table('line'), (new StockService())->table('lot'), (new StockService())->table('money'))->cells();
 $arten  = $apply([
-    ['op' => 'create_node', 'ref' => 'bb', 'name' => '__Betriebsbedarf', 'parent' => (string) $r['k_vb']],
-    ['op' => 'create_node', 'ref' => 'gr', 'name' => '__Abgang', 'parent' => (string) $r['k_vb']],
-    ['op' => 'create_node', 'ref' => 'vs', 'name' => '__Verlust/Schwund', 'parent' => '@gr'],
+    ['op' => 'create_node', 'ref' => 'bb', 'name' => '__Betriebsbedarf', 'parent' => (string) $r['k_vb'], 'class' => 'Constant'],
+    ['op' => 'create_node', 'ref' => 'gr', 'name' => '__Abgang', 'parent' => (string) $r['k_vb'], 'class' => 'Choice'],
+    ['op' => 'create_node', 'ref' => 'vs', 'name' => '__Verlust/Schwund', 'parent' => '@gr', 'class' => 'Constant'],
 ])['refs'] ?? [];
 $opt = get_option('taxmod_stock_structure');
 if (is_array($opt)) {
@@ -1103,7 +1103,10 @@ $s = new StockService();
 $pruefe($s->consumptionLeaves() === [(int) $arten['bb'], (int) $arten['vs']] || array_diff([(int) $arten['bb'], (int) $arten['vs']], $s->consumptionLeaves()) === [] && ! in_array((int) $arten['gr'], $s->consumptionLeaves(), true), 'D-1297: the leaves below «Verbrauch» are the kinds to choose');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'verbrauch', 'thing' => (string) $r['t1']];
 $html = (new StockPage())->render();
-$pruefe(str_contains($html, 'name="art"') && str_contains($html, '__Betriebsbedarf'), 'D-1297: the consumption form asks the kind with the modeller\'s tree chooser');
+$artFeld = (int) $s->structure()->field('transaction_kind');
+// D-1298: the kind is the modeller's own control of «Art», narrowed to the branch under «Verbrauch».
+$pruefe(str_contains($html, 'vorgang[' . $artFeld . ']') && str_contains($html, '__Betriebsbedarf') && ! str_contains($html, '>Wareneingang<') && ! str_contains($html, 'name="art"'),
+    'D-1298: the consumption form asks the kind with the modeller\'s chooser, only the branch under «Verbrauch»');
 foreach ([0 => 'without a kind', (int) $arten['gr'] => 'with an inner kind'] as $art => $wie) {
     try {
         (new StockService())->bookConsumption($r['t1'], null, '1', Purpose::none(), '2026-11-10', 'Verbrauch ohne Art', null, '', $art);
@@ -1128,6 +1131,43 @@ $losLot2 = (new StockService())->ledger()->proposedLot($r['t1']);
 $verlust = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_LOSS, null, ['sale' => $auftrag, 'lot' => $losLot2, 'quantity' => '1', 'reason' => 'Ersatzversand', 'date' => '2026-11-10', 'title' => 'Verlust Ersatzversand']);
 $s       = new StockService();
 $pruefe(is_int($verlust) && (int) $s->table('transaction')->first($verlust, $s->structure()->field('transaction_kind')) === (int) $arten['vs'], 'D-1297: the Ersatzversand books «Verlust/Schwund», named by the structure' . ($verlust instanceof WP_Error ? ': ' . $verlust->get_error_message() : ''));
+
+// D-1299, his question 2026-11-10 «baum in dem ich bestand wähle»: Ausbuchen picks the lot in one chooser (groups, then the
+// lots of the group's materials); a preselected lot stands chosen, the material follows from it.
+$s      = new StockService();
+$einLot = $s->ledger()->proposedLot($r['t1']);
+$_GET   = ['page' => StockPage::PAGE, 'tab' => 'verbrauch', 'lot' => (string) $einLot];
+$html   = (new StockPage())->render();
+$mengeF = (int) $s->structure()->field('line_quantity');
+$pruefe(str_contains($html, 'taxmod-record-pick') && preg_match('/name="lot" value="' . $einLot . '" checked/', $html) === 1 && ! str_contains($html, 'name="thing"')
+    && str_contains($html, StockPage::LOT_BRANCH) && str_contains($html, StockPage::LOT_SEARCH) && str_contains($html, 'menge[' . $mengeF . ']') && str_contains($html, 'taxmod-stock-unit'),
+    'D-1299: Ausbuchen picks the lot in the tree chooser; «Menge» is the modeller\'s control with the material\'s unit beside it');
+$ast    = [];
+foreach ($s->treeRows() as $reihe) {
+    $ast = in_array($einLot, $ast, true) ? $ast : array_column($s->branchLots($reihe['id']), 'id');
+}
+$such   = array_column($s->searchLots('#' . $einLot), 'id');
+$pruefe(in_array($einLot, $ast, true) && ($such[0] ?? 0) === $einLot && array_filter($ast, static fn (int $l): bool => $s->ledger()->restOf($l) <= 0.0) === [],
+    'D-1299: a group\'s lots with a rest, and a lot\'s own number finds it first');
+$pruefe(($s->unitWords([$r['t1']])[$r['t1']] ?? '') !== '', 'D-1298: every material has a unit word, «Stück» where none is set');
+$vorLot = $s->ledger()->restOf($einLot);
+$getippt = $s->consumptionTyped([$mengeF => '1'], [$artFeld => (string) $arten['bb']]);
+$s->bookConsumption(0, $einLot, $getippt['quantity'], Purpose::none(), '2026-11-10', 'Verbrauch aus dem Baum', null, '', $getippt['kind']);
+$pruefe(abs((new StockService())->ledger()->restOf($einLot) - ($vorLot - 1.0)) < 1e-9, 'D-1299: a picked lot books without a material named, the typed values read back by the modeller');
+
+// His word «eingeschränkt auf den material zweig»: the chooser offers only the branch under «Material».
+$opt = get_option('taxmod_stock_structure');
+$vor = $opt;
+if (is_array($opt)) {
+    $opt['nodes']['material_root'] = $r['teile'];
+    update_option('taxmod_stock_structure', $opt);
+}
+$s      = new StockService();
+$ast    = array_keys($s->pickerTree());
+$reihen = array_column($s->treeRows(), 'id');
+$pruefe(in_array($r['teile'], $ast, true) && array_diff($reihen, $ast) === [] && count($s->pickerTree()) < count($s->tree()) && in_array($r['t1'], array_column($s->searchThings('#' . $r['t1']), 'id'), true),
+    'the material chooser offers only the branch under «Material»; the views keep the whole tree');
+update_option('taxmod_stock_structure', $vor);
 
 echo $fehler === 0 ? "all green ({$kind})\n" : "{$fehler} red ({$kind})\n";
 exit($fehler === 0 ? 0 : 1);

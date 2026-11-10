@@ -35,12 +35,15 @@ final class ModelGateway
     /**
      * D-1250: the modeller's own controls for these fields, posted as `$prefix[relation]`; nothing on a modeller without them.
      *
-     * @param list<int> $relations
+     * @param list<int>          $relations
+     * @param array<int, string> $values characters by relation id where there is no record yet
+     * @param array<int, int>    $roots  relation id → the node its chooser is narrowed to
      * @return array<int, string> relation id → markup, escaped
      */
-    public function controls(int $node, array $relations, string $prefix, string $formId = ''): array
+    public function controls(int $node, array $relations, string $prefix, string $formId = '', int $record = 0, array $values = [], array $roots = []): array
     {
-        return method_exists($this->door, 'controls') ? $this->door->controls($node, $relations, $prefix, $formId) : [];
+        // D-1298: `$roots` narrows a chooser to a branch (modeller 0.2.63); an older modeller ignores the extra argument.
+        return method_exists($this->door, 'controls') ? $this->door->controls($node, $relations, $prefix, $formId, $record, $values, $roots) : [];
     }
 
     /**

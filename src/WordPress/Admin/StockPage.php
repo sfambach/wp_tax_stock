@@ -97,6 +97,9 @@ final class StockPage
     public const THING_SEARCH = 'taxmod_stock_thing_search';
     public const THING_NODES  = 'taxmod_stock_thing_nodes';
     public const THING_BRANCH = 'taxmod_stock_thing_branch';
+    /** D-1299: the lot chooser of Ausbuchen — search and a group's lots. */
+    public const LOT_SEARCH   = 'taxmod_stock_lot_search';
+    public const LOT_BRANCH   = 'taxmod_stock_lot_branch';
 
     /** The side trees' names for the state the modeller keeps per user (`ListPage::sideTree()`). */
     private const PLACE_TREE = 'taxmod_stock_places';
@@ -214,6 +217,10 @@ final class StockPage
         $copy = 0;
 
         try {
+            // D-1298: «Menge» and «Art» of Ausbuchen come from the modeller's controls and are read back by it.
+            $consumption = $kind === 'verbrauch'
+                ? $this->stock->consumptionTyped(is_array($_POST['menge'] ?? null) ? $_POST['menge'] : [], is_array($_POST['vorgang'] ?? null) ? $_POST['vorgang'] : [])
+                : ['quantity' => '', 'kind' => 0];
             $result = match ($kind) {
                 'inventur'     => $this->stock->bookInventory($this->inventoryRows(), $today, $this->title(__('Inventur', 'taxmod-stock'), $today)),
                 'lager'        => $this->stock->saveLager($thing, $this->lagerInput()),
@@ -307,13 +314,13 @@ final class StockPage
                 'verbrauch'    => $this->stock->bookConsumption(
                     $thing,
                     absint($_POST['lot'] ?? 0) ?: null,
-                    sanitize_text_field(wp_unslash((string) ($_POST['quantity'] ?? ''))),
+                    $consumption['quantity'] !== '' ? $consumption['quantity'] : sanitize_text_field(wp_unslash((string) ($_POST['quantity'] ?? ''))),
                     $this->purpose(sanitize_key(wp_unslash((string) ($_POST['purpose'] ?? '')))),
                     $today,
                     $this->title(__('Verbrauch', 'taxmod-stock'), $today),
                     absint($_POST['place'] ?? 0) ?: null,
                     sanitize_text_field(wp_unslash((string) ($_POST['reason'] ?? ''))),
-                    absint($_POST['art'] ?? 0)
+                    $consumption['kind']
                 ),
                 default        => throw StockError::nothingToBook(),
             };
@@ -2325,6 +2332,38 @@ final class StockPage
         }
     }
 
+    /** D-1299: admin-post handler for the lot search of the Ausbuchen chooser: capability → nonce → validate → act. */
+    public function lotSearch(): void
+    {
+        if (! current_user_can('manage_options')) {
+            wp_send_json_error([], 403);
+        }
+
+        Acts::ajaxNonce(self::LOT_SEARCH);
+
+        try {
+            wp_send_json_success($this->stock->searchLots(sanitize_text_field(wp_unslash((string) ($_GET['term'] ?? '')))));
+        } catch (StockError $e) {
+            wp_send_json_error(['message' => Messages::of($e)]);
+        }
+    }
+
+    /** D-1299: admin-post handler for the lots of one group in the Ausbuchen tree: capability → nonce → validate → act. */
+    public function lotBranch(): void
+    {
+        if (! current_user_can('manage_options')) {
+            wp_send_json_error([], 403);
+        }
+
+        Acts::ajaxNonce(self::LOT_BRANCH);
+
+        try {
+            wp_send_json_success($this->stock->branchLots(absint($_GET['node'] ?? 0)));
+        } catch (StockError $e) {
+            wp_send_json_error(['message' => Messages::of($e)]);
+        }
+    }
+
     /** admin-post handler for one order's purchases, fetched when he opens the order: capability → nonce → validate → act. */
     public function positions(): void
     {
@@ -3816,32 +3855,32 @@ final class StockPage
     private function consumptionForm(int $preset, int $presetLot, int $presetPlace = 0): string
     {
         $ledger = $this->stock->ledger();
-        $labels = $this->stock->things()->all();
-        $lots   = $this->stock->table('lot');
-        $date   = $this->stock->structure()->field('lot_date');
-        $have   = array_intersect_key($labels, array_flip($ledger->things()));
-        $choice = '<option value="0">' . esc_html__('automatisch: ältester Posten mit Rest', 'taxmod-stock') . '</option>';
-
-        foreach ($have as $thing => $label) {
-            foreach ($ledger->lotsOf($thing) as $lot) {
-                $choice .= '<option value="' . esc_attr((string) $lot) . '"' . selected($lot, $presetLot, false) . '>' . esc_html($label . ' · ' . substr((string) $lots->first($lot, $date), 0, 10)
-                    . ' · ' . __('Rest', 'taxmod-stock') . ' ' . $this->number($ledger->restOf($lot))) . '</option>';
-            }
+        // D-1299, his question 2026-11-10 «baum in dem ich bestand wähle»: one chooser picks the lot, the material follows from it;
+        // a material alone (from its list) proposes its oldest lot with a rest, as the booking always did.
+        $lot    = $presetLot > 0 && $ledger->thingOf($presetLot) !== null ? $presetLot : ($preset > 0 && $ledger->lotsOf($preset) !== [] ? $ledger->proposedLot($preset) : 0);
+        $thing  = $lot > 0 ? (int) $ledger->thingOf($lot) : 0;
+        $word   = '';
+        foreach ($lot > 0 ? $this->stock->lotHits([$thing]) : [] as $hit) {
+            $word = $hit['id'] === $lot ? $hit['word'] : $word;
         }
+        $controls = $this->stock->consumptionControls('taxmod-stock-consumption');
+        $unit     = $thing > 0 ? ($this->stock->unitWords([$thing])[$thing] ?? '') : '';
 
         // D-1039: «Ausbuchen» on a row of the Bestand tab takes from that row's place.
         $at   = $presetPlace > 0 ? sprintf(/* translators: %s: the place, by its path */ __('Ausgebucht wird am Ort %s.', 'taxmod-stock'), $this->stock->places()[$presetPlace] ?? '#' . $presetPlace) : '';
         $rows = [
-            ['label' => __('Material', 'taxmod-stock'), 'for' => 'taxmod-stock-consumption-thing', 'control' => '<select id="taxmod-stock-consumption-thing" name="thing" required>' . $this->options($have, '', $preset) . '</select>'],
-            ['label' => __('Menge', 'taxmod-stock'), 'for' => 'taxmod-stock-consumption-quantity', 'control' => '<input type="text" inputmode="decimal" id="taxmod-stock-consumption-quantity" name="quantity" required style="width:6em">'],
-            ['label' => __('Bestandsposten', 'taxmod-stock'), 'for' => 'taxmod-stock-consumption-lot', 'control' => '<select id="taxmod-stock-consumption-lot" name="lot">' . $choice . '</select>'
+            ['label' => __('Bestandsposten', 'taxmod-stock'), 'control' => $this->modellerAssets(false, true)
+                . $this->recordPicker('lot', $lot > 0 ? $lot : null, $word === '' ? '#' . $lot : $word, null, __('Material oder Posten suchen …', 'taxmod-stock'))
                 . ($presetPlace > 0 ? '<input type="hidden" name="place" value="' . esc_attr((string) $presetPlace) . '">' : ''), 'hint' => $at],
+            // D-1298: the modeller's own number control; the unit is the material's, shown beside it by name.
+            ['label' => __('Menge', 'taxmod-stock'), 'control' => ($controls['quantity'] !== '' ? $controls['quantity']
+                : '<input type="text" inputmode="decimal" name="quantity" required style="width:6em">')
+                . ($unit === '' ? '' : ' <span class="taxmod-stock-unit">' . esc_html($unit) . '</span>')],
             $this->purposeRow($presetPlace),
         ];
-        // D-1297: the kind, chosen from the tree below «Verbrauch»; required wherever that tree has kinds.
-        $kinds = $this->stock->consumptionKindChooser('art', absint($_GET['art'] ?? 0));
-        if ($kinds !== '') {
-            $rows[] = ['label' => __('Art', 'taxmod-stock'), 'control' => $kinds, 'hint' => __('Pflicht: wofür die Ware das Lager verlässt. Gewählt wird eine Art ohne Unterarten.', 'taxmod-stock')];
+        // D-1297, D-1298: the kind, from the modeller's chooser narrowed to the leaves under «Verbrauch»; required there.
+        if ($controls['kind'] !== '') {
+            $rows[] = ['label' => __('Art', 'taxmod-stock'), 'control' => $controls['kind'], 'hint' => __('Pflicht: wofür die Ware das Lager verlässt.', 'taxmod-stock')];
         }
         $rows = [...$rows,
             ['label' => __('Grund (optional)', 'taxmod-stock'), 'for' => 'taxmod-stock-consumption-reason', 'control' => '<input type="text" id="taxmod-stock-consumption-reason" name="reason" list="taxmod-stock-consumption-reasons" style="width:20em">'
@@ -3849,7 +3888,7 @@ final class StockPage
         ];
         $submit = get_submit_button(__('Verbrauch buchen', 'taxmod-stock'), 'primary', 'submit', false);
 
-        return $this->formStart('verbrauch') . self::actForm($rows, $submit) . '</form>';
+        return str_replace('<form ', '<form id="taxmod-stock-consumption" ', $this->formStart('verbrauch')) . self::actForm($rows, $submit) . '</form>';
     }
 
     /**
@@ -4096,7 +4135,7 @@ final class StockPage
      *
      * @param int|null $purchase D-1111: the receipt row whose «Material» dialog the chosen word opens; null: a plain word
      */
-    private function recordPicker(string $name, ?int $value, string $word, ?int $purchase = null): string
+    private function recordPicker(string $name, ?int $value, string $word, ?int $purchase = null, string $placeholder = ''): string
     {
         $radio = static fn (string $choice, bool $on): string => '<label class="taxmod-record-choice"><input type="radio" name="' . esc_attr($name) . '" value="' . esc_attr($choice) . '"'
             . ($on ? ' checked' : '') . '></label>';
@@ -4106,7 +4145,7 @@ final class StockPage
 
         return '<span class="taxmod-record-pick taxmod-record-remote' . ($none ? '' : ' taxmod-record-taken') . '">'
             . '<span class="taxmod-record-choices" hidden>' . $radio('', $none) . ($none ? '' : $radio((string) $value, true)) . '</span>'
-            . '<input type="search" class="taxmod-record-quick" autocomplete="off" placeholder="' . esc_attr__('Material suchen …', 'taxmod-stock') . '"' . ($none ? '' : ' hidden') . '>'
+            . '<input type="search" class="taxmod-record-quick" autocomplete="off" placeholder="' . esc_attr($placeholder === '' ? __('Material suchen …', 'taxmod-stock') : $placeholder) . '"' . ($none ? '' : ' hidden') . '>'
             . '<button type="button" class="button taxmod-icon-button taxmod-record-browse"' . ($none ? '' : ' hidden') . ' title="' . esc_attr($tree) . '">'
                 . \Taxmod\Core\Renderer\IconMarkup::dashicon('networking') . '<span class="screen-reader-text">' . esc_html($tree) . '</span></button>'
             . ($none || $purchase === null
@@ -4122,7 +4161,7 @@ final class StockPage
      * The modeller's stylesheet and script for {@see self::recordPicker()}, and the one element its script reads the material
      * endpoints from: search, the tree's groups and a group's things.
      */
-    private function modellerAssets(bool $groups): string
+    private function modellerAssets(bool $groups, bool $lots = false): string
     {
         if (class_exists(\Taxmod\WordPress\Plugin::class)) {
             // D-1269: the modeller's own stylesheet with the icon size he chose, and its script.
@@ -4131,12 +4170,13 @@ final class StockPage
 
         $address = static fn (string $action): string => esc_url(add_query_arg(['action' => $action, '_ajax_nonce' => wp_create_nonce($action)], admin_url('admin-post.php')));
 
-        $search  = $address(self::THING_SEARCH) . ($groups ? '&amp;groups=1' : '');
+        $search  = $lots ? $address(self::LOT_SEARCH) : $address(self::THING_SEARCH) . ($groups ? '&amp;groups=1' : '');
 
+        // D-1299: for Ausbuchen the same tree of groups, its records are the lots of the group's materials.
         return '<span hidden id="taxmod-words" data-record-search="' . $search . '"'
-            . ' data-record-nodes="' . $address(self::THING_NODES) . '" data-record-branch="' . $address(self::THING_BRANCH) . '"'
-            . ' data-browse-title="' . esc_attr__('Material im Baum wählen', 'taxmod-stock') . '"'
-            . ' data-browse-filter="' . esc_attr__('Material oder Gruppe suchen …', 'taxmod-stock') . '"'
+            . ' data-record-nodes="' . $address(self::THING_NODES) . '" data-record-branch="' . $address($lots ? self::LOT_BRANCH : self::THING_BRANCH) . '"'
+            . ' data-browse-title="' . ($lots ? esc_attr__('Bestandsposten im Baum wählen', 'taxmod-stock') : esc_attr__('Material im Baum wählen', 'taxmod-stock')) . '"'
+            . ' data-browse-filter="' . ($lots ? esc_attr__('Material, Posten oder Gruppe suchen …', 'taxmod-stock') : esc_attr__('Material oder Gruppe suchen …', 'taxmod-stock')) . '"'
             . ' data-no-hits="' . esc_attr__('Nichts gefunden.', 'taxmod-stock') . '"></span>';
     }
 

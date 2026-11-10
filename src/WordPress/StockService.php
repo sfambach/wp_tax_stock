@@ -263,27 +263,6 @@ final class StockService
     }
 
     /**
-     * D-1297: the modeller's node chooser over the kinds below «Verbrauch» — only its leaves can be picked; '' while it has none.
-     */
-    public function consumptionKindChooser(string $name, int $preselected = 0): string
-    {
-        $tree = $this->consumptionKindTree();
-        $s    = $this->structure();
-        if ($tree === [] || ! $s->hasValue('kind_consumption')) {
-            return '';
-        }
-        $root  = $s->value('kind_consumption');
-        $inner = array_values(array_diff(array_keys($tree), $this->consumptionLeaves()));
-
-        return (string) apply_filters('taxmod_node_chooser', '', array_filter([
-            'name'        => $name,
-            'root'        => $root,
-            'unpickable'  => [$root, ...$inner],
-            'preselected' => $preselected,
-        ], static fn (mixed $v): bool => $v !== 0 && $v !== []));
-    }
-
-    /**
      * D-1297: the kinds a consumption may be booked as — the leaves below «Verbrauch»; none while it has no kinds below.
      *
      * @return list<int>
@@ -588,6 +567,185 @@ final class StockService
         return $this->tree = array_diff_key($tree, $drop);
     }
 
+    /**
+     * His word 2026-11-10 «eingeschränkt auf den material zweig»: the material chooser (search, tree, branch) offers only the
+     * branch under «Material» (D-1257) where the structure names it; the views keep the whole tree, older material lies there.
+     *
+     * @return array<int, array{name: string, parent: int, class: string}>
+     */
+    public function pickerTree(): array
+    {
+        $tree = $this->tree();
+        $s    = $this->structure();
+        $root = $s->hasNode('material_root') ? $s->node('material_root') : 0;
+        if (! isset($tree[$root])) {
+            return $tree;
+        }
+        $keep = [$root => true];
+        do {
+            $before = count($keep);
+            foreach ($tree as $id => $node) {
+                if (isset($keep[$node['parent']])) {
+                    $keep[$id] = true;
+                }
+            }
+        } while (count($keep) > $before);
+
+        return array_intersect_key($tree, $keep);
+    }
+
+    /**
+     * A group of the chooser's tree and every group below it.
+     *
+     * @return list<int>
+     */
+    private function branchOf(int $group): array
+    {
+        $tree = $this->pickerTree();
+
+        if (! isset($tree[$group])) {
+            throw StockError::notAGroup($group);
+        }
+
+        $branch = [$group => true];
+
+        do {
+            $before = count($branch);
+
+            foreach ($tree as $id => $node) {
+                if (isset($branch[$node['parent']])) {
+                    $branch[$id] = true;
+                }
+            }
+        } while (count($branch) > $before);
+
+        return array_keys($branch);
+    }
+
+    /**
+     * D-1299, his question 2026-11-10 «baum in dem ich bestand wähle»: the lots with a rest of the materials in a group and
+     * below it, for the tree of the Ausbuchen chooser — one read of the group's records, the rests from the ledger in one pass.
+     *
+     * @return list<array{id: int, word: string, node: string}>
+     */
+    public function branchLots(int $group, int $limit = 300): array
+    {
+        return $this->lotHits(array_keys($this->model->recordsOf($this->branchOf($group), $limit)));
+    }
+
+    /**
+     * D-1299: the lots of the materials the search finds; a lot's own number («68143», «P-68143») finds that lot first.
+     *
+     * @return list<array{id: int, word: string, node: string}>
+     */
+    public function searchLots(string $term, int $limit = 30): array
+    {
+        $number = preg_match('/^(?:#|P-)?([1-9][0-9]{0,18})$/i', trim($term), $m) === 1 ? (int) $m[1] : 0;
+        $own    = $number > 0 ? $this->ledger()->thingOf($number) : null;
+        $things = array_values(array_filter(array_column($this->searchThings($term, $limit), 'id'), 'is_int'));
+        $hits   = $this->lotHits($own === null ? $things : [$own, ...$things]);
+
+        if ($own !== null) {
+            usort($hits, static fn (array $a, array $b): int => ($b['id'] === $number) <=> ($a['id'] === $number));
+        }
+
+        return $hits;
+    }
+
+    /**
+     * The lots with a rest of these materials as the chooser lists them: «Material · Ort · Datum · Rest 10 Stück».
+     *
+     * @param list<int> $things
+     * @return list<array{id: int, word: string, node: string}>
+     */
+    public function lotHits(array $things): array
+    {
+        $rests  = $this->lotsWithRest($things);
+        $ledger = $this->ledger();
+        $lots   = $this->table('lot');
+        $date   = $this->structure()->field('lot_date');
+        $places = $this->places();
+        $labels = $this->recordLabels(array_keys($rests));
+        $units  = $this->unitWords(array_keys($rests));
+        $out    = [];
+
+        foreach ($rests as $thing => $each) {
+            foreach ($each as $lot => $rest) {
+                $at    = array_map(static fn (int $place): string => $places[$place] ?? '#' . $place, array_keys(array_filter($ledger->placesOf($lot), static fn (float $q): bool => $q > 1e-9)));
+                $out[] = ['id' => $lot, 'word' => implode(' · ', array_filter([
+                    ($labels[$thing] ?? '') === '' ? '#' . $thing : $labels[$thing],
+                    implode('; ', $at),
+                    substr((string) $lots->first($lot, $date), 0, 10),
+                    /* translators: 1: the rest of a lot, 2: its unit */
+                    sprintf(__('Rest %1$s %2$s', 'taxmod-stock'), rtrim(rtrim(number_format($rest, 3, ',', ''), '0'), ','), $units[$thing]),
+                ], static fn (string $part): bool => $part !== '')), 'node' => ''];
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * D-1298: the name of the unit the Lager counts each material in (lager_unit with lager_prefix), from the model; none set
+     * is «Stück», as the Lager form says.
+     *
+     * @param list<int> $things
+     * @return array<int, string> thing → unit word
+     */
+    public function unitWords(array $things): array
+    {
+        $s      = $this->structure();
+        $named  = $s->hasField('lager_unit') ? $this->baseUnits() : ['units' => [], 'prefixes' => []];
+        $lager  = $this->table('lager');
+        $out    = [];
+
+        foreach ($things as $thing) {
+            $record = $this->things()->lagerOf($thing);
+            $unit   = $record === null || $named['units'] === [] ? 0 : (int) $lager->first($record, $s->field('lager_unit'));
+            $prefix = $record === null || ! $s->hasField('lager_prefix') ? 0 : (int) $lager->first($record, $s->field('lager_prefix'));
+            $out[$thing] = isset($named['units'][$unit])
+                ? ($named['prefixes'][$prefix] ?? '') . (isset($named['prefixes'][$prefix]) ? mb_strtolower($named['units'][$unit]) : $named['units'][$unit])
+                : __('Stück', 'taxmod-stock');
+        }
+
+        return $out;
+    }
+
+    /**
+     * D-1298: the modeller's own controls for the Ausbuchen form — «Menge» of the Vorgang position, and «Art» narrowed to the
+     * leaves under «Verbrauch» where it has kinds; empty strings on a modeller without them.
+     *
+     * @return array{quantity: string, kind: string}
+     */
+    public function consumptionControls(string $formId = ''): array
+    {
+        $s        = $this->structure();
+        $quantity = $s->field('line_quantity');
+        $kind     = $s->field('transaction_kind');
+
+        return [
+            'quantity' => $this->model->controls($s->node('line'), [$quantity], 'menge', $formId)[$quantity] ?? '',
+            'kind'     => $this->consumptionLeaves() === [] ? '' : ($this->model->controls($s->node('transaction'), [$kind], 'vorgang', $formId, 0, [], [$kind => $s->value('kind_consumption')])[$kind] ?? ''),
+        ];
+    }
+
+    /**
+     * D-1298: what was typed into {@see consumptionControls()}, read back by the modeller.
+     *
+     * @param array<int|string, mixed> $quantity `$_POST['menge']`; `mixed`: as posted
+     * @param array<int|string, mixed> $kind `$_POST['vorgang']`; `mixed`: as posted
+     * @return array{quantity: string, kind: int}
+     */
+    public function consumptionTyped(array $quantity, array $kind): array
+    {
+        $s = $this->structure();
+
+        return [
+            'quantity' => $this->model->typed($s->node('line'), $quantity)[$s->field('line_quantity')] ?? '',
+            'kind'     => (int) ($this->model->typed($s->node('transaction'), $kind)[$s->field('transaction_kind')] ?? 0),
+        ];
+    }
+
     /** @return array<int, int> node → parent, the tree of the groups as the test rule (D-1002) walks it */
     public function groupParents(): array
     {
@@ -637,7 +795,7 @@ final class StockService
      */
     public function searchThings(string $term, int $limit = 30, bool $groups = false): array
     {
-        $tree  = $this->tree();
+        $tree  = $this->pickerTree();
         // D-1287, his wish 2026-11-09 «material nummern eingabe sollte auch möglich sein»: a number («45704», «#45704», «M-45704»
         // as on the label) finds the material with that id first; the text is searched as well, and «0603» stays text. The
         // number is shown with the hit as the label writes it, never written into the name.
@@ -700,7 +858,7 @@ final class StockService
      */
     public function treeRows(): array
     {
-        $tree     = $this->tree();
+        $tree     = $this->pickerTree();
         $children = [];
         $roots    = [];
 
@@ -738,25 +896,7 @@ final class StockService
      */
     public function branchThings(int $group, int $limit = 300): array
     {
-        $tree = $this->tree();
-
-        if (! isset($tree[$group])) {
-            throw StockError::notAGroup($group);
-        }
-
-        $branch = [$group => true];
-
-        do {
-            $before = count($branch);
-
-            foreach ($tree as $id => $node) {
-                if (isset($branch[$node['parent']])) {
-                    $branch[$id] = true;
-                }
-            }
-        } while (count($branch) > $before);
-
-        $nodes  = $this->model->recordsOf(array_keys($branch), $limit);
+        $nodes  = $this->model->recordsOf($this->branchOf($group), $limit);
         $labels = $this->recordLabels(array_keys($nodes), $nodes);
         $out    = [];
 
@@ -2627,6 +2767,8 @@ final class StockService
             throw StockError::noConsumptionKind();
         }
         $ledger = $this->ledger();
+        // D-1299: a picked lot names its material.
+        $thing  = $thing <= 0 && $lot !== null ? (int) ($ledger->thingOf($lot) ?? 0) : $thing;
         $lot  ??= $ledger->proposedLot($thing);
 
         if ($ledger->thingOf($lot) !== $thing) {

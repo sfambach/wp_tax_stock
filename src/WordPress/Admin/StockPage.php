@@ -312,7 +312,8 @@ final class StockPage
                     $today,
                     $this->title(__('Verbrauch', 'taxmod-stock'), $today),
                     absint($_POST['place'] ?? 0) ?: null,
-                    sanitize_text_field(wp_unslash((string) ($_POST['reason'] ?? '')))
+                    sanitize_text_field(wp_unslash((string) ($_POST['reason'] ?? ''))),
+                    absint($_POST['art'] ?? 0)
                 ),
                 default        => throw StockError::nothingToBook(),
             };
@@ -1861,7 +1862,7 @@ final class StockPage
      */
     private function movements(array $lots, int $thing): array
     {
-        $s       = $this->stock->structure();
+        $s       = $this->stock->structureWithKinds();
         $lines   = $this->stock->table('line');
         $deals   = $this->stock->table('transaction');
         $places  = $this->stock->places();
@@ -1871,6 +1872,10 @@ final class StockPage
             $s->value('kind_count')       => __('Inventur', 'taxmod-stock'),
         ] + ($s->hasValue('kind_transfer') ? [$s->value('kind_transfer') => __('Umbuchung', 'taxmod-stock')] : [])
             + ($s->hasValue('kind_sale') ? [$s->value('kind_sale') => __('Verkauf', 'taxmod-stock')] : []);
+        // D-1297: a kind below «Verbrauch» is shown with its own name from the model.
+        foreach ($this->stock->consumptionKindTree() as $art => $node) {
+            $kinds[$art] = __('Verbrauch', 'taxmod-stock') . ' · ' . $node['name'];
+        }
         $wanted  = array_flip($lots);
         $hidden  = (new Storno($s))->pairedLines($lines) + Ledger::reservationLines($s, $deals);
         $where   = $s->hasField('line_location') ? $s->field('line_location') : null;
@@ -3832,6 +3837,13 @@ final class StockPage
             ['label' => __('Bestandsposten', 'taxmod-stock'), 'for' => 'taxmod-stock-consumption-lot', 'control' => '<select id="taxmod-stock-consumption-lot" name="lot">' . $choice . '</select>'
                 . ($presetPlace > 0 ? '<input type="hidden" name="place" value="' . esc_attr((string) $presetPlace) . '">' : ''), 'hint' => $at],
             $this->purposeRow($presetPlace),
+        ];
+        // D-1297: the kind, chosen from the tree below «Verbrauch»; required wherever that tree has kinds.
+        $kinds = $this->stock->consumptionKindChooser('art', absint($_GET['art'] ?? 0));
+        if ($kinds !== '') {
+            $rows[] = ['label' => __('Art', 'taxmod-stock'), 'control' => $kinds, 'hint' => __('Pflicht: wofür die Ware das Lager verlässt. Gewählt wird eine Art ohne Unterarten.', 'taxmod-stock')];
+        }
+        $rows = [...$rows,
             ['label' => __('Grund (optional)', 'taxmod-stock'), 'for' => 'taxmod-stock-consumption-reason', 'control' => '<input type="text" id="taxmod-stock-consumption-reason" name="reason" list="taxmod-stock-consumption-reasons" style="width:20em">'
                 . '<datalist id="taxmod-stock-consumption-reasons">' . implode('', array_map(static fn (string $r): string => '<option value="' . esc_attr($r) . '">', self::consumptionReasons())) . '</datalist>'],
         ];
@@ -3897,8 +3909,8 @@ final class StockPage
      */
     private static function consumptionReasons(): array
     {
-        // D-1168: goods sent a second time leave as a loss.
-        return [__('Reparatur', 'taxmod-stock'), __('Verlust', 'taxmod-stock')];
+        // D-1297: a loss is a kind of its own now («Verlust/Schwund»), not a reason.
+        return [__('Reparatur', 'taxmod-stock')];
     }
 
     /**

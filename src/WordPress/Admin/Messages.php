@@ -115,6 +115,7 @@ final class Messages
             'no_backfill_place'         => sprintf(__('Kein Lagerort für die Nacherfassung von Material #%s: weder angegeben noch am Material, an seiner Gruppe oder als «Lagerort für Käufe ohne Material» eingestellt.', 'taxmod-stock'), $error->detail),
             'place_in_use'              => sprintf(__('Dieser Lagerort wird noch gebraucht: %s', 'taxmod-stock'), $error->detail),
             'no_subject'                => __('Kein gültiger Bezug: ein Projekt oder ein Verkauf.', 'taxmod-stock'),
+            'no_consumption_kind'       => __('Bitte die Art des Verbrauchs wählen (z. B. Betriebsbedarf).', 'taxmod-stock'),
             /* translators: %s: what was typed */
             'not_a_date'                => sprintf(__('«%s» ist kein gültiges Datum.', 'taxmod-stock'), $error->detail),
             'model_refused'             => sprintf(__('Der Taxonomy Modeller hat die Buchung abgelehnt, nichts wurde geschrieben: %s', 'taxmod-stock'), $error->detail),

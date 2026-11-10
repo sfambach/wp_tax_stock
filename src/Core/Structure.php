@@ -127,6 +127,8 @@ final class Structure
         'kind_relocation',
         // D-1260: the Vorgang «Verkauf», booked by the sales module.
         'kind_sale',
+        // D-1297: the kind «Verlust/Schwund» under «Verbrauch», booked by the Ersatzversand (D-1168).
+        'kind_loss',
         // D-1169: a place type's fit calculation and how loudly a misfit is said.
         'fit_volume', 'fit_sides', 'fit_none', 'level_info', 'level_warning', 'level_error',
     ];
@@ -155,12 +157,14 @@ final class Structure
      * @param array<string, int>  $fields
      * @param array<string, int>  $values
      * @param array<string, true> $composed field keys of position lists that are compositions in the model
+     * @param array<int, true>    $consumptionTree D-1297: «Verbrauch» and every kind below it, as the model said
      */
     private function __construct(
         private readonly array $nodes,
         private readonly array $fields,
         private readonly array $values,
         private readonly array $composed = [],
+        private readonly array $consumptionTree = [],
     ) {
     }
 
@@ -248,7 +252,7 @@ final class Structure
      */
     public function consumptionKinds(): array
     {
-        return array_values(array_filter([$this->values['kind_consumption'] ?? null, $this->values['kind_sale'] ?? null]));
+        return array_values(array_unique(array_filter([$this->values['kind_consumption'] ?? null, ...array_keys($this->consumptionTree), $this->values['kind_sale'] ?? null])));
     }
 
     /**
@@ -259,7 +263,28 @@ final class Structure
      */
     public function withComposed(array $keys): self
     {
-        return new self($this->nodes, $this->fields, $this->values, array_fill_keys(array_values(array_intersect(array_keys(self::POSITION_LISTS), $keys)), true));
+        return new self($this->nodes, $this->fields, $this->values, array_fill_keys(array_values(array_intersect(array_keys(self::POSITION_LISTS), $keys)), true), $this->consumptionTree);
+    }
+
+    /**
+     * D-1297: the same ids, told which kinds stand below «Verbrauch» in the model — each of them is a consumption.
+     *
+     * @param list<int> $kinds the kinds below «Verbrauch», read once per request
+     */
+    public function withConsumptionTree(array $kinds): self
+    {
+        $tree = $this->hasValue('kind_consumption') ? [$this->value('kind_consumption') => true] : [];
+        foreach ($kinds as $kind) {
+            $tree[(int) $kind] = true;
+        }
+
+        return new self($this->nodes, $this->fields, $this->values, $this->composed, $tree);
+    }
+
+    /** D-1297: whether a Vorgang of this kind is a consumption — «Verbrauch» itself (as before) or a kind below it. */
+    public function isConsumption(int $kind): bool
+    {
+        return $kind > 0 && ($kind === ($this->values['kind_consumption'] ?? 0) || isset($this->consumptionTree[$kind]));
     }
 
     /** Whether the positions of this list are parts of their head (D-1097), as the model said when it was read. */

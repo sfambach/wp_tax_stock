@@ -324,7 +324,7 @@ final class Bookings
      *
      * @return list<array<string, mixed>>
      */
-    public function consumption(int $lot, string $quantity, Purpose $purpose, string $title, ?int $place = null, string $reason = ''): array
+    public function consumption(int $lot, string $quantity, Purpose $purpose, string $title, ?int $place = null, string $reason = '', int $art = 0): array
     {
         $s      = $this->structure;
         $amount = Quantity::positive($quantity);
@@ -339,7 +339,8 @@ final class Bookings
             $extra[(string) $s->field('description')] = trim($reason);
         }
 
-        return $this->finish($title, 'kind_consumption', $extra);
+        // D-1297: a kind below «Verbrauch», where one is chosen; else «Verbrauch» itself, as before.
+        return $this->finish($title, $art > 0 && $s->isConsumption($art) ? $art : 'kind_consumption', $extra);
     }
 
     /**
@@ -850,7 +851,7 @@ final class Bookings
      * @param array<string, string> $extra
      * @return list<array<string, mixed>>
      */
-    private function finish(string $title, string $kind, array $extra): array
+    private function finish(string $title, string|int $kind, array $extra): array
     {
         $s   = $this->structure;
         $ref = $this->ref('v');
@@ -858,7 +859,7 @@ final class Bookings
         $this->changes[] = ['op' => 'create_record', 'ref' => $ref, 'node' => $s->node('transaction')];
         $this->changes[] = ['op' => 'set_values', 'record' => '@' . $ref, 'values' => [
             (string) $s->field('label')              => $title,
-            (string) $s->field('transaction_kind')   => (string) $s->value($kind),
+            (string) $s->field('transaction_kind')   => (string) (is_int($kind) ? $kind : $s->value($kind)),
             (string) $s->field('transaction_date')   => $this->today,
             (string) $s->field('transaction_source') => (string) $s->value('source_manual'),
             (string) $s->field('transaction_lines')  => $s->composes('transaction_lines') ? $this->lineParts : ['values' => $this->lineRefs],

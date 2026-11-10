@@ -120,6 +120,9 @@ final class StockService
     /** @var array<string, array<int, bool|int|null>> D-1259: group properties, read once per key */
     private array $groupProperties = [];
 
+    /** @var array<int, array{name: string, parent: int, class: string, hidden: bool}>|null D-1297 */
+    private ?array $consumptionKinds = null;
+
     /** @var array<string, array<int, bool|int|null>> D-1284: Bauform properties, read once per key */
     private array $formProperties = [];
 
@@ -234,7 +237,63 @@ final class StockService
             }
         }
 
-        return $s->withComposed($this->composed);
+        return $s->withComposed($this->composed)->withConsumptionTree(array_keys($this->consumptionKindTree()));
+    }
+
+    /**
+     * D-1297: the kinds below «Verbrauch» (Betriebsbedarf, Verlust/Schwund …) as the model holds them, read once per request;
+     * none where «Verbrauch» has no kinds below it.
+     *
+     * @return array<int, array{name: string, parent: int, class: string, hidden: bool}>
+     */
+    public function consumptionKindTree(): array
+    {
+        if ($this->consumptionKinds !== null) {
+            return $this->consumptionKinds;
+        }
+        $s = $this->structure();
+        try {
+            $tree = $s->hasValue('kind_consumption') ? $this->model->tree($s->value('kind_consumption')) : [];
+        } catch (StockError) {
+            $tree = [];
+        }
+        unset($tree[$s->hasValue('kind_consumption') ? $s->value('kind_consumption') : 0]);
+
+        return $this->consumptionKinds = $tree;
+    }
+
+    /**
+     * D-1297: the modeller's node chooser over the kinds below «Verbrauch» — only its leaves can be picked; '' while it has none.
+     */
+    public function consumptionKindChooser(string $name, int $preselected = 0): string
+    {
+        $tree = $this->consumptionKindTree();
+        $s    = $this->structure();
+        if ($tree === [] || ! $s->hasValue('kind_consumption')) {
+            return '';
+        }
+        $root  = $s->value('kind_consumption');
+        $inner = array_values(array_diff(array_keys($tree), $this->consumptionLeaves()));
+
+        return (string) apply_filters('taxmod_node_chooser', '', array_filter([
+            'name'        => $name,
+            'root'        => $root,
+            'unpickable'  => [$root, ...$inner],
+            'preselected' => $preselected,
+        ], static fn (mixed $v): bool => $v !== 0 && $v !== []));
+    }
+
+    /**
+     * D-1297: the kinds a consumption may be booked as — the leaves below «Verbrauch»; none while it has no kinds below.
+     *
+     * @return list<int>
+     */
+    public function consumptionLeaves(): array
+    {
+        $tree    = $this->consumptionKindTree();
+        $parents = array_flip(array_map(static fn (array $node): int => $node['parent'], $tree));
+
+        return array_values(array_filter(array_keys($tree), static fn (int $id): bool => ! isset($parents[$id])));
     }
 
     public function table(string $node): Table
@@ -1946,7 +2005,7 @@ final class StockService
     /** D-1083: the reservations of subjects, read from the Vorgänge once per request. */
     public function reservations(): Reservations
     {
-        return Reservations::from($this->structure(), $this->table('transaction'), $this->table('line'), $this->ledger());
+        return Reservations::from($this->structureWithKinds(), $this->table('transaction'), $this->table('line'), $this->ledger());
     }
 
     /**
@@ -2560,8 +2619,13 @@ final class StockService
      *
      * @return array<string, mixed>
      */
-    public function bookConsumption(int $thing, ?int $lot, string $quantity, Purpose $purpose, string $today, string $title, ?int $place = null, string $reason = ''): array
+    public function bookConsumption(int $thing, ?int $lot, string $quantity, Purpose $purpose, string $today, string $title, ?int $place = null, string $reason = '', int $art = 0): array
     {
+        // D-1297: where «Verbrauch» has kinds below it, one of its leaves is required.
+        $leaves = $this->consumptionLeaves();
+        if ($leaves !== [] && ! in_array($art, $leaves, true)) {
+            throw StockError::noConsumptionKind();
+        }
         $ledger = $this->ledger();
         $lot  ??= $ledger->proposedLot($thing);
 
@@ -2580,7 +2644,7 @@ final class StockService
         $reserved->checkConsumption($place ?? $ledger->homeOf($lot), $purpose);
         $this->reservations()->checkConsumption($lot, $quantity, $place ?? $ledger->homeOf($lot), $purpose, $ledger, $reserved);
 
-        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->consumption($lot, $quantity, $purpose, $title, $place, $reason));
+        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->consumption($lot, $quantity, $purpose, $title, $place, $reason, $leaves === [] ? 0 : $art));
     }
 
     /**
@@ -2779,7 +2843,7 @@ final class StockService
     /** @return array<int, array<int, float>> thing → lot → pieces the Vorgänge naming `$reference` took, net of what came back */
     private function takenFor(int $reference): array
     {
-        $s = $this->structure();
+        $s = $this->structureWithKinds();
 
         if (! $s->hasField('transaction_reference')) {
             return [];
@@ -2791,7 +2855,7 @@ final class StockService
         $out    = [];
 
         foreach ($deals->ids() as $deal) {
-            if ((int) $deals->first($deal, $s->field('transaction_reference')) !== $reference || (int) $deals->first($deal, $s->field('transaction_kind')) !== $s->value('kind_consumption')) {
+            if ((int) $deals->first($deal, $s->field('transaction_reference')) !== $reference || ! $s->isConsumption((int) $deals->first($deal, $s->field('transaction_kind')))) {
                 continue;
             }
 
@@ -2874,7 +2938,14 @@ final class StockService
         $known   = array_merge(...array_map('array_keys', array_values($this->purposes())));
         $purpose = $sale > 0 && in_array($sale, $known, true) ? Purpose::subject($sale) : Purpose::none();
 
-        return $this->dealOf($this->bookConsumption($thing, $lot, $quantity, $purpose, $today, $title, null, $reason));
+        // D-1297: the Ersatzversand books «Verlust/Schwund», named by the structure, never by its name.
+        $s   = $this->structure();
+        $art = $s->hasValue('kind_loss') && in_array($s->value('kind_loss'), $this->consumptionLeaves(), true) ? $s->value('kind_loss') : 0;
+        if ($art === 0 && $this->consumptionLeaves() !== []) {
+            throw StockError::notConfigured('values.kind_loss');
+        }
+
+        return $this->dealOf($this->bookConsumption($thing, $lot, $quantity, $purpose, $today, $title, null, $reason, $art));
     }
 
     /**
@@ -3046,7 +3117,7 @@ final class StockService
      */
     public function cancelConsumption(int $deal, string $now, string $who): array
     {
-        $s     = $this->structure();
+        $s     = $this->structureWithKinds();
         $deals = $this->table('transaction');
         $rows  = (new Storno($s))->consumptionRows($deal, $deals, $this->table('line'));
         /* translators: %s: the name of the Vorgang taken back */

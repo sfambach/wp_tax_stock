@@ -46,8 +46,10 @@ require __DIR__ . '/../../vendor/autoload.php';
 use TaxmodStock\Core\InventoryRow;
 use TaxmodStock\Core\LagerInput;
 use TaxmodStock\Core\NewThing;
+use TaxmodStock\Core\ConsumptionByKind;
 use TaxmodStock\Core\ReceiptChoice;
 use TaxmodStock\Core\ReceiptReversal;
+use TaxmodStock\Core\PeriodActivity;
 use TaxmodStock\Core\Purpose;
 use TaxmodStock\Core\SplitRow;
 use TaxmodStock\Core\StockError;
@@ -1083,6 +1085,49 @@ $pruefe($frage !== null && ($frage->get_meta()['annotations']['readonly'] ?? fal
 $pruefe(is_array($dort) && $dort['total_lots'] === $soll, 'the ability answers with every lot at the place and inside it');
 $pruefe(is_array($ein = $frage?->execute(['materials' => [$bc]])) && abs(($ein['materials'][0]['quantity'] ?? -1.0) - $nun->ledger()->stockOf($bc)) < 1e-9, 'per material: the quantity is the ledger\'s stock');
 $pruefe(is_wp_error($frage?->execute(['limit' => 0]) ?? new WP_Error()), 'a wrong limit is refused');
+
+// D-1297, his choice: «Verbrauch» holds kinds below it; a consumption names a leaf, the Ersatzversand books «Verlust/Schwund».
+$vorBau = (new StockService())->ledger()->stockOf($r['t1']);
+$alt    = ConsumptionByKind::from((new StockService())->structureWithKinds(), (new StockService())->table('transaction'), (new StockService())->table('line'), (new StockService())->table('lot'), (new StockService())->table('money'))->cells();
+$arten  = $apply([
+    ['op' => 'create_node', 'ref' => 'bb', 'name' => '__Betriebsbedarf', 'parent' => (string) $r['k_vb']],
+    ['op' => 'create_node', 'ref' => 'gr', 'name' => '__Abgang', 'parent' => (string) $r['k_vb']],
+    ['op' => 'create_node', 'ref' => 'vs', 'name' => '__Verlust/Schwund', 'parent' => '@gr'],
+])['refs'] ?? [];
+$opt = get_option('taxmod_stock_structure');
+if (is_array($opt)) {
+    $opt['values']['kind_loss'] = (int) $arten['vs'];
+    update_option('taxmod_stock_structure', $opt);
+}
+$s = new StockService();
+$pruefe($s->consumptionLeaves() === [(int) $arten['bb'], (int) $arten['vs']] || array_diff([(int) $arten['bb'], (int) $arten['vs']], $s->consumptionLeaves()) === [] && ! in_array((int) $arten['gr'], $s->consumptionLeaves(), true), 'D-1297: the leaves below «Verbrauch» are the kinds to choose');
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'verbrauch', 'thing' => (string) $r['t1']];
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'name="art"') && str_contains($html, '__Betriebsbedarf'), 'D-1297: the consumption form asks the kind with the modeller\'s tree chooser');
+foreach ([0 => 'without a kind', (int) $arten['gr'] => 'with an inner kind'] as $art => $wie) {
+    try {
+        (new StockService())->bookConsumption($r['t1'], null, '1', Purpose::none(), '2026-11-10', 'Verbrauch ohne Art', null, '', $art);
+        $pruefe(false, 'D-1297: a consumption ' . $wie . ' is refused');
+    } catch (StockError $e) {
+        $pruefe($e->reason === 'no_consumption_kind' && (new StockService())->ledger()->stockOf($r['t1']) === $vorBau, 'D-1297: a consumption ' . $wie . ' is refused, nothing booked');
+    }
+}
+$bb   = (new StockService())->bookConsumption($r['t1'], null, '1', Purpose::none(), '2026-11-10', 'Verbrauch Betrieb', null, '', (int) $arten['bb']);
+$s    = new StockService();
+$deal = (int) ($bb['refs']['v1'] ?? array_values(array_filter($bb['refs'] ?? [], static fn ($v, $k): bool => str_starts_with((string) $k, 'v'), ARRAY_FILTER_USE_BOTH))[0] ?? 0);
+$pruefe($s->ledger()->stockOf($r['t1']) === $vorBau - 1.0 && (int) $s->table('transaction')->first($deal, $s->structure()->field('transaction_kind')) === (int) $arten['bb'], 'D-1297: a consumption books the kind chosen and takes the piece');
+$events = (new PeriodActivity($s->structureWithKinds(), $s->table('transaction'), $s->table('line'), $s->table('lot'), '2026-11-10', '2026-11-11'))->events('2026-11-10', '2026-11-11');
+$hier   = array_values(array_filter($events, static fn (array $e): bool => $e['deal'] === $deal))[0] ?? [];
+$pruefe(($hier['kind'] ?? 0) === $s->structure()->value('kind_consumption') && ($hier['art'] ?? 0) === (int) $arten['bb'], 'D-1297: the period counts a kind below «Verbrauch» as «Verbrauch», keeping its kind');
+$bericht = ConsumptionByKind::from($s->structureWithKinds(), $s->table('transaction'), $s->table('line'), $s->table('lot'), $s->table('money'))->cells();
+$zelle   = $bericht[(int) $arten['bb']]['2026'] ?? null;
+$pruefe($zelle !== null && ($zelle['value'] > 0.0 || $zelle['unvalued'] === 1) && ($bericht[$r['k_vb']] ?? null) == ($alt[$r['k_vb']] ?? null), 'D-1297: the report counts the new kind per year, a lot without value apart; the old «Verbrauch» stays as it was');
+(new StockService())->cancelConsumption($deal, '2026-11-10 12:00', 'check');
+$pruefe((new StockService())->ledger()->stockOf($r['t1']) === $vorBau, 'D-1297: a consumption of a kind below «Verbrauch» is cancelled like any other');
+$losLot2 = (new StockService())->ledger()->proposedLot($r['t1']);
+$verlust = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_LOSS, null, ['sale' => $auftrag, 'lot' => $losLot2, 'quantity' => '1', 'reason' => 'Ersatzversand', 'date' => '2026-11-10', 'title' => 'Verlust Ersatzversand']);
+$s       = new StockService();
+$pruefe(is_int($verlust) && (int) $s->table('transaction')->first($verlust, $s->structure()->field('transaction_kind')) === (int) $arten['vs'], 'D-1297: the Ersatzversand books «Verlust/Schwund», named by the structure' . ($verlust instanceof WP_Error ? ': ' . $verlust->get_error_message() : ''));
 
 echo $fehler === 0 ? "all green ({$kind})\n" : "{$fehler} red ({$kind})\n";
 exit($fehler === 0 ? 0 : 1);

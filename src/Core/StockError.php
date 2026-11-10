@@ -305,6 +305,12 @@ final class StockError extends \RuntimeException
         return new self('no_subject', '');
     }
 
+    /** D-1297: a consumption names one of the kinds below «Verbrauch», a leaf. */
+    public static function noConsumptionKind(): self
+    {
+        return new self('no_consumption_kind', '');
+    }
+
     /** D-1146: a build takes only what lies in its box; the detail is the thing. */
     public static function notEnoughForBuild(int $thing): self
     {

@@ -23,7 +23,7 @@ namespace TaxmodStock\Core;
  */
 final class PeriodActivity
 {
-    /** @var list<array{deal: int, date: string, kind: int, in: float, out: float, lines: int, things: array<int, float>}> newest first */
+    /** @var list<array{deal: int, date: string, kind: int, art: int, in: float, out: float, lines: int, things: array<int, float>}> newest first */
     private array $events = [];
 
     /**
@@ -46,8 +46,10 @@ final class PeriodActivity
                 continue;
             }
 
-            $kind  = (int) $transactions->first($deal, $s->field('transaction_kind'));
-            $event = ['deal' => $deal, 'date' => $date, 'kind' => $kind, 'in' => 0.0, 'out' => 0.0, 'lines' => 0, 'things' => []];
+            $art   = (int) $transactions->first($deal, $s->field('transaction_kind'));
+            // D-1297: a kind below «Verbrauch» counts as «Verbrauch»; `art` keeps which one.
+            $kind  = $s->hasValue('kind_consumption') && $s->isConsumption($art) && $art !== ($s->hasValue('kind_sale') ? $s->value('kind_sale') : 0) ? $s->value('kind_consumption') : $art;
+            $event = ['deal' => $deal, 'date' => $date, 'kind' => $kind, 'art' => $art, 'in' => 0.0, 'out' => 0.0, 'lines' => 0, 'things' => []];
 
             foreach ($transactions->all($deal, $s->field('transaction_lines')) as $line) {
                 $line = (int) $line;
@@ -83,7 +85,7 @@ final class PeriodActivity
     /**
      * Every Vorgang of the span, newest first.
      *
-     * @return list<array{deal: int, date: string, kind: int, in: float, out: float, lines: int, things: array<int, float>}>
+     * @return list<array{deal: int, date: string, kind: int, art: int, in: float, out: float, lines: int, things: array<int, float>}>
      */
     public function events(string $from = '', string $until = '9999'): array
     {

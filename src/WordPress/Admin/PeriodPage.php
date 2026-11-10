@@ -64,7 +64,7 @@ final class PeriodPage
 
     private function activity(Period $period): string
     {
-        $s        = $this->stock->structure();
+        $s        = $this->stock->structureWithKinds();
         $before   = $period->previous();
         $activity = new PeriodActivity(
             $s,
@@ -105,7 +105,47 @@ final class PeriodPage
         return Tiles::grid($tiles, sprintf(__('Lager · %s', 'taxmod-stock'), Tiles::periodName($period)))
             . '<h2 class="taxmod-tiles-heading">' . esc_html__('Verlauf', 'taxmod-stock') . '</h2>' . $chart
             . '<div class="taxmod-panels"><section class="taxmod-panel"><h3>' . esc_html__('Was ist passiert', 'taxmod-stock') . '</h3>' . $this->eventList($events) . '</section>'
-            . '<section class="taxmod-panel"><h3>' . esc_html__('Meistbewegtes Material', 'taxmod-stock') . '</h3>' . $this->mostMoved($activity, $period) . '</section></div>';
+            . '<section class="taxmod-panel"><h3>' . esc_html__('Meistbewegtes Material', 'taxmod-stock') . '</h3>' . $this->mostMoved($activity, $period) . '</section></div>'
+            . $this->consumptionByKind($s);
+    }
+
+    /**
+     * D-1297: the value of what was consumed, per kind and year — a Vorgang on «Verbrauch» itself, from before the kinds, in a row
+     * of its own; lines whose lot has no value are counted apart, not as 0 (D-1250).
+     */
+    public function consumptionByKind(\TaxmodStock\Core\Structure $s): string
+    {
+        $deals  = $this->stock->table('transaction');
+        $lines  = $this->stock->table('line');
+        $lots   = $this->stock->table('lot');
+        $money  = $this->stock->recordsOf('money', \TaxmodStock\Core\ConsumptionByKind::valueParts($s, $deals, $lines, $lots));
+        $report = \TaxmodStock\Core\ConsumptionByKind::from($s, $deals, $lines, $lots, $money);
+        $years  = $report->years();
+        if ($years === []) {
+            return '';
+        }
+        $names = [];
+        foreach ($this->stock->consumptionKindTree() as $kind => $node) {
+            $names[$kind] = $node['name'];
+        }
+        $plain = $s->hasValue('kind_consumption') ? $s->value('kind_consumption') : 0;
+        $names[$plain] = $names === [] ? __('Verbrauch', 'taxmod-stock') : __('Verbrauch (ohne Art)', 'taxmod-stock');
+        $body  = '';
+        foreach ($report->cells() as $kind => $byYear) {
+            $body .= '<tr><td>' . esc_html($names[$kind] ?? '#' . $kind) . '</td>';
+            foreach ($years as $year) {
+                $cell  = $byYear[$year] ?? null;
+                $body .= '<td style="text-align:right">' . ($cell === null ? '' : esc_html(number_format_i18n($cell['value'], 2)
+                    /* translators: %d: lines whose lot has no value */
+                    . ($cell['unvalued'] > 0 ? ' · ' . sprintf(_n('%d ohne Wert', '%d ohne Wert', $cell['unvalued'], 'taxmod-stock'), $cell['unvalued']) : ''))) . '</td>';
+            }
+            $body .= '</tr>';
+        }
+        $head = '<th>' . esc_html__('Art', 'taxmod-stock') . '</th>' . implode('', array_map(static fn (string $year): string => '<th style="text-align:right">' . esc_html($year) . '</th>', $years));
+
+        return '<h2 class="taxmod-tiles-heading">' . esc_html__('Verbrauch nach Art und Jahr', 'taxmod-stock') . '</h2>'
+            . '<p class="description">' . esc_html__('Wert: ausgebuchte Menge mal Wert je Stück des Postens. Zeilen ohne Wert je Stück zählen nicht mit und stehen als «ohne Wert» daneben.', 'taxmod-stock') . '</p>'
+            . '<table class="widefat striped" style="max-width:60em"><thead><tr>' . $head . '</tr></thead><tbody>' . $body . '</tbody></table>';
     }
 
     /** A count against the one before: grey when both are nothing, the trend as ▲ or ▼. */
@@ -164,7 +204,7 @@ final class PeriodPage
         return $count;
     }
 
-    /** @param list<array{deal: int, date: string, kind: int, in: float, out: float, lines: int, things: array<int, float>}> $events */
+    /** @param list<array{deal: int, date: string, kind: int, art?: int, in: float, out: float, lines: int, things: array<int, float>}> $events */
     private function eventList(array $events): string
     {
         if ($events === []) {
@@ -172,6 +212,7 @@ final class PeriodPage
         }
 
         $kinds  = $this->kinds();
+        $arts   = array_map(static fn (array $node): string => $node['name'], $this->stock->consumptionKindTree());
         $things = $this->stock->things();
         $rows   = '';
 
@@ -181,7 +222,7 @@ final class PeriodPage
                 array_keys($e['things'])
             );
             $rows .= '<tr><td>' . esc_html(wp_date('j.n.Y', (int) strtotime($e['date'] . ' 00:00:00 UTC'), new \DateTimeZone('UTC'))) . '</td>'
-                . '<td>' . esc_html($kinds[$e['kind']] ?? '–') . '</td>'
+                . '<td>' . esc_html(($kinds[$e['kind']] ?? '–') . (isset($arts[$e['art'] ?? 0]) ? ' · ' . $arts[$e['art']] : '')) . '</td>'
                 . '<td>' . implode(', ', $names) . '</td>'
                 . '<td style="text-align:right">' . esc_html($e['in'] > 0 ? '+' . number_format_i18n($e['in'], fmod($e['in'], 1.0) === 0.0 ? 0 : 2) : '') . '</td>'
                 . '<td style="text-align:right">' . esc_html($e['out'] > 0 ? '−' . number_format_i18n($e['out'], fmod($e['out'], 1.0) === 0.0 ? 0 : 2) : '') . '</td></tr>';

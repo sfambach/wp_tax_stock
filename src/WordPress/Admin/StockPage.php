@@ -1348,7 +1348,9 @@ final class StockPage
                     // His wish 2026-11-08: «Bitte auch das Material anzeigen hier in der Liste».
                     . '<td>' . ($first ? esc_html($name) : '') . '</td><td>' . esc_html($places[$place] ?? '—') . $this->reservedMark($place, $flags) . '</td><td>' . esc_html($this->number($quantity)) . '</td>'
                     . '<td>' . ($first ? esc_html($amount ?? '—') : '') . '</td>'
-                    . '<td>' . ($first ? esc_html($purchase === null ? __('Inventur', 'taxmod-stock') : '#' . $purchase) : '') . '</td>'
+                    // His wish 2026-11-11 «Absprung zum Kauf … in einem neuen Tab»: the purchase opens in the modeller, picture and all.
+                    . '<td>' . ($first ? ($purchase === null ? esc_html__('Inventur', 'taxmod-stock')
+                        : '<a href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => (int) $purchase], admin_url('admin.php'))) . '" target="_blank" rel="noopener">#' . esc_html((string) $purchase) . '</a>') : '') . '</td>'
                     . '<td>' . ($first ? esc_html(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10)) : '') . '</td>'
                     . '<td style="text-align:right;white-space:nowrap">' . ($quantity > 0.0 ? $this->transferDialog($thing, $lot, $place, $quantity, $places) : '')
                     . ' ' . $this->bookOutButton(add_query_arg(['page' => self::PAGE, 'tab' => 'verbrauch', 'thing' => $thing, 'lot' => $lot, 'place' => $place], admin_url('admin.php')))

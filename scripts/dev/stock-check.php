@@ -1169,6 +1169,15 @@ $pruefe(in_array($r['teile'], $ast, true) && array_diff($reihen, $ast) === [] &&
     'the material chooser offers only the branch under «Material»; the views keep the whole tree');
 update_option('taxmod_stock_structure', $vor);
 
+// His wish 2026-11-11 «Absprung zum Kauf … in einem neuen Tab»: a lot's purchase in the Bestand list links to the purchase.
+$mitKauf = 0;
+foreach ((new StockService())->ledger()->lotsOf($r['t1']) as $l) {
+    $mitKauf = $mitKauf ?: (int) ((new StockService())->table('lot')->first($l, (new StockService())->structure()->field('lot_purchase')) ?? 0);
+}
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => (string) $r['t1'], 'view' => 'bestand'];
+$html = (new StockPage())->render();
+$pruefe($mitKauf === 0 || str_contains($html, 'taxmod_open_record=' . $mitKauf . '" target="_blank"'), 'the Bestand list links a lot\'s purchase, in a new tab');
+
 // D-1308, his word 2026-11-11 «die Buttons oben wie so eine Toolbar arrangiert. Und nicht mehr unten»: the forms carry their acts
 // in the toolbar above the fields, and no submit row below.
 $oben = static fn (string $html, string $vor): bool => ($t = strpos($html, 'taxmod-toolbar')) !== false && ($f = strpos($html, $vor)) !== false && $t < $f && ! str_contains($html, '<p class="submit"');

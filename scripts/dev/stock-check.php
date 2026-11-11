@@ -1180,7 +1180,7 @@ $pruefe($mitKauf === 0 || str_contains($html, 'taxmod_open_record=' . $mitKauf .
 
 // D-1309 (S14): the receipt's «Material» dialog is the modeller's one view dialog; the module draws no frame of its own.
 $quelle = (string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Admin/StockPage.php');
-$pruefe(str_contains($quelle, "ListPage::viewDialog('taxmod-stock-material-'") && ! str_contains($quelle, '<iframe'), 'D-1309: «Material» in the receipt opens in the modeller\'s view dialog');
+$pruefe(str_contains($quelle, "ListPage::viewDialog('taxmod-stock-material-'") && ! str_contains($quelle, '<iframe') && ! str_contains($quelle, 'iframe[data-src]'), 'D-1309: «Material» in the receipt opens in the modeller\'s view dialog');
 
 // D-1308, his word 2026-11-11 «die Buttons oben wie so eine Toolbar arrangiert. Und nicht mehr unten»: the forms carry their acts
 // in the toolbar above the fields, and no submit row below.

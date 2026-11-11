@@ -80,12 +80,12 @@ final class Plugin
 
     public function bootWhenModellerIsThere(): void
     {
-        // *The one door into the model and the shared confirm dialog (D-1186) came with the modeller 0.1.175; the Ausbuchen form needs the narrowed choosers of 0.2.64 (D-1298), every form the toolbar of 0.2.67 (D-1308); an older one is named
+        // *The one door into the model and the shared confirm dialog (D-1186) came with the modeller 0.1.175; the Ausbuchen form needs the narrowed choosers of 0.2.64 (D-1298), every form the toolbar of 0.2.67 (D-1308), the view dialog of 0.2.68 (D-1309); an older one is named
         // rather than failing on a page.*
         // Asked by version, not by loading the classes: method_exists() compiled the 43 KB list page on every page view (D-1187).
-        if (! class_exists(\Taxmod\WordPress\Plugin::class, false) || version_compare(\Taxmod\WordPress\Plugin::VERSION, '0.2.67', '<')) {
+        if (! class_exists(\Taxmod\WordPress\Plugin::class, false) || version_compare(\Taxmod\WordPress\Plugin::VERSION, '0.2.68', '<')) {
             add_action('admin_notices', static function (): void {
-                echo '<div class="notice notice-error"><p>' . esc_html__('Taxmod Stock braucht den aktiven Taxonomy Modeller ab 0.2.67.', 'taxmod-stock') . '</p></div>';
+                echo '<div class="notice notice-error"><p>' . esc_html__('Taxmod Stock braucht den aktiven Taxonomy Modeller ab 0.2.68.', 'taxmod-stock') . '</p></div>';
             });
 
             return;

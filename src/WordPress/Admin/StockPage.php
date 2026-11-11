@@ -4253,7 +4253,8 @@ final class StockPage
             . 'document.querySelectorAll(".taxmod-stock-positions:not([data-loaded])").forEach(function(box){if(seen){seen.observe(box);}else{load(box);}});'
             // D-1087: the branch he opened in the tree beside the material search is the group «Neues Material» proposes.
             . 'var browsed={};document.addEventListener("taxmod-browse-node",function(e){var pick=e.target.closest?e.target.closest("tr"):null,f=pick&&pick.querySelector("[name^=\\"thing[\\"]"),m=f&&/^thing\\[(\\d+)\\]/.exec(f.name);if(m){browsed[m[1]]=String(e.detail.node);}});'
-            // D-1069: the material's frame loads only when its dialog opens.
+            // D-1069, D-1309: a view dialog's frame loads when it opens — here too, for the rows that arrive later by ajax, where
+            // the modeller's view-dialog.js was not enqueued with the page.
             . 'document.addEventListener("change",function(e){var sw=e.target;if(!sw.classList||!sw.classList.contains("taxmod-dialog-switch")||!sw.checked){return;}'
             . 'var f=sw.parentNode.querySelector("iframe[data-src]");if(f&&!f.src){f.src=f.getAttribute("data-src");}'
             // A group already chosen in the row's search is the group «Neues Material» proposes (his report 2026-11-01).
@@ -4330,25 +4331,9 @@ final class StockPage
      */
     private function materialDialog(int $purchase, int $thing): string
     {
-        if (! class_exists(\Taxmod\Core\Renderer\DialogMarkup::class)) {
-            return '<a class="button button-small" href="' . esc_url(self::thingUrl($thing, 'daten')) . '" target="_blank">' . esc_html__('Material', 'taxmod-stock') . '</a> ';
-        }
-
-        // The panel grows to the frame; the shared dialog is drawn for short forms.
         // His answer 2026-11-01 (screenshot of the stock material page): the stock's own material view, not the modeller's.
-        $record = self::thingUrl($thing, 'daten');
-        $frame  = '<style>#taxmod-stock-material-' . $purchase . ' ~ .taxmod-dialog .taxmod-dialog-panel{width:min(94vw,1150px);max-width:none}</style><iframe data-src="' . esc_url($record) . '" title="' . esc_attr__('Material', 'taxmod-stock') . '"'
-            . ' style="display:block;width:100%;height:75vh;border:0"></iframe>';
-
-        return \Taxmod\Core\Renderer\DialogMarkup::of(
-            'taxmod-stock-material-' . $purchase,
-            esc_html__('Material', 'taxmod-stock'),
-            esc_html__('Material', 'taxmod-stock'),
-            $frame,
-            '<a class="button" href="' . esc_url($record) . '" target="_blank">' . esc_html__('In Logistik öffnen', 'taxmod-stock') . '</a>',
-            'button taxmod-dialog-open taxmod-stock-material-open',
-            __('Schließen', 'taxmod-stock')
-        ) . ' ';
+        // D-1309: in the modeller's one view dialog (S14) — the frame loads when it opens, «Open fully» in a new tab.
+        return ListPage::viewDialog('taxmod-stock-material-' . $purchase, __('Material', 'taxmod-stock'), __('Material', 'taxmod-stock'), self::thingUrl($thing, 'daten')) . ' ';
     }
 
     /**

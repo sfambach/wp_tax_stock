@@ -1178,6 +1178,10 @@ $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => (string) $r[
 $html = (new StockPage())->render();
 $pruefe($mitKauf === 0 || str_contains($html, 'taxmod_open_record=' . $mitKauf . '" target="_blank"'), 'the Bestand list links a lot\'s purchase, in a new tab');
 
+// D-1309 (S14): the receipt's «Material» dialog is the modeller's one view dialog; the module draws no frame of its own.
+$quelle = (string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Admin/StockPage.php');
+$pruefe(str_contains($quelle, "ListPage::viewDialog('taxmod-stock-material-'") && ! str_contains($quelle, '<iframe'), 'D-1309: «Material» in the receipt opens in the modeller\'s view dialog');
+
 // D-1308, his word 2026-11-11 «die Buttons oben wie so eine Toolbar arrangiert. Und nicht mehr unten»: the forms carry their acts
 // in the toolbar above the fields, and no submit row below.
 $oben = static fn (string $html, string $vor): bool => ($t = strpos($html, 'taxmod-toolbar')) !== false && ($f = strpos($html, $vor)) !== false && $t < $f && ! str_contains($html, '<p class="submit"');

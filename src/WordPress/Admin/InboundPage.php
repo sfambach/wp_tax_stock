@@ -356,8 +356,9 @@ final class InboundPage
         return '<p style="margin-top:0"><a href="' . esc_url(self::url(['tab' => $tab])) . '">← ' . esc_html(sprintf(/* translators: %s: name of the tab */ __('Zurück zu «%s»', 'taxmod-stock'), $this->tabName($tab))) . '</a></p>'
             . '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1em;flex-wrap:wrap">'
             . '<div><h2 style="margin:.2em 0">' . esc_html($label) . ($late ? ' <span style="color:#b32d2e;font-size:.8em">' . esc_html__('überfällig', 'taxmod-stock') . '</span>' : '') . '</h2>'
-            . ($about === '' ? '' : '<p class="description" style="margin-top:0">' . esc_html($about) . '</p>') . '</div>'
-            . '<div style="text-align:right">' . $this->buttons($order, $stage, $counts['booked'], $tab) . '</div></div>'
+            . ($about === '' ? '' : '<p class="description" style="margin-top:0">' . esc_html($about) . '</p>') . '</div></div>'
+            // D-1308: the order's acts as the toolbar, top left under its name.
+            . ListPage::toolbar([$this->buttons($order, $stage, $counts['booked'], $tab)])
             . '<div style="display:flex;gap:1em;align-items:flex-start;flex-wrap:wrap;margin-bottom:1em">'
             . '<table class="widefat" style="max-width:40em"><tbody>'
             . $fact(__('Stufe', 'taxmod-stock'), esc_html(self::stageName($stage)))

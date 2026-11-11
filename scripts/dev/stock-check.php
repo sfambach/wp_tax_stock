@@ -1169,5 +1169,15 @@ $pruefe(in_array($r['teile'], $ast, true) && array_diff($reihen, $ast) === [] &&
     'the material chooser offers only the branch under «Material»; the views keep the whole tree');
 update_option('taxmod_stock_structure', $vor);
 
+// D-1308, his word 2026-11-11 «die Buttons oben wie so eine Toolbar arrangiert. Und nicht mehr unten»: the forms carry their acts
+// in the toolbar above the fields, and no submit row below.
+$oben = static fn (string $html, string $vor): bool => ($t = strpos($html, 'taxmod-toolbar')) !== false && ($f = strpos($html, $vor)) !== false && $t < $f && ! str_contains($html, '<p class="submit"');
+$_GET = ['page' => TaxmodStock\WordPress\Admin\SettingsPage::PAGE];
+$pruefe($oben((new TaxmodStock\WordPress\Admin\SettingsPage())->render(), 'form-table'), 'D-1308: Grundeinstellungen save in the toolbar above the form');
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'inventur'];
+$pruefe($oben((new StockPage())->render(), 'rows[0][quantity]'), 'D-1308: «Inventur buchen» in the toolbar above the rows');
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'verbrauch'];
+$pruefe($oben((new StockPage())->render(), 'Bestandsposten'), 'D-1308: «Verbrauch buchen» in the toolbar above the fields');
+
 echo $fehler === 0 ? "all green ({$kind})\n" : "{$fehler} red ({$kind})\n";
 exit($fehler === 0 ? 0 : 1);

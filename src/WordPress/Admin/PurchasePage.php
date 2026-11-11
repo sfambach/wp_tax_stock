@@ -286,6 +286,8 @@ final class PurchasePage
         $html = '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="background:#fff;border:1px solid #c3c4c7;padding:16px;margin-top:12px;max-width:900px">'
             . $this->hidden('reorder', 'neu')
             . '<h2 style="margin-top:0">' . esc_html__('Nachbestellen', 'taxmod-stock') . '</h2>'
+            // D-1308: the acts in the toolbar above the form.
+            . ListPage::toolbar([[get_submit_button(__('Hinzufügen', 'taxmod-stock'), 'primary', '', false)], ['<a class="button" href="' . esc_url(self::url(['tab' => 'nachbestellen'])) . '">' . esc_html__('Abbrechen', 'taxmod-stock') . '</a>']])
             . '<table class="widefat striped"><thead><tr><th>' . esc_html__('Material', 'taxmod-stock') . '</th><th>' . esc_html__('Verfügbar', 'taxmod-stock') . '</th><th>'
             . esc_html__('Mindestbestand', 'taxmod-stock') . '</th><th>' . esc_html__('Unterwegs / gewünscht', 'taxmod-stock') . '</th><th>' . esc_html__('Menge', 'taxmod-stock') . '</th></tr></thead><tbody>';
 
@@ -301,8 +303,7 @@ final class PurchasePage
         }
 
         return $html . '</tbody></table><p><label>' . esc_html__('In Bedarf', 'taxmod-stock') . ' <select name="demand">' . $this->select($choices, (string) ($demands === [] ? '0' : end($demands))) . '</select></label> '
-            . '<label>' . esc_html__('Name des neuen Bedarfs', 'taxmod-stock') . ' <input type="text" class="regular-text" name="name" placeholder="' . esc_attr__('z. B. Projekt oder «Lager auffüllen»', 'taxmod-stock') . '"></label></p>'
-            . get_submit_button(__('Hinzufügen', 'taxmod-stock'), 'primary', '', false) . ' <a class="button" href="' . esc_url(self::url(['tab' => 'nachbestellen'])) . '">' . esc_html__('Abbrechen', 'taxmod-stock') . '</a></form>';
+            . '<label>' . esc_html__('Name des neuen Bedarfs', 'taxmod-stock') . ' <input type="text" class="regular-text" name="name" placeholder="' . esc_attr__('z. B. Projekt oder «Lager auffüllen»', 'taxmod-stock') . '"></label></p></form>';
     }
 
     private function orderRow(string $tab, int $order, Table $orders, Table $purchases, bool $open): string

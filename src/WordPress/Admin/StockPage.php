@@ -1133,14 +1133,16 @@ final class StockPage
      */
     private function editView(int $thing, int $node): string
     {
-        $form = (string) apply_filters('taxmod_record_editor', '', $thing, $this->thingUrl($thing, 'daten'));
+        // D-1308: «Abbrechen» joins the editor's toolbar, after «Speichern».
+        $form = (string) apply_filters('taxmod_record_editor', '', $thing, $this->thingUrl($thing, 'daten'),
+            [['<a class="button" href="' . esc_url($this->thingUrl($thing, 'daten')) . '">' . esc_html__('Abbrechen', 'taxmod-stock') . '</a>']]);
 
         if ($form === '') {
             return '<p><a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $thing], admin_url('admin.php'))) . '">'
                 . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a></p>';
         }
 
-        return $form . '<p><a href="' . esc_url($this->thingUrl($thing, 'daten')) . '">' . esc_html__('Abbrechen', 'taxmod-stock') . '</a></p>';
+        return $form;
     }
 
     /** Every field of the thing's node but the head's; references show the name of what they point at. */
@@ -1255,7 +1257,9 @@ final class StockPage
         $record = $this->stock->things()->lagerOf($thing);
         $lager  = $this->stock->table('lager');
         $value  = static fn (string $key): string => $record === null || ! $s->hasField($key) ? '' : (string) $lager->first($record, $s->field($key));
+        // D-1308: «Speichern» in the toolbar above the form.
         $html   = $this->formStart('lager') . '<input type="hidden" name="thing" value="' . esc_attr((string) $thing) . '">'
+            . ListPage::toolbar([[self::saveButton()]])
             . '<table class="form-table" role="presentation"><tbody>';
 
         if ($s->hasField('lager_location')) {
@@ -1276,7 +1280,7 @@ final class StockPage
                 . '<p class="description">' . esc_html__('Worin das Lager zählt, z. B. milli + Liter für ml. Ohne Angabe: Stück.', 'taxmod-stock') . '</p></td></tr>';
         }
 
-        return $html . '</tbody></table>' . $this->sourcesTable($record) . '<p class="submit">' . self::saveButton() . '</p></form>';
+        return $html . '</tbody></table>' . $this->sourcesTable($record) . '</form>';
     }
 
     /**
@@ -1617,9 +1621,10 @@ final class StockPage
             }
         }
 
-        $button = $s->hasValue('kind_reservation') ? '<p style="text-align:right">' . $this->reserveFormDialog($thing, 'bestand') . '</p>' : '';
+        // D-1308: the act as the toolbar above what it is about.
+        $button = $s->hasValue('kind_reservation') ? ListPage::toolbar([[$this->reserveFormDialog($thing, 'bestand')]]) : '';
 
-        return ($items === [] ? '' : '<ul style="margin:0 0 12px">' . implode('', $items) . '</ul>') . $button;
+        return $button . ($items === [] ? '' : '<ul style="margin:0 0 12px">' . implode('', $items) . '</ul>');
     }
 
     private function reservationUrl(string $anchor): string
@@ -1768,7 +1773,7 @@ final class StockPage
         }
 
         return '<p>' . esc_html__('Eine Reservierung je Bezug: Projekt oder Verkauf. Ein für die Produktion reservierter Lagerort hat genau eine Reservierung, gerechnet aus dem, was dort liegt.', 'taxmod-stock') . '</p>'
-            . '<p style="text-align:right">' . $this->reserveFormDialog(0, 'reservierungen') . '</p>'
+            . ListPage::toolbar([[$this->reserveFormDialog(0, 'reservierungen')]])
             . ListPage::table([[__('Reservierung', 'taxmod-stock'), ''], [__('Bezug', 'taxmod-stock'), '14em'], [__('Datum', 'taxmod-stock'), '7em'], [__('Frist', 'taxmod-stock'), '7em'], [__('Positionen', 'taxmod-stock'), '6em']],
                 $body === '' ? $this->noItems(5) : $body);
     }
@@ -1979,9 +1984,14 @@ final class StockPage
         $labels = $this->stock->labels('purchase');
         $about  = $this->purchaseAbout([$purchase]);
         $groups = $this->groupOptions();
+        $cancel = $back === InboundPage::BACK
+            ? InboundPage::url(['order' => $order])
+            : add_query_arg(['page' => self::PAGE, 'tab' => 'wareneingang', 'order' => $order], admin_url('admin.php'));
         $html   = $this->formStart('aufteilen')
             . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '"><input type="hidden" name="purchase" value="' . esc_attr((string) $purchase) . '">'
             . ($back === InboundPage::BACK ? '<input type="hidden" name="back" value="' . esc_attr($back) . '">' : '')
+            // D-1308: the acts in the toolbar above the form.
+            . ListPage::toolbar([[get_submit_button(__('Aufteilen', 'taxmod-stock'), 'primary', 'submit', false)], ['<a class="button" href="' . esc_url($cancel) . '">' . esc_html__('Abbrechen', 'taxmod-stock') . '</a>']])
             . '<h2>' . esc_html(sprintf(
                 /* translators: %s: the lot purchase */
                 __('Konvolut aufteilen: %s', 'taxmod-stock'),
@@ -2001,12 +2011,7 @@ final class StockPage
                 . '<td><input type="text" inputmode="decimal" name="rows[' . $i . '][price]" style="width:6em"></td></tr>';
         }
 
-        $cancel = $back === InboundPage::BACK
-            ? InboundPage::url(['order' => $order])
-            : add_query_arg(['page' => self::PAGE, 'tab' => 'wareneingang', 'order' => $order], admin_url('admin.php'));
-
-        return $html . '</tbody></table><p class="submit" style="text-align:right">' . get_submit_button(__('Aufteilen', 'taxmod-stock'), 'primary', 'submit', false)
-            . ' <a class="button" href="' . esc_url($cancel) . '">' . esc_html__('Abbrechen', 'taxmod-stock') . '</a></p></form>';
+        return $html . '</tbody></table></form>';
     }
 
     /** @return list<SplitRow> the filled rows; a row without a material and without a name is no row */
@@ -2064,8 +2069,8 @@ final class StockPage
             [__('oder Gesamtwert', 'taxmod-stock'), '7em'], [__('Hinweis', 'taxmod-stock'), '']], $rows);
 
         // The architecture thread 2026-11-09: the repeated rows in the list table, the act's button through the shared form block (modeller 0.2.33).
-        return $this->formStart('inventur') . $intro . $table
-            . (method_exists(ListPage::class, 'form') ? ListPage::form([], $submit) : '<p class="submit">' . $submit . '</p>') . '</form>';
+        // D-1308: the act in the toolbar above the rows.
+        return $this->formStart('inventur') . ListPage::toolbar([[$submit]]) . $intro . $table . '</form>';
     }
 
     /**
@@ -2485,6 +2490,11 @@ final class StockPage
             . ($back === '' ? '' : '<input type="hidden" name="back" value="' . esc_attr($back) . '">')
             // ⚠️ *Enter in a reason field must book, not close the first row: the browser presses the first submit button.*
             . '<button type="submit" name="booking" value="' . esc_attr($first) . '" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px"></button>'
+            // D-1308: «Zuordnung speichern» (his word 2026-10-28: «zwischenstände speichern … ohne we») first, then the booking.
+            . ListPage::toolbar([
+                [\Taxmod\Core\Renderer\ControlMarkup::button(\Taxmod\Core\Renderer\Control::saving('booking', 'zuordnen', __('Zuordnung speichern', 'taxmod-stock'), __('Zuordnung speichern', 'taxmod-stock')))],
+                [$assign ? '' : get_submit_button(__('Wareneingang buchen', 'taxmod-stock'), 'primary', 'submit', false)],
+            ])
             . ($closing ? '<datalist id="taxmod-stock-reasons">' . implode('', array_map(static fn (string $r): string => '<option value="' . esc_attr($r) . '">', self::notStockedReasons())) . '</datalist>' : '')
             . ($assign ? '<p>' . esc_html__('Schon vor dem Eintreffen je Kauf das Material wählen oder als «Neues Material» in seiner Gruppe anlegen; die Felder kommen aus der Gruppe. Gespeichert wird nur die Zuordnung, eingebucht wird erst beim Wareneingang.', 'taxmod-stock') . '</p>' : '')
             . ($assign ? '' : '<p>' . esc_html__('Je Kauf das Material: vorgeschlagen ist das «Modell» des Kaufs; «Zurücksetzen» (Pfeil) gibt die Suche frei; «Neues Material» (oder eine Gruppe in der Suche) legt ein neues Material in der Gruppe an. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seiner Gruppe; Gebrauchtware aus einem Zweig mit Test nach dem Wareneingang geht an den «Lagerort für Test», wenn einer eingestellt ist. Der Materialtext öffnet das Material wie der Knopf «Material». Die Menge ist die gekaufte Anzahl (bei Ware in Packungen: Packungen); geändert wird sie beim Buchen oder Speichern in den Kauf geschrieben.', 'taxmod-stock') . '</p>')
@@ -2540,9 +2550,7 @@ final class StockPage
                 . $actions(($model === null ? $this->newThingDialog($purchase, $groups ??= $this->groupOptions()) : $this->materialDialog($purchase, $model)) . ($closing ? $this->closeControls($purchase) : '')) . '</tr>';
         }
 
-        // His word 2026-10-28: «zwischenstände speichern … ohne we» — the second button keeps the chosen material, books nothing.
-        return $html . '</tbody></table><p class="submit" style="text-align:right">' . ($assign ? '' : get_submit_button(__('Wareneingang buchen', 'taxmod-stock'), 'primary', 'submit', false))
-            . ' <button type="submit" class="button' . ($assign ? ' button-primary' : '') . '" name="booking" value="zuordnen">' . esc_html__('Zuordnung speichern', 'taxmod-stock') . '</button></p></form>';
+        return $html . '</tbody></table></form>';
     }
 
     /**
@@ -2747,7 +2755,6 @@ final class StockPage
         // «projekt steht aber nicht auf dem etikett» (2026-11-03): the second line names the project before the path.
         // D-1141, his word 2026-11-04: «den übergeordneten ort sollten wir bei beweglichen pläzen nicht andrucken und wenn ein Projekt
         // zugeordnet ist sollten wir Projekt: dann Projekt name» — a box moves, so its parent would be wrong tomorrow.
-        $form    = (string) apply_filters('taxmod_record_editor', '', $place, $back);
         $label   = (string) apply_filters('taxmod_label_button', '', ...$this->placeLabel($place, $tree));
         $facts = [
             [__('Beweglich (Kiste, Karton)', 'taxmod-stock'), $tree->isMovable($place) ? __('ja', 'taxmod-stock') : __('nein', 'taxmod-stock')],
@@ -2759,19 +2766,18 @@ final class StockPage
             $table .= '<tr><th scope="row" style="width:14em">' . esc_html($name) . '</th><td>' . esc_html($value) . '</td></tr>';
         }
 
-        $html = $this->placeHead($place, $tree)
-            . '<div class="taxmod-stock-place-actions" style="text-align:right;margin-bottom:12px">'
-            . ($form === '' ? '<a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $place], admin_url('admin.php'))) . '">' . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a> ' : '')
+        // D-1308: the place's acts are the editor's toolbar after «Speichern», grouped by what they do.
+        $groups = [
             // D-1224, his word 2026-11-07: «zur bestandsansicht wechseln» — what lies here and below, in «Platzbestand».
-            . '<a class="button" href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'lagerorte', 'ort' => $place], admin_url('admin.php'))) . '">' . esc_html__('Zur Bestandsansicht', 'taxmod-stock') . '</a> '
-            . $this->movePlaceDialog($place, $tree) . ' '
-            . $this->newPlaceDialog($place, 'lagerstruktur') . ' '
-            . $this->copyPlaceDialog($place, $tree, count($below) - 1) . ' '
-            . $this->deletePlaceDialog($place, $tree) . ' '
-            . $this->formStart('lagerstruktur') . $this->returnFields('lagerstruktur', $place)
-            . $this->reserveDialog($place, $flags->isFlagged($place), $all) . '</form>'
-            . ($label === '' ? '' : ' ' . $label) . '</div>'
-            . ($form === '' ? '<table class="widefat striped" style="max-width:40em">' . $table . '</table>' : $form)
+            ['<a class="button" href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'lagerorte', 'ort' => $place], admin_url('admin.php'))) . '">' . esc_html__('Zur Bestandsansicht', 'taxmod-stock') . '</a>'],
+            [$this->newPlaceDialog($place, 'lagerstruktur'), $this->copyPlaceDialog($place, $tree, count($below) - 1), $this->movePlaceDialog($place, $tree), $this->deletePlaceDialog($place, $tree)],
+            [$this->formStart('lagerstruktur') . $this->returnFields('lagerstruktur', $place) . $this->reserveDialog($place, $flags->isFlagged($place), $all) . '</form>'],
+            [$label],
+        ];
+        $form = (string) apply_filters('taxmod_record_editor', '', $place, $back, $groups);
+        $html = $this->placeHead($place, $tree)
+            . ($form === '' ? ListPage::toolbar([['<a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $place], admin_url('admin.php'))) . '">' . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a>'], ...$groups])
+                . '<table class="widefat striped" style="max-width:40em">' . $table . '</table>' : $form)
             . $this->childList($place, $tree, $rows);
 
         if ($tree->isMovable($place) && $this->stock->relocates()) {
@@ -3075,10 +3081,11 @@ final class StockPage
 
         if ($chosen > 0 && $types->has($chosen)) {
             $back = add_query_arg('typ', $chosen, $list);
-            $form = (string) apply_filters('taxmod_record_editor', '', $chosen, $back);
+            // D-1308: «Kopieren» joins the editor's toolbar.
+            $copy = [[$this->copyTypeDialog($chosen, $types->nameOf($chosen))]];
+            $form = (string) apply_filters('taxmod_record_editor', '', $chosen, $back, $copy);
 
-            return $html . '<div style="text-align:right;margin-bottom:12px">' . $this->copyTypeDialog($chosen, $types->nameOf($chosen)) . '</div>'
-                . '<h3>' . esc_html($types->nameOf($chosen)) . '</h3>'
+            return $html . '<h3>' . esc_html($types->nameOf($chosen)) . '</h3>' . ($form === '' ? ListPage::toolbar($copy) : '')
                 . ($form === '' ? '<p><a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $chosen], admin_url('admin.php'))) . '">' . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a></p>' : $form)
                 . '<p><a href="' . esc_url($list) . '">' . esc_html__('← alle Platzarten', 'taxmod-stock') . '</a></p>';
         }
@@ -3117,7 +3124,7 @@ final class StockPage
             ) . '</form>'
             : '';
 
-        return $html . '<div style="text-align:right;margin-bottom:12px">' . $dialog . '</div>'
+        return $html . ListPage::toolbar([[$dialog]])
             . ListPage::table([[__('Platzart', 'taxmod-stock'), ''], [__('Beweglich', 'taxmod-stock'), '7em'], [__('Teile', 'taxmod-stock'), ''], [__('Plätze', 'taxmod-stock'), '5em']], $body === '' ? $this->noItems(5) : $body);
     }
 
@@ -3143,9 +3150,11 @@ final class StockPage
             $template = $templates->get($chosen);
             $name     = $template === null ? '#' . $chosen : $nameOf($template);
             $back     = add_query_arg('vorlage', $chosen, $list);
-            $form     = (string) apply_filters('taxmod_record_editor', '', $chosen, $back);
+            // D-1308: «Kopieren» joins the editor's toolbar.
+            $copy     = [[$this->copyTemplateDialog($chosen, $template['name'] ?? $name)]];
+            $form     = (string) apply_filters('taxmod_record_editor', '', $chosen, $back, $copy);
 
-            return $html . '<div style="text-align:right;margin-bottom:12px">' . $this->copyTemplateDialog($chosen, $template['name'] ?? $name) . '</div>'
+            return $html . ($form === '' ? ListPage::toolbar($copy) : '')
                 . '<h3>' . esc_html($name) . ' <span class="description" style="font-weight:normal">· Id: ' . esc_html((string) $chosen) . '</span></h3>'
                 . $this->templatePreview($chosen, $template)
                 . ($form === '' ? '<p><a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $chosen], admin_url('admin.php'))) . '">' . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a></p>' : $form)
@@ -3306,7 +3315,7 @@ final class StockPage
         }
 
         return '<div style="margin-bottom:12px">' . (string) apply_filters('taxmod_label_preview', '', $label, $place) . $source
-            . ($button === '' ? '' : '<div style="text-align:right">' . $button . '</div>') . '</div>';
+            . ListPage::toolbar([[$button]]) . '</div>';
     }
 
     /** D-1154: the first place (by id) whose place type prints with this template; 0 where none does. */
@@ -3426,7 +3435,6 @@ final class StockPage
         $s       = $this->stock->structure();
         $list    = add_query_arg(['page' => self::PAGE, 'tab' => 'drucker'], admin_url('admin.php'));
         $back    = add_query_arg(['satz' => $record], $list);
-        $form    = (string) apply_filters('taxmod_record_editor', '', $record, $back);
         $isRoll  = isset($rolls[$record]);
         $name    = $isRoll ? $rolls[$record] : $printers[$record];
         $facts   = '';
@@ -3446,10 +3454,12 @@ final class StockPage
             $actions = $this->changeRollDialog($record, $name, $rolls);
         }
 
+        // D-1308: «Rolle wechseln» joins the editor's toolbar.
+        $form = (string) apply_filters('taxmod_record_editor', '', $record, $back, [[$actions]]);
+
         return '<p><a href="' . esc_url($list) . '">' . esc_html__('← Drucker und Rollen', 'taxmod-stock') . '</a></p>'
             . '<h2>' . esc_html($name) . '</h2>'
-            . '<div style="text-align:right;margin-bottom:12px">' . $actions
-            . ($form === '' ? ' <a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $record], admin_url('admin.php'))) . '">' . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a>' : '') . '</div>'
+            . ($form === '' ? ListPage::toolbar([['<a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $record], admin_url('admin.php'))) . '">' . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a>'], [$actions]]) : '')
             // D-1220: the facts beside the form on wide screens, above it on narrow ones — the shared block.
             . (method_exists(ListPage::class, 'beside')
                 ? ListPage::beside($form, '<table class="widefat striped">' . $facts . '</table>')

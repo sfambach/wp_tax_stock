@@ -152,7 +152,7 @@ final class ContactsPage
         $count  = sprintf(/* translators: %d: number of contacts */ _n('%d Kontakt', '%d Kontakte', count($rows), 'taxmod-stock'), count($rows));
         $html   = '<h2>' . esc_html($node === $root ? __('Alle Kontakte', 'taxmod-stock') : $tree[$node]['name']) . '</h2>'
             . $this->tiles($tree, $node, $all)
-            . ($node === $root ? '' : '<div style="text-align:right;margin-bottom:12px">' . $this->newDialog($node, $tree[$node]['name']) . '</div>')
+            . ($node === $root ? '' : ListPage::toolbar([[$this->newDialog($node, $tree[$node]['name'])]]))
             . ListPage::searchBox(self::SEARCH, $search, __('Name, Gruppe, Nummer …', 'taxmod-stock'), ['page' => self::PAGE, 'tab' => (string) $node])
             . ListPage::bulkBar(self::BULK_FORM, self::ACTION, [], $count);
         $body   = '';
@@ -204,11 +204,13 @@ final class ContactsPage
     private function editor(int $contact, int $node): string
     {
         $back = self::url(['tab' => (string) $node, 'kontakt' => (string) $contact]);
-        $form = (string) apply_filters('taxmod_record_editor', '', $contact, $back);
+        // D-1308: «Anlegen zurücknehmen» joins the editor's toolbar.
+        $undo = [[$this->undoForm($contact, $node)]];
+        $form = (string) apply_filters('taxmod_record_editor', '', $contact, $back, $undo);
 
-        return '<p><a href="' . esc_url(self::url(['tab' => (string) $node])) . '">' . esc_html__('← zur Liste', 'taxmod-stock') . '</a></p>' . $this->undoForm($contact, $node)
-            . ($form === '' ? '<p><a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $contact], admin_url('admin.php'))) . '">'
-                . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a></p>' : $form);
+        return '<p><a href="' . esc_url(self::url(['tab' => (string) $node])) . '">' . esc_html__('← zur Liste', 'taxmod-stock') . '</a></p>'
+            . ($form === '' ? ListPage::toolbar([['<a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $contact], admin_url('admin.php'))) . '">'
+                . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a>'], ...$undo]) : $form);
     }
 
     /** «+ Neuer Kontakt» in the chosen node: the name (and a person's first name) only. */
@@ -237,8 +239,8 @@ final class ContactsPage
         }
 
         return $this->formStart($node) . '<input type="hidden" name="kontakt" value="' . esc_attr((string) $contact) . '">'
-            . '<p style="text-align:right"><button type="submit" class="button" name="booking" value="zuruecknehmen"' . ListPage::confirm(__('Den eben angelegten Kontakt mit allen eingetragenen Werten wieder entfernen?', 'taxmod-stock')) . '>'
-            . esc_html__('Anlegen zurücknehmen', 'taxmod-stock') . '</button></p></form>';
+            . '<button type="submit" class="button" name="booking" value="zuruecknehmen"' . ListPage::confirm(__('Den eben angelegten Kontakt mit allen eingetragenen Werten wieder entfernen?', 'taxmod-stock')) . '>'
+            . esc_html__('Anlegen zurücknehmen', 'taxmod-stock') . '</button></form>';
     }
 
     private function formStart(int $node): string

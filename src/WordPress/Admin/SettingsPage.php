@@ -39,8 +39,10 @@ final class SettingsPage
         return '<div class="wrap">' . ListPage::heading(__('Grundeinstellungen', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . $this->notice()
             . '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">'
             . wp_nonce_field(self::ACTION, '_wpnonce', true, false) . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
+            // D-1308: «Speichern» in the toolbar above the form.
+            . ListPage::toolbar([[StockPage::saveButton()]])
             . $this->notMaterialSection() . $this->placesSection() . $this->testsSection() . $this->viewsSection()
-            . '<p class="submit">' . StockPage::saveButton() . '</p>' . '</form></div>';
+            . '</form></div>';
     }
 
     /** admin-post: capability → nonce → validate and sanitize per field (in {@see save()}) → keep → back to the page. */
@@ -69,6 +71,7 @@ final class SettingsPage
             . '<p>' . esc_html(sprintf(/* translators: %s: the user's display name */ __('Gilt nur für %s.', 'taxmod-stock'), wp_get_current_user()->display_name)) . '</p>'
             . '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">'
             . wp_nonce_field(self::USER_ACTION, '_wpnonce', true, false) . '<input type="hidden" name="action" value="' . esc_attr(self::USER_ACTION) . '">'
+            . ListPage::toolbar([[StockPage::saveButton()]])
             . '<table class="form-table" role="presentation"><tbody>'
             . '<tr><th scope="row">' . esc_html__('Vollbild', 'taxmod-stock') . '</th><td><label><input type="checkbox" name="fullscreen" value="1"' . checked(LogisticsShell::isFullscreen(), true, false) . '> '
             . esc_html__('Logistik ohne WordPress-Leisten zeigen', 'taxmod-stock') . '</label></td></tr>'
@@ -77,7 +80,7 @@ final class SettingsPage
             // His wish 2026-11-09: the trees on the left open as he left them; this forgets it.
             . (method_exists(ListPage::class, 'resetTreeStates') ? '<tr><th scope="row">' . esc_html__('Bäume links', 'taxmod-stock') . '</th><td><label><input type="checkbox" name="reset_trees" value="1"> '
                 . esc_html__('Gemerkten Ast und offene Äste aller Bäume vergessen', 'taxmod-stock') . '</label></td></tr>' : '')
-            . '</tbody></table>' . '<p class="submit">' . StockPage::saveButton() . '</p>' . '</form></div>';
+            . '</tbody></table>' . '</form></div>';
     }
 
     /** admin-post for Benutzereinstellungen: logged in with access to the stock → nonce → keep for this user → back. */

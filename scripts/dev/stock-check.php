@@ -1176,7 +1176,12 @@ foreach ((new StockService())->ledger()->lotsOf($r['t1']) as $l) {
 }
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => (string) $r['t1'], 'view' => 'bestand'];
 $html = (new StockPage())->render();
-$pruefe($mitKauf === 0 || str_contains($html, 'taxmod_open_record=' . $mitKauf . '" target="_blank"'), 'the Bestand list links a lot\'s purchase, in a new tab');
+$pruefe($mitKauf === 0 || str_contains($html, '#taxmod-stock-purchase-' . $mitKauf . '" target="_blank"') || str_contains($html, 'taxmod_open_record=' . $mitKauf . '" target="_blank"'),
+    'D-1310: the Bestand list links a lot\'s purchase to its order\'s view at the purchase, in a new tab');
+// D-1310: Material › Einkauf links purchase and order to the order's own view in the Wareneingang.
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => (string) $r['t1'], 'view' => 'einkauf'];
+$html = (new StockPage())->render();
+$pruefe(! str_contains($html, '<table class="widefat striped"><thead><tr><th>Kauf') || str_contains($html, '#taxmod-stock-purchase-'), 'D-1310: Material › Einkauf links to the internal order view');
 
 // D-1309 (S14): the receipt's «Material» dialog is the modeller's one view dialog; the module draws no frame of its own.
 $quelle = (string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Admin/StockPage.php');

@@ -1201,13 +1201,7 @@ final class StockPage
 
         $money   = $this->stock->table('money');
         $orders  = $this->stock->table('order');
-        $orderOf = [];
-
-        foreach ($orders->ids() as $order) {
-            foreach ($orders->all($order, $s->field('order_lines')) as $line) {
-                $orderOf[(int) $line] = $order;
-            }
-        }
+        $orderOf = $this->ordersOfPurchases();
 
         $orderValue = static fn (?int $order, string $key): string => $order === null || ! $s->hasField($key) ? '' : trim((string) $orders->first($order, $s->field($key)));
         $amountOf   = static function (?string $part) use ($money, $s): string {
@@ -1237,9 +1231,15 @@ final class StockPage
             $sum      = $total !== null ? $amountOf($total) : ($each === null || $count <= 0.0 ? '—' : number_format_i18n((float) $each * $count, 2));
             $article  = $s->hasField('purchase_number') ? trim((string) ($purchases->first($id, $s->field('purchase_number')) ?? '')) : '';
             $number   = $order === null ? '' : $inbound->orderNumber($order);
-            $html    .= '<tr><td>' . esc_html((string) $purchases->first($id, $s->field('label')))
+            // D-1310, his word 2026-11-11 «auf jeden fall sollte hier ein link zur internen bestellung bestehen»: purchase and order open
+            // the order's own view in the Wareneingang at the purchase's row, in a new tab; the shop's order page follows as an icon (D-1249).
+            $inside   = $order === null ? null : InboundPage::url(['order' => $order]) . '#taxmod-stock-purchase-' . $id;
+            $shop     = $order === null ? null : $inbound->orderLink($order);
+            $word     = (string) $purchases->first($id, $s->field('label'));
+            $html    .= '<tr><td>' . ($inside === null ? esc_html($word) : '<a href="' . esc_url($inside) . '" target="_blank" rel="noopener">' . esc_html($word) . '</a>')
                 . ($article === '' ? '' : '<br><span class="description">' . $linked($article, $order === null ? null : $inbound->productLink($order, $article)) . '</span>') . '</td>'
-                . '<td>' . $linked($number, $order === null ? null : $inbound->orderLink($order)) . '</td>'
+                . '<td>' . ($inside === null ? '—' : '<a href="' . esc_url($inside) . '" target="_blank" rel="noopener">' . esc_html($number === '' ? '#' . $order : $number) . '</a>')
+                . ($shop === null ? '' : ' ' . str_replace('<a ', '<a target="_blank" rel="noopener noreferrer" ', ListPage::iconLink('external', __('Beim Händler öffnen', 'taxmod-stock'), $shop))) . '</td>'
                 . '<td>' . esc_html($merchant === '' ? '—' : $merchant) . '</td>'
                 . '<td>' . esc_html(($date = substr($orderValue($order, 'order_date'), 0, 10)) === '' ? '—' : $date) . '</td>'
                 . '<td>' . esc_html((string) ($purchases->first($id, $s->field('purchase_quantity')) ?? '—')) . '</td>'
@@ -1333,6 +1333,7 @@ final class StockPage
         $rows    = '';
         $charges = $this->charges($ledger->lotsOf($thing));
         $name    = (string) ($this->stock->recordLabels([$thing])[$thing] ?? '');
+        $orderOf = $this->ordersOfPurchases();
 
         foreach ($ledger->lotsOf($thing) as $lot) {
             $value    = $lots->first($lot, $s->field('lot_value'));
@@ -1348,9 +1349,11 @@ final class StockPage
                     // His wish 2026-11-08: «Bitte auch das Material anzeigen hier in der Liste».
                     . '<td>' . ($first ? esc_html($name) : '') . '</td><td>' . esc_html($places[$place] ?? '—') . $this->reservedMark($place, $flags) . '</td><td>' . esc_html($this->number($quantity)) . '</td>'
                     . '<td>' . ($first ? esc_html($amount ?? '—') : '') . '</td>'
-                    // His wish 2026-11-11 «Absprung zum Kauf … in einem neuen Tab»: the purchase opens in the modeller, picture and all.
+                    // D-1310, his wishes 2026-11-11 «Absprung zum Kauf … in einem neuen Tab», «link zur internen bestellung»: the purchase opens
+                    // its order's view in the Wareneingang; without an order, the purchase itself in the modeller.
                     . '<td>' . ($first ? ($purchase === null ? esc_html__('Inventur', 'taxmod-stock')
-                        : '<a href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => (int) $purchase], admin_url('admin.php'))) . '" target="_blank" rel="noopener">#' . esc_html((string) $purchase) . '</a>') : '') . '</td>'
+                        : '<a href="' . esc_url(isset($orderOf[(int) $purchase]) ? InboundPage::url(['order' => $orderOf[(int) $purchase]]) . '#taxmod-stock-purchase-' . (int) $purchase
+                            : add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => (int) $purchase], admin_url('admin.php'))) . '" target="_blank" rel="noopener">#' . esc_html((string) $purchase) . '</a>') : '') . '</td>'
                     . '<td>' . ($first ? esc_html(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10)) : '') . '</td>'
                     . '<td style="text-align:right;white-space:nowrap">' . ($quantity > 0.0 ? $this->transferDialog($thing, $lot, $place, $quantity, $places) : '')
                     . ' ' . $this->bookOutButton(add_query_arg(['page' => self::PAGE, 'tab' => 'verbrauch', 'thing' => $thing, 'lot' => $lot, 'place' => $place], admin_url('admin.php')))
@@ -2519,7 +2522,7 @@ final class StockPage
             $model    = $row['model'];
             $select   = 'taxmod-stock-choice-' . $purchase;
             $quantity = (string) $bought->first($purchase, $amount);
-            $html    .= '<tr><th scope="row" class="check-column"><input type="checkbox" name="purchases[]" value="' . esc_attr((string) $purchase) . '"'
+            $html    .= '<tr id="taxmod-stock-purchase-' . esc_attr((string) $purchase) . '"><th scope="row" class="check-column"><input type="checkbox" name="purchases[]" value="' . esc_attr((string) $purchase) . '"'
                 . ($lock === null && $model !== null ? ' checked' : '') . ($lock === null ? '' : ' disabled') . '></th>'
                 . '<td>' . esc_html($labels[$purchase] ?? '#' . $purchase) . ($lock === null ? '' : ' <em>(' . esc_html(Messages::lockReason($lock)) . ')</em>')
                 . (($about[$purchase] ?? '') === '' ? '' : '<br><span class="description">' . esc_html($about[$purchase]) . '</span>') . '</td>';
@@ -4246,7 +4249,7 @@ final class StockPage
             . 'root.querySelectorAll("tr").forEach(function(tr){var cb=tr.querySelector("input[name=\\"purchases[]\\"]");if(!cb||cb.disabled){return;}tr.querySelectorAll("select,input[type=text],input[type=search]").forEach(function(f){f.addEventListener("change",function(){cb.checked=true;});});});'
             . '}bind(document);'
             . 'function load(box){if(box.dataset.loaded){return;}box.dataset.loaded="1";var cell=box;cell.textContent="…";'
-            . 'fetch(pos+"&order="+encodeURIComponent(box.dataset.order)+(box.dataset.back?"&back="+encodeURIComponent(box.dataset.back):"")+(box.dataset.assign?"&assign=1":""),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){cell.innerHTML=(j.data&&j.data.html)||"";bind(cell);})'
+            . 'fetch(pos+"&order="+encodeURIComponent(box.dataset.order)+(box.dataset.back?"&back="+encodeURIComponent(box.dataset.back):"")+(box.dataset.assign?"&assign=1":""),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){cell.innerHTML=(j.data&&j.data.html)||"";bind(cell);var h=location.hash&&document.getElementById(location.hash.slice(1));if(h&&cell.contains(h)){h.scrollIntoView({block:"center"});}})'
             . '.catch(function(){delete box.dataset.loaded;cell.textContent=' . wp_json_encode(__('Positionen konnten nicht geladen werden.', 'taxmod-stock')) . ';});}'
             // An order's purchases load once its details row shows: opened by hand, by «Expand all», or open from the start.
             . 'var seen="IntersectionObserver" in window?new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){seen.unobserve(e.target);load(e.target);}});},{rootMargin:"200px"}):null;'
@@ -4322,6 +4325,26 @@ final class StockPage
     }
 
     /** D-1058: the reason field and the «Nicht einlagern» button of one purchase. */
+    /**
+     * The order each purchase is a position of, read once (order_lines backwards).
+     *
+     * @return array<int, int> purchase → order
+     */
+    private function ordersOfPurchases(): array
+    {
+        $orders = $this->stock->table('order');
+        $field  = $this->stock->structure()->field('order_lines');
+        $out    = [];
+
+        foreach ($orders->ids() as $order) {
+            foreach ($orders->all($order, $field) as $line) {
+                $out[(int) $line] = $order;
+            }
+        }
+
+        return $out;
+    }
+
     /**
      * D-1069: the material of a purchase in a dialog — its own page with every view, so a placeholder from the goods receipt is
      * filled where materials are filled (his word 2026-11-01: «im grunde müssten wir doch im dialog einfach nur die material

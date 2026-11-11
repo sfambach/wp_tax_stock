@@ -625,7 +625,8 @@ final class InboundPage
             $total ??= $each === null || $count <= 0.0 ? null : $each * $count;
             // His wish 2026-11-09: once booked, the purchase is named by its number only; where it went stands in its own columns.
             $went  = $done ? $this->whereItWent($purchase) : null;
-            $rows .= '<tr><th scope="row" class="check-column"></th><td style="white-space:normal">' . ($pictures[$purchase] ?? '') . ' ' . esc_html($labels[$purchase] ?? '#' . $purchase)
+            // D-1310: a link to one purchase jumps to its row.
+            $rows .= '<tr id="taxmod-stock-purchase-' . esc_attr((string) $purchase) . '"><th scope="row" class="check-column"></th><td style="white-space:normal">' . ($pictures[$purchase] ?? '') . ' ' . esc_html($labels[$purchase] ?? '#' . $purchase)
                 . ($done ? $this->purchaseNumber($order->id) : $this->purchaseFacts($table, $order->id, $purchase)) . '</td>'
                 . ($went === null ? '' : '<td>' . $went['material'] . '</td><td>' . $went['place'] . '</td><td>' . $went['date'] . '</td>')
                 . '<td style="text-align:right">' . esc_html($count > 0.0 ? (string) (0 + $count) : '—') . '</td>'

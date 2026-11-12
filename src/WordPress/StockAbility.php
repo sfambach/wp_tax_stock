@@ -24,7 +24,7 @@ final class StockAbility
 
         wp_register_ability(self::NAME, [
             'label'               => __('Read the stock', 'taxmod-stock'),
-            'description'         => __('What lies in stock: with place, the lots at that storage place and every place inside it (below false: only the place itself); with materials, only these material records. Each lot row gives lot, material, place path and quantity; materials gives the total quantity and lot count per material over all rows, not only the page. Without place and materials: the whole stock. limit 1–1000 (default 100), offset.', 'taxmod-stock'),
+            'description'         => __('What lies in stock: with place, the lots at that storage place and every place inside it (below false: only the place itself); with materials, only these material records. Each lot row gives lot, material, place path and quantity; materials gives the total quantity and lot count per material over all rows; both lists are paged by the same limit and offset, total_lots and total_materials count them all. Without place and materials: the whole stock. limit 1–1000 (default 100), offset.', 'taxmod-stock'),
             'category'            => 'taxmod',
             'input_schema'        => [
                 'type'       => 'object',

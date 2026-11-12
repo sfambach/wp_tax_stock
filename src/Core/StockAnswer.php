@@ -16,7 +16,7 @@ namespace TaxmodStock\Core;
  * ⚠️ *The quantity is the ledger's rest, as on the stock page (D-956): reserved stock still counts, it lowers what is available,
  * not what is there (D-1083).*
  *
- * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/NewConcept/90-decision-log.md D-1209
+ * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/NewConcept/90-decision-log.md D-1209, D-1324
  */
 final class StockAnswer
 {
@@ -27,7 +27,7 @@ final class StockAnswer
     /**
      * @param int       $place     0 for every place
      * @param list<int> $materials empty for every material
-     * @return array{total_lots: int, lots: list<array{lot: int, material: int, material_word: string, place: int, place_word: string, quantity: float}>, materials: list<array{material: int, material_word: string, quantity: float, lots: int}>}
+     * @return array{total_lots: int, total_materials: int, lots: list<array{lot: int, material: int, material_word: string, place: int, place_word: string, quantity: float}>, materials: list<array{material: int, material_word: string, quantity: float, lots: int}>}
      */
     public static function of(Ledger $ledger, LocationTree $places, Things $things, int $place, bool $below, array $materials, int $limit, int $offset): array
     {
@@ -67,6 +67,12 @@ final class StockAnswer
         usort($rows, static fn (array $a, array $b): int => [$a['place_word'], $a['material_word'], $a['lot']] <=> [$b['place_word'], $b['material_word'], $b['lot']]);
         usort($totals, static fn (array $a, array $b): int => strnatcasecmp($a['material_word'], $b['material_word']) ?: $a['material'] <=> $b['material']);
 
-        return ['total_lots' => count($rows), 'lots' => array_slice($rows, max(0, $offset), $limit), 'materials' => array_values($totals)];
+        // D-1324: the totals are paged like the lots — the whole stock has more materials than one answer should carry.
+        return [
+            'total_lots'      => count($rows),
+            'lots'            => array_slice($rows, max(0, $offset), $limit),
+            'total_materials' => count($totals),
+            'materials'       => array_slice(array_values($totals), max(0, $offset), $limit),
+        ];
     }
 }

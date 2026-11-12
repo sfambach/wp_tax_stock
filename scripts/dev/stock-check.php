@@ -1085,6 +1085,7 @@ $pruefe($frage !== null && ($frage->get_meta()['annotations']['readonly'] ?? fal
 $pruefe(is_array($dort) && $dort['total_lots'] === $soll, 'the ability answers with every lot at the place and inside it');
 $pruefe(is_array($ein = $frage?->execute(['materials' => [$bc]])) && abs(($ein['materials'][0]['quantity'] ?? -1.0) - $nun->ledger()->stockOf($bc)) < 1e-9, 'per material: the quantity is the ledger\'s stock');
 $pruefe(is_wp_error($frage?->execute(['limit' => 0]) ?? new WP_Error()), 'a wrong limit is refused');
+$pruefe(is_array($seite = $frage?->execute(['limit' => 1])) && count($seite['materials']) <= 1 && $seite['total_materials'] >= count($seite['materials']), 'D-1324: the totals per material are paged by limit, total_materials counts them all');
 
 // D-1297, his choice: «Verbrauch» holds kinds below it; a consumption names a leaf, the Ersatzversand books «Verlust/Schwund».
 $vorBau = (new StockService())->ledger()->stockOf($r['t1']);

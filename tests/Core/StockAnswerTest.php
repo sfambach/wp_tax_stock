@@ -67,6 +67,10 @@ final class StockAnswerTest extends TestCase
         self::assertSame(2, $out['total_lots']);
         self::assertCount(1, $out['lots'], 'the page holds one row, the totals all of them');
 
+        $alle = StockAnswer::of($ledger, $places, $things, 0, true, [], 1, 1);
+        self::assertSame(2, $alle['total_materials'], 'D-1324: the count covers every material');
+        self::assertSame(['NE555'], array_column($alle['materials'], 'material_word'), 'D-1324: the totals are paged like the lots');
+
         $this->expectException(\InvalidArgumentException::class);
         StockAnswer::of($ledger, $places, $things, 0, true, [], 0, 0);
     }

@@ -861,13 +861,18 @@ $offenR = $s->reservations()->forSubject($r['t2']);
 $pruefe($offenR !== null && count($s->table('transaction')->all($offenR, $r['v_pos'])) === 2 && ($s->reservations()->reservedByThing()[$bc] ?? 0.0) === 3.0, 'one reservation per subject, holding both positions');
 
 // D-1301: the manufacturing module reserves, reads and releases for its order in one call each.
-$resAnswer = apply_filters('taxmod_stock_reserve', null, ['subject' => $auftrag, 'rows' => [['thing' => $bc, 'quantity' => 1], ['thing' => $r['t1'], 'quantity' => 1]], 'date' => '2026-11-13', 'title' => 'Reservierung Testkarte']);
+$t1Ledger  = (new StockService())->ledger();
+$t1Lot     = $t1Ledger->proposedLot($bc);
+$t1Ort     = (int) array_key_first(array_filter($t1Ledger->placesOf($t1Lot), static fn (float $q, int $p): bool => $q >= 1.0 && $p > 0, ARRAY_FILTER_USE_BOTH));
+$resAnswer = apply_filters('taxmod_stock_reserve', null, ['subject' => $auftrag, 'rows' => [['thing' => $bc, 'quantity' => 1, 'place' => $t1Ort], ['thing' => $r['t1'], 'quantity' => 1]], 'date' => '2026-11-13', 'title' => 'Reservierung Testkarte']);
 $resOf     = apply_filters('taxmod_stock_reservations_of', null, ['subjects' => [$auftrag]]);
 $resLines  = is_array($resOf) ? array_column($resOf[$auftrag] ?? [], 'line') : [];
 $resPart   = apply_filters('taxmod_stock_release', null, ['subject' => $auftrag, 'lines' => array_slice($resLines, 0, 1)]);
 $resAfter  = apply_filters('taxmod_stock_reservations_of', null, ['subjects' => [$auftrag]]);
 $resAll    = apply_filters('taxmod_stock_release', null, ['subject' => $auftrag]);
 $resEnd    = apply_filters('taxmod_stock_reservations_of', null, ['subjects' => [$auftrag]]);
+$t1Pos     = array_values(array_filter(is_array($resOf) ? ($resOf[$auftrag] ?? []) : [], static fn (array $p): bool => $p['thing'] === $bc))[0] ?? [];
+$pruefe(($t1Pos['lot'] ?? null) !== null && isset($t1Pos['places'][$t1Ort]), 'D-1301: a row naming a place reserves the lot lying there, which stays where it is');
 $pruefe(is_array($resAnswer) && count($resLines) === 2 && is_array($resPart) && count($resAfter[$auftrag] ?? []) === 1 && is_array($resAll) && ($resEnd[$auftrag] ?? null) === [], 'D-1301: reserve two positions in one call, release one, then the rest; reservations_of reads each step' . ($resAnswer instanceof WP_Error ? ': ' . $resAnswer->get_error_message() : ''));
 
 // D-1097, his word «eine Position gehört zu genau einem Kopf»: after every booking above, each line and each purchase has one head.
@@ -1147,14 +1152,16 @@ $arten  = $apply([
     ['op' => 'create_node', 'ref' => 'bb', 'name' => '__Betriebsbedarf', 'parent' => (string) $r['k_vb'], 'class' => 'Constant'],
     ['op' => 'create_node', 'ref' => 'gr', 'name' => '__Abgang', 'parent' => (string) $r['k_vb'], 'class' => 'Choice'],
     ['op' => 'create_node', 'ref' => 'vs', 'name' => '__Verlust/Schwund', 'parent' => '@gr', 'class' => 'Constant'],
+    ['op' => 'create_node', 'ref' => 'da', 'name' => '__Defekt/Ausschuss', 'parent' => '@gr', 'class' => 'Constant'],
 ])['refs'] ?? [];
 $opt = get_option('taxmod_stock_structure');
 if (is_array($opt)) {
-    $opt['values']['kind_loss'] = (int) $arten['vs'];
+    $opt['values']['kind_loss']  = (int) $arten['vs'];
+    $opt['values']['kind_scrap'] = (int) $arten['da'];
     update_option('taxmod_stock_structure', $opt);
 }
 $s = new StockService();
-$pruefe($s->consumptionLeaves() === [(int) $arten['bb'], (int) $arten['vs']] || array_diff([(int) $arten['bb'], (int) $arten['vs']], $s->consumptionLeaves()) === [] && ! in_array((int) $arten['gr'], $s->consumptionLeaves(), true), 'D-1297: the leaves below «Verbrauch» are the kinds to choose');
+$pruefe(array_diff([(int) $arten['bb'], (int) $arten['vs']], $s->consumptionLeaves()) === [] && ! in_array((int) $arten['gr'], $s->consumptionLeaves(), true), 'D-1297: the leaves below «Verbrauch» are the kinds to choose');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'verbrauch', 'thing' => (string) $r['t1']];
 $html = (new StockPage())->render();
 $artFeld = (int) $s->structure()->field('transaction_kind');
@@ -1185,6 +1192,14 @@ $losLot2 = (new StockService())->ledger()->proposedLot($r['t1']);
 $verlust = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_LOSS, null, ['sale' => $auftrag, 'lot' => $losLot2, 'quantity' => '1', 'reason' => 'Ersatzversand', 'date' => '2026-11-10', 'title' => 'Verlust Ersatzversand']);
 $s       = new StockService();
 $pruefe(is_int($verlust) && (int) $s->table('transaction')->first($verlust, $s->structure()->field('transaction_kind')) === (int) $arten['vs'], 'D-1297: the Ersatzversand books «Verlust/Schwund», named by the structure' . ($verlust instanceof WP_Error ? ': ' . $verlust->get_error_message() : ''));
+// D-1302: scrap from the box, as «Defekt/Ausschuss» naming the order, the reason as description.
+$vorAus  = (new StockService())->presentIn($schrank)[$bc] ?? 0.0;
+$aus     = apply_filters('taxmod_stock_book_scrap', null, ['reference' => $auftrag, 'place' => $schrank, 'lines' => [$bc => 1], 'reason' => 'Ausschuss Fertigung: Test', 'date' => '2026-11-13', 'title' => 'Ausschuss Testkarte']);
+$s       = new StockService();
+$pruefe(is_int($aus) && ($s->presentIn($schrank)[$bc] ?? 0.0) === $vorAus - 1.0 && (int) $s->table('transaction')->first($aus, $s->structure()->field('transaction_kind')) === (int) $arten['da'] && (int) $s->table('transaction')->first($aus, $s->structure()->field('transaction_reference')) === $auftrag && (! $s->structure()->hasField('description') || $s->table('transaction')->first($aus, $s->structure()->field('description')) === 'Ausschuss Fertigung: Test'), 'D-1302: book_scrap takes from the box as «Defekt/Ausschuss», naming the order and the reason' . ($aus instanceof WP_Error ? ': ' . $aus->get_error_message() : ''));
+if (is_int($aus)) {
+    (new StockService())->cancelConsumption($aus, '2026-11-13 12:00', 'check');
+}
 
 // D-1299, his question 2026-11-10 «baum in dem ich bestand wähle»: Ausbuchen picks the lot in one chooser (groups, then the
 // lots of the group's materials); a preselected lot stands chosen, the material follows from it.

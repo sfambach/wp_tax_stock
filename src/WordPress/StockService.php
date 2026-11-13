@@ -2279,11 +2279,16 @@ final class StockService
      * D-1301: several positions for one subject's reservation in one act — a project, a sale or a production order alike,
      * by the Bezug that may name any record.
      *
+     * A row without a lot that names a place (`$places`, row index → place) takes the free lots lying there, oldest first,
+     * so the goods stay where they are and the reservation names them.
+     *
      * @param list<ReservationRow> $rows
+     * @param array<int, int>      $places
      * @return array<string, mixed> the modeller's answer
      */
-    public function reserveRows(int $subject, string $deadline, array $rows, string $today, string $title): array
+    public function reserveRows(int $subject, string $deadline, array $rows, string $today, string $title, array $places = []): array
     {
+        $rows = $places === [] ? $rows : $this->lotsAtPlaces($rows, $places);
         $s = $this->structure();
 
         if (! $s->hasValue('kind_reservation')) {
@@ -2299,6 +2304,45 @@ final class StockService
         $reservations->check($rows, $this->ledger(), $this->reservedPlaces());
 
         return $this->model->write((new Bookings($this->structureWithKinds(), $today))->reserve($subject, $deadline, $rows, $reservations->forSubject($subject), $this->table('transaction'), $title));
+    }
+
+    /**
+     * @param list<ReservationRow> $rows
+     * @param array<int, int>      $places row index → place
+     * @return list<ReservationRow>
+     */
+    private function lotsAtPlaces(array $rows, array $places): array
+    {
+        $ledger = $this->ledger();
+        $bound  = $this->boundLots();
+        $out    = [];
+
+        foreach ($rows as $index => $row) {
+            $place = $places[$index] ?? 0;
+
+            if ($row->lot !== null || $place <= 0) {
+                $out[] = $row;
+                continue;
+            }
+
+            $left = (float) $row->quantity;
+
+            foreach ($ledger->lotsOf($row->thing) as $lot) {
+                $there = isset($bound[$lot]) ? 0.0 : $ledger->restAt($lot, $place);
+
+                if ($left > 0.000001 && $there > 0.000001) {
+                    $part  = min($there, $left);
+                    $out[] = new ReservationRow($row->thing, rtrim(rtrim(number_format($part, 6, '.', ''), '0'), '.'), $lot);
+                    $left -= $part;
+                }
+            }
+
+            if ($left > 0.000001) {
+                throw StockError::notEnoughToPick($row->thing, $place);
+            }
+        }
+
+        return $out;
     }
 
     /**
@@ -3093,6 +3137,42 @@ final class StockService
         }
 
         return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $bound, $reference)));
+    }
+
+    /**
+     * D-1302: scrap from a build — taken like a build from the box and then the order's reservation, booked as «Defekt/
+     * Ausschuss» with the order as Bezug and the reason as description. One Vorgang.
+     *
+     * @param array<int, float> $lines thing → pieces, each more than 0
+     * @return int the Vorgang
+     */
+    public function bookScrap(int $reference, int $place, array $lines, string $reason, string $today, string $title): int
+    {
+        $s = $this->structureWithKinds();
+
+        if (! $s->hasValue('kind_scrap')) {
+            throw StockError::notConfigured('values.kind_scrap');
+        }
+
+        if ($reference <= 0) {
+            throw StockError::noSubject();
+        }
+
+        if (! $this->table('location')->has($place)) {
+            throw StockError::notALocation($place);
+        }
+
+        $lines = array_filter($lines, static fn (float $q): bool => $q > 0.0);
+        $this->checkThings(array_keys($lines));
+        $reserved = [];
+
+        foreach ($this->reservationsOf([$reference])[$reference] as $position) {
+            $reserved[$position['thing']][] = ['lot' => $position['lot'], 'quantity' => $position['quantity']];
+        }
+
+        $rows = BuildPlan::rows($this->ledger(), $place, $this->locationTree()->withAllBelow($place), $lines, [], $reserved);
+
+        return $this->dealOf($this->model->write((new Bookings($s, $today))->build($rows, $reference, $title, $s->value('kind_scrap'), $reason)));
     }
 
     /**

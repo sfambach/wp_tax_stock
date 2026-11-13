@@ -84,6 +84,9 @@ final class Plugin
     /** D-1301: «Box leer räumen» — back to where it came from. */
     public const BOOK_RETURN = 'taxmod_stock_book_return';
 
+    /** D-1302: scrap from a build, as «Defekt/Ausschuss». */
+    public const BOOK_SCRAP = 'taxmod_stock_book_scrap';
+
     public function boot(): void
     {
         // Checked at runtime rather than with «Requires Plugins»: WordPress matches that header against the folder name, and the
@@ -174,6 +177,7 @@ final class Plugin
         add_filter(self::RESERVATIONS_OF, [self::class, 'reservationsOf'], 10, 2);
         add_filter(self::RELEASE, [self::class, 'release'], 10, 2);
         add_filter(self::BOOK_RETURN, [self::class, 'bookReturn'], 10, 2);
+        add_filter(self::BOOK_SCRAP, [self::class, 'bookScrap'], 10, 2);
         // D-1147: the rows of the material and purchase lists draw their details when opened.
         // The filter's name stands as text, so an older modeller without it does not stop the module.
         add_filter('taxmod_list_details', static fn (?string $html, string $source, array $args): ?string => match ($source) {
@@ -308,7 +312,7 @@ final class Plugin
 
     /**
      * D-1301: `apply_filters('taxmod_stock_reserve', null, ['subject' => id, 'rows' => [['thing' => id, 'quantity' => n,
-     * 'lot' => id|0], …], 'deadline' => Y-m-d|'', 'date' => Y-m-d, 'title' => …])` — all rows into the subject's open
+     * 'lot' => id|0, 'place' => id|0], …], 'deadline' => Y-m-d|'', 'date' => Y-m-d, 'title' => …])` — all rows into the subject's open
      * reservation, in one act. Answers the modeller's answer.
      */
     public static function reserve(mixed $previous, mixed $args): array|\WP_Error
@@ -325,9 +329,14 @@ final class Plugin
         $date     = sanitize_text_field((string) ($args['date'] ?? ''));
         $deadline = sanitize_text_field((string) ($args['deadline'] ?? ''));
         $rows     = [];
+        $places   = [];
 
         foreach (is_array($args['rows'] ?? null) ? $args['rows'] : [] as $row) {
             if (is_array($row) && absint($row['thing'] ?? 0) > 0 && is_numeric($row['quantity'] ?? null) && (float) $row['quantity'] > 0) {
+                if (absint($row['place'] ?? 0) > 0) {
+                    $places[count($rows)] = absint($row['place']);
+                }
+
                 $rows[] = new ReservationRow(absint($row['thing']), (string) (float) $row['quantity'], absint($row['lot'] ?? 0) ?: null);
             }
         }
@@ -341,7 +350,7 @@ final class Plugin
         }
 
         try {
-            return (new StockService())->reserveRows(absint($args['subject'] ?? 0), $deadline, $rows, $date, sanitize_text_field((string) ($args['title'] ?? __('Reservierung', 'taxmod-stock'))));
+            return (new StockService())->reserveRows(absint($args['subject'] ?? 0), $deadline, $rows, $date, sanitize_text_field((string) ($args['title'] ?? __('Reservierung', 'taxmod-stock'))), $places);
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
@@ -418,6 +427,41 @@ final class Plugin
 
         try {
             return (new StockService())->bookReturn(absint($args['box'] ?? 0), absint($args['reference'] ?? 0), $date, sanitize_text_field((string) ($args['title'] ?? __('Box leer räumen', 'taxmod-stock'))));
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1302: `apply_filters('taxmod_stock_book_scrap', null, ['reference' => order, 'place' => box, 'lines' => [thing =>
+     * pieces], 'reason' => 'Ausschuss Fertigung[: …]', 'title' => …, 'date' => Y-m-d])` → the Vorgang's id.
+     */
+    public static function bookScrap(mixed $previous, mixed $args): int|\WP_Error
+    {
+        if (is_int($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args  = is_array($args) ? $args : [];
+        $date  = sanitize_text_field((string) ($args['date'] ?? ''));
+        $lines = [];
+
+        foreach (is_array($args['lines'] ?? null) ? $args['lines'] : [] as $thing => $pieces) {
+            if (absint($thing) > 0 && is_numeric($pieces) && (float) $pieces > 0) {
+                $lines[absint($thing)] = (float) $pieces;
+            }
+        }
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+            return new \WP_Error('taxmod_stock_not_a_date', Messages::of(StockError::notADate($date)));
+        }
+
+        try {
+            return (new StockService())->bookScrap(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, sanitize_text_field((string) ($args['reason'] ?? __('Ausschuss Fertigung', 'taxmod-stock'))), $date, sanitize_text_field((string) ($args['title'] ?? __('Ausschuss', 'taxmod-stock'))));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }

@@ -349,7 +349,7 @@ final class Bookings
      * @param list<array{lot: int, place: int, quantity: float}> $rows signed: negative is taken
      * @return list<array<string, mixed>>
      */
-    public function build(array $rows, int $reference, string $title): array
+    public function build(array $rows, int $reference, string $title, int $art = 0, string $reason = ''): array
     {
         $s = $this->structure;
 
@@ -363,7 +363,14 @@ final class Bookings
             $this->line($title, (string) $row['lot'], self::signed($row['quantity']), null, $row['place']);
         }
 
-        return $this->finish($title, 'kind_consumption', [(string) $s->field('transaction_reference') => (string) $reference]);
+        $extra = [(string) $s->field('transaction_reference') => (string) $reference];
+
+        if (trim($reason) !== '' && $s->hasField('description')) {
+            $extra[(string) $s->field('description')] = trim($reason);
+        }
+
+        // D-1302: scrap is the kind «Defekt/Ausschuss» below «Verbrauch» (D-1297); a build stays «Verbrauch».
+        return $this->finish($title, $art > 0 && $s->isConsumption($art) ? $art : 'kind_consumption', $extra);
     }
 
     /**

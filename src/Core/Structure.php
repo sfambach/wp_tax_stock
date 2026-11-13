@@ -133,6 +133,8 @@ final class Structure
         'kind_sale',
         // D-1297: the kind «Verlust/Schwund» under «Verbrauch», booked by the Ersatzversand (D-1168).
         'kind_loss',
+        // D-1302: «Defekt/Ausschuss» under «Verbrauch», booked for scrap from a build.
+        'kind_scrap',
         // D-1169: a place type's fit calculation and how loudly a misfit is said.
         'fit_volume', 'fit_sides', 'fit_none', 'level_info', 'level_warning', 'level_error',
     ];

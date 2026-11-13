@@ -1841,6 +1841,31 @@ final class StockService
         return $out;
     }
 
+    /**
+     * D-1301: every project box with its project, its path and the pieces lying in it and in every place below it, for the
+     * manufacturing module. One ledger and one tree for all boxes (CD-7).
+     *
+     * @return array<int, array{project: int, label: string, pieces: float}> place → its box
+     */
+    public function projectBoxSummary(): array
+    {
+        $boxes = $this->projectBoxes();
+
+        if ($boxes === []) {
+            return [];
+        }
+
+        $ledger = $this->ledger();
+        $tree   = $this->locationTree();
+        $out    = [];
+
+        foreach ($boxes as $place => $project) {
+            $out[$place] = ['project' => $project, 'label' => $tree->pathOf($place), 'pieces' => array_sum(ProjectBill::present($ledger, $tree->withAllBelow($place)))];
+        }
+
+        return $out;
+    }
+
     /** D-1139: a project's parts list; null while the model holds no way from a project to one. */
     public function projectBill(int $project): ?ProjectBill
     {

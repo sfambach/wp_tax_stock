@@ -72,6 +72,9 @@ final class Plugin
     public const CUT_SOURCES = 'taxmod_stock_cut_sources';
     public const BOOK_CUT    = 'taxmod_stock_book_cut';
 
+    /** D-1301: the project boxes with their project, path and pieces, for the manufacturing module. */
+    public const PROJECT_BOXES = 'taxmod_stock_project_boxes';
+
     public function boot(): void
     {
         // Checked at runtime rather than with «Requires Plugins»: WordPress matches that header against the folder name, and the
@@ -157,6 +160,7 @@ final class Plugin
         add_action(self::ORDER_EVENT, [self::class, 'orderEvent'], 10, 2);
         add_filter(self::CUT_SOURCES, [self::class, 'cutSources'], 10, 2);
         add_filter(self::BOOK_CUT, [self::class, 'bookCut'], 10, 2);
+        add_filter(self::PROJECT_BOXES, [self::class, 'projectBoxes'], 10, 2);
         // D-1147: the rows of the material and purchase lists draw their details when opened.
         // The filter's name stands as text, so an older modeller without it does not stop the module.
         add_filter('taxmod_list_details', static fn (?string $html, string $source, array $args): ?string => match ($source) {
@@ -263,6 +267,27 @@ final class Plugin
 
         try {
             return (new StockService())->cutSources($wanted, absint($args['except'] ?? 0));
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1301: `apply_filters('taxmod_stock_project_boxes', null, [])` → `[place => ['project' => id, 'label' => path,
+     * 'pieces' => n]]`, the pieces counted in the box and every place below it.
+     */
+    public static function projectBoxes(mixed $previous, mixed $args): array|\WP_Error
+    {
+        if (is_array($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        try {
+            return (new StockService())->projectBoxSummary();
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }

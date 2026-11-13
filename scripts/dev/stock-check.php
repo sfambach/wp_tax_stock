@@ -660,6 +660,8 @@ $pruefe(($rows[$bc]['present'] ?? null) === $menge && ($rows[$bc]['missing'] ?? 
 $_GET  = ['page' => StockPage::PAGE, 'tab' => 'fertigung'];
 $seite = implode('', (new StockPage())->parts());
 $pruefe(str_contains($seite, '__Testkarte') && str_contains($seite, '2 Teile fehlen') && str_contains($seite, 'Stückliste aus: Rev 1.1'), 'Fertigung › Projekt-Gebinde shows the box, its project and what is missing');
+$summary = apply_filters('taxmod_stock_project_boxes', null, []);
+$pruefe(is_array($summary) && ($summary[$schrank]['project'] ?? 0) === (int) ($b['pj'] ?? 0) && ($summary[$schrank]['pieces'] ?? null) === array_sum($s->presentIn($schrank)) && ($summary[$schrank]['label'] ?? '') === $s->locationTree()->pathOf($schrank), 'D-1301: project_boxes answers each box with its project, its path and the pieces in it and below it');
 $_GET  = [];
 
 try {

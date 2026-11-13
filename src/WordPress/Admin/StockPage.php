@@ -82,6 +82,7 @@ final class StockPage
     /** Rows per page of the material list (design 20: a list of thousands draws only what is seen). */
     private const PER_PAGE  = 50;
     private const ROWS      = 6;
+    private const MANUFACTURING = 'taxmod-fertigung';
     private const TABS      = ['wareneingang', 'material', 'gruppenbestand', 'inventur', 'verbrauch', 'reservierungen', 'lagerorte', 'lagerstruktur', 'platzarten', 'etikettenvorlagen', 'drucker', 'fertigung'];
     private const VIEWS     = ['daten', 'bearbeiten', 'einkauf', 'lager', 'bestand', 'verkauf'];
     private const FILTER_FORM = 'taxmod-stock-filter';
@@ -162,7 +163,7 @@ final class StockPage
                 'platzarten' => $this->placeTypesPage(absint($_GET['typ'] ?? 0)),
                 'etikettenvorlagen' => $this->labelTemplatesPage(absint($_GET['vorlage'] ?? 0)),
                 'drucker'   => $this->printersPage(),
-                'fertigung' => $this->projectBoxList(),
+                'fertigung' => self::boxesInModule() === null ? $this->projectBoxList() : ListPage::toolbar([['<a class="button button-primary" href="' . esc_url((string) self::boxesInModule()) . '">' . esc_html__('Projekt-Gebinde in der Fertigung öffnen', 'taxmod-stock') . '</a>']]),
                 default     => absint($_GET['split'] ?? 0) > 0
                     ? $this->splitForm(absint($_GET['order'] ?? 0), absint($_GET['split']), sanitize_key((string) ($_GET['back'] ?? '')))
                     : $this->receiptTab($list, absint($_GET['order'] ?? 0)),
@@ -1792,6 +1793,12 @@ final class StockPage
             . ListPage::toolbar([[$this->reserveFormDialog(0, 'reservierungen')]])
             . ListPage::table([[__('Reservierung', 'taxmod-stock'), ''], [__('Bezug', 'taxmod-stock'), '14em'], [__('Datum', 'taxmod-stock'), '7em'], [__('Frist', 'taxmod-stock'), '7em'], [__('Positionen', 'taxmod-stock'), '6em']],
                 $body === '' ? $this->noItems(5) : $body);
+    }
+
+    /** D-1301: where the manufacturing module lists the project boxes; null while that module is not there. */
+    public static function boxesInModule(): ?string
+    {
+        return isset(ModulePage::all()[self::MANUFACTURING]) ? add_query_arg('tab', 'boxes', ModulePage::url(self::MANUFACTURING)) : null;
     }
 
     /**

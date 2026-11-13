@@ -99,7 +99,8 @@ final class LogisticsShell
             ]],
             // D-957 names «Fertigung» among the module's areas; D-1139 is its first page.
             ['key' => 'production', 'label' => __('Fertigung', 'taxmod-stock'), 'items' => [
-                $item('project-boxes', __('Projekt-Gebinde', 'taxmod-stock'), Pages::STOCK, 'fertigung'),
+                // D-1301: the manufacturing module shows the project boxes itself; this page stays only without it.
+                ...(StockPage::boxesInModule() === null ? [$item('project-boxes', __('Projekt-Gebinde', 'taxmod-stock'), Pages::STOCK, 'fertigung')] : []),
                 // D-1142: the manufacturing module (wp_tax_manufacturing) hangs its pages here.
                 ...self::modules('production'),
             ]],

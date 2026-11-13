@@ -1492,5 +1492,7 @@ try {
 $pruefe(is_int($qkVorgang) && count($qkLots) === 2 && $gesperrt && str_contains($html, 'taxmod-stock-blocked') && $frei && (new StockService())->blockedLots($qkLots) === [$qkLots[1]],
     'D-1342: two untested boards are two blocked lots with a red ⊘; a test result frees one, it moves');
 
+$pruefe(apply_filters('taxmod_stock_test_place', null) === (int) ((new StockService())->testSettings([])->place ?? 0) || apply_filters('taxmod_stock_test_place', null) === 0, 'D-1342: taxmod_stock_test_place answers the place «Test», 0 without');
+
 echo $fehler === 0 ? "all green ({$kind})\n" : "{$fehler} red ({$kind})\n";
 exit($fehler === 0 ? 0 : 1);

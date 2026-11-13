@@ -92,6 +92,7 @@ final class Plugin
     public const LOT_STAGES        = 'taxmod_stock_lot_stages';
     public const SET_LOT_STAGE     = 'taxmod_stock_set_lot_stage';
     public const PRODUCTION_INBOUND = 'taxmod_stock_production_inbound';
+    public const TEST_PLACE        = 'taxmod_stock_test_place';
 
     public function boot(): void
     {
@@ -187,6 +188,7 @@ final class Plugin
         add_filter(self::LOT_STAGES, [self::class, 'lotStages'], 10, 2);
         add_filter(self::SET_LOT_STAGE, [self::class, 'setLotStage'], 10, 2);
         add_filter(self::PRODUCTION_INBOUND, [self::class, 'productionInbound'], 10, 1);
+        add_filter(self::TEST_PLACE, [self::class, 'testPlace'], 10, 1);
         // D-1315 with the modeller's D-1334: the kind of a place with places inside changes only through «Art wechseln …».
         add_filter('taxmod_claimed_fields', [self::class, 'claimedFields'], 10, 3);
         // D-1147: the rows of the material and purchase lists draw their details when opened.
@@ -556,6 +558,23 @@ final class Plugin
         }
 
         return $claims;
+    }
+
+    /** D-1342: `apply_filters('taxmod_stock_test_place', null)` → the place «Test» (D-1111 setting) untested boards come in at, 0 while none is set. */
+    public static function testPlace(mixed $previous): int
+    {
+        if (is_int($previous) && $previous > 0) {
+            return $previous;
+        }
+
+        try {
+            $stock = new StockService();
+            $place = (int) ($stock->testSettings([])->place ?? 0);
+
+            return $place > 0 && $stock->table('location')->has($place) ? $place : 0;
+        } catch (StockError) {
+            return 0;
+        }
     }
 
     /** D-1303: `apply_filters('taxmod_stock_production_inbound', null)` → the place finished boards come in, 0 while none is set. */

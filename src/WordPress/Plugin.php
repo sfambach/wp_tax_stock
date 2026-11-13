@@ -187,6 +187,8 @@ final class Plugin
         add_filter(self::LOT_STAGES, [self::class, 'lotStages'], 10, 2);
         add_filter(self::SET_LOT_STAGE, [self::class, 'setLotStage'], 10, 2);
         add_filter(self::PRODUCTION_INBOUND, [self::class, 'productionInbound'], 10, 1);
+        // D-1315 with the modeller's D-1334: the kind of a place with places inside changes only through «Art wechseln …».
+        add_filter('taxmod_claimed_fields', [self::class, 'claimedFields'], 10, 3);
         // D-1147: the rows of the material and purchase lists draw their details when opened.
         // The filter's name stands as text, so an older modeller without it does not stop the module.
         add_filter('taxmod_list_details', static fn (?string $html, string $source, array $args): ?string => match ($source) {
@@ -528,6 +530,32 @@ final class Plugin
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
+    }
+
+    /**
+     * D-1315: the field «Platzart» of a place with fixed places inside, claimed for the dialog «Art wechseln …» (D-1334).
+     *
+     * @param array<int, array{label: string, url: string}> $claims
+     * @return array<int, array{label: string, url: string}>
+     */
+    public static function claimedFields(mixed $claims, int $recordId, int $nodeId): array
+    {
+        $claims = is_array($claims) ? $claims : [];
+
+        try {
+            $stock = new StockService();
+            $s     = $stock->structure();
+
+            if (! $s->hasNode('location') || $nodeId !== $s->node('location') || ! $s->hasField('location_place_type') || $stock->locationTree()->nestedBelow($recordId) === []) {
+                return $claims;
+            }
+
+            $claims[$s->field('location_place_type')] = ['label' => __('Art wechseln …', 'taxmod-stock'), 'url' => StockPage::kindChangeUrl($recordId)];
+        } catch (StockError) {
+            return $claims;
+        }
+
+        return $claims;
     }
 
     /** D-1303: `apply_filters('taxmod_stock_production_inbound', null)` → the place finished boards come in, 0 while none is set. */

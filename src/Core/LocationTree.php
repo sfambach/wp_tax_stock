@@ -216,6 +216,19 @@ final class LocationTree
         return $children;
     }
 
+    /**
+     * D-1315: the fixed places inside it as a nested list, each level by name. A movable place — a box put there — is no
+     * part of the place's build; it is left out with what is in it.
+     *
+     * @return list<array{id: int, below: list<array<string, mixed>>}>
+     */
+    public function nestedBelow(int $id): array
+    {
+        $fixed = array_values(array_filter($this->childrenOf($id), fn (int $child): bool => ! $this->isMovable($child)));
+
+        return array_map(fn (int $child): array => ['id' => $child, 'below' => $this->nestedBelow($child)], $fixed);
+    }
+
     /** @return list<int> the place and everything inside it */
     public function withAllBelow(int $id): array
     {

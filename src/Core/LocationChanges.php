@@ -77,6 +77,30 @@ final class LocationChanges
     }
 
     /**
+     * D-1315: the place takes the new kind and gets what that kind brings along, beside the places inside it so far; those
+     * are the caller's to empty and remove. The new places answer the refs «teil1» … in {@see PlaceKindChange}'s order.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function changeKind(int $place, int $type, PlaceTypes $types, Table $places): array
+    {
+        if (! $places->has($place)) {
+            throw StockError::notALocation($place);
+        }
+
+        if (! $types->has($type) || ! $this->structure->hasField('location_place_type')) {
+            throw StockError::notALocation($type);
+        }
+
+        $this->needTree();
+        $changes = [['op' => 'set_values', 'record' => (string) $place, 'values' => [(string) $this->structure->field('location_place_type') => (string) $type]]];
+        $count   = 0;
+        $this->bring($types->brought($type), (string) $place, $types, $changes, $count);
+
+        return $changes;
+    }
+
+    /**
      * @param list<array{type: int, name: string, below: list<array<string, mixed>>}> $places
      * @param list<array<string, mixed>> $changes
      */

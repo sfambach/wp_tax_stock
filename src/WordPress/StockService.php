@@ -17,6 +17,7 @@ use TaxmodStock\Core\LocationSettings;
 use TaxmodStock\Core\NewThing;
 use TaxmodStock\Core\Purchasing;
 use TaxmodStock\Core\LocationChanges;
+use TaxmodStock\Core\PlaceKindChange;
 use TaxmodStock\Core\MaterialCopy;
 use TaxmodStock\Core\NamedCopy;
 use TaxmodStock\Core\LocationTree;
@@ -2097,6 +2098,14 @@ final class StockService
         return $this->model->write((new LocationChanges($s))->bringInto($place, $type, $this->placeTypes(), $this->locationTree(), $this->table('location')));
     }
 
+    /** The kind a place is of, 0 for none. */
+    public function kindOf(int $place): int
+    {
+        $s = $this->structure();
+
+        return $s->hasField('location_place_type') ? (int) $this->table('location')->first($place, $s->field('location_place_type')) : 0;
+    }
+
     /** D2: whether «Unterplätze anlegen» has something to do — a type with parts, no place inside yet. */
     public function canCreateSubPlaces(int $place): bool
     {
@@ -2218,6 +2227,116 @@ final class StockService
         $this->planPlaces(array_map(static fn (int $at): int => $parent, array_filter($this->plannedPlaces(), static fn (int $at): bool => in_array($at, $gone, true))));
 
         return $parent;
+    }
+
+    /**
+     * D-1315: what changing the kind of a place asks — the places inside it and how many the new kind brings along, the
+     * ways to choose from (none preselected) and whatever already refuses it.
+     *
+     * @return array{old: int, new: int, ways: list<string>, refused: string}
+     */
+    public function placeKindChange(int $place, int $type): array
+    {
+        $tree  = $this->locationTree();
+        $old   = count($tree->nestedBelow($place));
+        $new   = $this->placeTypes()->has($type) ? count($this->placeTypes()->brought($type)) : 0;
+        $gone  = array_keys(PlaceKindChange::targets($tree->nestedBelow($place), [], $old === 0 ? '' : PlaceKindChange::WAY_PARENT));
+        $taken = array_intersect($gone, [(int) ($this->locationSettings([])->unreferenced ?? 0), (int) ($this->testSettings([])->place ?? 0)]);
+
+        return [
+            'old'     => $old,
+            'new'     => $new,
+            'ways'    => PlaceKindChange::ways($old),
+            'refused' => $taken === [] ? '' : __('ein Unterplatz ist in den Grundeinstellungen gewählt (Käufe ohne Material oder Test); dort zuerst einen anderen wählen', 'taxmod-stock'),
+        ];
+    }
+
+    /**
+     * D-1315 (Gesamtkonzept D3): the kind of a place changes; the new kind brings its places along, what lay in the old ones
+     * goes there by the way chosen — only as an «Umbuchung» (D-1233) — and the old places go. Materials and groups naming an
+     * old place name its new one. Checked before anything is written; two writes, as the second needs the new ids.
+     */
+    public function changePlaceKind(int $place, int $type, string $way, string $today, string $title): void
+    {
+        $s      = $this->structure();
+        $tree   = $this->locationTree();
+        $places = $this->table('location');
+        if (! $places->has($place)) {
+            throw StockError::notALocation($place);
+        }
+
+        $plan   = $this->placeKindChange($place, $type);
+
+        if ($plan['refused'] !== '') {
+            throw StockError::placeInUse($plan['refused']);
+        }
+
+        $targets = PlaceKindChange::targets($tree->nestedBelow($place), $this->placeTypes()->has($type) ? $this->placeTypes()->brought($type) : [], $way);
+        $gone    = array_keys($targets);
+        $lagerOf = $s->hasField('lager_location') ? $this->table('lager') : new Table([]);
+        $lager   = $s->hasField('lager_location') ? array_values(array_filter($lagerOf->ids(), static fn (int $id): bool => in_array((int) $lagerOf->first($id, $s->field('lager_location')), $gone, true))) : [];
+        $left    = [];
+
+        foreach ($gone === [] ? [] : $this->model->referrersOf($gone) as $referrers) {
+            foreach ($referrers as $id) {
+                if (! in_array($id, [...$gone, ...$lager], true) && ! $this->table('lot')->has($id) && ! $this->table('line')->has($id) && ! $this->table('transaction')->has($id)) {
+                    $left[$id] = $id;
+                }
+            }
+        }
+
+        if ($left !== []) {
+            throw StockError::placeInUse(sprintf(/* translators: %s: record ids */ __('Sätze %s verweisen noch auf einen Unterplatz', 'taxmod-stock'), implode(', ', array_map(static fn (int $id): string => '#' . $id, array_values($left)))));
+        }
+
+        $refs   = (array) ($this->model->write((new LocationChanges($s))->changeKind($place, $type, $this->placeTypes(), $places))['refs'] ?? []);
+        $to     = static fn (int $old): int => $targets[$old] === '' ? $place : (int) ($refs[$targets[$old]] ?? $place);
+        $rows   = [];
+        $ledger = $this->ledger();
+
+        foreach ($ledger->stockByPlace() as $lot => $at) {
+            foreach ($gone as $where) {
+                if (($at[$where] ?? 0.0) > 0.0) {
+                    $rows[] = new TransferRow($lot, $where, $to($where), rtrim(rtrim(number_format($at[$where], 6, '.', ''), '0'), '.'));
+                }
+            }
+        }
+
+        $bookings = new Bookings($this->structureWithKinds(), $today);
+        $changes  = $rows === [] ? [] : $bookings->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $this->boundLots());
+
+        // A box put into an old place moves on to its new one, with what is in it (D-1091).
+        foreach ($gone as $old) {
+            foreach (array_filter($tree->childrenOf($old), static fn (int $child): bool => $tree->isMovable($child)) as $box) {
+                $changes[] = ['op' => 'set_values', 'record' => (string) $box, 'values' => [(string) $s->field('location_parent') => (string) $to($old)]];
+
+                if ($this->relocates()) {
+                    $changes = [...$changes, ...$bookings->relocate($box, $old, $to($old), $title)];
+                }
+            }
+        }
+
+        foreach ($lager as $record) {
+            $changes[] = ['op' => 'set_values', 'record' => (string) $record, 'values' => [(string) $s->field('lager_location') => (string) $to((int) $lagerOf->first($record, $s->field('lager_location')))]];
+        }
+
+        foreach (array_filter($this->model->ownProperties(array_keys($this->tree()), self::PLACE_PROPERTY), static fn (bool|int $at): bool => is_int($at) && in_array($at, $gone, true)) as $node => $at) {
+            $changes[] = ['op' => 'set_setting', 'node' => $node, 'attribute' => self::PLACE_PROPERTY, 'value' => (string) $to($at)];
+        }
+
+        foreach ($gone as $record) {
+            $changes[] = ['op' => 'remove_record', 'record' => (string) $record];
+        }
+
+        if ($changes !== []) {
+            $this->model->write($changes);
+        }
+
+        $planned = array_filter($this->plannedPlaces(), static fn (int $at): bool => in_array($at, $gone, true));
+
+        if ($planned !== []) {
+            (new self($this->model))->planPlaces(array_map($to, $planned));
+        }
     }
 
     public function copyPlace(int $place, string $name, bool $withBelow): int

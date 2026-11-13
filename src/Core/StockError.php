@@ -179,6 +179,12 @@ final class StockError extends \RuntimeException
         return new self('not_a_quantity', $given);
     }
 
+    /** D-1315: the kind of an occupied place changes only with a way chosen for what lies inside. */
+    public static function noWayChosen(): self
+    {
+        return new self('no_way_chosen', '');
+    }
+
     public static function nothingToBook(): self
     {
         return new self('nothing_to_book', '');

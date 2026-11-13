@@ -186,7 +186,7 @@ final class StockPage
 
         $kind  = sanitize_key((string) ($_POST['booking'] ?? ''));
         // D-1058: the row buttons carry their purchase in the value, «nichteinlagern-<id>» and «einlagern-<id>».
-        $rowPurchase = preg_match('/^(nichteinlagern|einlagern|umhaengen|reservieren|freigeben|ortkopieren|ortloeschen|artkopieren|vorlagekopieren|rollewechseln|unterplaetze)-(\d+)$/', $kind, $m) === 1 ? (int) $m[2] : 0;
+        $rowPurchase = preg_match('/^(nichteinlagern|einlagern|umhaengen|reservieren|freigeben|ortkopieren|ortloeschen|artkopieren|vorlagekopieren|rollewechseln|unterplaetze|artwechsel)-(\d+)$/', $kind, $m) === 1 ? (int) $m[2] : 0;
         $kind        = $rowPurchase > 0 ? $m[1] : $kind;
         $today = current_time('Y-m-d');
         // The goods receipt sends «thing» as a list (one per purchase); only the other forms send one thing.
@@ -310,6 +310,8 @@ final class StockPage
                 // D-1267: the page goes back to the parent of the place deleted.
                 'ortloeschen'  => $copy = $this->stock->deletePlace($rowPurchase, current_time('Y-m-d'), __('Lagerort gelöscht', 'taxmod-stock'), ! empty($_POST['below'])),
                 'unterplaetze' => $this->stock->createSubPlaces($rowPurchase),
+                // D-1315: the way comes from the dialog, never a default.
+                'artwechsel'   => $this->stock->changePlaceKind($rowPurchase, absint($_POST['place_type'] ?? 0), sanitize_key((string) ($_POST['way'] ?? '')), $today, $this->title(__('Umbuchung', 'taxmod-stock'), $today)),
                 'artkopieren'  => $copy = $this->stock->copyPlaceType($rowPurchase, sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? '')))),
                 // D-1130: «Kopieren» — the copy's id is what the page goes back to.
                 'ortkopieren'  => $copy = $this->stock->copyPlace($rowPurchase, sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? ''))), ! empty($_POST['below'])),
@@ -343,6 +345,7 @@ final class StockPage
                 'rollewechseln'  => __('Rolle gewechselt: der Drucker druckt jetzt die Etiketten der neuen Rolle. Zurück geht es mit «Rolle wechseln».', 'taxmod-stock'),
                 'vorlagekopieren' => __('Kopiert: die neue Vorlage trägt Format, Layout und Anzahl der alten; die Platzarten bleiben bei der alten.', 'taxmod-stock'),
                 'unterplaetze'   => __('Unterplätze angelegt, wie die Platzart sie vorgibt.', 'taxmod-stock'),
+                'artwechsel'     => __('Art gewechselt: die neuen Unterplätze stehen, der Bestand ist umgebucht, die alten Unterplätze sind entfernt.', 'taxmod-stock'),
                 'artkopieren'    => __('Kopiert: die neue Platzart trägt Felder und Teile der alten; die Plätze bleiben bei der alten.', 'taxmod-stock'),
                 'ortkopieren'    => __('Kopiert: der neue Ort trägt die Felder des alten, aber nichts von dem, was dort liegt.', 'taxmod-stock'),
                 'ortloeschen'    => __('Gelöscht: was dort lag ist jetzt im übergeordneten Ort. Rückgängig geht es oben über die Liste der letzten Änderungen.', 'taxmod-stock'),
@@ -2841,7 +2844,7 @@ final class StockPage
         $groups = [
             // D-1224, his word 2026-11-07: «zur bestandsansicht wechseln» — what lies here and below, in «Platzbestand».
             ['<a class="button" href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'lagerorte', 'ort' => $place], admin_url('admin.php'))) . '">' . esc_html__('Zur Bestandsansicht', 'taxmod-stock') . '</a>'],
-            [$this->newPlaceDialog($place, 'lagerstruktur'), ...($this->stock->canCreateSubPlaces($place) ? [$this->subPlacesButton($place)] : []), $this->copyPlaceDialog($place, $tree, count($below) - 1), $this->movePlaceDialog($place, $tree), $this->deletePlaceDialog($place, $tree)],
+            [$this->newPlaceDialog($place, 'lagerstruktur'), ...($this->stock->canCreateSubPlaces($place) ? [$this->subPlacesButton($place)] : []), $this->kindChangeDialog($place, $tree), $this->copyPlaceDialog($place, $tree, count($below) - 1), $this->movePlaceDialog($place, $tree), $this->deletePlaceDialog($place, $tree)],
             [$this->formStart('lagerstruktur') . $this->returnFields('lagerstruktur', $place) . $this->reserveDialog($place, $flags->isFlagged($place), $all) . '</form>'],
             [$label],
         ];
@@ -3778,6 +3781,67 @@ final class StockPage
     {
         return $this->formStart('unterplaetze-' . $place) . $this->returnFields('lagerstruktur', $place)
             . '<button type="submit" class="button">' . esc_html__('Unterplätze anlegen', 'taxmod-stock') . '</button></form>';
+    }
+
+    /** D-1315: where the claimed field «Platzart» leads — the place's page with «Art wechseln …» open. */
+    public static function kindChangeUrl(int $place): string
+    {
+        return add_query_arg(['page' => self::PAGE, 'tab' => 'lagerstruktur', 'ort' => $place, 'artwechsel' => 1], admin_url('admin.php'));
+    }
+
+    /**
+     * D-1315 (Gesamtkonzept D3): «Art wechseln …» — the new kind, and for a place with places inside where their stock goes;
+     * no way is preselected. Moves only as an «Umbuchung» (D-1233).
+     */
+    private function kindChangeDialog(int $place, LocationTree $tree): string
+    {
+        $types = $this->stock->placeTypes();
+        $now   = $this->stock->kindOf($place);
+        $plan  = $this->stock->placeKindChange($place, $now);
+
+        if (! method_exists(ListPage::class, 'dialogAction') || $types->names() === []) {
+            return '';
+        }
+
+        if ($plan['refused'] !== '') {
+            return '<button type="button" class="button" disabled title="' . esc_attr($plan['refused']) . '">' . esc_html__('Art wechseln …', 'taxmod-stock') . '</button>';
+        }
+
+        $options = '<option value="">' . esc_html__('— wählen —', 'taxmod-stock') . '</option>';
+
+        foreach ($types->names() as $type => $name) {
+            $count    = count($types->brought($type));
+            /* translators: 1: kind of place, 2: number of places it brings along */
+            $options .= '<option value="' . esc_attr((string) $type) . '"' . disabled($type, $now, false) . '>' . esc_html(sprintf(_n('%1$s (%2$d Unterplatz)', '%1$s (%2$d Unterplätze)', $count, 'taxmod-stock'), $name, $count)) . '</option>';
+        }
+
+        $body = '<label style="display:block">' . esc_html__('Neue Platzart', 'taxmod-stock') . '<br><select name="place_type" required style="width:100%">' . $options . '</select></label>';
+
+        if ($plan['ways'] === []) {
+            $body .= '<p class="description">' . esc_html__('Der Platz hat keine Unterplätze; die neue Art bringt ihre mit.', 'taxmod-stock') . '</p>';
+        } else {
+            /* translators: %d: number of places inside so far */
+            $body .= '<p>' . esc_html(sprintf(_n('Bisher %d Unterplatz. Wohin geht, was darin liegt?', 'Bisher %d Unterplätze. Wohin geht, was darin liegt?', $plan['old'], 'taxmod-stock'), $plan['old'])) . '</p>';
+            $ways  = [
+                \TaxmodStock\Core\PlaceKindChange::WAY_PARENT => __('Alles auf den Platz selbst', 'taxmod-stock'),
+                \TaxmodStock\Core\PlaceKindChange::WAY_FIT    => __('Der Reihe nach: gleiche Anzahl 1:1, sonst so viel wie passt, der Rest auf den Platz selbst', 'taxmod-stock'),
+                \TaxmodStock\Core\PlaceKindChange::WAY_SPREAD => __('Auf die neuen Unterplätze verteilen (reihum)', 'taxmod-stock'),
+            ];
+
+            foreach ($plan['ways'] as $way) {
+                $body .= '<label style="display:block"><input type="radio" name="way" value="' . esc_attr($way) . '" required> ' . esc_html($ways[$way]) . '</label>';
+            }
+
+            $body .= '<p class="description">' . esc_html__('Gebucht wird als Umbuchung; Kisten darin wandern mit. Die alten Unterplätze werden entfernt.', 'taxmod-stock') . '</p>';
+        }
+
+        $switch = 'taxmod-stock-kind-' . $place;
+        $html   = $this->formStart('lagerstruktur') . $this->returnFields('lagerstruktur', $place)
+            . ListPage::dialogAction($switch, __('Art wechseln …', 'taxmod-stock'), sprintf(/* translators: %s: the place, by its path */ __('Art wechseln: %s', 'taxmod-stock'), $tree->pathOf($place)), $body, 'booking', 'artwechsel-' . $place, __('Wechseln', 'taxmod-stock'))
+            . '</form>';
+
+        // The claimed field's button (D-1334) lands here with the dialog open.
+        return absint($_GET['artwechsel'] ?? 0) === 1 ? (string) preg_replace('/(id="' . preg_quote($switch, '/') . '")/', '$1 checked', $html, 1) : $html;
     }
 
     private function copyPlaceDialog(int $place, LocationTree $tree, int $inside): string

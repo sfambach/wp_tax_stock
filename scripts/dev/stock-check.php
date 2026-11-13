@@ -1321,5 +1321,56 @@ $pruefe($oben((new StockPage())->render(), 'rows[0][quantity]'), 'D-1308: «Inve
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'verbrauch'];
 $pruefe($oben((new StockPage())->render(), 'Bestandsposten'), 'D-1308: «Verbrauch buchen» in the toolbar above the fields');
 
+// D-1315 (Gesamtkonzept D3): «Art wechseln …» of a place with places inside — claimed in the editor (D-1334), refused
+// without a way, then the new places stand, the stock moved by an Umbuchung, the old places gone.
+$arten = $apply([
+    ['op' => 'create_node', 'ref' => 'pt', 'name' => '__Platzarten', 'parent' => (string) $r['lo']],
+    ['op' => 'create_node', 'ref' => 'ptt', 'name' => '__Platzart-Teile', 'parent' => (string) $r['lo']],
+    $field('lo_art', (string) $r['lo'], '__Platzart', '@pt', 'aggregation', '0..1'),
+    $field('pt_teile', '@pt', '__Teile', '@ptt', 'aggregation', '0..*'),
+    $field('ptt_art', '@ptt', '__Art', '@pt', 'aggregation', '0..1'),
+    $field('ptt_anz', '@ptt', '__Anzahl', $int, 'composition', '0..1'),
+])['refs'] ?? [];
+$lbl     = (string) (new StockService())->structure()->field('label');
+$artRoh = isset($arten['ptt_anz']) ? wp_get_ability('taxmod/apply')->execute(['changes' => [
+    ['op' => 'create_record', 'ref' => 'fach', 'node' => (string) $arten['pt'], 'values' => [$lbl => '__Fach']],
+    ['op' => 'create_record', 'ref' => 'z1', 'node' => (string) $arten['ptt'], 'values' => [(string) $arten['ptt_art'] => '@fach', (string) $arten['ptt_anz'] => '2']],
+    ['op' => 'create_record', 'ref' => 'zwei', 'node' => (string) $arten['pt'], 'values' => [$lbl => '__Zwei', (string) $arten['pt_teile'] => ['values' => ['@z1']]]],
+    ['op' => 'create_record', 'ref' => 'd1', 'node' => (string) $arten['ptt'], 'values' => [(string) $arten['ptt_art'] => '@fach', (string) $arten['ptt_anz'] => '3']],
+    ['op' => 'create_record', 'ref' => 'drei', 'node' => (string) $arten['pt'], 'values' => [$lbl => '__Drei', (string) $arten['pt_teile'] => ['values' => ['@d1']]]],
+]]) : [];
+$artSaetze = is_array($artRoh) ? (array) ($artRoh['refs'] ?? []) : [];
+$opt = get_option('taxmod_stock_structure');
+if (is_array($opt) && isset($artSaetze['drei'])) {
+    $opt['nodes']  += ['location_type' => (int) $arten['pt'], 'location_type_part' => (int) $arten['ptt']];
+    $opt['fields'] += ['location_place_type' => (int) $arten['lo_art'], 'type_parts' => (int) $arten['pt_teile'], 'part_type' => (int) $arten['ptt_art'], 'part_count' => (int) $arten['ptt_anz']];
+    update_option('taxmod_stock_structure', $opt);
+}
+$zwei   = (int) ($artSaetze['zwei'] ?? 0);
+$drei   = (int) ($artSaetze['drei'] ?? 0);
+$regal  = (int) ((new StockService())->createPlace('__Regal', $schrank, false, 0, false, $zwei)['refs']['ort'] ?? 0);
+$faecher = (new StockService())->locationTree()->childrenOf($regal);
+(new StockService())->moveLot($weLot, $weBox, $faecher[1] ?? 0, '1', '2026-11-13', 'D3 vorher');
+$claim  = apply_filters('taxmod_claimed_fields', [], $regal, (int) $r['lo']);
+try {
+    (new StockService())->changePlaceKind($regal, $drei, '', '2026-11-13', 'D3 ohne Weg');
+    $ohneWeg = false;
+} catch (TaxmodStock\Core\StockError $e) {
+    $ohneWeg = $e->reason === 'no_way_chosen';
+}
+$s      = new StockService();
+$ohneWeg = $ohneWeg && $s->kindOf($regal) === $zwei && $s->locationTree()->childrenOf($regal) === $faecher;
+$s->changePlaceKind($regal, $drei, TaxmodStock\Core\PlaceKindChange::WAY_FIT, '2026-11-13', 'D3 Art wechseln');
+$s      = new StockService();
+$neu    = $s->locationTree()->childrenOf($regal);
+$pruefe(count($faecher) === 2 && isset($claim[(int) $arten['lo_art']]) && str_contains((string) $claim[(int) $arten['lo_art']]['url'], 'artwechsel=1') && $ohneWeg
+    && $s->kindOf($regal) === $drei && count($neu) === 3 && array_intersect($neu, $faecher) === [] && ! $s->table('location')->has($faecher[0])
+    && $s->ledger()->restAt($weLot, $neu[1]) === 1.0 && $s->ledger()->restAt($weLot, $faecher[1]) === 0.0,
+    'D-1315: «Art wechseln …» is claimed, refused without a way, then the new places stand, the stock moved 1:1 by an Umbuchung, the old places gone');
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'lagerstruktur', 'ort' => (string) $regal, 'artwechsel' => '1'];
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'value="artwechsel-' . $regal . '"') && preg_match('/id="taxmod-stock-kind-' . $regal . '"[^>]*checked/', $html) === 1 && ! preg_match('/name="way"[^>]*checked/', $html),
+    'D-1315: the place opens with «Art wechseln …» open, no way preselected');
+
 echo $fehler === 0 ? "all green ({$kind})\n" : "{$fehler} red ({$kind})\n";
 exit($fehler === 0 ? 0 : 1);

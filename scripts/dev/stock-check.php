@@ -1378,13 +1378,14 @@ $quellen = $apply([
     ['op' => 'create_node', 'ref' => 'qu', 'name' => '__Bezugsquellen', 'parent' => (string) $r['mat']],
     $field('qu_firma', '@qu', '__Firma', '@fi', 'aggregation', '0..1'),
     $field('qu_nr', '@qu', '__Nummer', 1175, 'composition', '0..1'),
+    $field('qu_inhalt', '@qu', '__Packungsinhalt', 1173, 'composition', '0..1'),
     $field('m_quellen', (string) $r['mat'], '__Bezugsquellen', '@qu', 'aggregation', '0..*'),
 ])['refs'] ?? [];
 $firma = isset($quellen['fi']) ? (int) ($apply([['op' => 'create_record', 'ref' => 'f', 'node' => (string) $quellen['fi'], 'values' => [(string) $r['label'] => '__Reichelt']]])['refs']['f'] ?? 0) : 0;
 $opt = get_option('taxmod_stock_structure');
 if (is_array($opt) && $firma > 0) {
     $opt['nodes']  += ['source' => (int) $quellen['qu'], 'firm' => (int) $quellen['fi']];
-    $opt['fields'] += ['source_firm' => (int) $quellen['qu_firma'], 'source_number' => (int) $quellen['qu_nr'], 'lager_sources' => (int) $quellen['m_quellen']];
+    $opt['fields'] += ['source_firm' => (int) $quellen['qu_firma'], 'source_number' => (int) $quellen['qu_nr'], 'lager_sources' => (int) $quellen['m_quellen'], 'source_content' => (int) $quellen['qu_inhalt']];
     update_option('taxmod_stock_structure', $opt);
 }
 $minVorher = (new StockService())->things()->lagerOf($r['t1']) === null ? null : (new StockService())->table('lager')->first((int) (new StockService())->things()->lagerOf($r['t1']), (int) $r['m_min']);
@@ -1404,6 +1405,10 @@ $pruefe($gespeichert === '' && count($zeilen) === 1 && $zeilen[0]->number === 'A
     && $s->table('lager')->first((int) $s->things()->lagerOf($r['t1']), (int) $r['m_min']) === $minVorher
     && str_contains($html, 'value="quellen"') && str_contains($html, 'name="quelle[0][part]"') && str_contains($html, 'quelle[1]') && ! str_contains($lagerHtml, '<h3>Bezugsquellen'),
     'C1: «Bezugsquellen» stand in «Einkauf» in the modeller\'s controls, saving writes only them' . ($gespeichert === '' ? '' : ': ' . $gespeichert));
+$einheit = (new StockService())->unitWords([$r['t1']])[$r['t1']];
+$pruefe(str_contains($html, '<th>Packungsinhalt</th>') && str_contains($html, '<span class="taxmod-stock-unit">' . esc_html($einheit) . '</span>')
+    && str_contains($html, 'placeholder="' . ($einheit === 'Stück' ? '1' : '—') . '"') && str_contains($html, 'Letzter Preis je ' . esc_html($einheit)),
+    'D-1019: «Packungsinhalt» shows the material\'s base unit beside the number, empty means 1 only for «Stück»');
 
 // C2: on request each source shows the supplier's current offer with its number (taxmod_supplier_offers).
 $angebot = static fn (mixed $o, string $q): array => ['list' => $q === 'ABC-1' ? [['merchant' => '__Reichelt', 'number' => 'ABC-1', 'price' => '0.42', 'currency' => 'EUR', 'stock' => 7]] : [], 'errors' => []];

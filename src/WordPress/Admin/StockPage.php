@@ -1346,6 +1346,12 @@ final class StockPage
         $firms  = array_replace([], ...array_values($this->stock->firms()));
         $prices = \TaxmodStock\Core\SourcePrices::of(array_map(static fn (array $l): SourceRow => $l['row'], $lines), $priced);
         $cell   = static fn (array $l, string $key): string => $s->hasField($key) ? ($l['controls'][$s->field($key)] ?? '') : '';
+        // D-1019: the pack content counts in the material's base unit — shown beside the number, never typed; an empty one
+        // means one piece only where that unit is «Stück», otherwise nothing is known (architecture, 2026-11-13).
+        $unit    = $this->stock->unitWords([$thing])[$thing];
+        $empty   = $unit === __('Stück', 'taxmod-stock') ? '1' : '—';
+        $content = static fn (array $l): string => (string) preg_replace('/<input\b(?![^>]*type="hidden")/', '<input placeholder="' . esc_attr($empty) . '"', $cell($l, 'source_content'), 1)
+            . ' <span class="taxmod-stock-unit">' . esc_html($unit) . '</span>';
         $price  = static fn (array $p): string => $p['price'] === null ? '—' : number_format_i18n($p['price'], 2) . ($p['date'] === '' ? '' : ' (' . $p['date'] . ')');
         $more   = add_query_arg(['page' => self::PAGE, 'tab' => 'material', 'thing' => $thing, 'view' => 'einkauf', 'zeilen' => $blank + 1], admin_url('admin.php'));
         // C2 (D-1320): the suppliers' current offer per source, asked only on request — each a call to the supplier.
@@ -1361,7 +1367,7 @@ final class StockPage
             . ($offers === null ? '' : implode('', array_map(static fn (string $e): string => '<div class="notice notice-warning inline"><p>' . esc_html($e) . '</p></div>', $offers['errors'])))
             . '<table class="widefat striped"><thead><tr><th>' . esc_html__('Firma', 'taxmod-stock') . '</th><th>' . esc_html__('Nummer', 'taxmod-stock') . '</th>'
             . ($s->hasField('source_content') ? '<th>' . esc_html__('Packungsinhalt', 'taxmod-stock') . '</th>' : '')
-            . '<th>' . esc_html__('Letzter Preis je Stück', 'taxmod-stock') . '</th><th>' . esc_html__('Verlauf', 'taxmod-stock') . '</th>'
+            . '<th>' . esc_html(sprintf(/* translators: %s: the material's base unit */ __('Letzter Preis je %s', 'taxmod-stock'), $unit)) . '</th><th>' . esc_html__('Verlauf', 'taxmod-stock') . '</th>'
             . ($offers === null ? '' : '<th>' . esc_html__('Angebot', 'taxmod-stock') . '</th>') . '<th>' . esc_html__('Entfernen', 'taxmod-stock') . '</th></tr></thead><tbody>';
 
         foreach ($lines as $i => $line) {
@@ -1370,7 +1376,7 @@ final class StockPage
             $history = $prices[$i] ?? [];
             $html   .= '<tr><td>' . ($line['part'] === null ? '' : '<input type="hidden" name="quelle[' . $i . '][part]" value="' . esc_attr((string) $line['part']) . '">') . $cell($line, 'source_firm') . '</td>'
                 . '<td>' . $cell($line, 'source_number') . ($link === null ? '' : ' ' . str_replace('<a ', '<a target="_blank" rel="noopener noreferrer" ', ListPage::iconLink('external', __('Beim Händler öffnen', 'taxmod-stock'), $link))) . '</td>'
-                . ($s->hasField('source_content') ? '<td>' . $cell($line, 'source_content') . '</td>' : '')
+                . ($s->hasField('source_content') ? '<td style="white-space:nowrap">' . $content($line) . '</td>' : '')
                 . '<td>' . esc_html($history === [] ? '—' : $price($history[0])) . '</td>'
                 . '<td>' . (count($history) < 2 ? '' : '<details><summary>' . esc_html(sprintf(/* translators: %d: earlier purchases */ _n('%d früherer Kauf', '%d frühere Käufe', count($history) - 1, 'taxmod-stock'), count($history) - 1)) . '</summary>'
                     . implode('<br>', array_map(static fn (array $p): string => esc_html($price($p)), array_slice($history, 1))) . '</details>') . '</td>'

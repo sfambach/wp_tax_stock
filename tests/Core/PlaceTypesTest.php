@@ -52,6 +52,14 @@ final class PlaceTypesTest extends TestCase
     }
 
     #[Test]
+    public function the_types_stand_as_a_tree_their_parts_below_them(): void
+    {
+        $types = new PlaceTypes([1 => 'IKEA Alex', 2 => 'Schublade Alex', 3 => 'Kiste'], [], [1 => [[2, 9]]]);
+
+        self::assertSame([['type' => 1, 'depth' => 0], ['type' => 2, 'depth' => 1], ['type' => 3, 'depth' => 0]], $types->asTree());
+    }
+
+    #[Test]
     public function a_kind_that_holds_itself_is_refused(): void
     {
         $this->expectException(StockError::class);

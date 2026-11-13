@@ -2033,6 +2033,24 @@ final class StockService
         return $this->model->write((new LocationChanges($this->structure()))->create($name, $parent, $movable, $project, $this->locationTree(), $this->table('location'), $reserved, $type, $this->placeTypes()));
     }
 
+    /** D2 (D-1320): «Unterplätze anlegen» — what the place's type brings along, for a place without places inside. */
+    public function createSubPlaces(int $place): array
+    {
+        $s    = $this->structure();
+        $type = $s->hasField('location_place_type') ? (int) $this->table('location')->first($place, $s->field('location_place_type')) : 0;
+
+        return $this->model->write((new LocationChanges($s))->bringInto($place, $type, $this->placeTypes(), $this->locationTree(), $this->table('location')));
+    }
+
+    /** D2: whether «Unterplätze anlegen» has something to do — a type with parts, no place inside yet. */
+    public function canCreateSubPlaces(int $place): bool
+    {
+        $s    = $this->structure();
+        $type = $s->hasField('location_place_type') ? (int) $this->table('location')->first($place, $s->field('location_place_type')) : 0;
+
+        return $type > 0 && $this->placeTypes()->partsOf($type) !== [] && count($this->locationTree()->withAllBelow($place)) === 1;
+    }
+
     /**
      * D-1130: «Kopieren» of a place, with its places inside or without; nothing that lies there comes along.
      *

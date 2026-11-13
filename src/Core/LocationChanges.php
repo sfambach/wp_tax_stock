@@ -54,6 +54,29 @@ final class LocationChanges
     }
 
     /**
+     * D2 (D-1320): the places a place's type brings along, for a place that has none yet — the same as a new place gets.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function bringInto(int $place, int $type, PlaceTypes $types, LocationTree $tree, Table $places): array
+    {
+        if (! $places->has($place)) {
+            throw StockError::notALocation($place);
+        }
+
+        if (! $types->has($type) || $types->partsOf($type) === [] || count($tree->withAllBelow($place)) > 1) {
+            throw StockError::nothingToBook();
+        }
+
+        $this->needTree();
+        $changes = [];
+        $count   = 0;
+        $this->bring($types->brought($type), (string) $place, $types, $changes, $count);
+
+        return $changes;
+    }
+
+    /**
      * @param list<array{type: int, name: string, below: list<array<string, mixed>>}> $places
      * @param list<array<string, mixed>> $changes
      */
@@ -65,7 +88,8 @@ final class LocationChanges
             $ref     = 'teil' . ++$count;
             $values  = [
                 (string) $s->field('label')               => $place['name'],
-                (string) $s->field('location_parent')     => '@' . $parentRef,
+                // An existing place by its id, a place made in this act by its ref.
+                (string) $s->field('location_parent')     => ctype_digit($parentRef) ? $parentRef : '@' . $parentRef,
                 (string) $s->field('location_place_type') => (string) $place['type'],
             ];
 

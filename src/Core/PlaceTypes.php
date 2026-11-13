@@ -129,6 +129,42 @@ final class PlaceTypes
         return $out;
     }
 
+    /**
+     * D1 (D-1320): the types as a tree for a list — every type that is no part of another at the top, its parts below it
+     * in their order; a part of several types stands below each.
+     *
+     * @return list<array{type: int, depth: int}>
+     */
+    public function asTree(): array
+    {
+        $isPart = [];
+
+        foreach ($this->parts as $lines) {
+            foreach ($lines as $line) {
+                $isPart[$line[0]] = true;
+            }
+        }
+
+        $out  = [];
+        $walk = function (int $type, int $depth) use (&$walk, &$out): void {
+            $out[] = ['type' => $type, 'depth' => $depth];
+
+            foreach ($depth + 1 < self::DEPTH ? $this->partsOf($type) : [] as $line) {
+                if (isset($this->names[$line[0]])) {
+                    $walk($line[0], $depth + 1);
+                }
+            }
+        };
+
+        foreach (array_keys($this->names) as $type) {
+            if (! isset($isPart[$type])) {
+                $walk($type, 0);
+            }
+        }
+
+        return $out;
+    }
+
     public function nameOf(int $type): string
     {
         return $this->names[$type] ?? '#' . $type;

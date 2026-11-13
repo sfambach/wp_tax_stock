@@ -6,7 +6,9 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use TaxmodStock\Core\LocationChanges;
 use TaxmodStock\Core\LocationTree;
+use TaxmodStock\Core\PlaceTypes;
 use TaxmodStock\Core\StockError;
+use TaxmodStock\Core\Structure;
 use TaxmodStock\Core\Table;
 
 final class LocationChangesTest extends TestCase
@@ -41,6 +43,24 @@ final class LocationChangesTest extends TestCase
     {
         $this->expectException(StockError::class);
         (new LocationChanges(Fixture::structure()))->move(4, 5, $this->tree(), $this->places());
+    }
+
+    #[Test]
+    public function an_empty_place_gets_the_places_its_type_brings_under_its_own_id(): void
+    {
+        $raw = Fixture::structure()->toArray();
+        $raw['fields'] += ['location_place_type' => 300];
+        $s       = Structure::fromArray($raw);
+        $types   = new PlaceTypes([1 => 'IKEA Alex', 2 => 'Schublade Alex'], [], [1 => [[2, 2, 'Schublade']]]);
+        $changes = (new LocationChanges($s))->bringInto(5, 1, $types, $this->tree(), $this->places());
+        $made    = array_values(array_filter($changes, static fn (array $c): bool => $c['op'] === 'set_values'));
+
+        self::assertSame(['Schublade 1', 'Schublade 2'], array_map(static fn (array $c): string => $c['values'][(string) $s->field('label')], $made));
+        self::assertSame(['5', '5'], array_map(static fn (array $c): string => $c['values'][(string) $s->field('location_parent')], $made));
+
+        // A place with places inside gets nothing: Obergeschoss holds the box.
+        $this->expectException(StockError::class);
+        (new LocationChanges($s))->bringInto(4, 1, $types, $this->tree(), $this->places());
     }
 
     private function tree(): LocationTree

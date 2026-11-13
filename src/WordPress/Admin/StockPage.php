@@ -186,7 +186,7 @@ final class StockPage
 
         $kind  = sanitize_key((string) ($_POST['booking'] ?? ''));
         // D-1058: the row buttons carry their purchase in the value, «nichteinlagern-<id>» and «einlagern-<id>».
-        $rowPurchase = preg_match('/^(nichteinlagern|einlagern|umhaengen|reservieren|freigeben|ortkopieren|ortloeschen|artkopieren|vorlagekopieren|rollewechseln)-(\d+)$/', $kind, $m) === 1 ? (int) $m[2] : 0;
+        $rowPurchase = preg_match('/^(nichteinlagern|einlagern|umhaengen|reservieren|freigeben|ortkopieren|ortloeschen|artkopieren|vorlagekopieren|rollewechseln|unterplaetze)-(\d+)$/', $kind, $m) === 1 ? (int) $m[2] : 0;
         $kind        = $rowPurchase > 0 ? $m[1] : $kind;
         $today = current_time('Y-m-d');
         // The goods receipt sends «thing» as a list (one per purchase); only the other forms send one thing.
@@ -307,6 +307,7 @@ final class StockPage
                 'vorlagekopieren' => $copy = $this->stock->copyLabelTemplate($rowPurchase, sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? '')))),
                 // D-1267: the page goes back to the parent of the place deleted.
                 'ortloeschen'  => $copy = $this->stock->deletePlace($rowPurchase, current_time('Y-m-d'), __('Lagerort gelöscht', 'taxmod-stock'), ! empty($_POST['below'])),
+                'unterplaetze' => $this->stock->createSubPlaces($rowPurchase),
                 'artkopieren'  => $copy = $this->stock->copyPlaceType($rowPurchase, sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? '')))),
                 // D-1130: «Kopieren» — the copy's id is what the page goes back to.
                 'ortkopieren'  => $copy = $this->stock->copyPlace($rowPurchase, sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? ''))), ! empty($_POST['below'])),
@@ -337,6 +338,7 @@ final class StockPage
                 'platzart'       => __('Platzart angelegt; die weiteren Felder stehen jetzt zum Ausfüllen da.', 'taxmod-stock'),
                 'rollewechseln'  => __('Rolle gewechselt: der Drucker druckt jetzt die Etiketten der neuen Rolle. Zurück geht es mit «Rolle wechseln».', 'taxmod-stock'),
                 'vorlagekopieren' => __('Kopiert: die neue Vorlage trägt Format, Layout und Anzahl der alten; die Platzarten bleiben bei der alten.', 'taxmod-stock'),
+                'unterplaetze'   => __('Unterplätze angelegt, wie die Platzart sie vorgibt.', 'taxmod-stock'),
                 'artkopieren'    => __('Kopiert: die neue Platzart trägt Felder und Teile der alten; die Plätze bleiben bei der alten.', 'taxmod-stock'),
                 'ortkopieren'    => __('Kopiert: der neue Ort trägt die Felder des alten, aber nichts von dem, was dort liegt.', 'taxmod-stock'),
                 'ortloeschen'    => __('Gelöscht: was dort lag ist jetzt im übergeordneten Ort. Rückgängig geht es oben über die Liste der letzten Änderungen.', 'taxmod-stock'),
@@ -2793,7 +2795,7 @@ final class StockPage
         $groups = [
             // D-1224, his word 2026-11-07: «zur bestandsansicht wechseln» — what lies here and below, in «Platzbestand».
             ['<a class="button" href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'lagerorte', 'ort' => $place], admin_url('admin.php'))) . '">' . esc_html__('Zur Bestandsansicht', 'taxmod-stock') . '</a>'],
-            [$this->newPlaceDialog($place, 'lagerstruktur'), $this->copyPlaceDialog($place, $tree, count($below) - 1), $this->movePlaceDialog($place, $tree), $this->deletePlaceDialog($place, $tree)],
+            [$this->newPlaceDialog($place, 'lagerstruktur'), ...($this->stock->canCreateSubPlaces($place) ? [$this->subPlacesButton($place)] : []), $this->copyPlaceDialog($place, $tree, count($below) - 1), $this->movePlaceDialog($place, $tree), $this->deletePlaceDialog($place, $tree)],
             [$this->formStart('lagerstruktur') . $this->returnFields('lagerstruktur', $place) . $this->reserveDialog($place, $flags->isFlagged($place), $all) . '</form>'],
             [$label],
         ];
@@ -3130,12 +3132,14 @@ final class StockPage
         $images = method_exists(ListPage::class, 'thumbnails') && ListPage::showsImages();
         $thumbs = $images ? ListPage::thumbnails($this->stock->titleImages(array_keys($types->names()))) : [];
 
-        foreach ($types->names() as $type => $name) {
+        // D1: a type's parts stand indented below it, as the tree they make.
+        foreach ($types->asTree() as ['type' => $type, 'depth' => $depth]) {
+            $name  = $types->nameOf($type);
             $parts = implode(', ', array_map(static fn (array $part): string => $part[1] . ' × ' . $types->nameOf($part[0]), $types->partsOf($type)));
             $link  = esc_url(add_query_arg('typ', $type, $list));
             $body .= '<tr><th scope="row" class="check-column"></th>'
                 . ($images ? '<td>' . (($thumbs[$type] ?? '') === '' ? '' : '<a href="' . $link . '">' . $thumbs[$type] . '</a>') . '</td>' : '')
-                . '<td><a href="' . $link . '"><strong>' . esc_html($name) . '</strong></a></td>'
+                . '<td' . ($depth > 0 ? ' style="padding-left:' . esc_attr((string) (8 + 20 * $depth)) . 'px"' : '') . '>' . ($depth > 0 ? '└ ' : '') . '<a href="' . $link . '"><strong>' . esc_html($name) . '</strong></a></td>'
                 . '<td>' . esc_html($types->isMovable($type) ? __('ja', 'taxmod-stock') : __('nein', 'taxmod-stock')) . '</td>'
                 . '<td>' . esc_html($parts === '' ? '—' : $parts) . '</td>'
                 . '<td>' . esc_html((string) ($used[$type] ?? 0)) . '</td>'
@@ -3723,6 +3727,13 @@ final class StockPage
     }
 
     /** D-1130: «Kopieren» of a place — its name proposed with «(Kopie)», the places inside it on request. */
+    /** D2 (D-1320): a place of a type with parts, still empty, gets the places its type brings along. */
+    private function subPlacesButton(int $place): string
+    {
+        return $this->formStart('unterplaetze-' . $place) . $this->returnFields('lagerstruktur', $place)
+            . '<button type="submit" class="button">' . esc_html__('Unterplätze anlegen', 'taxmod-stock') . '</button></form>';
+    }
+
     private function copyPlaceDialog(int $place, LocationTree $tree, int $inside): string
     {
         if (! method_exists(ListPage::class, 'dialogAction')) {

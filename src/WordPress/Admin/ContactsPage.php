@@ -203,12 +203,14 @@ final class ContactsPage
     /** D-1025: the contact in the modeller's record editor; saving comes back here. */
     private function editor(int $contact, int $node): string
     {
-        $back = self::url(['tab' => (string) $node, 'kontakt' => (string) $contact]);
-        // D-1308: «Anlegen zurücknehmen» joins the editor's toolbar.
-        $undo = [[$this->undoForm($contact, $node)]];
-        $form = (string) apply_filters('taxmod_record_editor', '', $contact, $back, $undo);
+        $back   = self::url(['tab' => (string) $node, 'kontakt' => (string) $contact]);
+        $list   = self::url(['tab' => (string) $node]);
+        // D-1316: the way back to the list is the toolbar's first group; D-1308: «Anlegen zurücknehmen» joins it.
+        $return = method_exists(ListPage::class, 'back') ? [[ListPage::back($list, __('Zur Liste', 'taxmod-stock'))]] : [];
+        $undo   = [...$return, [$this->undoForm($contact, $node)]];
+        $form   = (string) apply_filters('taxmod_record_editor', '', $contact, $back, $undo);
 
-        return '<p><a href="' . esc_url(self::url(['tab' => (string) $node])) . '">' . esc_html__('← zur Liste', 'taxmod-stock') . '</a></p>'
+        return ($return === [] ? '<p><a href="' . esc_url($list) . '">' . esc_html__('← zur Liste', 'taxmod-stock') . '</a></p>' : '')
             . ($form === '' ? ListPage::toolbar([['<a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $contact], admin_url('admin.php'))) . '">'
                 . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a>'], ...$undo]) : $form);
     }

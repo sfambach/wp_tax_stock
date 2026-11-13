@@ -71,7 +71,8 @@ final class CockpitPage
         if ($area === 'inbound') {
             $counts = $this->stageCounts();
 
-            return InboundPage::processBar($counts, $counts['test'] ?? null, '');
+            // D-1303: a module may add its own line below, the production's receipt line.
+            return (string) apply_filters(self::PROCESS_BAR, InboundPage::processBar($counts, $counts['test'] ?? null, ''), $area);
         }
 
         return (string) apply_filters(self::PROCESS_BAR, '', $area);

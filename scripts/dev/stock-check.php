@@ -1215,6 +1215,27 @@ update_option(StockService::PRODUCTION_INBOUND, $schrank, false);
 $weProd = apply_filters('taxmod_stock_production_inbound', null);
 delete_option(StockService::PRODUCTION_INBOUND);
 $pruefe(($s->structure()->hasField('lot_stage') || ($stufen instanceof WP_Error && $stufen->get_error_code() === 'taxmod_stock_not_configured')) && $weProd === $schrank && apply_filters('taxmod_stock_production_inbound', null) === 0, 'D-1303: lot_stages needs the stage field; production_inbound answers the place set, 0 without');
+// D-1303 with the stage field: a finished board comes in at its stage; the place answers its lots per stage; a stage is set.
+$stufeNeu = $apply([
+    ['op' => 'create_node', 'ref' => 'st', 'name' => '__Stufe', 'parent' => (string) $r['mat'], 'class' => 'Choice'],
+    ['op' => 'create_node', 'ref' => 'st1', 'name' => '__Aus Fertigung', 'parent' => '@st', 'class' => 'Constant'],
+    ['op' => 'create_node', 'ref' => 'st2', 'name' => '__In Test', 'parent' => '@st', 'class' => 'Constant'],
+    ['op' => 'add_field', 'ref' => 'stf', 'node' => (string) $r['lot'], 'target' => '@st', 'name' => '__Stufe', 'kind' => 'aggregation', 'multiplicity' => '0..1'],
+])['refs'] ?? [];
+$opt = get_option('taxmod_stock_structure');
+if (is_array($opt) && isset($stufeNeu['stf'])) {
+    $opt['fields']['lot_stage']             = (int) $stufeNeu['stf'];
+    $opt['values']['stage_from_production'] = (int) $stufeNeu['st1'];
+    $opt['values']['stage_in_test']         = (int) $stufeNeu['st2'];
+    update_option('taxmod_stock_structure', $opt);
+}
+$weBox   = (new StockService())->copyPlace($schrank, '__WE-PROD', false);
+$fertig  = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_OUTPUT, null, ['reference' => $auftrag, 'place' => $weBox, 'lines' => [$platine => 1], 'title' => 'Fertig WE-PROD', 'date' => '2026-11-13', 'stage' => 'stage_from_production']);
+$linie   = apply_filters('taxmod_stock_lot_stages', null, ['place' => $weBox]);
+$weLot   = is_array($linie) ? (int) array_key_first($linie['lots']) : 0;
+$gesetzt = apply_filters('taxmod_stock_set_lot_stage', null, ['lots' => [$weLot], 'stage' => (int) ($stufeNeu['st2'] ?? 0)]);
+$danach  = apply_filters('taxmod_stock_lot_stages', null, ['lots' => [$weLot]]);
+$pruefe(is_int($fertig) && is_array($linie) && count($linie['lots']) === 1 && ($linie['lots'][$weLot] ?? []) === ['stage' => (int) ($stufeNeu['st1'] ?? -1), 'thing' => $platine, 'quantity' => 1.0] && is_array($gesetzt) && is_array($danach) && $danach['lots'] === [$weLot => (int) ($stufeNeu['st2'] ?? -1)] && array_keys($danach['stages']) === ['stage_from_production', 'stage_in_test'], 'D-1303: a board comes in «Aus Fertigung», the place lists it per stage, «In Test» is set' . ($fertig instanceof WP_Error ? ': ' . $fertig->get_error_message() : ''));
 
 // D-1299, his question 2026-11-10 «baum in dem ich bestand wähle»: Ausbuchen picks the lot in one chooser (groups, then the
 // lots of the group's materials); a preselected lot stands chosen, the material follows from it.

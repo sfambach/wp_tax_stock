@@ -419,7 +419,7 @@ final class Bookings
      * @param list<array{lot: int, place: int, quantity: float}>     $back
      * @return list<array<string, mixed>>
      */
-    public function output(array $new, array $back, int $place, int $reference, string $title, bool $tested = false): array
+    public function output(array $new, array $back, int $place, int $reference, string $title, bool $tested = false, int $stage = 0): array
     {
         $s = $this->structure;
 
@@ -440,6 +440,11 @@ final class Bookings
             if ($untested) {
                 $this->changes[] = ['op' => 'set_values', 'record' => $lot, 'values' => [(string) $s->field('lot_condition') => (string) $s->value($condition)]
                     + ($tested && $s->hasField('lot_tested_on') ? [(string) $s->field('lot_tested_on') => $this->today] : [])];
+            }
+
+            // D-1303: a finished board starts its stage on the production's receipt line in the same act.
+            if ($stage > 0 && $s->hasField('lot_stage')) {
+                $this->changes[] = ['op' => 'set_values', 'record' => $lot, 'values' => [(string) $s->field('lot_stage') => (string) $stage]];
             }
 
             $this->line($row['name'], $lot, self::signed($row['quantity']), null, $place);

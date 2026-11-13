@@ -477,8 +477,9 @@ final class Plugin
     }
 
     /**
-     * D-1303: `apply_filters('taxmod_stock_lot_stages', null, ['lots' => [id, …]])` → `[lot => stage value id|0]`, plus
-     * `'stages' => [key => value id]`, the configured stages in their order.
+     * D-1303: `apply_filters('taxmod_stock_lot_stages', null, ['lots' => [id, …]])` → `['lots' => [lot => stage value id|0],
+     * 'stages' => [key => value id]]`, the configured stages in their order; with `['place' => id]` instead every lot at
+     * the place and below it, as `lot => ['stage', 'thing', 'quantity']`.
      */
     public static function lotStages(mixed $previous, mixed $args): array|\WP_Error
     {
@@ -499,7 +500,10 @@ final class Plugin
 
             $keys  = array_values(array_filter(Structure::STAGES, $s->hasValue(...)));
 
-            return ['lots' => $lots === [] ? [] : $stock->lotStages($lots), 'stages' => array_combine($keys, array_map($s->value(...), $keys))];
+            $place = absint($args['place'] ?? 0);
+            $found = $place > 0 ? $stock->lotStagesAt($place) : ($lots === [] ? [] : $stock->lotStages($lots));
+
+            return ['lots' => $found, 'stages' => array_combine($keys, array_map($s->value(...), $keys))];
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
@@ -596,7 +600,8 @@ final class Plugin
     /**
      * D-1143 for wp_tax_manufacturing: `apply_filters('taxmod_stock_book_output', null, $args)` brings the finished things of
      * a build order into stock. `$args`: reference (the order's record), place (where they go), lines (thing → pieces, less
-     * than 0 cancels what this order brought in), title, date (Y-m-d), tested (true: tested in the manufacturing, D-1177).
+     * than 0 cancels what this order brought in), title, date (Y-m-d), tested (true: tested in the manufacturing, D-1177),
+     * stage (D-1303: a key of the stages, e.g. «stage_from_production», set on the new lots in the same act).
      * Answers the Vorgang's id or a WP_Error.
      *
      * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
@@ -627,7 +632,7 @@ final class Plugin
         }
 
         try {
-            return (new StockService())->bookOutput(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Fertigung', 'taxmod-stock'))), ($args['tested'] ?? false) === true);
+            return (new StockService())->bookOutput(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Fertigung', 'taxmod-stock'))), ($args['tested'] ?? false) === true, sanitize_key((string) ($args['stage'] ?? '')));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }

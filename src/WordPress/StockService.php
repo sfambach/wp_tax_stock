@@ -1117,6 +1117,40 @@ final class StockService
     }
 
     /**
+     * D-1303: every lot lying at the place and the places in it, with its stage, material and quantity there — the
+     * production's receipt line per stage. One ledger.
+     *
+     * @return array<int, array{stage: int, thing: int, quantity: float}>
+     */
+    public function lotStagesAt(int $place): array
+    {
+        if (! $this->table('location')->has($place)) {
+            throw StockError::notALocation($place);
+        }
+
+        $ledger = $this->ledger();
+        $inside = array_flip($this->locationTree()->withAllBelow($place));
+        $here   = [];
+
+        foreach ($ledger->stockByPlace() as $lot => $at) {
+            $quantity = array_sum(array_intersect_key($at, $inside));
+
+            if ($quantity > 0.0) {
+                $here[$lot] = $quantity;
+            }
+        }
+
+        $stages = $here === [] ? [] : $this->lotStages(array_keys($here));
+        $out    = [];
+
+        foreach ($here as $lot => $quantity) {
+            $out[$lot] = ['stage' => $stages[$lot] ?? 0, 'thing' => (int) $ledger->thingOf($lot), 'quantity' => $quantity];
+        }
+
+        return $out;
+    }
+
+    /**
      * D-1303: sets the stage of these lots, one act; a stage outside the configured ones is refused.
      *
      * @param list<int> $lots
@@ -3098,8 +3132,19 @@ final class StockService
      *
      * @param array<int, float> $lines
      */
-    public function bookOutput(int $reference, int $place, array $lines, string $today, string $title, bool $tested = false): int
+    public function bookOutput(int $reference, int $place, array $lines, string $today, string $title, bool $tested = false, string $stage = ''): int
     {
+        $s       = $this->structure();
+        $stageId = 0;
+
+        if ($stage !== '') {
+            if (! in_array($stage, Structure::STAGES, true) || ! $s->hasValue($stage) || ! $s->hasField('lot_stage')) {
+                throw StockError::notConfigured('values.' . $stage);
+            }
+
+            $stageId = $s->value($stage);
+        }
+
         if ($reference <= 0) {
             throw StockError::noSubject();
         }
@@ -3119,7 +3164,7 @@ final class StockService
         $labels = $this->recordLabels(array_column($plan['new'], 'thing'));
         $new    = array_map(static fn (array $r): array => $r + ['name' => $labels[$r['thing']] ?? $title], $plan['new']);
 
-        return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->output($new, $plan['back'], $place, $reference, $title, $tested)));
+        return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->output($new, $plan['back'], $place, $reference, $title, $tested, $stageId)));
     }
 
     /**

@@ -3104,13 +3104,15 @@ final class StockPage
 
         if ($chosen > 0 && $types->has($chosen)) {
             $back = add_query_arg('typ', $chosen, $list);
-            // D-1308: «Kopieren» joins the editor's toolbar.
-            $copy = [[$this->copyTypeDialog($chosen, $types->nameOf($chosen))]];
-            $form = (string) apply_filters('taxmod_record_editor', '', $chosen, $back, $copy);
+            // D-1316 (D7): the way back to the list is the toolbar's first group; D-1308: «Kopieren» joins it.
+            $return = method_exists(ListPage::class, 'back') ? [[ListPage::back($list, __('Alle Platzarten', 'taxmod-stock'))]] : [];
+            $copy   = [...$return, [$this->copyTypeDialog($chosen, $types->nameOf($chosen))]];
+            $form   = (string) apply_filters('taxmod_record_editor', '', $chosen, $back, $copy);
 
-            return $html . '<h3>' . esc_html($types->nameOf($chosen)) . '</h3>' . ($form === '' ? ListPage::toolbar($copy) : '')
+            // D7, his word «Kopf in einer Zeile»: «Platzarten – Name».
+            return '<h2>' . esc_html(sprintf(/* translators: %s: name of the place type */ __('Platzarten – %s', 'taxmod-stock'), $types->nameOf($chosen))) . '</h2>' . ($form === '' ? ListPage::toolbar($copy) : '')
                 . ($form === '' ? '<p><a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $chosen], admin_url('admin.php'))) . '">' . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a></p>' : $form)
-                . '<p><a href="' . esc_url($list) . '">' . esc_html__('← alle Platzarten', 'taxmod-stock') . '</a></p>';
+                . ($return === [] ? '<p><a href="' . esc_url($list) . '">' . esc_html__('← alle Platzarten', 'taxmod-stock') . '</a></p>' : '');
         }
 
         $places = $this->stock->table('location');
@@ -3123,12 +3125,17 @@ final class StockPage
             }
         }
 
-        $body = '';
+        $body   = '';
+        // D6: the place types' pictures as on every list, read in one go (CD-7).
+        $images = method_exists(ListPage::class, 'thumbnails') && ListPage::showsImages();
+        $thumbs = $images ? ListPage::thumbnails($this->stock->titleImages(array_keys($types->names()))) : [];
 
         foreach ($types->names() as $type => $name) {
             $parts = implode(', ', array_map(static fn (array $part): string => $part[1] . ' × ' . $types->nameOf($part[0]), $types->partsOf($type)));
+            $link  = esc_url(add_query_arg('typ', $type, $list));
             $body .= '<tr><th scope="row" class="check-column"></th>'
-                . '<td><a href="' . esc_url(add_query_arg('typ', $type, $list)) . '"><strong>' . esc_html($name) . '</strong></a></td>'
+                . ($images ? '<td>' . (($thumbs[$type] ?? '') === '' ? '' : '<a href="' . $link . '">' . $thumbs[$type] . '</a>') . '</td>' : '')
+                . '<td><a href="' . $link . '"><strong>' . esc_html($name) . '</strong></a></td>'
                 . '<td>' . esc_html($types->isMovable($type) ? __('ja', 'taxmod-stock') : __('nein', 'taxmod-stock')) . '</td>'
                 . '<td>' . esc_html($parts === '' ? '—' : $parts) . '</td>'
                 . '<td>' . esc_html((string) ($used[$type] ?? 0)) . '</td>'
@@ -3148,7 +3155,7 @@ final class StockPage
             : '';
 
         return $html . ListPage::toolbar([[$dialog]])
-            . ListPage::table([[__('Platzart', 'taxmod-stock'), ''], [__('Beweglich', 'taxmod-stock'), '7em'], [__('Teile', 'taxmod-stock'), ''], [__('Plätze', 'taxmod-stock'), '5em']], $body === '' ? $this->noItems(5) : $body);
+            . ListPage::table([...($images ? [[__('Bild', 'taxmod-stock'), '52px']] : []), [__('Platzart', 'taxmod-stock'), ''], [__('Beweglich', 'taxmod-stock'), '7em'], [__('Teile', 'taxmod-stock'), ''], [__('Plätze', 'taxmod-stock'), '5em']], $body === '' ? $this->noItems($images ? 6 : 5) : $body);
     }
 
     /**

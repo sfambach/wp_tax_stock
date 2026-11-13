@@ -1458,5 +1458,39 @@ $pruefe($quelleB > 0 && str_contains($seite, 'Bedarf – ') && str_contains($sei
     && $neuB > 0 && $s->table('order')->all($neuB, $r['o_pos']) === [(string) $posB[0]] && ! in_array((string) $posB[0], $s->table('order')->all($quelleB, $r['o_pos']), true),
     'C5: a demand has its own page; ticked positions move into a new demand, keeping their ids');
 
+// D-1342 (QK status): untested from production, one lot per piece, each blocked — shown with a red ⊘ — until its result.
+$qk = $apply([
+    ['op' => 'create_node', 'ref' => 'zu', 'name' => '__Zustand', 'parent' => (string) $r['mat'], 'class' => 'Choice'],
+    ['op' => 'create_node', 'ref' => 'zu_un', 'name' => '__ungetestet', 'parent' => '@zu', 'class' => 'Constant'],
+    ['op' => 'create_node', 'ref' => 'zu_ok', 'name' => '__funktioniert', 'parent' => '@zu', 'class' => 'Constant'],
+    $field('l_zust', (string) $r['lot'], '__Zustand', '@zu', 'aggregation', '0..1'),
+])['refs'] ?? [];
+$opt = get_option('taxmod_stock_structure');
+if (is_array($opt) && isset($qk['l_zust'])) {
+    $opt['fields'] += ['lot_condition' => (int) $qk['l_zust']];
+    $opt['values'] += ['condition_untested' => (int) $qk['zu_un'], 'test_ok' => (int) $qk['zu_ok']];
+    update_option('taxmod_stock_structure', $opt);
+}
+$qkVorgang = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_OUTPUT, null, ['reference' => $auftrag, 'place' => $schrank, 'lines' => [$platine => 2], 'title' => 'QK zwei', 'date' => '2026-11-13']);
+$s       = new StockService();
+$qkLots  = array_values(array_filter($s->ledger()->lotsOf($platine), static fn (int $l): bool => (string) $s->table('lot')->first($l, (int) $qk['l_zust']) === (string) $qk['zu_un'] && $s->ledger()->restAt($l, $schrank) > 0.0));
+try {
+    (new StockService())->moveLot($qkLots[0] ?? 0, $schrank, $weBox, '1', '2026-11-13', 'QK');
+    $gesperrt = false;
+} catch (TaxmodStock\Core\StockError $e) {
+    $gesperrt = $e->reason === 'lot_blocked';
+}
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => (string) $platine, 'view' => 'bestand'];
+$html = (new StockPage())->render();
+$apply([['op' => 'set_values', 'record' => (string) ($qkLots[0] ?? 0), 'values' => [(string) $qk['l_zust'] => (string) $qk['zu_ok']]]]);
+try {
+    (new StockService())->moveLot($qkLots[0] ?? 0, $schrank, $weBox, '1', '2026-11-13', 'QK frei');
+    $frei = true;
+} catch (TaxmodStock\Core\StockError $e) {
+    $frei = false;
+}
+$pruefe(is_int($qkVorgang) && count($qkLots) === 2 && $gesperrt && str_contains($html, 'taxmod-stock-blocked') && $frei && (new StockService())->blockedLots($qkLots) === [$qkLots[1]],
+    'D-1342: two untested boards are two blocked lots with a red ⊘; a test result frees one, it moves');
+
 echo $fehler === 0 ? "all green ({$kind})\n" : "{$fehler} red ({$kind})\n";
 exit($fehler === 0 ? 0 : 1);

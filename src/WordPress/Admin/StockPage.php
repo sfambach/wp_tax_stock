@@ -1436,6 +1436,8 @@ final class StockPage
         $charges = $this->charges($ledger->lotsOf($thing));
         $name    = (string) ($this->stock->recordLabels([$thing])[$thing] ?? '');
         $orderOf = $this->ordersOfPurchases();
+        // D-1342, his wish «ein Kreis mit einem Strich durch in Rot … Tooltip … muss noch getestet werden».
+        $blocked = $this->stock->blockedLots($ledger->lotsOf($thing));
 
         foreach ($ledger->lotsOf($thing) as $lot) {
             $value    = $lots->first($lot, $s->field('lot_value'));
@@ -1447,7 +1449,7 @@ final class StockPage
 
             foreach ($where as $place => $quantity) {
                 // D-1227: a lot's further places and its «Vorgänge» move with its first row when the list is sorted or grouped.
-                $rows .= '<tr' . ($first ? ' id="taxmod-stock-lot-' . esc_attr((string) $lot) . '"' : ' class="taxmod-list-more"') . '><th scope="row" class="check-column"></th><td>' . ($first ? '#' . esc_html((string) $lot) : '') . '</td>'
+                $rows .= '<tr' . ($first ? ' id="taxmod-stock-lot-' . esc_attr((string) $lot) . '"' : ' class="taxmod-list-more"') . '><th scope="row" class="check-column"></th><td>' . ($first ? '#' . esc_html((string) $lot) . (in_array($lot, $blocked, true) ? self::blockedMark() : '') : '') . '</td>'
                     // His wish 2026-11-08: «Bitte auch das Material anzeigen hier in der Liste».
                     . '<td>' . ($first ? esc_html($name) : '') . '</td><td>' . esc_html($places[$place] ?? '—') . $this->reservedMark($place, $flags) . '</td><td>' . esc_html($this->number($quantity)) . '</td>'
                     . '<td>' . ($first ? esc_html($amount ?? '—') : '') . '</td>'
@@ -3852,6 +3854,14 @@ final class StockPage
         ]);
 
         return $moves === [] ? '<p>' . esc_html__('Der Ort ist leer.', 'taxmod-stock') . '</p>' : '<ul style="list-style:disc;margin-left:1.5em">' . implode('', array_map(static fn (string $m): string => '<li>' . esc_html($m) . '</li>', $moves)) . '</ul>';
+    }
+
+    /** D-1342: the red ⊘ of a blocked lot, its reason as tooltip. */
+    public static function blockedMark(): string
+    {
+        $why = __('Gesperrt: muss noch getestet werden', 'taxmod-stock');
+
+        return ' <span class="taxmod-stock-blocked" style="color:#d63638;font-weight:700" title="' . esc_attr($why) . '" aria-label="' . esc_attr($why) . '">⊘</span>';
     }
 
     /** His report 2026-11-09 «speichern knopf … immer noch text nicht icon»: the modeller's one save button, the diskette, the word its tooltip. */

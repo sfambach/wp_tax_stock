@@ -70,6 +70,8 @@ final class Messages
             'not_in_order'              => sprintf(__('Kauf #%s gehört nicht zu dieser Bestellung.', 'taxmod-stock'), $error->detail),
             /* translators: %s: what was typed */
             'not_a_quantity'            => sprintf(__('«%s» ist keine gültige Menge.', 'taxmod-stock'), $error->detail),
+            /* translators: %s: record id of the lot */
+            'lot_blocked'               => sprintf(__('Posten #%s ist gesperrt: er muss noch getestet werden. Erst ein Testergebnis gibt ihn frei.', 'taxmod-stock'), $error->detail),
             'no_way_chosen'             => __('Bitte wählen, wohin der Bestand der bisherigen Unterplätze geht.', 'taxmod-stock'),
             'nothing_to_book'           => __('Nichts zu buchen: keine Zeile ausgefüllt.', 'taxmod-stock'),
             /* translators: %s: record id of the thing */

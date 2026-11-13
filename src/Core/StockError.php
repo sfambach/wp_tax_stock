@@ -179,6 +179,12 @@ final class StockError extends \RuntimeException
         return new self('not_a_quantity', $given);
     }
 
+    /** D-1342: the lot waits for its test; it is not moved, used, sold or reserved before. */
+    public static function lotBlocked(int $lot): self
+    {
+        return new self('lot_blocked', (string) $lot);
+    }
+
     /** D-1315: the kind of an occupied place changes only with a way chosen for what lies inside. */
     public static function noWayChosen(): self
     {

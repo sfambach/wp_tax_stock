@@ -2666,6 +2666,7 @@ final class StockService
         }
 
         $this->checkThings(array_values(array_unique(array_map(static fn (ReservationRow $row): int => $row->thing, $rows))));
+        $this->guardUnblocked(array_values(array_filter(array_map(static fn (ReservationRow $row): int => (int) $row->lot, $rows))));
         $reservations = $this->reservations();
         $reservations->check($rows, $this->ledger(), $this->reservedPlaces());
 
@@ -3377,6 +3378,7 @@ final class StockService
         // D-1299: a picked lot names its material.
         $thing  = $thing <= 0 && $lot !== null ? (int) ($ledger->thingOf($lot) ?? 0) : $thing;
         $lot  ??= $ledger->proposedLot($thing);
+        $this->guardUnblocked([$lot]);
 
         if ($ledger->thingOf($lot) !== $thing) {
             throw StockError::noLot($thing);
@@ -3496,6 +3498,12 @@ final class StockService
         $plan   = OutputPlan::rows($lines, $this->producedFor($reference));
         $labels = $this->recordLabels(array_column($plan['new'], 'thing'));
         $new    = array_map(static fn (array $r): array => $r + ['name' => $labels[$r['thing']] ?? $title], $plan['new']);
+
+        // D-1342: untested, each piece is a lot of its own — each gets its own test and is freed on its own.
+        if (! $tested) {
+            $new = array_merge(...array_map(static fn (array $r): array => (float) $r['quantity'] > 1.0 && floor((float) $r['quantity']) === (float) $r['quantity']
+                ? array_fill(0, (int) $r['quantity'], ['quantity' => 1.0] + $r) : [$r], $new));
+        }
 
         return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->output($new, $plan['back'], $place, $reference, $title, $tested, $stageId)));
     }
@@ -3850,6 +3858,8 @@ final class StockService
      */
     public function bookSale(int $sale, array $lines, string $today, string $title): int
     {
+        $this->guardUnblocked(array_keys($lines));
+
         $this->checkSale($sale);
         $ledger   = $this->ledger();
         $reserved = $this->reservedPlaces();
@@ -4263,6 +4273,56 @@ final class StockService
     }
 
     /**
+     * D-1342 (QK status): the lots that are blocked — waiting for their test. Derived, never stored: a lot is blocked while
+     * its condition is «ungetestet», or empty while its material lies in a branch with «Test nach Wareneingang» (D-1002).
+     * An entered test result frees it, «defekt» too.
+     *
+     * @param list<int> $lots
+     * @return list<int> the blocked ones among them
+     */
+    public function blockedLots(array $lots): array
+    {
+        $s = $this->structure();
+
+        if ($lots === [] || ! $s->hasField('lot_condition')) {
+            return [];
+        }
+
+        $table     = $this->table('lot');
+        $untested  = $s->hasValue('condition_untested') ? (string) $s->value('condition_untested') : null;
+        $condition = static fn (int $lot): string => (string) ($table->first($lot, $s->field('lot_condition')) ?? '');
+        $empty     = array_values(array_filter($lots, static fn (int $lot): bool => $condition($lot) === ''));
+        $out       = array_values(array_filter($lots, static fn (int $lot): bool => $untested !== null && $condition($lot) === $untested));
+
+        if ($empty !== []) {
+            $ledger   = $this->ledger();
+            $things   = array_values(array_filter(array_map(static fn (int $lot): int => (int) $ledger->thingOf($lot), $empty)));
+            $nodes    = $things === [] ? [] : $this->nodesOf($things);
+            $settings = $this->testSettings(array_values($nodes));
+            $parents  = $settings->branches === [] ? [] : $this->groupParents();
+            $queue    = new TestQueue($s);
+
+            foreach ($empty as $lot) {
+                if ($queue->needsTest($nodes[(int) $ledger->thingOf($lot)] ?? null, '', $parents, $settings)) {
+                    $out[] = $lot;
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /** D-1342: refuses an act on a blocked lot — moving, using, selling, reserving — naming it. */
+    private function guardUnblocked(array $lots): void
+    {
+        $blocked = $this->blockedLots(array_values(array_unique(array_map('intval', $lots))));
+
+        if ($blocked !== []) {
+            throw StockError::lotBlocked($blocked[0]);
+        }
+    }
+
+    /**
      * «Umbuchen» (D-1039): a quantity of a lot from the place it lies at to another, as a Vorgang «Umbuchung» with the
      * lines «− old place, + new place» — also when the whole lot moves. Replaces writing the lot's «Lagerort» (0.10.x).
      *
@@ -4270,6 +4330,8 @@ final class StockService
      */
     public function moveLot(int $lot, int $from, int $location, string $quantity, string $today, string $title): array
     {
+        $this->guardUnblocked([$lot]);
+
         if (! $this->table('lot')->has($lot)) {
             throw StockError::noLot($lot);
         }
@@ -4290,6 +4352,8 @@ final class StockService
      */
     public function moveLots(array $lots, int $from, int $location, string $quantity, string $today, string $title): array
     {
+        $this->guardUnblocked($lots);
+
         if (! $this->table('location')->has($location)) {
             throw StockError::notALocation($location);
         }
@@ -4328,6 +4392,8 @@ final class StockService
      */
     public function moveLotsWhole(array $lotsAt, int $location, string $today, string $title): array
     {
+        $this->guardUnblocked(array_column($lotsAt, 0));
+
         if (! $this->table('location')->has($location)) {
             throw StockError::notALocation($location);
         }
@@ -4383,6 +4449,8 @@ final class StockService
         if ($rows === []) {
             throw StockError::nothingToBook();
         }
+
+        $this->guardUnblocked(array_map(static fn (TransferRow $row): int => $row->lot, $rows));
 
         return $this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $this->boundLots()));
     }

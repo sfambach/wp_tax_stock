@@ -3571,9 +3571,11 @@ final class StockPage
 
         $structure = add_query_arg(['page' => self::PAGE, 'tab' => 'lagerstruktur', 'ort' => $place], admin_url('admin.php'));
 
+        // His wish 2026-11-11: «vom Platzbestand … nicht wieder zurück zur Layout-Sicht» — the counterpart of
+        // «Zur Bestandsansicht» (D-1224), first in the toolbar (D-1308).
         return $this->placeHead($place, $tree)
-            . '<p>' . esc_html(sprintf(/* translators: %d: lots at the place and below it */ _n('%d Posten hier und darunter.', '%d Posten hier und darunter.', $count, 'taxmod-stock'), $count))
-            . ' <a href="' . esc_url($structure) . '">' . esc_html__('Lagerstruktur bearbeiten', 'taxmod-stock') . '</a></p>'
+            . ListPage::toolbar([['<a class="button" href="' . esc_url($structure) . '">' . esc_html__('Zur Layout-Sicht', 'taxmod-stock') . '</a>']])
+            . '<p>' . esc_html(sprintf(/* translators: %d: lots at the place and below it */ _n('%d Posten hier und darunter.', '%d Posten hier und darunter.', $count, 'taxmod-stock'), $count)) . '</p>'
             . ($count > 0 ? $this->placeLotsBar($place, $count) : '')
             . ListPage::table([[__('Posten', 'taxmod-stock'), '6em'], [__('Material', 'taxmod-stock'), ''], [__('Unterort', 'taxmod-stock'), '12em'], [__('Menge', 'taxmod-stock'), '6em'], [__('Buchungsdatum', 'taxmod-stock'), '8em']], $body === '' ? $this->noItems(5) : $body);
     }

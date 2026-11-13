@@ -236,6 +236,8 @@ final class StockPage
                     $today,
                     $this->title(__('Umbuchung', 'taxmod-stock'), $today)
                 ),
+                'sammelverschieben' => $this->stock->moveThingsToGroup(array_values(array_filter(array_map('absint', (array) ($_POST['selected'] ?? [])))), absint($_POST['group'] ?? 0)),
+                'gruppeanlegen' => $copy = $this->stock->createGroup(absint($_POST['group'] ?? 0), sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? '')))),
                 'sammelumbuchen' => $this->stock->moveThings(
                     array_values(array_filter(array_map('absint', (array) ($_POST['selected'] ?? [])))),
                     absint($_POST['location'] ?? 0),
@@ -330,6 +332,8 @@ final class StockPage
                 'umhaengen'      => __('Umgehängt: der Ort liegt jetzt dort, mit allem, was in ihm liegt.', 'taxmod-stock'),
                 'orteverschieben' => __('Verschoben: die gewählten Orte liegen jetzt dort, mit allem, was in ihnen liegt.', 'taxmod-stock'),
                 'umbuchen'       => __('Umgebucht: ein Vorgang «Umbuchung» mit Abgang am alten und Zugang am neuen Ort.', 'taxmod-stock'),
+                'sammelverschieben' => __('Verschoben: die gewählten Materialien stehen jetzt in der neuen Gruppe.', 'taxmod-stock'),
+                'gruppeanlegen'  => __('Gruppe angelegt.', 'taxmod-stock'),
                 'sammelumbuchen' => __('Umgebucht: alle gewählten Materialien liegen jetzt am neuen Ort, als ein Vorgang «Umbuchung».', 'taxmod-stock'),
                 'postenumbuchen' => __('Umgebucht: die gewählten Posten liegen jetzt ganz am neuen Ort, als ein Vorgang «Umbuchung».', 'taxmod-stock'),
                 'storno', 'reservierungstorno', 'verbrauchstorno', 'inventurstorno' => __('Storniert: die Gegenbuchung hebt den Vorgang auf, beide bleiben im Protokoll.', 'taxmod-stock'),
@@ -378,6 +382,7 @@ final class StockPage
                 'wareneingang', 'aufteilen', 'zuordnen', 'nichteinlagern', 'einlagern' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
                 'platzart'     => ['platzarten', array_filter(['typ' => (int) (((array) ($result['refs'] ?? []))['art'] ?? 0)])],
                 'artkopieren'  => ['platzarten', array_filter(['typ' => $copy])],
+                'gruppeanlegen' => ['gruppenbestand', array_filter(['group' => $copy])],
                 'vorlagekopieren' => ['etikettenvorlagen', array_filter(['vorlage' => $copy])],
                 'rollewechseln' => ['drucker', []],
                 'umhaengen', 'orteverschieben', 'ort', 'reservieren', 'freigeben' => ['lagerstruktur', []],
@@ -389,6 +394,7 @@ final class StockPage
                 'wareneingang', 'zuordnen', 'nichteinlagern', 'einlagern' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
                 'platzart'          => ['platzarten', []],
                 'artkopieren'       => ['platzarten', array_filter(['typ' => $rowPurchase])],
+                'gruppeanlegen'     => ['gruppenbestand', array_filter(['group' => absint($_POST['group'] ?? 0)])],
                 'vorlagekopieren'   => ['etikettenvorlagen', array_filter(['vorlage' => $rowPurchase])],
                 'rollewechseln'     => ['drucker', []],
                 'umhaengen', 'orteverschieben', 'ort', 'reservieren', 'freigeben' => ['lagerstruktur', []],
@@ -540,7 +546,7 @@ final class StockPage
             /* translators: %d: number of materials */
             _n('%d Material', '%d Materialien', count($shown), 'taxmod-stock'),
             count($shown)
-        ), ListPage::filterToggle() . ListPage::columnMenu($listId, $view, $url([])), $this->bulkTransferAsk() + $this->materialLabelsAsk());
+        ), ListPage::filterToggle() . ListPage::columnMenu($listId, $view, $url([])), $this->bulkTransferAsk() + $this->bulkGroupAsk() + $this->materialLabelsAsk());
         $body    = $waits ? ($branch ? '<tr class="no-items"><td class="colspanchange" colspan="' . esc_attr((string) (count($visible) + 2)) . '">'
             . esc_html__('Links eine Materialgruppe wählen: angezeigt wird alles darin und in den Gruppen darunter.', 'taxmod-stock') . '</td></tr>'
             : ListPage::searchPrompt(count($visible), $url([ListPage::SHOW_ALL => '1']), count($all))) : ($shown === [] ? $this->noItems(count($visible)) : '');
@@ -610,7 +616,9 @@ final class StockPage
                     . '<select name="group" style="width:100%" onchange="this.form.submit()">' . $this->groupOptions($group) . '</select></form>')
                 . '</div>' . $this->placeTreeScript();
 
-        return ($group > 0 ? '<h2>' . esc_html($this->stock->path($group)) . '</h2>' . $this->groupProperties($group) : '') . $this->materialList($list, true);
+        $newGroup = $group > 0 ? $this->newGroupDialog($group) : '';
+
+        return ($group > 0 ? '<h2>' . esc_html($this->stock->path($group)) . '</h2>' . ($newGroup === '' ? '' : ListPage::toolbar([[$newGroup]])) . $this->groupProperties($group) : '') . $this->materialList($list, true);
     }
 
     /**
@@ -1425,6 +1433,38 @@ final class StockPage
             . ($toList ? '<input type="hidden" name="return_tab" value="' . esc_attr(self::BACK_TO_LIST) . '">' : '')
             . ListPage::dialogAction('taxmod-stock-transfer-' . $lot . '-' . $from . ($toList ? '-list' : ''), __('Umbuchen', 'taxmod-stock'), __('Umbuchen', 'taxmod-stock'), $body, 'booking', 'umbuchen', __('Umbuchen', 'taxmod-stock'), '', self::icon('ICON_TRANSFER'))
             . '</form>';
+    }
+
+    /**
+     * D8 (D-1320): «Verschieben nach …» for the rows ticked — into another group, as «Verschieben» does for one material.
+     *
+     * @return array<string, array{0: string, 1: string}>
+     */
+    private function bulkGroupAsk(): array
+    {
+        if (! method_exists(ListPage::class, 'dialogAction')) {
+            return [];
+        }
+
+        $chooser = $this->stock->groupChooser('group', 0, self::BULK_FORM);
+        $body    = self::actForm([['label' => __('Gruppe', 'taxmod-stock'), 'control' => $chooser !== '' ? $chooser : '<select name="group" form="' . esc_attr(self::BULK_FORM) . '">' . $this->groupOptions() . '</select>',
+                'hint' => __('Felder, die die neue Gruppe zusätzlich hat, kommen leer dazu. Gingen bei einem Material Werte verloren, wird keines verschoben.', 'taxmod-stock')]])
+            . '<input type="hidden" name="return_tab" value="' . esc_attr(self::BACK_TO_LIST) . '" form="' . esc_attr(self::BULK_FORM) . '">';
+
+        return ['taxmod-stock-bulk-group' => [__('Verschieben nach …', 'taxmod-stock'), '<div class="alignleft actions">' . ListPage::dialogAction('taxmod-stock-bulk-group', __('Verschieben nach …', 'taxmod-stock'), __('Ausgewählte in andere Gruppe', 'taxmod-stock'), $body, 'booking', 'sammelverschieben', __('Verschieben', 'taxmod-stock'), self::BULK_FORM) . '</div>']];
+    }
+
+    /** D8, D-1331: «+ Neue Untergruppe» of the group chosen in «Gruppenbestand»; nothing while the modeller cannot make one. */
+    private function newGroupDialog(int $parent): string
+    {
+        if (! method_exists(ListPage::class, 'dialogAction') || ! $this->stock->canCreateGroup()) {
+            return '';
+        }
+
+        $body = '<label style="display:block">' . esc_html__('Name', 'taxmod-stock') . '<br><input type="text" name="name" style="width:100%" required></label>'
+            . '<input type="hidden" name="group" value="' . esc_attr((string) $parent) . '">';
+
+        return $this->formStart('gruppeanlegen') . ListPage::dialogAction('taxmod-stock-new-group', __('+ Neue Untergruppe', 'taxmod-stock'), __('Neue Untergruppe', 'taxmod-stock'), $body, 'booking', 'gruppeanlegen', __('Anlegen', 'taxmod-stock')) . '</form>';
     }
 
     /**

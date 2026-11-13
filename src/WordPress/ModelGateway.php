@@ -112,6 +112,22 @@ final class ModelGateway
         return method_exists($this->door, 'fieldWords') ? $this->ask(fn (): array => $this->door->fieldWords($records, $relations)) : [];
     }
 
+    /** D8, D-1331: whether the modeller can make a node below another (0.2.79). */
+    public function canCreateChild(): bool
+    {
+        return method_exists($this->door, 'createChild');
+    }
+
+    /** D8, D-1331: a new node below `$parent`, of its default child class; one act, undoable. */
+    public function createChild(int $parent, string $name): int
+    {
+        if (! $this->canCreateChild()) {
+            throw StockError::fromModel('The Taxonomy Modeller is too old to create a group (0.2.79).');
+        }
+
+        return (int) ($this->ask(fn (): array => ['id' => $this->door->createChild($parent, $name)])['id'] ?? 0);
+    }
+
     /** D-1259: one act, undoable; null lets the node inherit again. */
     public function setProperty(int $node, string $key, bool|int|null $value): void
     {

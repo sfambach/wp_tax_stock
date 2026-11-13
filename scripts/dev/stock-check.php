@@ -754,6 +754,17 @@ $gruppe  = (int) ((new TaxmodStock\WordPress\ModelGateway())->nodesOf([$bc])[$bc
 $platine = apply_filters(TaxmodStock\WordPress\Plugin::CREATE_THING, null, ['name' => 'Testkarte bestückt 0.7', 'group' => $gruppe]);
 $pruefe(is_int($platine) && $platine > 0 && isset((new StockService())->tree()[$gruppe]), 'D-1143: a material for the finished board is created in a group of the things' . ($platine instanceof WP_Error ? ': ' . $platine->get_error_message() : ''));
 $platine = is_int($platine) ? $platine : 0;
+// D8 (D-1320), D-1331: a subgroup made in the Lager where the modeller can; ticked materials move into it and back, one act each.
+if ((new StockService())->canCreateGroup()) {
+    $andere = (new StockService())->createGroup($gruppe, '__Untergruppe');
+    $pruefe($andere > 0 && isset((new StockService())->tree()[$andere]), 'D8: «+ Neue Untergruppe» stands in the tree below its group');
+} else {
+    $andere = (int) ((new StockService())->tree()[$gruppe]['parent'] ?? 0);
+}
+$hin    = (new StockService())->moveThingsToGroup([$platine], $andere);
+$dort   = (int) ((new TaxmodStock\WordPress\ModelGateway())->nodesOf([$platine])[$platine] ?? 0);
+(new StockService())->moveThingsToGroup([$platine], $gruppe);
+$pruefe($andere > 0 && $dort === $andere && (int) ((new TaxmodStock\WordPress\ModelGateway())->nodesOf([$platine])[$platine] ?? 0) === $gruppe, 'D8: ticked materials move into another group and back, one act each');
 $zugang  = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_OUTPUT, null, ['reference' => $auftrag, 'place' => $schrank, 'lines' => [$platine => 2], 'title' => 'Fertigung Testkarte fertig', 'date' => '2026-11-04']);
 $s       = new StockService();
 $pruefe(is_int($zugang) && ($s->presentIn($schrank)[$platine] ?? 0.0) === 2.0 && (int) $s->table('transaction')->first($zugang, $s->structure()->field('transaction_reference')) === $auftrag && (int) $s->table('transaction')->first($zugang, $s->structure()->field('transaction_kind')) === $s->structure()->value('kind_receipt'), 'D-1143: two finished boards come in at the place, one Vorgang «Zugang» naming the order' . ($zugang instanceof WP_Error ? ': ' . $zugang->get_error_message() : ''));

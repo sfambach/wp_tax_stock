@@ -561,6 +561,61 @@ final class StockService
     }
 
     /**
+     * D8 (D-1320): several materials into another group in one act; refused whole when values would fall (D-1073).
+     *
+     * @param list<int> $things
+     * @return array<string, mixed>
+     */
+    public function moveThingsToGroup(array $things, int $group): array
+    {
+        if ($things === []) {
+            throw StockError::nothingToBook();
+        }
+
+        $this->checkThings($things);
+
+        if (! isset($this->tree()[$group])) {
+            throw StockError::notAGroup($group);
+        }
+
+        try {
+            return $this->model->write(array_map(static fn (int $thing): array => ['op' => 'move_record', 'record' => $thing, 'node' => $group, 'anywhere' => true], $things));
+        } catch (StockError $e) {
+            if ($e->reason === 'model_refused' && preg_match('/would drop values of: (.+?)\.?$/', $e->detail, $m) === 1) {
+                throw StockError::wouldDrop($m[1]);
+            }
+
+            throw $e;
+        }
+    }
+
+    /** D8, D-1331: whether «+ Neue Untergruppe» can be offered. */
+    public function canCreateGroup(): bool
+    {
+        return $this->model->canCreateChild();
+    }
+
+    /**
+     * D8 (D-1320), D-1331: a new material group below a group of the tree, by the name he typed.
+     *
+     * @return int the new group
+     */
+    public function createGroup(int $parent, string $name): int
+    {
+        $name = trim($name);
+
+        if (! isset($this->tree()[$parent])) {
+            throw StockError::notAGroup($parent);
+        }
+
+        if ($name === '') {
+            throw StockError::placeWithoutName();
+        }
+
+        return $this->model->createChild($parent, $name);
+    }
+
+    /**
      * The fields of a node with their names, for the tab «Technische Daten».
      *
      * @return array<int, array{name: string, target: int, type: string|null}>

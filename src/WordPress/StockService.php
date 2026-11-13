@@ -3533,6 +3533,30 @@ final class StockService
     }
 
     /**
+     * «Aus Bestand zuweisen» (his wish 2026-11-13 16:26): the materials in a group and below it that have free stock outside
+     * `$except`, with that stock — one ledger pass, one read of the materials' nodes.
+     *
+     * @return array<int, float> thing → free pieces
+     */
+    public function thingsInStock(int $group, int $except = 0): array
+    {
+        $branch = array_flip($this->branchOf($group));
+        $things = $this->ledger()->things();
+        $inside = array_keys(array_filter($this->model->nodesOf($things), static fn (int $node): bool => isset($branch[$node])));
+        $out    = [];
+
+        foreach ($this->freeStockByPlace($inside, $except) as $thing => $at) {
+            $total = array_sum($at);
+
+            if ($total > 0.0) {
+                $out[$thing] = $total;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * D-1146, the pick list of a build order: where the things lie free — not in the box `$except` or below it, not in a
      * reserved area (D-1082), not in a lot a reservation names (D-1083).
      *

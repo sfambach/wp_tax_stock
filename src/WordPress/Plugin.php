@@ -94,6 +94,9 @@ final class Plugin
     public const PRODUCTION_INBOUND = 'taxmod_stock_production_inbound';
     public const TEST_PLACE        = 'taxmod_stock_test_place';
 
+    /** «Aus Bestand zuweisen»: the materials with free stock below a group, for the Fertigung's chooser. */
+    public const THINGS_IN_STOCK = 'taxmod_stock_things_in_stock';
+
     public function boot(): void
     {
         // Checked at runtime rather than with «Requires Plugins»: WordPress matches that header against the folder name, and the
@@ -189,6 +192,7 @@ final class Plugin
         add_filter(self::SET_LOT_STAGE, [self::class, 'setLotStage'], 10, 2);
         add_filter(self::PRODUCTION_INBOUND, [self::class, 'productionInbound'], 10, 1);
         add_filter(self::TEST_PLACE, [self::class, 'testPlace'], 10, 1);
+        add_filter(self::THINGS_IN_STOCK, [self::class, 'thingsInStock'], 10, 2);
         // D-1315 with the modeller's D-1334: the kind of a place with places inside changes only through «Art wechseln …».
         add_filter('taxmod_claimed_fields', [self::class, 'claimedFields'], 10, 3);
         // D-1147: the rows of the material and purchase lists draw their details when opened.
@@ -755,6 +759,33 @@ final class Plugin
 
         try {
             return (new StockService())->freeStockByPlace(array_values(array_filter(array_map('absint', is_array($args['things'] ?? null) ? $args['things'] : []))), absint($args['except'] ?? 0));
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * `apply_filters('taxmod_stock_things_in_stock', null, ['group' => node] or ['node' => node], 'except' => box)` → thing →
+     * free pieces below that node (D-1298 root), outside the box; reserved places and bound lots do not count.
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     `mixed`: checked here
+     */
+    public static function thingsInStock(mixed $previous, mixed $args): array|\WP_Error
+    {
+        if (is_array($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args = is_array($args) ? $args : [];
+        $root = absint($args['group'] ?? 0) ?: absint($args['node'] ?? 0);
+
+        try {
+            return $root === 0 ? [] : (new StockService())->thingsInStock($root, absint($args['except'] ?? 0));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }

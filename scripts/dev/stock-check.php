@@ -745,6 +745,13 @@ $s      = new StockService();
 $pruefe(is_int($pick) && ($s->presentIn($schrank)[$r['t1']] ?? 0.0) === 1.0 && (int) $s->table('transaction')->first($pick, $s->structure()->field('transaction_kind')) === $s->structure()->value('kind_transfer') && (int) $s->table('transaction')->first($pick, $s->structure()->field('transaction_reference')) === $auftrag, 'a ticked line moves into the box as an Umbuchung naming the order' . ($pick instanceof WP_Error ? ': ' . $pick->get_error_message() : ''));
 $pick   = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_PICK, null, ['reference' => $auftrag, 'place' => $schrank, 'lines' => [['thing' => $r['t1'], 'from' => $von, 'qty' => 999]], 'title' => 'zu viel', 'date' => '2026-11-04']);
 $pruefe($pick instanceof WP_Error && $pick->get_error_code() === 'taxmod_stock_not_enough_to_pick', 'more than lies free at the place is refused, nothing moved');
+// «Aus Bestand zuweisen» (his wish 2026-11-13): the materials with free stock below a group, outside the box, with their stock.
+add_filter(TaxmodStock\WordPress\Plugin::THINGS_IN_STOCK, [TaxmodStock\WordPress\Plugin::class, 'thingsInStock'], 10, 2);
+$gruppe  = (int) ((new StockService())->nodesOf([$r['t1']])[$r['t1']] ?? 0);
+$imLager = apply_filters(TaxmodStock\WordPress\Plugin::THINGS_IN_STOCK, null, ['group' => $gruppe, 'except' => $schrank]);
+$freiT1  = array_sum(is_array($frei) ? ($frei[$r['t1']] ?? []) : []) - 1;
+$pruefe(is_array($imLager) && isset($imLager[$r['t1']]) && abs($imLager[$r['t1']] - $freiT1) < 0.001 && $imLager === apply_filters(TaxmodStock\WordPress\Plugin::THINGS_IN_STOCK, null, ['node' => $gruppe, 'except' => $schrank]),
+    'things_in_stock: a group names its materials with free stock outside the box, «node» the same' . (is_array($imLager) ? '' : ': ' . $imLager->get_error_message()));
 $pruefe(str_contains($html, 'taxmod-stock-drop-lot') && ! str_contains($html, 'taxmod-stock-move-place-'), 'Lagerorte: a lot dropped on a place asks for the Umbuchung; no structure actions here');
 
 // D-1143: the finished board — a material created for it, brought into stock naming the order, cancelled again.

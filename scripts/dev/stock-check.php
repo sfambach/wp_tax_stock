@@ -860,6 +860,16 @@ $s     = new StockService();
 $offenR = $s->reservations()->forSubject($r['t2']);
 $pruefe($offenR !== null && count($s->table('transaction')->all($offenR, $r['v_pos'])) === 2 && ($s->reservations()->reservedByThing()[$bc] ?? 0.0) === 3.0, 'one reservation per subject, holding both positions');
 
+// D-1301: the manufacturing module reserves, reads and releases for its order in one call each.
+$resAnswer = apply_filters('taxmod_stock_reserve', null, ['subject' => $auftrag, 'rows' => [['thing' => $bc, 'quantity' => 1], ['thing' => $r['t1'], 'quantity' => 1]], 'date' => '2026-11-13', 'title' => 'Reservierung Testkarte']);
+$resOf     = apply_filters('taxmod_stock_reservations_of', null, ['subjects' => [$auftrag]]);
+$resLines  = is_array($resOf) ? array_column($resOf[$auftrag] ?? [], 'line') : [];
+$resPart   = apply_filters('taxmod_stock_release', null, ['subject' => $auftrag, 'lines' => array_slice($resLines, 0, 1)]);
+$resAfter  = apply_filters('taxmod_stock_reservations_of', null, ['subjects' => [$auftrag]]);
+$resAll    = apply_filters('taxmod_stock_release', null, ['subject' => $auftrag]);
+$resEnd    = apply_filters('taxmod_stock_reservations_of', null, ['subjects' => [$auftrag]]);
+$pruefe(is_array($resAnswer) && count($resLines) === 2 && is_array($resPart) && count($resAfter[$auftrag] ?? []) === 1 && is_array($resAll) && ($resEnd[$auftrag] ?? null) === [], 'D-1301: reserve two positions in one call, release one, then the rest; reservations_of reads each step' . ($resAnswer instanceof WP_Error ? ': ' . $resAnswer->get_error_message() : ''));
+
 // D-1097, his word «eine Position gehört zu genau einem Kopf»: after every booking above, each line and each purchase has one head.
 $s = new StockService();
 foreach ([['line', 'transaction', $r['v_pos']], ['purchase', 'order', $r['o_pos']]] as [$teil, $kopf, $liste]) {
@@ -1068,6 +1078,16 @@ $x      = new StockService();
 $x->write((new ReceiptReversal($x->structureWithKinds()))->reverse($r['best2'], $x->table('order'), $x->table('lot'), $x->table('line'), $x->table('transaction')));
 $nach   = new StockService();
 $pruefe(count($vorher) === 8 && $zeilen($nach) === [] && array_filter($zwei, static fn (int $l): bool => $nach->table('lot')->has($l)) === [], 'a receipt whose lot was only moved goes back, its Umbuchung lines with it');
+// D-1301 «Box leer räumen»: a box of its own gets one part picked in; emptying it moves the part back to where it was picked.
+$rueckBox  = (new StockService())->copyPlace($schrank, '__Rückgabebox', false);
+$rueckFrei = apply_filters(TaxmodStock\WordPress\Plugin::PLACES_OF, null, ['things' => [$bc, $r['t1'], $r['t2']], 'except' => $rueckBox]);
+$rueckDing = is_array($rueckFrei) ? (int) array_key_first(array_filter($rueckFrei)) : 0;
+$rueckVon  = $rueckDing > 0 ? (int) array_key_first($rueckFrei[$rueckDing]) : 0;
+apply_filters(TaxmodStock\WordPress\Plugin::BOOK_PICK, null, ['reference' => $auftrag, 'place' => $rueckBox, 'lines' => [['thing' => $rueckDing, 'from' => $rueckVon, 'qty' => 1]], 'title' => 'Pickliste Rückgabe', 'date' => '2026-11-13']);
+$voll      = (new StockService())->presentIn($rueckBox);
+$leer      = apply_filters('taxmod_stock_book_return', null, ['box' => $rueckBox, 'reference' => $auftrag, 'date' => '2026-11-13']);
+$s         = new StockService();
+$pruefe($voll === [$rueckDing => 1.0] && is_int($leer) && $s->presentIn($rueckBox) === [] && (int) $s->table('transaction')->first($leer, $s->structure()->field('transaction_kind')) === $s->structure()->value('kind_transfer'), 'D-1301: Box leer räumen moves the picked part back to its place, one Umbuchung' . ($leer instanceof WP_Error ? ': ' . $leer->get_error_message() : ''));
 
 // D-1260 for the sales module: a sale leaves as «Verkauf»; an old sale without stock is backfilled and leaves in one act.
 $s       = new StockService();

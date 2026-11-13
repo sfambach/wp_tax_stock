@@ -30,6 +30,18 @@ final class BuildPlanTest extends TestCase
     }
 
     #[Test]
+    public function what_the_box_lacks_comes_from_the_orders_reservation_at_most_its_open_quantity(): void
+    {
+        // D-1301: the box holds 7; lot 62 outside at 9 is reserved for the order, 3 of it open.
+        $rows = BuildPlan::rows($this->ledger(), 3, [3, 4], [30 => 8.0], [], [30 => [['lot' => 62, 'quantity' => 3.0]]]);
+
+        self::assertSame([['lot' => 60, 'place' => 3, 'quantity' => -2.0], ['lot' => 61, 'place' => 4, 'quantity' => -5.0], ['lot' => 62, 'place' => 9, 'quantity' => -1.0]], $rows);
+
+        $this->expectException(StockError::class);
+        BuildPlan::rows($this->ledger(), 3, [3, 4], [30 => 8.0], [], [30 => [['lot' => 62, 'quantity' => 0.5]]]);
+    }
+
+    #[Test]
     public function giving_back_returns_to_the_box_what_the_order_took_newest_lot_first(): void
     {
         $rows = BuildPlan::rows($this->ledger(), 3, [3, 4], [30 => -3.0], [30 => [60 => 2.0, 61 => 2.0]]);

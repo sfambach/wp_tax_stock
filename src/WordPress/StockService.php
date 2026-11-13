@@ -2272,6 +2272,18 @@ final class StockService
      */
     public function reserve(int $subject, string $deadline, int $thing, string $quantity, ?int $lot, string $today, string $title): array
     {
+        return $this->reserveRows($subject, $deadline, [new ReservationRow($thing, $quantity, $lot)], $today, $title);
+    }
+
+    /**
+     * D-1301: several positions for one subject's reservation in one act — a project, a sale or a production order alike,
+     * by the Bezug that may name any record.
+     *
+     * @param list<ReservationRow> $rows
+     * @return array<string, mixed> the modeller's answer
+     */
+    public function reserveRows(int $subject, string $deadline, array $rows, string $today, string $title): array
+    {
         $s = $this->structure();
 
         if (! $s->hasValue('kind_reservation')) {
@@ -2282,12 +2294,62 @@ final class StockService
             throw StockError::noSubject();
         }
 
-        $this->checkThings([$thing]);
-        $rows         = [new ReservationRow($thing, $quantity, $lot)];
+        $this->checkThings(array_values(array_unique(array_map(static fn (ReservationRow $row): int => $row->thing, $rows))));
         $reservations = $this->reservations();
         $reservations->check($rows, $this->ledger(), $this->reservedPlaces());
 
         return $this->model->write((new Bookings($this->structureWithKinds(), $today))->reserve($subject, $deadline, $rows, $reservations->forSubject($subject), $this->table('transaction'), $title));
+    }
+
+    /**
+     * D-1301: the open reservation positions of each subject, with where their lot lies. One ledger for all (CD-7).
+     *
+     * @param list<int> $subjects
+     * @return array<int, list<array{deal: int, line: int, thing: int, lot: int|null, quantity: float, places: array<int, float>}>> subject → positions
+     */
+    public function reservationsOf(array $subjects): array
+    {
+        $wanted = array_flip($subjects);
+        $ledger = $this->ledger();
+        $out    = array_fill_keys($subjects, []);
+
+        foreach ($this->reservations()->open() as $deal => $head) {
+            if (! isset($wanted[$head['subject']])) {
+                continue;
+            }
+
+            foreach ($head['positions'] as $line => $position) {
+                $out[$head['subject']][] = ['deal' => $deal, 'line' => $line, 'thing' => $position['thing'], 'lot' => $position['lot'], 'quantity' => $position['quantity'], 'places' => $position['lot'] === null ? [] : $ledger->placesOf($position['lot'])];
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * D-1301: gives a subject's reservation free — all of it, or only the positions `$lines` — in one Storno.
+     *
+     * @param list<int>|null $lines
+     * @return array<string, mixed> the modeller's answer
+     */
+    public function releaseReservations(int $subject, ?array $lines, string $now, string $who): array
+    {
+        $reservations = $this->reservations();
+        $deal         = $reservations->forSubject($subject) ?? throw StockError::noSubject();
+        $positions    = $reservations->toCancel($deal);
+
+        if ($lines !== null) {
+            $positions = array_intersect_key($positions, array_flip($lines));
+        }
+
+        if ($positions === []) {
+            throw StockError::alreadyCancelled($deal);
+        }
+
+        /* translators: %s: the name of the reservation taken back */
+        $title = sprintf(__('Storno: %s', 'taxmod-stock'), (string) ($this->table('transaction')->first($deal, $this->structure()->field('label')) ?? '#' . $deal));
+
+        return $this->model->write((new Bookings($this->structureWithKinds(), $now))->cancelReservation($subject, $positions, $title, $who . ', ' . $now));
     }
 
     /**
@@ -2874,7 +2936,14 @@ final class StockService
         }
 
         $this->checkThings(array_keys(array_filter($lines, static fn (float $q): bool => $q > 0.0)));
-        $rows   = BuildPlan::rows($this->ledger(), $place, $this->locationTree()->withAllBelow($place), $lines, $this->takenFor($reference));
+        $reserved = [];
+
+        // D-1301, D-1088: what the box lacks comes from the order's own reservation; the consumption naming it lowers it.
+        foreach ($this->reservationsOf([$reference])[$reference] as $position) {
+            $reserved[$position['thing']][] = ['lot' => $position['lot'], 'quantity' => $position['quantity']];
+        }
+
+        $rows   = BuildPlan::rows($this->ledger(), $place, $this->locationTree()->withAllBelow($place), $lines, $this->takenFor($reference), $reserved);
         return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->build($rows, $reference, $title)));
     }
 
@@ -3024,6 +3093,64 @@ final class StockService
         }
 
         return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $bound, $reference)));
+    }
+
+    /**
+     * D-1301 «Box leer räumen»: everything lying in the box and the places in it goes back where the order's pick list took
+     * it from; a lot never picked goes to the place it came in, unless that is inside the box — then it stays. One Umbuchung.
+     *
+     * @return int the Vorgang
+     */
+    public function bookReturn(int $box, int $reference, string $today, string $title): int
+    {
+        if (! $this->table('location')->has($box)) {
+            throw StockError::notALocation($box);
+        }
+
+        $ledger = $this->ledger();
+        $inBox  = array_flip($this->locationTree()->withAllBelow($box));
+        $from   = $this->pickedFrom($reference);
+        $rows   = [];
+
+        foreach ($ledger->stockByPlace() as $lot => $at) {
+            foreach (array_intersect_key($at, $inBox) as $place => $quantity) {
+                $origin = $from[$lot] ?? $ledger->homeOf($lot);
+
+                if ($origin > 0 && ! isset($inBox[$origin])) {
+                    $rows[] = new TransferRow($lot, $place, $origin, rtrim(rtrim(number_format($quantity, 6, '.', ''), '0'), '.'));
+                }
+            }
+        }
+
+        return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), [], $reference)));
+    }
+
+    /** @return array<int, int> lot → the place the order's latest Umbuchung took it from */
+    private function pickedFrom(int $reference): array
+    {
+        $s = $this->structureWithKinds();
+
+        if ($reference <= 0 || ! $s->hasField('transaction_reference') || ! $s->hasValue('kind_transfer')) {
+            return [];
+        }
+
+        $deals = $this->table('transaction');
+        $lines = $this->table('line');
+        $out   = [];
+
+        foreach ($deals->ids() as $deal) {
+            if ((int) $deals->first($deal, $s->field('transaction_reference')) !== $reference || (int) $deals->first($deal, $s->field('transaction_kind')) !== $s->value('kind_transfer')) {
+                continue;
+            }
+
+            foreach ($deals->all($deal, $s->field('transaction_lines')) as $line) {
+                if ((float) ($lines->first((int) $line, $s->field('line_quantity')) ?? 0) < 0.0) {
+                    $out[(int) $lines->first((int) $line, $s->field('line_lot'))] = (int) $lines->first((int) $line, $s->field('line_location'));
+                }
+            }
+        }
+
+        return $out;
     }
 
     /** @param array<string, mixed> $answer the modeller's answer to a booking @return int the Vorgang it created */

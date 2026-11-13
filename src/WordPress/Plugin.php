@@ -2,6 +2,7 @@
 
 namespace TaxmodStock\WordPress;
 
+use TaxmodStock\Core\ReservationRow;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\TestSettings;
 use TaxmodStock\WordPress\Admin\Acts;
@@ -74,6 +75,14 @@ final class Plugin
 
     /** D-1301: the project boxes with their project, path and pieces, for the manufacturing module. */
     public const PROJECT_BOXES = 'taxmod_stock_project_boxes';
+
+    /** D-1301: reservations for a subject (project, sale, production order) as one call each, for the manufacturing module. */
+    public const RESERVE          = 'taxmod_stock_reserve';
+    public const RESERVATIONS_OF  = 'taxmod_stock_reservations_of';
+    public const RELEASE          = 'taxmod_stock_release';
+
+    /** D-1301: «Box leer räumen» — back to where it came from. */
+    public const BOOK_RETURN = 'taxmod_stock_book_return';
 
     public function boot(): void
     {
@@ -161,6 +170,10 @@ final class Plugin
         add_filter(self::CUT_SOURCES, [self::class, 'cutSources'], 10, 2);
         add_filter(self::BOOK_CUT, [self::class, 'bookCut'], 10, 2);
         add_filter(self::PROJECT_BOXES, [self::class, 'projectBoxes'], 10, 2);
+        add_filter(self::RESERVE, [self::class, 'reserve'], 10, 2);
+        add_filter(self::RESERVATIONS_OF, [self::class, 'reservationsOf'], 10, 2);
+        add_filter(self::RELEASE, [self::class, 'release'], 10, 2);
+        add_filter(self::BOOK_RETURN, [self::class, 'bookReturn'], 10, 2);
         // D-1147: the rows of the material and purchase lists draw their details when opened.
         // The filter's name stands as text, so an older modeller without it does not stop the module.
         add_filter('taxmod_list_details', static fn (?string $html, string $source, array $args): ?string => match ($source) {
@@ -288,6 +301,123 @@ final class Plugin
 
         try {
             return (new StockService())->projectBoxSummary();
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1301: `apply_filters('taxmod_stock_reserve', null, ['subject' => id, 'rows' => [['thing' => id, 'quantity' => n,
+     * 'lot' => id|0], …], 'deadline' => Y-m-d|'', 'date' => Y-m-d, 'title' => …])` — all rows into the subject's open
+     * reservation, in one act. Answers the modeller's answer.
+     */
+    public static function reserve(mixed $previous, mixed $args): array|\WP_Error
+    {
+        if (is_array($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args     = is_array($args) ? $args : [];
+        $date     = sanitize_text_field((string) ($args['date'] ?? ''));
+        $deadline = sanitize_text_field((string) ($args['deadline'] ?? ''));
+        $rows     = [];
+
+        foreach (is_array($args['rows'] ?? null) ? $args['rows'] : [] as $row) {
+            if (is_array($row) && absint($row['thing'] ?? 0) > 0 && is_numeric($row['quantity'] ?? null) && (float) $row['quantity'] > 0) {
+                $rows[] = new ReservationRow(absint($row['thing']), (string) (float) $row['quantity'], absint($row['lot'] ?? 0) ?: null);
+            }
+        }
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1 || ($deadline !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $deadline) !== 1)) {
+            return new \WP_Error('taxmod_stock_not_a_date', __('Datum fehlt oder ist kein Datum (JJJJ-MM-TT).', 'taxmod-stock'));
+        }
+
+        if ($rows === []) {
+            return new \WP_Error('taxmod_stock_no_rows', __('Keine Position zum Reservieren.', 'taxmod-stock'));
+        }
+
+        try {
+            return (new StockService())->reserveRows(absint($args['subject'] ?? 0), $deadline, $rows, $date, sanitize_text_field((string) ($args['title'] ?? __('Reservierung', 'taxmod-stock'))));
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1301: `apply_filters('taxmod_stock_reservations_of', null, ['subjects' => [id, …]])` → `[subject => [['deal', 'line',
+     * 'thing', 'lot', 'quantity', 'places' => [place => n]], …]]`, the open positions only.
+     */
+    public static function reservationsOf(mixed $previous, mixed $args): array|\WP_Error
+    {
+        if (is_array($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args     = is_array($args) ? $args : [];
+        $subjects = array_values(array_unique(array_filter(array_map('absint', is_array($args['subjects'] ?? null) ? $args['subjects'] : []))));
+
+        try {
+            return $subjects === [] ? [] : (new StockService())->reservationsOf($subjects);
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1301: `apply_filters('taxmod_stock_release', null, ['subject' => id, 'lines' => [line, …]|null])` gives the
+     * subject's reservation free — whole, or those positions — in one Storno.
+     */
+    public static function release(mixed $previous, mixed $args): array|\WP_Error
+    {
+        if (is_array($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args  = is_array($args) ? $args : [];
+        $lines = is_array($args['lines'] ?? null) ? array_values(array_filter(array_map('absint', $args['lines']))) : null;
+
+        try {
+            return (new StockService())->releaseReservations(absint($args['subject'] ?? 0), $lines, current_time('Y-m-d H:i:s'), wp_get_current_user()->display_name);
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1301: `apply_filters('taxmod_stock_book_return', null, ['box' => place, 'reference' => order, 'date' => Y-m-d,
+     * 'title' => …])` moves what lies in the box back to its places, one Umbuchung; answers the Vorgang.
+     */
+    public static function bookReturn(mixed $previous, mixed $args): int|\WP_Error
+    {
+        if (is_int($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args = is_array($args) ? $args : [];
+        $date = sanitize_text_field((string) ($args['date'] ?? current_time('Y-m-d')));
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+            return new \WP_Error('taxmod_stock_not_a_date', __('Datum fehlt oder ist kein Datum (JJJJ-MM-TT).', 'taxmod-stock'));
+        }
+
+        try {
+            return (new StockService())->bookReturn(absint($args['box'] ?? 0), absint($args['reference'] ?? 0), $date, sanitize_text_field((string) ($args['title'] ?? __('Box leer räumen', 'taxmod-stock'))));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }

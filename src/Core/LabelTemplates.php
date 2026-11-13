@@ -34,13 +34,14 @@ final class LabelTemplates
      * @param array<int, int>    $nodeOf     record id → the node it stands in
      * @param Table|null         $printers   D-1191: the records of «Drucker», read once beside the labels
      * @param Table|null         $rolls      D-1192: the records of «Rollen» — a printer holds one, a roll allows its labels
+     * @param Table|null         $pauses     D-1333: the unit values a printer's pause points at, read once beside the printers
      */
-    public static function from(Structure $s, Table $labels, array $categoryOf = [], array $nodeOf = [], ?Table $printers = null, ?Table $rolls = null): self
+    public static function from(Structure $s, Table $labels, array $categoryOf = [], array $nodeOf = [], ?Table $printers = null, ?Table $rolls = null, ?Table $pauses = null): self
     {
         $int  = static fn (int $id, string $field): int => $s->hasField($field) ? (int) $labels->first($id, $s->field($field)) : 0;
         $text = static fn (int $id, string $field): string => $s->hasField($field) ? trim((string) $labels->first($id, $s->field($field))) : '';
         $out  = [];
-        $all    = self::printers($s, $printers, $rolls);
+        $all    = self::printers($s, $printers, $rolls, $pauses);
 
         foreach ($labels->ids() as $id) {
             $key    = $text($id, 'template_key');
@@ -75,9 +76,9 @@ final class LabelTemplates
      * D-1191, D-1192: every printer with a queue and a loaded roll, by name — its settings as the modeller's label dialog takes
      * them, the width of the roll it holds, and the labels that roll allows.
      *
-     * @return array<int, array{queue: string, roll: int, turn: bool, options: string, turn_options: string, sizes: string, offset: int, line: int, retry: bool, name: string, roll_name: string, allows: list<int>}>
+     * @return array<int, array{queue: string, roll: int, turn: bool, options: string, turn_options: string, sizes: string, offset: int, line: int, retry: bool, pause: int, name: string, roll_name: string, allows: list<int>}>
      */
-    private static function printers(Structure $s, ?Table $printers, ?Table $rolls): array
+    private static function printers(Structure $s, ?Table $printers, ?Table $rolls, ?Table $pauses = null): array
     {
         if ($printers === null || $rolls === null || ! $s->hasField('printer_queue') || ! $s->hasField('printer_loaded_roll') || ! $s->hasField('roll_labels')) {
             return [];
@@ -101,6 +102,7 @@ final class LabelTemplates
                 'offset'       => (int) $text($printers, $id, 'printer_offset'),
                 'line'         => (int) $text($printers, $id, 'printer_line'),
                 'retry'        => $text($printers, $id, 'printer_retry') === '1',
+                'pause'        => self::pause($s, $pauses, (int) $text($printers, $id, 'printer_pause')),
                 'name'         => trim((string) ($printers->first($id, $s->field('label')) ?? '')),
                 'roll_name'    => trim((string) ($rolls->first($roll, $s->field('label')) ?? '')),
                 'allows'       => array_values(array_map('intval', $rolls->all($roll, $s->field('roll_labels')))),
@@ -109,6 +111,16 @@ final class LabelTemplates
         uasort($out, static fn (array $a, array $b): int => strnatcasecmp($a['name'], $b['name']));
 
         return $out;
+    }
+
+    /** D-1333: the seconds a printer's pause holds — a unit value in seconds; none is 0. */
+    private static function pause(Structure $s, ?Table $pauses, int $part): int
+    {
+        if ($part <= 0 || $pauses === null || ! $s->hasField('money_amount')) {
+            return 0;
+        }
+
+        return max(0, (int) round((float) $pauses->first($part, $s->field('money_amount'))));
     }
 
     /**

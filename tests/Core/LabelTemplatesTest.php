@@ -57,9 +57,10 @@ final class LabelTemplatesTest extends TestCase
     {
         $labels = $this->withPrinters();
 
-        self::assertSame(['queue' => 'Phomemo_M220L', 'roll' => 40, 'turn' => false, 'options' => '', 'turn_options' => '', 'sizes' => '*=w{B}h{H}', 'offset' => 21, 'line' => 38, 'retry' => true, 'name' => 'Phomemo M22L'], $labels->get(1)['printer']);
+        self::assertSame(['queue' => 'Phomemo_M220L', 'roll' => 40, 'turn' => false, 'options' => '', 'turn_options' => '', 'sizes' => '*=w{B}h{H}', 'offset' => 21, 'line' => 38, 'retry' => true, 'pause' => 20, 'name' => 'Phomemo M22L'], $labels->get(1)['printer']);
         self::assertSame('QL-810W_take', $labels->get(2)['printer']['queue'], 'the first by name that has a queue and a roll');
         self::assertTrue($labels->get(2)['printer']['turn']);
+        self::assertSame(0, $labels->get(2)['printer']['pause'], 'D-1333: no pause set is no pause');
         self::assertArrayNotHasKey('printer', $labels->get(3), 'no loaded roll allows it: the print service chooses as before');
         self::assertSame(['name' => '40×30', 'format' => $labels->get(1)['format'], 'layout' => self::LAYOUT, 'printer' => $labels->get(1)['printer'], 'record' => 5], LabelTemplates::forButton($labels->get(1), ['record' => 5]));
     }
@@ -132,7 +133,7 @@ final class LabelTemplatesTest extends TestCase
             81 => [$label => ['62 mm endlos'], 440 => ['62'], 441 => ['2']],
         ]);
         $printers = new Table([
-            70 => [$label => ['Phomemo M22L'], 430 => ['Phomemo_M220L'], 443 => ['1'], 438 => ['80'], 431 => ['0'], 437 => ['*=w{B}h{H}'], 432 => ['21'], 433 => ['38']],
+            70 => [$label => ['Phomemo M22L'], 430 => ['Phomemo_M220L'], 443 => ['1'], 444 => ['90'], 438 => ['80'], 431 => ['0'], 437 => ['*=w{B}h{H}'], 432 => ['21'], 433 => ['38']],
             71 => [$label => ['QL-810W'], 430 => ['QL-810W_take'], 438 => ['81'], 431 => ['1'], 436 => ['orientation-requested=4'], 437 => ['62x30=BrL053E01E3D0F6']],
             72 => [$label => ['A ohne Warteschlange'], 438 => ['81']],
             // D-1231: switched off, so not offered.
@@ -140,7 +141,7 @@ final class LabelTemplatesTest extends TestCase
             73 => [$label => ['Z ohne Rolle'], 430 => ['QL-1100']],
         ]);
 
-        return LabelTemplates::from($s, new Table([1 => $row('40×30', 40, 30, 40), 2 => $row('62×30', 62, 30, 62), 3 => $row('102×62', 102, 62, 102)]), [], [1 => 40, 2 => 40, 3 => 40], $printers, $rolls);
+        return LabelTemplates::from($s, new Table([1 => $row('40×30', 40, 30, 40), 2 => $row('62×30', 62, 30, 62), 3 => $row('102×62', 102, 62, 102)]), [], [1 => 40, 2 => 40, 3 => 40], $printers, $rolls, new Table([90 => [$s->field('money_amount') => ['20']]]));
     }
 
     #[Test]
@@ -175,7 +176,7 @@ final class LabelTemplatesTest extends TestCase
         $raw['fields'] += ['template_key' => 400, 'template_width' => 401, 'template_height' => 402, 'template_roll' => 403,
             'template_copies' => 405, 'template_layout' => 406, 'type_label_template' => 410, 'type_label_copies' => 411,
             'printer_queue' => 430, 'printer_turns' => 431, 'printer_offset' => 432, 'printer_line' => 433,
-            'printer_options' => 435, 'printer_turn_options' => 436, 'printer_sizes' => 437, 'printer_loaded_roll' => 438, 'roll_width' => 440, 'roll_labels' => 441, 'printer_active' => 442, 'printer_retry' => 443];
+            'printer_options' => 435, 'printer_turn_options' => 436, 'printer_sizes' => 437, 'printer_loaded_roll' => 438, 'roll_width' => 440, 'roll_labels' => 441, 'printer_active' => 442, 'printer_retry' => 443, 'printer_pause' => 444];
 
         return Structure::fromArray($raw);
     }

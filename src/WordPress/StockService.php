@@ -1656,8 +1656,14 @@ final class StockService
 
         // D-1191, D-1192: the printers and the rolls, one read each; a label goes to a printer whose loaded roll allows it.
         $printers = $s->hasNode('label_printer') ? $this->table('label_printer') : null;
+        // D-1333: a printer's pause is a unit value; its parts in one read.
+        $parts    = $printers === null || ! $s->hasField('printer_pause') ? [] : array_values(array_filter(array_map(
+            static fn (int $id): int => (int) $printers->first($id, $s->field('printer_pause')),
+            $printers->ids(),
+        )));
+        $pauses   = $parts === [] ? null : $this->model->records($parts);
 
-        return $this->labelTemplates = LabelTemplates::from($s, $table, array_map(static fn (int $node): string => $categories[$node] ?? '', $nodeOf), $nodeOf, $printers, $this->rollTable());
+        return $this->labelTemplates = LabelTemplates::from($s, $table, array_map(static fn (int $node): string => $categories[$node] ?? '', $nodeOf), $nodeOf, $printers, $this->rollTable(), $pauses);
     }
 
     /**

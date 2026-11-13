@@ -116,6 +116,8 @@ final class Structure
         'printer_active',
         // D-1234: whether CUPS may try a failed job again by itself; off unless set.
         'printer_retry',
+        // D-1333: the seconds the print service waits after each job to this printer; empty is 0.
+        'printer_pause',
         // D-1158: a place type's outer and inner size, and the three sides of a Dimension.
         'type_outer', 'type_inner', 'dimension_length', 'dimension_width', 'dimension_height',
         // D-1169: a place type chooses its fit calculation and its message.

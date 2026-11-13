@@ -4492,6 +4492,17 @@ final class StockService
         return $this->model->write($this->purchasing()->unsource($draft, $purchase, $this->table('order'), $this->table('purchase')));
     }
 
+    /**
+     * C5: positions of a demand moved into another demand, or a new one with this name.
+     *
+     * @param list<int> $positions
+     * @return array<string, mixed>
+     */
+    public function moveDemandLines(int $from, array $positions, ?int $to, string $newName): array
+    {
+        return $this->model->write($this->purchasing()->moveLines($from, $positions, $to, $newName, $this->table('order')));
+    }
+
     /** @return array<string, mixed> */
     public function setPositionQuantity(int $order, int $purchase, string $quantity): array
     {

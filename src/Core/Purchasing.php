@@ -296,6 +296,70 @@ final class Purchasing
     }
 
     /**
+     * C5 (D-1320): positions of a demand moved together into another demand or a new one of this name; each keeps its
+     * id (D-1098). A demand left empty stays, as an empty bracket he removes himself.
+     *
+     * @param list<int> $positions
+     * @return list<array<string, mixed>>
+     */
+    public function moveLines(int $from, array $positions, ?int $to, string $newName, Table $orders): array
+    {
+        $s = $this->structure;
+
+        if (! $orders->has($from) || ! $this->isDemand($from, $orders)) {
+            throw StockError::notADemand($from);
+        }
+
+        $lines = $orders->all($from, $s->field('order_lines'));
+
+        foreach ($positions as $position) {
+            if (! in_array((string) $position, $lines, true)) {
+                throw StockError::notInOrder($position);
+            }
+        }
+
+        if ($positions === [] || $to === $from) {
+            throw StockError::nothingToBook();
+        }
+
+        $this->start();
+
+        if ($to !== null) {
+            if (! $orders->has($to) || ! $this->isDemand($to, $orders)) {
+                throw StockError::notADemand($to);
+            }
+
+            $target      = (string) $to;
+            $targetLines = $orders->all($to, $s->field('order_lines'));
+        } else {
+            $newName = trim($newName);
+
+            if ($newName === '') {
+                throw StockError::demandWithoutName();
+            }
+
+            $target          = '@' . $this->ref('b');
+            $targetLines     = [];
+            $this->changes[] = ['op' => 'create_record', 'ref' => substr($target, 1), 'node' => $s->node('order')];
+            $this->changes[] = ['op' => 'set_values', 'record' => $target, 'values' => $this->draftValues($newName, '')];
+        }
+
+        if ($s->composes('order_lines')) {
+            foreach ($positions as $position) {
+                $this->changes[] = $this->movePart($position, $target);
+            }
+
+            return $this->changes;
+        }
+
+        $moved           = array_map('strval', $positions);
+        $this->changes[] = ['op' => 'set_values', 'record' => (string) $from, 'values' => [(string) $s->field('order_lines') => ['values' => array_values(array_diff($lines, $moved))]]];
+        $this->changes[] = ['op' => 'set_values', 'record' => $target, 'values' => [(string) $s->field('order_lines') => ['values' => [...$targetLines, ...$moved]]]];
+
+        return $this->changes;
+    }
+
+    /**
      * A position's quantity in a demand or a supplier's draft.
      *
      * @return list<array<string, mixed>>

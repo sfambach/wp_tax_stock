@@ -108,6 +108,8 @@ final class PurchasePage
                 'restore'   => $this->stock->restoreOrder($order),
                 // D-1130: a copy of the order as a new demand.
                 'again'     => $this->stock->reorderOrder($order),
+                // C5 (D-1320): ticked positions of the demand into another demand or a new one.
+                'move'      => $this->stock->moveDemandLines($order, array_values(array_filter(array_map('absint', (array) ($_POST['positions'] ?? [])))), absint($_POST['demand'] ?? 0) ?: null, $text('name')),
                 default     => throw StockError::nothingToBook(),
             };
             /* translators: %d: number of changes the modeller applied */
@@ -118,6 +120,7 @@ final class PurchasePage
                 'source'  => ['tab' => 'bedarf', 'order' => $order],
                 'unsource', 'restore' => ['tab' => 'bedarf'],
                 'back'    => ['tab' => 'bestellen', 'order' => $order],
+                'move'    => ['bedarf' => $order],
                 default   => $back,
             };
         } catch (StockError $e) {
@@ -125,6 +128,10 @@ final class PurchasePage
 
             if ($op === 'reorder') {
                 $back = ['tab' => 'neu', 'things' => implode(',', array_keys($this->quantities()))];
+            }
+
+            if ($op === 'move') {
+                $back = ['bedarf' => $order];
             }
         }
 
@@ -143,6 +150,38 @@ final class PurchasePage
             . ($form === '' ? ListPage::toolbar($return) . StockPage::editorMissing() : $form);
     }
 
+    /**
+     * C5 (D-1320): one demand on its own page — its head, the way back and «Verschieben nach …» in the toolbar (D-1308,
+     * D-1316), its positions below with a tick each; the ticked ones go together into another demand or a new one.
+     */
+    private function demandView(int $demand, Table $orders, Table $purchases): string
+    {
+        $s       = $this->stock->structure();
+        $p       = $this->stock->purchasing();
+        $form    = 'taxmod-stock-demand-move';
+        $label   = (string) $orders->first($demand, $s->field('label'));
+        $targets = ['' => __('— neuer Bedarf —', 'taxmod-stock')];
+
+        foreach ($orders->ids() as $id) {
+            if ($id !== $demand && $p->isDemand($id, $orders)) {
+                $targets[(string) $id] = (string) $orders->first($id, $s->field('label')) ?: '#' . $id;
+            }
+        }
+
+        $body  = '<label style="display:block">' . esc_html__('In den Bedarf', 'taxmod-stock') . '<br><select name="demand" form="' . esc_attr($form) . '" style="width:100%">' . $this->select($targets, '') . '</select></label>'
+            . '<label style="display:block;margin-top:.5em">' . esc_html__('Name des neuen Bedarfs', 'taxmod-stock') . '<br><input type="text" name="name" form="' . esc_attr($form) . '" style="width:100%"></label>'
+            . '<p class="description">' . esc_html__('Die angehakten Positionen wandern mit ihren Werten; der Name gilt nur für «neuer Bedarf».', 'taxmod-stock') . '</p>';
+        $move  = ListPage::dialogAction('taxmod-stock-demand-move-dialog', __('Verschieben nach …', 'taxmod-stock'), __('Positionen verschieben', 'taxmod-stock'), $body, 'op', 'move', __('Verschieben', 'taxmod-stock'), $form);
+        $back  = method_exists(ListPage::class, 'back') ? [ListPage::back(self::url(['tab' => 'bedarf']), __('Zum Bedarf', 'taxmod-stock'))] : [];
+        $lines = array_map('intval', $orders->all($demand, $s->field('order_lines')));
+
+        return '<h2>' . esc_html(sprintf(/* translators: %s: the demand's name */ __('Bedarf – %s', 'taxmod-stock'), $label === '' ? '#' . $demand : $label)) . '</h2>'
+            . '<form method="post" id="' . esc_attr($form) . '" action="' . esc_url(admin_url('admin-post.php')) . '">' . $this->hidden('move', 'bedarf')
+            . '<input type="hidden" name="order" value="' . esc_attr((string) $demand) . '"></form>'
+            . ListPage::toolbar([...($back === [] ? [] : [$back]), [$move]])
+            . $this->details('bedarf', $demand, $lines, $this->sourcedFrom($demand, $purchases), $orders, $purchases, $form);
+    }
+
     private function body(): string
     {
         $s         = $this->stock->structure();
@@ -152,6 +191,13 @@ final class PurchasePage
         $tab       = sanitize_key((string) ($_GET['tab'] ?? self::TABS[0]));
         $open      = absint($_GET['order'] ?? 0);
         $single    = absint($_GET['kauf'] ?? 0);
+
+        $demand = absint($_GET['bedarf'] ?? 0);
+
+        // C5 (D-1320): a demand on a page of its own.
+        if ($demand > 0 && $orders->has($demand) && $p->isDemand($demand, $orders)) {
+            return $this->demandView($demand, $orders, $purchases);
+        }
 
         // His wish 2026-11-11: a purchase without an order opens here, not in the modeller.
         if ($single > 0 && $this->stock->recordsOf('purchase', [$single])->has($single)) {
@@ -343,7 +389,7 @@ final class PurchasePage
         };
 
         return ListPage::row(self::BULK_FORM, (string) $order, [
-            '<strong>' . esc_html($label === '' ? '#' . $order : $label) . '</strong> <span class="description">#' . esc_html((string) $order) . ($number === '' ? '' : ' · ' . esc_html($number)) . '</span>',
+            ($tab === 'bedarf' ? '<a href="' . esc_url(self::url(['bedarf' => $order])) . '"><strong>' . esc_html($label === '' ? '#' . $order : $label) . '</strong></a>' : '<strong>' . esc_html($label === '' ? '#' . $order : $label) . '</strong>') . ' <span class="description">#' . esc_html((string) $order) . ($number === '' ? '' : ' · ' . esc_html($number)) . '</span>',
             esc_html($merchant === '' ? '—' : $merchant),
             esc_html($count),
         ], $buttons, ListPage::lazyDetails(self::DETAILS, ['tab' => $tab, 'order' => $order]), $open);
@@ -380,18 +426,20 @@ final class PurchasePage
      * @param list<int> $lines
      * @param list<int> $sourced positions of this demand that went to a supplier
      */
-    private function details(string $tab, int $order, array $lines, array $sourced, Table $orders, Table $purchases): string
+    private function details(string $tab, int $order, array $lines, array $sourced, Table $orders, Table $purchases, string $pick = ''): string
     {
         $s    = $this->stock->structure();
         $p    = $this->stock->purchasing();
         $edit = in_array($tab, ['bedarf', 'bestellen'], true);
-        $html = '<table class="widefat striped" style="margin-top:8px"><thead><tr><th>' . esc_html__('Position', 'taxmod-stock') . '</th><th>' . esc_html__('Art.-Nr.', 'taxmod-stock') . '</th><th>'
+        // C5: on the demand's own page each position carries a tick for «Verschieben nach …», in that form.
+        $tick = static fn (int $line): string => $pick === '' ? '' : '<td><input type="checkbox" name="positions[]" value="' . esc_attr((string) $line) . '" form="' . esc_attr($pick) . '"></td>';
+        $html = '<table class="widefat striped" style="margin-top:8px"><thead><tr>' . ($pick === '' ? '' : '<td class="check-column"></td>') . '<th>' . esc_html__('Position', 'taxmod-stock') . '</th><th>' . esc_html__('Art.-Nr.', 'taxmod-stock') . '</th><th>'
             . esc_html__('Menge', 'taxmod-stock') . '</th><th>' . ($tab === 'bedarf' ? esc_html__('Bezugsquelle', 'taxmod-stock') : '') . '</th><th></th></tr></thead><tbody>';
 
         foreach ($lines as $line) {
             $thing  = (int) $purchases->first($line, $s->field('purchase_model'));
             $number = $s->hasField('purchase_number') ? (string) $purchases->first($line, $s->field('purchase_number')) : '';
-            $html  .= '<tr><td>' . ($thing > 0 ? '<a href="' . esc_url(StockPage::thingUrl($thing, 'einkauf')) . '">' . esc_html((string) $purchases->first($line, $s->field('label'))) . '</a>' : esc_html((string) $purchases->first($line, $s->field('label'))))
+            $html  .= '<tr>' . $tick($line) . '<td>' . ($thing > 0 ? '<a href="' . esc_url(StockPage::thingUrl($thing, 'einkauf')) . '">' . esc_html((string) $purchases->first($line, $s->field('label'))) . '</a>' : esc_html((string) $purchases->first($line, $s->field('label'))))
                 . ' <span class="description">#' . esc_html((string) $line) . '</span></td><td>' . esc_html($number === '' ? '—' : $number) . '</td>'
                 . '<td>' . ($edit ? $this->quantityForm($order, $line, (string) ($purchases->first($line, $s->field('purchase_quantity')) ?? '1'), $tab) : esc_html((string) ($purchases->first($line, $s->field('purchase_quantity')) ?? '—'))) . '</td>'
                 . '<td>' . ($tab === 'bedarf' ? $this->sourceForm($order, $line, $thing) : '') . '</td><td style="text-align:right;white-space:nowrap">'
@@ -403,7 +451,7 @@ final class PurchasePage
         foreach ($sourced as $line) {
             $at    = $this->orderOf($line, $orders);
             $state = $at === null ? '' : ($p->isSupplierDraft($at, $orders) ? __('im Entwurf', 'taxmod-stock') : ($p->isOrdered($at, $orders) ? __('bestellt', 'taxmod-stock') : __('eingegangen oder storniert', 'taxmod-stock')));
-            $html .= '<tr style="opacity:.75"><td>' . esc_html((string) $purchases->first($line, $s->field('label'))) . ' <span class="description">#' . esc_html((string) $line) . '</span></td>'
+            $html .= '<tr style="opacity:.75">' . ($pick === '' ? '' : '<td></td>') . '<td>' . esc_html((string) $purchases->first($line, $s->field('label'))) . ' <span class="description">#' . esc_html((string) $line) . '</span></td>'
                 . '<td>' . esc_html($s->hasField('purchase_number') ? (string) $purchases->first($line, $s->field('purchase_number')) : '') . '</td>'
                 . '<td>' . esc_html((string) ($purchases->first($line, $s->field('purchase_quantity')) ?? '')) . '</td>'
                 . '<td>' . esc_html(($at === null ? '' : $p->merchantOf($at, $orders)) . ' · ' . $state) . '</td><td></td></tr>';

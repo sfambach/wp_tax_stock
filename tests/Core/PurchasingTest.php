@@ -139,6 +139,35 @@ final class PurchasingTest extends TestCase
     }
 
     #[Test]
+    public function positions_move_together_into_a_new_demand_and_as_a_composition_each_part_is_rehung(): void
+    {
+        $s       = self::structure();
+        $changes = (new Purchasing($s, '2026-10-30'))->moveLines(self::DEMAND, [70, 71], null, 'Rest', $this->orders());
+
+        self::assertSame('create_record', $changes[0]['op']);
+        self::assertSame(['values' => []], $changes[2]['values'][(string) $s->field('order_lines')]);
+        self::assertSame(['values' => ['70', '71']], $changes[3]['values'][(string) $s->field('order_lines')]);
+
+        $parts = (new Purchasing(self::structure(true), '2026-10-30'))->moveLines(self::DEMAND, [71], null, 'Rest', $this->orders());
+        self::assertSame(['op' => 'move_part', 'part' => '71', 'to' => '@b1', 'field' => (string) $s->field('order_lines')], $parts[2]);
+    }
+
+    #[Test]
+    public function moving_into_a_supplier_draft_or_a_position_of_another_order_is_refused(): void
+    {
+        $p = new Purchasing(self::structure(), '2026-10-30');
+
+        try {
+            $p->moveLines(self::DEMAND, [70], self::DRAFT, '', $this->orders());
+            self::fail('a draft is no demand');
+        } catch (StockError) {
+        }
+
+        $this->expectException(StockError::class);
+        $p->moveLines(self::DEMAND, [72], null, 'Rest', $this->orders());
+    }
+
+    #[Test]
     public function a_removed_line_leaves_the_list_and_as_a_composition_only_the_part_is_removed(): void
     {
         $s = self::structure();

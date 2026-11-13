@@ -1444,5 +1444,19 @@ $pruefe($vorschlag === [$regal => 'R1', $neu[0] => 'R1-F1', $neu[1] => 'R1-F2'] 
     && $s->coloursOf($regal) === ['colours' => ['__Blau'], 'inherited' => true] && $s->coloursOf($neu[2]) === ['colours' => ['__Rot'], 'inherited' => false],
     'D-1337/D-1338: short marks proposed from the Kürzel along the path, a typed one stays; a place\'s own colour, else its kind\'s');
 
+// C5 (D-1320): a demand on its own page; ticked positions move together into a new demand, keeping their ids.
+$s       = new StockService();
+$offene  = array_values(array_filter($s->table('order')->ids(), static fn (int $o): bool => $s->purchasing()->isDemand($o, $s->table('order')) && count($s->table('order')->all($o, $r['o_pos'])) > 0));
+$quelleB = $offene[0] ?? 0;
+$posB    = array_map('intval', $s->table('order')->all($quelleB, $r['o_pos']));
+$_GET    = ['page' => TaxmodStock\WordPress\Admin\PurchasePage::PAGE, 'bedarf' => (string) $quelleB];
+$seite   = (new TaxmodStock\WordPress\Admin\PurchasePage())->render();
+$antwort = $posB === [] ? [] : (new StockService())->moveDemandLines($quelleB, [$posB[0]], null, '__C5 Rest');
+$s       = new StockService();
+$neuB    = (int) ($antwort['refs']['b1'] ?? 0);
+$pruefe($quelleB > 0 && str_contains($seite, 'Bedarf – ') && str_contains($seite, 'name="positions[]" value="' . $posB[0] . '"') && str_contains($seite, 'Verschieben nach')
+    && $neuB > 0 && $s->table('order')->all($neuB, $r['o_pos']) === [(string) $posB[0]] && ! in_array((string) $posB[0], $s->table('order')->all($quelleB, $r['o_pos']), true),
+    'C5: a demand has its own page; ticked positions move into a new demand, keeping their ids');
+
 echo $fehler === 0 ? "all green ({$kind})\n" : "{$fehler} red ({$kind})\n";
 exit($fehler === 0 ? 0 : 1);

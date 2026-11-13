@@ -1153,11 +1153,13 @@ $arten  = $apply([
     ['op' => 'create_node', 'ref' => 'gr', 'name' => '__Abgang', 'parent' => (string) $r['k_vb'], 'class' => 'Choice'],
     ['op' => 'create_node', 'ref' => 'vs', 'name' => '__Verlust/Schwund', 'parent' => '@gr', 'class' => 'Constant'],
     ['op' => 'create_node', 'ref' => 'da', 'name' => '__Defekt/Ausschuss', 'parent' => '@gr', 'class' => 'Constant'],
+    ['op' => 'create_node', 'ref' => 'pr', 'name' => '__Projekt', 'parent' => (string) $r['k_vb'], 'class' => 'Constant'],
 ])['refs'] ?? [];
 $opt = get_option('taxmod_stock_structure');
 if (is_array($opt)) {
     $opt['values']['kind_loss']  = (int) $arten['vs'];
     $opt['values']['kind_scrap'] = (int) $arten['da'];
+    $opt['values']['kind_build'] = (int) $arten['pr'];
     update_option('taxmod_stock_structure', $opt);
 }
 $s = new StockService();
@@ -1200,6 +1202,19 @@ $pruefe(is_int($aus) && ($s->presentIn($schrank)[$bc] ?? 0.0) === $vorAus - 1.0 
 if (is_int($aus)) {
     (new StockService())->cancelConsumption($aus, '2026-11-13 12:00', 'check');
 }
+// D-1330: a build is booked as «Projekt» below «Verbrauch».
+$bau = apply_filters(TaxmodStock\WordPress\Plugin::BOOK_BUILD, null, ['reference' => $auftrag, 'place' => $schrank, 'lines' => [$bc => 1], 'title' => 'Fertigung Projekt', 'date' => '2026-11-13']);
+$s   = new StockService();
+$pruefe(is_int($bau) && (int) $s->table('transaction')->first($bau, $s->structure()->field('transaction_kind')) === (int) $arten['pr'], 'D-1330: a build books its consumption as «Projekt»' . ($bau instanceof WP_Error ? ': ' . $bau->get_error_message() : ''));
+if (is_int($bau)) {
+    apply_filters(TaxmodStock\WordPress\Plugin::BOOK_BUILD, null, ['reference' => $auftrag, 'place' => $schrank, 'lines' => [$bc => -1], 'title' => 'Fertigung Projekt zurück', 'date' => '2026-11-13']);
+}
+// D-1303: without the stage field the stages are refused, not guessed; the production's receipt place is a setting.
+$stufen = apply_filters('taxmod_stock_lot_stages', null, ['lots' => [1]]);
+update_option(StockService::PRODUCTION_INBOUND, $schrank, false);
+$weProd = apply_filters('taxmod_stock_production_inbound', null);
+delete_option(StockService::PRODUCTION_INBOUND);
+$pruefe(($s->structure()->hasField('lot_stage') || ($stufen instanceof WP_Error && $stufen->get_error_code() === 'taxmod_stock_not_configured')) && $weProd === $schrank && apply_filters('taxmod_stock_production_inbound', null) === 0, 'D-1303: lot_stages needs the stage field; production_inbound answers the place set, 0 without');
 
 // D-1299, his question 2026-11-10 «baum in dem ich bestand wähle»: Ausbuchen picks the lot in one chooser (groups, then the
 // lots of the group's materials); a preselected lot stands chosen, the material follows from it.

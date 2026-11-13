@@ -80,6 +80,9 @@ final class StockService
      */
     public const NOT_MATERIAL = 'taxmod_stock_not_material';
 
+    /** D-1303: «Lagerort Wareneingang Produktion», where finished boards come in (like D-1111). */
+    public const PRODUCTION_INBOUND = 'taxmod_stock_production_inbound';
+
     /** D-1111: «Lagerort für Test»; which groups are tested is the group property {@see TEST_PROPERTY} (D-1259). */
     public const TESTS = 'taxmod_stock_tests';
 
@@ -1079,6 +1082,71 @@ final class StockService
     public function inboundArchive(string $today): InboundArchive
     {
         return new InboundArchive($this->inboundSince(), $this->inboundArchiveDays(), $today);
+    }
+
+    /** D-1303: the place finished boards come in; 0 while none is set or it is gone. */
+    public function productionInbound(): int
+    {
+        $place = absint(get_option(self::PRODUCTION_INBOUND, 0));
+
+        return $place > 0 && $this->table('location')->has($place) ? $place : 0;
+    }
+
+    /**
+     * D-1303: the stage of each lot, as the value id; 0 where it has none.
+     *
+     * @param list<int> $lots
+     * @return array<int, int>
+     */
+    public function lotStages(array $lots): array
+    {
+        $s = $this->structure();
+
+        if (! $s->hasField('lot_stage')) {
+            throw StockError::notConfigured('fields.lot_stage');
+        }
+
+        $table = $this->table('lot');
+        $out   = [];
+
+        foreach ($lots as $lot) {
+            $out[$lot] = $table->has($lot) ? (int) $table->first($lot, $s->field('lot_stage')) : 0;
+        }
+
+        return $out;
+    }
+
+    /**
+     * D-1303: sets the stage of these lots, one act; a stage outside the configured ones is refused.
+     *
+     * @param list<int> $lots
+     * @return array<string, mixed> the modeller's answer
+     */
+    public function setLotStage(array $lots, int $stage): array
+    {
+        $s      = $this->structure();
+        $stages = array_map($s->value(...), array_values(array_filter(Structure::STAGES, $s->hasValue(...))));
+
+        if (! $s->hasField('lot_stage')) {
+            throw StockError::notConfigured('fields.lot_stage');
+        }
+
+        if (! in_array($stage, $stages, true)) {
+            throw StockError::notAStage($stage);
+        }
+
+        $table   = $this->table('lot');
+        $changes = [];
+
+        foreach ($lots as $lot) {
+            if (! $table->has($lot)) {
+                throw StockError::unknownLot($lot);
+            }
+
+            $changes[] = ['op' => 'set_values', 'record' => $lot, 'values' => [(string) $s->field('lot_stage') => (string) $stage]];
+        }
+
+        return $changes === [] ? [] : $this->model->write($changes);
     }
 
     /**
@@ -2988,7 +3056,10 @@ final class StockService
         }
 
         $rows   = BuildPlan::rows($this->ledger(), $place, $this->locationTree()->withAllBelow($place), $lines, $this->takenFor($reference), $reserved);
-        return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->build($rows, $reference, $title)));
+        $s = $this->structureWithKinds();
+
+        // D-1330: a build is booked as «Projekt» below «Verbrauch» once the structure names it.
+        return $this->dealOf($this->model->write((new Bookings($s, $today))->build($rows, $reference, $title, $s->hasValue('kind_build') ? $s->value('kind_build') : 0)));
     }
 
     /**

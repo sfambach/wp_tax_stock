@@ -182,6 +182,9 @@ final class SettingsPage
             // D-1111: an ordinary place the setting names, never a name in code.
             . '<p><label>' . esc_html__('Lagerort für Test', 'taxmod-stock') . ' ' . $stock->placeChooser('taxmod_stock_test_place', (int) $settings->place) . '</label> '
             . '<span class="description">' . esc_html__('Der Wareneingang schlägt diesen Ort für Gebrauchtware aus diesen Gruppen vor (nicht für Neuware); leer: der übliche Vorschlag.', 'taxmod-stock') . '</span></p>'
+            // D-1303: where finished boards come in, an ordinary place the setting names.
+            . '<p><label>' . esc_html__('Lagerort Wareneingang Produktion', 'taxmod-stock') . ' ' . $stock->placeChooser('taxmod_stock_production_inbound', $stock->productionInbound()) . '</label> '
+            . '<span class="description">' . esc_html__('Hier kommen fertige Platinen aus der Fertigung an.', 'taxmod-stock') . '</span></p>'
             . '<input type="hidden" name="taxmod_stock_tests_sent" value="1">';
 
         return $html;
@@ -221,6 +224,15 @@ final class SettingsPage
             }
 
             update_option(StockService::TESTS, ['place' => TestSettings::fromArray(['place' => $place])->place], false);
+            $inbound = absint($post['taxmod_stock_production_inbound'] ?? 0);
+
+            try {
+                $inbound = isset((new StockService())->places()[$inbound]) ? $inbound : 0;
+            } catch (StockError) {
+                $inbound = 0;
+            }
+
+            update_option(StockService::PRODUCTION_INBOUND, $inbound, false);
             $since = sanitize_text_field((string) ($post['taxmod_stock_inbound_since'] ?? ''));
 
             if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $since) === 1) {

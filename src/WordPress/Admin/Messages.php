@@ -53,6 +53,10 @@ final class Messages
             'not_a_group'               => sprintf(__('Knoten %s ist keine Gruppe unter Model.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id */
             'cut_not_possible'          => vsprintf(__('Aus einer Leiste mit %2$s Polen lassen sich keine Stücke mit %1$s Polen ablängen.', 'taxmod-stock'), explode('|', $error->detail) + ['', '']),
+            /* translators: %s: record id */
+            'unknown_lot'               => sprintf(__('#%s ist kein Bestandsposten.', 'taxmod-stock'), $error->detail),
+            /* translators: %s: record id */
+            'not_a_stage'               => sprintf(__('#%s ist keine Stufe eines Bestandspostens.', 'taxmod-stock'), $error->detail),
             'cut_no_lot'                => sprintf(__('#%s ist kein Posten im Bestand, aus dem abgelängt werden kann.', 'taxmod-stock'), $error->detail),
             'cut_too_short'             => vsprintf(__('Posten #%1$s reicht nicht: zum Ablängen werden %2$s gebraucht.', 'taxmod-stock'), explode('|', $error->detail) + ['', '']),
             'not_a_location'            => sprintf(__('#%s ist kein Lagerort.', 'taxmod-stock'), $error->detail),

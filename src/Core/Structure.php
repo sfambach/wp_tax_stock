@@ -47,6 +47,9 @@ final class Structure
         'material_root'];
 
     /** Fields the module uses when they are there and leaves out when they are not. */
+    /** D-1303: the stages a lot from production runs through, in this order; «In Reparatur» and «Verschrottet» step aside. */
+    public const STAGES = ['stage_from_production', 'stage_in_test', 'stage_packed', 'stage_booked', 'stage_repair', 'stage_scrapped'];
+
     private const OPTIONAL_FIELDS = [
         'description', 'title_image', 'lager_use',
         // D-1205: the ordered picture list; its first picture is the title picture.
@@ -115,6 +118,8 @@ final class Structure
         'lager_pack_name', 'lager_pack_content', 'lager_cut_loss',
         // D-1328: what makes two strips the same kind, and how many poles a strip has.
         'connector_poles', 'connector_rows', 'connector_pitch', 'connector_orientation',
+        // D-1303: the stage of a lot on the production's receipt line.
+        'lot_stage',
     ];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];
@@ -135,6 +140,10 @@ final class Structure
         'kind_loss',
         // D-1302: «Defekt/Ausschuss» under «Verbrauch», booked for scrap from a build.
         'kind_scrap',
+        // D-1330: «Projekt» under «Verbrauch», booked for what a build takes.
+        'kind_build',
+        // D-1303: the stages of a lot from production, in their order.
+        ...self::STAGES,
         // D-1169: a place type's fit calculation and how loudly a misfit is said.
         'fit_volume', 'fit_sides', 'fit_none', 'level_info', 'level_warning', 'level_error',
     ];

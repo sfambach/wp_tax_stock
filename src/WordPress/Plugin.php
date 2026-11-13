@@ -4,6 +4,7 @@ namespace TaxmodStock\WordPress;
 
 use TaxmodStock\Core\ReservationRow;
 use TaxmodStock\Core\StockError;
+use TaxmodStock\Core\Structure;
 use TaxmodStock\Core\TestSettings;
 use TaxmodStock\WordPress\Admin\Acts;
 use TaxmodStock\WordPress\Admin\CockpitPage;
@@ -86,6 +87,11 @@ final class Plugin
 
     /** D-1302: scrap from a build, as «Defekt/Ausschuss». */
     public const BOOK_SCRAP = 'taxmod_stock_book_scrap';
+
+    /** D-1303: the stages of lots from production, and the place finished boards come in. */
+    public const LOT_STAGES        = 'taxmod_stock_lot_stages';
+    public const SET_LOT_STAGE     = 'taxmod_stock_set_lot_stage';
+    public const PRODUCTION_INBOUND = 'taxmod_stock_production_inbound';
 
     public function boot(): void
     {
@@ -178,6 +184,9 @@ final class Plugin
         add_filter(self::RELEASE, [self::class, 'release'], 10, 2);
         add_filter(self::BOOK_RETURN, [self::class, 'bookReturn'], 10, 2);
         add_filter(self::BOOK_SCRAP, [self::class, 'bookScrap'], 10, 2);
+        add_filter(self::LOT_STAGES, [self::class, 'lotStages'], 10, 2);
+        add_filter(self::SET_LOT_STAGE, [self::class, 'setLotStage'], 10, 2);
+        add_filter(self::PRODUCTION_INBOUND, [self::class, 'productionInbound'], 10, 1);
         // D-1147: the rows of the material and purchase lists draw their details when opened.
         // The filter's name stands as text, so an older modeller without it does not stop the module.
         add_filter('taxmod_list_details', static fn (?string $html, string $source, array $args): ?string => match ($source) {
@@ -464,6 +473,70 @@ final class Plugin
             return (new StockService())->bookScrap(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, sanitize_text_field((string) ($args['reason'] ?? __('Ausschuss Fertigung', 'taxmod-stock'))), $date, sanitize_text_field((string) ($args['title'] ?? __('Ausschuss', 'taxmod-stock'))));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1303: `apply_filters('taxmod_stock_lot_stages', null, ['lots' => [id, …]])` → `[lot => stage value id|0]`, plus
+     * `'stages' => [key => value id]`, the configured stages in their order.
+     */
+    public static function lotStages(mixed $previous, mixed $args): array|\WP_Error
+    {
+        if (is_array($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args = is_array($args) ? $args : [];
+        $lots = array_values(array_unique(array_filter(array_map('absint', is_array($args['lots'] ?? null) ? $args['lots'] : []))));
+
+        try {
+            $stock = new StockService();
+            $s     = $stock->structure();
+
+            $keys  = array_values(array_filter(Structure::STAGES, $s->hasValue(...)));
+
+            return ['lots' => $lots === [] ? [] : $stock->lotStages($lots), 'stages' => array_combine($keys, array_map($s->value(...), $keys))];
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /** D-1303: `apply_filters('taxmod_stock_set_lot_stage', null, ['lots' => [id, …], 'stage' => value id])` → the modeller's answer. */
+    public static function setLotStage(mixed $previous, mixed $args): array|\WP_Error
+    {
+        if (is_array($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args = is_array($args) ? $args : [];
+        $lots = array_values(array_unique(array_filter(array_map('absint', is_array($args['lots'] ?? null) ? $args['lots'] : []))));
+
+        try {
+            return (new StockService())->setLotStage($lots, absint($args['stage'] ?? 0));
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /** D-1303: `apply_filters('taxmod_stock_production_inbound', null)` → the place finished boards come in, 0 while none is set. */
+    public static function productionInbound(mixed $previous): int
+    {
+        if (is_int($previous) && $previous > 0) {
+            return $previous;
+        }
+
+        try {
+            return (new StockService())->productionInbound();
+        } catch (StockError) {
+            return 0;
         }
     }
 
@@ -908,6 +981,14 @@ final class Plugin
             'default'           => [],
             'sanitize_callback' => static fn ($value): array => array_values(array_filter(array_map('absint', is_array($value) ? $value : []))),
             'show_in_rest'      => ['schema' => ['type' => 'array', 'items' => ['type' => 'integer']]],
+        ]);
+
+        // D-1303: «Lagerort Wareneingang Produktion», like D-1111.
+        register_setting('taxmod_stock', StockService::PRODUCTION_INBOUND, [
+            'type'              => 'integer',
+            'default'           => 0,
+            'sanitize_callback' => 'absint',
+            'show_in_rest'      => true,
         ]);
 
         // D-1111: «Lagerort für Test» (the tested groups are a group property since D-1259), so the place can be named over REST once it is created.

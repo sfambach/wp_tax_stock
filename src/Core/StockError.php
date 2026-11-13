@@ -107,6 +107,18 @@ final class StockError extends \RuntimeException
     }
 
     /** D-1328: the lot to cut from is no lot in stock. */
+    /** D-1303: a stage set on a lot that is not there. */
+    public static function unknownLot(int $lot): self
+    {
+        return new self('unknown_lot', (string) $lot);
+    }
+
+    /** D-1303: a stage that is not one of the configured stages. */
+    public static function notAStage(int $stage): self
+    {
+        return new self('not_a_stage', (string) $stage);
+    }
+
     public static function cutNoLot(int $lot): self
     {
         return new self('cut_no_lot', (string) $lot);

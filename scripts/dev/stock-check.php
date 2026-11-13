@@ -71,6 +71,7 @@ $pruefe = static function (bool $gut, string $was) use (&$fehler): void {
 $field = static fn (string $ref, int|string $node, string $name, int|string $target, string $kind, string $mult): array
     => ['op' => 'add_field', 'ref' => $ref, 'node' => $node, 'name' => $name, 'target' => $target, 'kind' => $kind, 'multiplicity' => $mult];
 
+$apply = static fn (array $changes): array => (array) wp_get_ability('taxmod/apply')->execute(['changes' => $changes]);
 $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'create_node', 'ref' => 'stock', 'name' => '__Stock', 'parent' => 402],
     // On Model itself, so the things in __Teile carry it as well as the Stock records.
@@ -890,8 +891,17 @@ $pruefe($hinaus === [] && str_contains($kauf, 'Kauf – ') && str_contains($kauf
 $t1Ledger  = (new StockService())->ledger();
 $t1Lot     = $t1Ledger->proposedLot($bc);
 $t1Ort     = (int) array_key_first(array_filter($t1Ledger->placesOf($t1Lot), static fn (float $q, int $p): bool => $q >= 1.0 && $p > 0, ARRAY_FILTER_USE_BOTH));
-$resAnswer = apply_filters('taxmod_stock_reserve', null, ['subject' => $auftrag, 'rows' => [['thing' => $bc, 'quantity' => 1, 'place' => $t1Ort], ['thing' => $r['t1'], 'quantity' => 1]], 'date' => '2026-11-13', 'title' => 'Reservierung Testkarte']);
+// «Aus Bestand zuweisen» (his choice 2026-11-13): a row may name the bill-of-materials position it stands in for.
+$posFeld   = $apply([$field('l_pos', (string) $r['vp'], '__Stücklistenposition', (string) ((new StockService())->nodesOf([$r['t1']])[$r['t1']] ?? 0), 'aggregation', '0..1')])['refs']['l_pos'] ?? 0;
+$opt       = get_option('taxmod_stock_structure');
+if (is_array($opt) && $posFeld > 0) {
+    $opt['fields'] += ['line_position' => (int) $posFeld];
+    update_option('taxmod_stock_structure', $opt);
+}
+$resAnswer = apply_filters('taxmod_stock_reserve', null, ['subject' => $auftrag, 'rows' => [['thing' => $bc, 'quantity' => 1, 'place' => $t1Ort], ['thing' => $r['t1'], 'quantity' => 1, 'position' => $r['t1']]], 'date' => '2026-11-13', 'title' => 'Reservierung Testkarte']);
 $resOf     = apply_filters('taxmod_stock_reservations_of', null, ['subjects' => [$auftrag]]);
+$posOf     = is_array($resOf) ? array_column($resOf[$auftrag] ?? [], 'position', 'thing') : [];
+$pruefe(($posOf[$r['t1']] ?? null) === $r['t1'] && ($posOf[$bc] ?? null) === 0, 'a reservation row keeps the bill-of-materials position it stands in for; reservations_of gives it back, 0 without');
 $resLines  = is_array($resOf) ? array_column($resOf[$auftrag] ?? [], 'line') : [];
 $resPart   = apply_filters('taxmod_stock_release', null, ['subject' => $auftrag, 'lines' => array_slice($resLines, 0, 1)]);
 $resAfter  = apply_filters('taxmod_stock_reservations_of', null, ['subjects' => [$auftrag]]);
@@ -1015,7 +1025,6 @@ $genannt  = (new StockService())->recordLabels([$ohneName])[$ohneName] ?? '';
 $pruefe(str_starts_with($genannt, 'Laut AliExpress-Angebot: 100 Stück') && str_ends_with($genannt, '…') && mb_strlen($genannt) <= 60, 'D-1279: a material without «Bezeichnung» is named by the start of its «Beschreibung»');
 
 // His word 2026-11-09 «smd is eine eigenschaft»: the default label follows the Bauform, «SMD» for «0603», before the group's.
-$apply = static fn (array $changes): array => (array) wp_get_ability('taxmod/apply')->execute(['changes' => $changes]);
 $bf    = $apply([
     ['op' => 'create_node', 'ref' => 'root', 'name' => '__Bauformen', 'parent' => 402],
     ['op' => 'create_node', 'ref' => 'smd', 'name' => '__SMD', 'parent' => '@root'],

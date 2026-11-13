@@ -51,6 +51,8 @@ final class Structure
     public const STAGES = ['stage_from_production', 'stage_in_test', 'stage_packed', 'stage_booked', 'stage_repair', 'stage_scrapped'];
 
     private const OPTIONAL_FIELDS = [
+        // «Aus Bestand zuweisen» (his choice 2026-11-13): the bill-of-materials position a reservation line stands in for.
+        'line_position',
         'description', 'title_image', 'lager_use',
         // D-1205: the ordered picture list; its first picture is the title picture.
         'images', 'lager_location', 'transaction_project',

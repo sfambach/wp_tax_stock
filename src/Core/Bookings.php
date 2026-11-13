@@ -679,7 +679,7 @@ final class Bookings
         $this->start();
 
         foreach ($rows as $row) {
-            $this->line($title, $row->lot === null ? '' : (string) $row->lot, Quantity::positive($row->quantity), null, null, null, $row->thing);
+            $this->line($title, $row->lot === null ? '' : (string) $row->lot, Quantity::positive($row->quantity), null, null, null, $row->thing, $row->position);
         }
 
         $deadline = $this->deadline($deadline);
@@ -850,7 +850,7 @@ final class Bookings
         return '@' . $ref;
     }
 
-    private function line(string $name, string $lot, string $quantity, ?string $counted, ?int $place = null, ?int $reverses = null, ?int $thing = null): void
+    private function line(string $name, string $lot, string $quantity, ?string $counted, ?int $place = null, ?int $reverses = null, ?int $thing = null, ?int $position = null): void
     {
         $s   = $this->structure;
         $ref = $this->ref('p');
@@ -878,6 +878,10 @@ final class Bookings
 
         if ($reverses !== null) {
             $values[(string) $s->field('line_reverses')] = (string) $reverses;
+        }
+
+        if ($position !== null && $position > 0 && $s->hasField('line_position')) {
+            $values[(string) $s->field('line_position')] = (string) $position;
         }
 
         // D-1097: a part has no ref of its own — nothing later in the list names a line, so none is needed.

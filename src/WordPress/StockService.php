@@ -2733,6 +2733,8 @@ final class StockService
         $wanted = array_flip($subjects);
         $ledger = $this->ledger();
         $out    = array_fill_keys($subjects, []);
+        $s      = $this->structure();
+        $lines  = $s->hasField('line_position') ? $this->table('line') : null;
 
         foreach ($this->reservations()->open() as $deal => $head) {
             if (! isset($wanted[$head['subject']])) {
@@ -2740,7 +2742,8 @@ final class StockService
             }
 
             foreach ($head['positions'] as $line => $position) {
-                $out[$head['subject']][] = ['deal' => $deal, 'line' => $line, 'thing' => $position['thing'], 'lot' => $position['lot'], 'quantity' => $position['quantity'], 'places' => $position['lot'] === null ? [] : $ledger->placesOf($position['lot'])];
+                $out[$head['subject']][] = ['deal' => $deal, 'line' => $line, 'thing' => $position['thing'], 'lot' => $position['lot'], 'quantity' => $position['quantity'], 'places' => $position['lot'] === null ? [] : $ledger->placesOf($position['lot']),
+                    'position' => $lines === null ? 0 : (int) $lines->first($line, $s->field('line_position'))];
             }
         }
 

@@ -329,7 +329,7 @@ final class Plugin
 
     /**
      * D-1301: `apply_filters('taxmod_stock_reserve', null, ['subject' => id, 'rows' => [['thing' => id, 'quantity' => n,
-     * 'lot' => id|0, 'place' => id|0], …], 'deadline' => Y-m-d|'', 'date' => Y-m-d, 'title' => …])` — all rows into the subject's open
+     * 'lot' => id|0, 'place' => id|0, 'position' => bill-of-materials position|0], …], 'deadline' => Y-m-d|'', 'date' => Y-m-d, 'title' => …])` — all rows into the subject's open
      * reservation, in one act. Answers the modeller's answer.
      */
     public static function reserve(mixed $previous, mixed $args): array|\WP_Error
@@ -354,7 +354,7 @@ final class Plugin
                     $places[count($rows)] = absint($row['place']);
                 }
 
-                $rows[] = new ReservationRow(absint($row['thing']), (string) (float) $row['quantity'], absint($row['lot'] ?? 0) ?: null);
+                $rows[] = new ReservationRow(absint($row['thing']), (string) (float) $row['quantity'], absint($row['lot'] ?? 0) ?: null, absint($row['position'] ?? 0) ?: null);
             }
         }
 
@@ -375,7 +375,7 @@ final class Plugin
 
     /**
      * D-1301: `apply_filters('taxmod_stock_reservations_of', null, ['subjects' => [id, …]])` → `[subject => [['deal', 'line',
-     * 'thing', 'lot', 'quantity', 'places' => [place => n]], …]]`, the open positions only.
+     * 'thing', 'lot', 'quantity', 'places' => [place => n], 'position' => bill-of-materials position|0], …]]`, the open positions only.
      */
     public static function reservationsOf(mixed $previous, mixed $args): array|\WP_Error
     {

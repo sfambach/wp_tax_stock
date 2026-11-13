@@ -9,6 +9,8 @@ final class ReservationRow
         public readonly int $thing,
         public readonly string $quantity,
         public readonly ?int $lot = null,
+        // «Aus Bestand zuweisen» (his choice 2026-11-13): the bill-of-materials position this row stands in for.
+        public readonly ?int $position = null,
     ) {
     }
 }

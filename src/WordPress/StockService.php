@@ -420,6 +420,44 @@ final class StockService
         return $chosen === [] ? [] : (new PurchasePictures($this->structure()))->firstPictures($chosen, $this->picturesOf(array_keys($chosen)), $this->picturesOf($known));
     }
 
+    /**
+     * D-1317: a material without a picture takes the picture of its newest purchase that has one — the same media
+     * reference into its own picture field, no file copied; once done it is the material's picture. Runs on an order's
+     * event only (never on a timer: a picture he took off must not come back). Two reads (CD-7).
+     *
+     * @param list<int>|null $only these purchases; null: all (the one-time fill, as an apply list)
+     * @return list<array<string, mixed>> the changes
+     */
+    public function purchasePictureChanges(?array $only = null): array
+    {
+        $s = $this->structure();
+
+        if (! $s->hasField('images') || ! $s->hasField('purchase_model')) {
+            return [];
+        }
+
+        $purchases = $this->table('purchase');
+        $ids       = $only ?? $purchases->ids();
+        rsort($ids);
+        $chosen    = [];
+
+        foreach ($ids as $purchase) {
+            $thing = (int) $purchases->first($purchase, $s->field('purchase_model'));
+
+            if ($thing > 0) {
+                $chosen[$purchase] = (string) $thing;
+            }
+        }
+
+        $things  = array_values(array_unique(array_map('intval', $chosen)));
+        $known   = $this->picturesOf($things);
+        $without = array_filter($known, static fn (array $p): bool => PurchasePictures::titleOf($p) === 0);
+        $chosen  = array_filter($chosen, static fn (string $thing): bool => isset($without[(int) $thing]));
+
+        // Newest purchase first: the first one with a picture gives it (PurchasePictures::firstPictures fills each once).
+        return $chosen === [] ? [] : (new PurchasePictures($s))->firstPictures($chosen, $this->picturesOf(array_keys($chosen)), $known);
+    }
+
     /** D-1264, «Bild übernehmen»: the purchase's picture behind its material's pictures, in one act; nothing when it is there. */
     public function takePurchasePicture(int $purchase): array
     {
@@ -2836,7 +2874,11 @@ final class StockService
             return [];
         }
 
-        $changes = (new OrderStatusEvent($s))->changes($order, $current, $event);
+        $changes = [
+            ...(new OrderStatusEvent($s))->changes($order, $current, $event),
+            // D-1317: the order's purchases give their pictures to materials that have none.
+            ...$this->purchasePictureChanges(array_values(array_map('intval', $orders->all($order, $s->field('order_lines'))))),
+        ];
 
         return $changes === [] ? [] : $this->model->write($changes);
     }

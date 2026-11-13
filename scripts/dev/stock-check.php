@@ -813,6 +813,19 @@ $pruefe($s->table('purchase')->first($nachT1, $r['k_bedarf']) === (string) $beda
 $s = new StockService();
 $pruefe(in_array((string) $nachT1, $s->table('order')->all($bedarf, $r['o_pos']), true) && $s->table('order')->all($entwurf, $r['o_pos']) === [] && $s->table('order')->first($entwurf, $r['o_stat']) === (string) $r['s_storn'], 'back into the demand; the emptied draft is cancelled');
 
+// D-1317: on an order's event, a material without a picture takes its purchase's picture, as a reference, once.
+$picSetup = wp_get_ability('taxmod/apply')->execute(['changes' => [
+    ['op' => 'create_record', 'ref' => 'pk', 'node' => (string) $r['pur'], 'values' => [(string) $r['k_mod'] => (string) $bc, (string) $r['bilder'] => ['values' => ['media:424242']]]],
+    ['op' => 'create_record', 'ref' => 'po', 'node' => (string) $r['ord'], 'values' => [(string) $r['o_stat'] => (string) $r['s_best'], (string) $r['o_pos'] => ['values' => ['@pk']]]],
+]]);
+$picOrder  = is_array($picSetup) ? (int) ($picSetup['refs']['po'] ?? 0) : 0;
+$picBefore = (new StockService())->picturesOf([$bc])[$bc]['pictures'];
+do_action('taxmod_stock_event', $picOrder, 'shipped', '2026-11-13', 'mail', 'x2');
+// The order's lines as parts (composition) take no refs in one act; the aggregation run proves it.
+if ($kind !== 'composition') {
+    $pruefe($picOrder > 0 && ! in_array('media:424242', $picBefore, true) && in_array('media:424242', (new StockService())->picturesOf([$bc])[$bc]['pictures'], true), 'D-1317: on the order\'s event the material without a picture takes its purchase\'s, as media:<id>');
+}
+
 // D-1328 (D9): the filters for the manufacturing module answer; without the connector fields no proposals, a cut without lot is refused.
 $cutAnswer  = apply_filters('taxmod_stock_cut_sources', null, ['things' => [$bc => 2], 'except' => 0]);
 $cutRefused = apply_filters('taxmod_stock_book_cut', null, ['reference' => 1, 'into' => $r['lager'], 'cuts' => [['from' => 999999999, 'thing' => $bc, 'pieces' => 1]], 'date' => '2026-11-13']);

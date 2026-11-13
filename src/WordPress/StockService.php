@@ -3188,6 +3188,75 @@ final class StockService
         return $out;
     }
 
+    /**
+     * C1 (D-1320): the «Bezugsquellen» of a thing in its «Einkauf» view — each line the modeller's own controls for firm,
+     * number and pack content (D-1250), posted as `quelle[<i>][<relation>]`; then `$blank` empty lines to add one. Derived
+     * columns (link, price) are the page's.
+     *
+     * @return list<array{part: ?int, controls: array<int, string>, row: SourceRow}>
+     */
+    public function sourceLines(int $thing, string $formId, int $blank = 1): array
+    {
+        $s = $this->structure();
+
+        if (! $s->hasNode('source') || ! $s->hasField('lager_sources')) {
+            return [];
+        }
+
+        $fields = array_values(array_filter([$s->field('source_firm'), $s->field('source_number'), $s->hasField('source_content') ? $s->field('source_content') : 0]));
+        $rows   = [...$this->sourcesOf($this->things()->lagerOf($thing)), ...array_fill(0, max(0, $blank), new SourceRow(null, null, ''))];
+        $out    = [];
+
+        foreach ($rows as $i => $row) {
+            $out[] = ['part' => $row->part, 'controls' => $this->model->controls($s->node('source'), $fields, 'quelle[' . $i . ']', $formId, (int) $row->part), 'row' => $row];
+        }
+
+        return $out;
+    }
+
+    /**
+     * C1: saves only the «Bezugsquellen» lines — what was typed into the modeller's controls, read back through it (D-1250);
+     * a line marked «entfernen» or left empty without a part goes; the other fields of the Lager record stay as they are.
+     *
+     * @param array<int|string, mixed> $posted `quelle` as posted: index → relation → characters, plus `part` and `remove`
+     * @return array<string, mixed>
+     */
+    public function saveSources(int $thing, array $posted): array
+    {
+        $this->checkThings([$thing]);
+        $s = $this->structure();
+
+        if (! $s->hasNode('source') || ! $s->hasField('lager_sources')) {
+            throw StockError::notConfigured('fields.lager_sources');
+        }
+
+        $known   = array_map(static fn (SourceRow $row): int => (int) $row->part, $this->sourcesOf($this->things()->lagerOf($thing)));
+        $parts   = [];
+        $removed = [];
+
+        foreach ($posted as $i => $line) {
+            if (! is_array($line)) {
+                continue;
+            }
+
+            $part   = absint($line['part'] ?? 0);
+            $part   = in_array($part, $known, true) ? $part : 0;
+            $values = $this->model->typed($s->node('source'), array_diff_key($line, ['part' => 1, 'remove' => 1]));
+
+            if (! empty($line['remove']) || $values === []) {
+                if ($part > 0 && ! empty($line['remove'])) {
+                    $removed[] = $part;
+                }
+
+                continue;
+            }
+
+            $parts[$part > 0 ? (string) $part : 'new' . (int) $i] = array_map('strval', $values);
+        }
+
+        return $this->model->write((new LagerChanges($s))->sourceLines($thing, $this->things()->lagerOf($thing), $parts, $removed));
+    }
+
     /** @return array<string, mixed> the modeller's answer */
     public function saveLager(int $thing, LagerInput $input): array
     {

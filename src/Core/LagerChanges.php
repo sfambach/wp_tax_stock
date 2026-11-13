@@ -54,6 +54,36 @@ final class LagerChanges
     }
 
     /**
+     * C1 (D-1320): only the «Bezugsquellen» lines of a thing's Lager record — a record made for them when there is none.
+     *
+     * @param array<string, array<string, string>> $parts part id (or «new<i>») → raw values by relation id
+     * @param list<int> $removed
+     * @return list<array<string, mixed>>
+     */
+    public function sourceLines(int $thing, ?int $lagerRecord, array $parts, array $removed): array
+    {
+        if ($parts === [] && $removed === []) {
+            throw StockError::nothingToBook();
+        }
+
+        $s       = $this->structure;
+        $changes = $lagerRecord === null
+            ? [['op' => 'create_record', 'ref' => 'lager', 'node' => $s->node('lager')], ['op' => 'set_values', 'record' => '@lager', 'values' => [(string) $s->field('lager_thing') => (string) $thing]]]
+            : [];
+        $target  = $lagerRecord === null ? '@lager' : $lagerRecord;
+
+        if ($parts !== []) {
+            $changes[] = ['op' => 'set_values', 'record' => $target, 'values' => [(string) $s->field('lager_sources') => $parts]];
+        }
+
+        foreach ($removed as $part) {
+            $changes[] = ['op' => 'remove_record', 'record' => $part];
+        }
+
+        return $changes;
+    }
+
+    /**
      * The lines as the modeller's parts: an existing part by its record id, a new one under a key of its own; an emptied line
      * removes its part.
      *

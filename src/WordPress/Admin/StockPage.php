@@ -310,6 +310,8 @@ final class StockPage
                 // D-1267: the page goes back to the parent of the place deleted.
                 'ortloeschen'  => $copy = $this->stock->deletePlace($rowPurchase, current_time('Y-m-d'), __('Lagerort gelöscht', 'taxmod-stock'), ! empty($_POST['below'])),
                 'unterplaetze' => $this->stock->createSubPlaces($rowPurchase),
+                // C1: only the «Bezugsquellen» lines, read back through the modeller's controls (D-1250).
+                'quellen'      => $this->stock->saveSources($thing, is_array($_POST['quelle'] ?? null) ? wp_unslash($_POST['quelle']) : []),
                 // D-1315: the way comes from the dialog, never a default.
                 'artwechsel'   => $this->stock->changePlaceKind($rowPurchase, absint($_POST['place_type'] ?? 0), sanitize_key((string) ($_POST['way'] ?? '')), $today, $this->title(__('Umbuchung', 'taxmod-stock'), $today)),
                 'artkopieren'  => $copy = $this->stock->copyPlaceType($rowPurchase, sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? '')))),
@@ -345,6 +347,7 @@ final class StockPage
                 'rollewechseln'  => __('Rolle gewechselt: der Drucker druckt jetzt die Etiketten der neuen Rolle. Zurück geht es mit «Rolle wechseln».', 'taxmod-stock'),
                 'vorlagekopieren' => __('Kopiert: die neue Vorlage trägt Format, Layout und Anzahl der alten; die Platzarten bleiben bei der alten.', 'taxmod-stock'),
                 'unterplaetze'   => __('Unterplätze angelegt, wie die Platzart sie vorgibt.', 'taxmod-stock'),
+                'quellen'        => __('Bezugsquellen gespeichert.', 'taxmod-stock'),
                 'artwechsel'     => __('Art gewechselt: die neuen Unterplätze stehen, der Bestand ist umgebucht, die alten Unterplätze sind entfernt.', 'taxmod-stock'),
                 'artkopieren'    => __('Kopiert: die neue Platzart trägt Felder und Teile der alten; die Plätze bleiben bei der alten.', 'taxmod-stock'),
                 'ortkopieren'    => __('Kopiert: der neue Ort trägt die Felder des alten, aber nichts von dem, was dort liegt.', 'taxmod-stock'),
@@ -379,6 +382,7 @@ final class StockPage
                 'verschieben'  => ['material', ['thing' => $thing, 'view' => 'daten']],
                 'kopieren'     => ['material', ['thing' => $copy, 'view' => 'bearbeiten']],
                 'lager'        => ['material', ['thing' => $thing, 'view' => 'lager']],
+                'quellen'      => ['material', ['thing' => $thing, 'view' => 'einkauf']],
                 'umbuchen', 'storno', 'verbrauchstorno', 'inventurstorno' => ['material', ['thing' => $thing, 'view' => 'bestand']],
                 'reservieren', 'reservierungstorno' => sanitize_key((string) ($_POST['back'] ?? '')) === 'bestand' && $thing > 0
                     ? ['material', ['thing' => $thing, 'view' => 'bestand']] : ['reservierungen', []],
@@ -402,6 +406,7 @@ final class StockPage
                 'rollewechseln'     => ['drucker', []],
                 'umhaengen', 'orteverschieben', 'ort', 'reservieren', 'freigeben' => ['lagerstruktur', []],
                 'aufteilen'         => ['wareneingang', ['order' => absint($_POST['order'] ?? 0), 'split' => absint($_POST['purchase'] ?? 0)]],
+                'quellen'           => ['material', ['thing' => $thing, 'view' => 'einkauf']],
                 'lager', 'umbuchen', 'storno', 'verbrauchstorno', 'inventurstorno' => ['material', ['thing' => $thing, 'view' => $kind === 'lager' ? 'lager' : 'bestand']],
                 // D-1073: refused because values would fall — named, nothing moved (his doubt 2026-11-01: «das verschieben ist problematisch»).
                 'verschieben'       => ['material', ['thing' => $thing, 'view' => 'daten']],
@@ -1219,8 +1224,10 @@ final class StockPage
             }
         }
 
+        $priced = [];
+
         if ($about === []) {
-            return '<p>' . esc_html__('Noch kein Kauf zeigt auf dieses Material.', 'taxmod-stock') . '</p>';
+            return $this->sourcesSection($thing, []) . '<p>' . esc_html__('Noch kein Kauf zeigt auf dieses Material.', 'taxmod-stock') . '</p>';
         }
 
         $money   = $this->stock->table('money');
@@ -1260,6 +1267,7 @@ final class StockPage
             $inside   = $order === null ? null : InboundPage::url(['order' => $order]) . '#taxmod-stock-purchase-' . $id;
             $shop     = $order === null ? null : $inbound->orderLink($order);
             $word     = (string) $purchases->first($id, $s->field('label'));
+            $priced[] = ['purchase' => $id, 'number' => $article, 'date' => substr($orderValue($order, 'order_date'), 0, 10), 'price' => $each === null ? null : (float) $each];
             $html    .= '<tr><td>' . ($inside === null ? esc_html($word) : '<a href="' . esc_url($inside) . '" target="_blank" rel="noopener">' . esc_html($word) . '</a>')
                 . ($article === '' ? '' : '<br><span class="description">' . $linked($article, $order === null ? null : $inbound->productLink($order, $article)) . '</span>') . '</td>'
                 . '<td>' . ($inside === null ? '—' : '<a href="' . esc_url($inside) . '" target="_blank" rel="noopener">' . esc_html($number === '' ? '#' . $order : $number) . '</a>')
@@ -1271,7 +1279,104 @@ final class StockPage
                 . '<td>' . esc_html($sum) . '</td></tr>';
         }
 
-        return $html . '</tbody></table>';
+        return $this->sourcesSection($thing, $priced) . '<h3>' . esc_html__('Käufe', 'taxmod-stock') . '</h3>' . $html . '</tbody></table>';
+    }
+
+    /**
+     * C2 (D-1320): per source with a number, the supplier's current offer through `taxmod_supplier_offers` — the one with the
+     * source's number, else the first of the source's firm; none found, none shown. Errors name the supplier.
+     *
+     * @param list<array{part: ?int, controls: array<int, string>, row: SourceRow}> $lines
+     * @param array<int, string> $firms
+     * @return array{rows: array<int, string>, errors: list<string>}
+     */
+    private function currentOffers(array $lines, array $firms): array
+    {
+        $rows   = [];
+        $errors = [];
+        $same   = static fn (string $a, string $b): bool => $a !== '' && mb_strtolower(trim($a)) === mb_strtolower(trim($b));
+
+        foreach ($lines as $i => $line) {
+            $row = $line['row'];
+
+            if (trim($row->number) === '') {
+                continue;
+            }
+
+            $answer = apply_filters(PurchasePage::OFFERS, ['list' => [], 'errors' => []], $row->number, 1);
+            $list   = array_values(array_filter(is_array($answer['list'] ?? null) ? $answer['list'] : [], 'is_array'));
+            $firm   = (string) ($firms[(int) $row->firm] ?? '');
+            $offer  = array_values(array_filter($list, static fn (array $o): bool => $same((string) ($o['number'] ?? ''), $row->number)))[0]
+                ?? array_values(array_filter($list, static fn (array $o): bool => $same((string) ($o['merchant'] ?? ''), $firm)))[0] ?? null;
+
+            foreach ((array) ($answer['errors'] ?? []) as $merchant => $error) {
+                $errors[(string) $merchant] = $merchant . ': ' . $error;
+            }
+
+            if ($offer !== null) {
+                $text     = static fn (string $key): string => trim((string) ($offer[$key] ?? ''));
+                $said     = trim($text('merchant') . ' ' . ($text('price') === '' ? '—' : $text('price') . ' ' . $text('currency'))) . ' · ' . sprintf(/* translators: %d: pieces in stock */ __('%d am Lager', 'taxmod-stock'), (int) ($offer['stock'] ?? 0));
+                $rows[$i] = $text('url') === '' ? esc_html($said) : '<a href="' . esc_url($text('url')) . '" target="_blank" rel="noopener noreferrer">' . esc_html($said) . '</a>';
+            }
+        }
+
+        return ['rows' => $rows, 'errors' => array_values($errors)];
+    }
+
+    /**
+     * C1 (D-1320): «Bezugsquellen» in the material's «Einkauf» — firm, number and pack content in the modeller's own controls
+     * (D-1250, D-1018), the link from the firm's template (D-1249) and the price from the purchases with that number, the
+     * latest and the ones before (D-1314); both only shown, never stored. No purchase, no price: «—».
+     *
+     * @param list<array{purchase: int, number: string, date: string, price: ?float}> $priced
+     */
+    private function sourcesSection(int $thing, array $priced): string
+    {
+        $formId = 'taxmod-stock-sources-' . $thing;
+        $blank  = max(1, min(10, absint($_GET['zeilen'] ?? 1)));
+        $lines  = $this->stock->sourceLines($thing, $formId, $blank);
+
+        if ($lines === []) {
+            return '';
+        }
+
+        $s      = $this->stock->structure();
+        $firms  = array_replace([], ...array_values($this->stock->firms()));
+        $prices = \TaxmodStock\Core\SourcePrices::of(array_map(static fn (array $l): SourceRow => $l['row'], $lines), $priced);
+        $cell   = static fn (array $l, string $key): string => $s->hasField($key) ? ($l['controls'][$s->field($key)] ?? '') : '';
+        $price  = static fn (array $p): string => $p['price'] === null ? '—' : number_format_i18n($p['price'], 2) . ($p['date'] === '' ? '' : ' (' . $p['date'] . ')');
+        $more   = add_query_arg(['page' => self::PAGE, 'tab' => 'material', 'thing' => $thing, 'view' => 'einkauf', 'zeilen' => $blank + 1], admin_url('admin.php'));
+        // C2 (D-1320): the suppliers' current offer per source, asked only on request — each a call to the supplier.
+        $asking = has_filter(PurchasePage::OFFERS) !== false;
+        $offers = $asking && absint($_GET['angebote'] ?? 0) === 1 ? $this->currentOffers($lines, $firms) : null;
+        $fetch  = add_query_arg(['page' => self::PAGE, 'tab' => 'material', 'thing' => $thing, 'view' => 'einkauf', 'angebote' => 1], admin_url('admin.php'));
+        $html   = '<h3>' . esc_html__('Bezugsquellen', 'taxmod-stock') . '</h3>'
+            . '<form method="post" id="' . esc_attr($formId) . '" action="' . esc_url(admin_url('admin-post.php')) . '">'
+            . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"><input type="hidden" name="booking" value="quellen">'
+            . '<input type="hidden" name="thing" value="' . esc_attr((string) $thing) . '">' . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
+            . ListPage::toolbar([[self::saveButton()], ['<a class="button" href="' . esc_url($more) . '">' . esc_html__('+ Zeile', 'taxmod-stock') . '</a>'],
+                ...($asking ? [['<a class="button" href="' . esc_url($fetch) . '">' . esc_html__('Angebote holen', 'taxmod-stock') . '</a>']] : [])])
+            . ($offers === null ? '' : implode('', array_map(static fn (string $e): string => '<div class="notice notice-warning inline"><p>' . esc_html($e) . '</p></div>', $offers['errors'])))
+            . '<table class="widefat striped"><thead><tr><th>' . esc_html__('Firma', 'taxmod-stock') . '</th><th>' . esc_html__('Nummer', 'taxmod-stock') . '</th>'
+            . ($s->hasField('source_content') ? '<th>' . esc_html__('Packungsinhalt', 'taxmod-stock') . '</th>' : '')
+            . '<th>' . esc_html__('Letzter Preis je Stück', 'taxmod-stock') . '</th><th>' . esc_html__('Verlauf', 'taxmod-stock') . '</th>'
+            . ($offers === null ? '' : '<th>' . esc_html__('Angebot', 'taxmod-stock') . '</th>') . '<th>' . esc_html__('Entfernen', 'taxmod-stock') . '</th></tr></thead><tbody>';
+
+        foreach ($lines as $i => $line) {
+            $row     = $line['row'];
+            $link    = $row->firm === null ? null : \TaxmodStock\Core\PlatformLink::filled($this->stock->linkTemplates((string) ($firms[$row->firm] ?? ''))['product'], $row->number);
+            $history = $prices[$i] ?? [];
+            $html   .= '<tr><td>' . ($line['part'] === null ? '' : '<input type="hidden" name="quelle[' . $i . '][part]" value="' . esc_attr((string) $line['part']) . '">') . $cell($line, 'source_firm') . '</td>'
+                . '<td>' . $cell($line, 'source_number') . ($link === null ? '' : ' ' . str_replace('<a ', '<a target="_blank" rel="noopener noreferrer" ', ListPage::iconLink('external', __('Beim Händler öffnen', 'taxmod-stock'), $link))) . '</td>'
+                . ($s->hasField('source_content') ? '<td>' . $cell($line, 'source_content') . '</td>' : '')
+                . '<td>' . esc_html($history === [] ? '—' : $price($history[0])) . '</td>'
+                . '<td>' . (count($history) < 2 ? '' : '<details><summary>' . esc_html(sprintf(/* translators: %d: earlier purchases */ _n('%d früherer Kauf', '%d frühere Käufe', count($history) - 1, 'taxmod-stock'), count($history) - 1)) . '</summary>'
+                    . implode('<br>', array_map(static fn (array $p): string => esc_html($price($p)), array_slice($history, 1))) . '</details>') . '</td>'
+                . ($offers === null ? '' : '<td>' . ($offers['rows'][$i] ?? '—') . '</td>')
+                . '<td>' . ($line['part'] === null ? '' : '<input type="checkbox" name="quelle[' . $i . '][remove]" value="1">') . '</td></tr>';
+        }
+
+        return $html . '</tbody></table></form>';
     }
 
     /** D-997, tab «Lager»: Standard-Lagerort, Mindestbestand, Einzelstück (and «Verwendung» where it is set up). */
@@ -1304,36 +1409,7 @@ final class StockPage
                 . '<p class="description">' . esc_html__('Worin das Lager zählt, z. B. milli + Liter für ml. Ohne Angabe: Stück.', 'taxmod-stock') . '</p></td></tr>';
         }
 
-        return $html . '</tbody></table>' . $this->sourcesTable($record) . '</form>';
-    }
-
-    /**
-     * D-1018, «Bezugsquellen»: a firm and its number per line, the existing ones and two empty lines to add. Clearing a line removes it.
-     */
-    private function sourcesTable(?int $record): string
-    {
-        $s = $this->stock->structure();
-
-        if (! $s->hasField('lager_sources') || ! $s->hasNode('source')) {
-            return '';
-        }
-
-        $firms = $this->stock->firmTree();
-        $rows  = [...$this->stock->sourcesOf($record), new SourceRow(null, null, ''), new SourceRow(null, null, '')];
-        $html  = '<h3>' . esc_html__('Bezugsquellen', 'taxmod-stock') . '</h3>'
-            . '<p class="description">' . esc_html__('Wo es das Material gibt: Hersteller oder Händler und seine Nummer. Eine geleerte Zeile wird entfernt.', 'taxmod-stock') . '</p>'
-            . '<table class="widefat striped" style="max-width:720px"><thead><tr><th>' . esc_html__('Firma', 'taxmod-stock') . '</th><th>'
-            . esc_html__('Nummer', 'taxmod-stock') . '</th>' . ($s->hasField('source_content') ? '<th>' . esc_html__('Packungsinhalt', 'taxmod-stock') . '</th>' : '') . '</tr></thead><tbody>';
-
-        foreach ($rows as $i => $row) {
-            $html .= '<tr><td>' . ($row->part === null ? '' : '<input type="hidden" name="sources[' . $i . '][part]" value="' . esc_attr((string) $row->part) . '">')
-                . FirmChoice::field('sources[' . $i . '][firm]', $firms, $row->firm) . '</td>'
-                . '<td><input type="text" class="regular-text" name="sources[' . $i . '][number]" value="' . esc_attr($row->number) . '"></td>'
-                . ($s->hasField('source_content') ? '<td><input type="text" inputmode="decimal" style="width:7em" name="sources[' . $i . '][content]" value="' . esc_attr($row->content) . '" title="'
-                    . esc_attr__('Wie viel eine Packung enthält, in der Basiseinheit', 'taxmod-stock') . '"></td>' : '') . '</tr>';
-        }
-
-        return $html . '</tbody></table><input type="hidden" name="has_sources" value="1">';
+        return $html . '</tbody></table></form>';
     }
 
     /**
@@ -4264,31 +4340,10 @@ final class StockPage
             absint($_POST['use'] ?? 0) ?: null,
             absint($_POST['location'] ?? 0) ?: null,
             $minimum === '' ? null : absint($minimum),
-            empty($_POST['has_sources']) ? null : $this->sourceRows(),
+            null,
             absint($_POST['unit'] ?? 0) ?: null,
             absint($_POST['prefix'] ?? 0) ?: null
         );
-    }
-
-    /** @return list<SourceRow> */
-    private function sourceRows(): array
-    {
-        $rows = [];
-
-        foreach (is_array($_POST['sources'] ?? null) ? wp_unslash($_POST['sources']) : [] as $line) {
-            if (! is_array($line)) {
-                continue;
-            }
-
-            $rows[] = new SourceRow(
-                absint($line['part'] ?? 0) ?: null,
-                absint($line['firm'] ?? 0) ?: null,
-                sanitize_text_field((string) ($line['number'] ?? '')),
-                str_replace(',', '.', sanitize_text_field((string) ($line['content'] ?? '')))
-            );
-        }
-
-        return $rows;
     }
 
     /**

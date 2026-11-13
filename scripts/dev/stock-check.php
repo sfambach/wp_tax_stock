@@ -1372,5 +1372,46 @@ $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'value="artwechsel-' . $regal . '"') && preg_match('/id="taxmod-stock-kind-' . $regal . '"[^>]*checked/', $html) === 1 && ! preg_match('/name="way"[^>]*checked/', $html),
     'D-1315: the place opens with «Art wechseln …» open, no way preselected');
 
+// C1 (D-1320): «Bezugsquellen» live in the material's «Einkauf», in the modeller's controls (D-1250); saving writes only them.
+$quellen = $apply([
+    ['op' => 'create_node', 'ref' => 'fi', 'name' => '__Firmen', 'parent' => (string) $r['mat']],
+    ['op' => 'create_node', 'ref' => 'qu', 'name' => '__Bezugsquellen', 'parent' => (string) $r['mat']],
+    $field('qu_firma', '@qu', '__Firma', '@fi', 'aggregation', '0..1'),
+    $field('qu_nr', '@qu', '__Nummer', 1175, 'composition', '0..1'),
+    $field('m_quellen', (string) $r['mat'], '__Bezugsquellen', '@qu', 'aggregation', '0..*'),
+])['refs'] ?? [];
+$firma = isset($quellen['fi']) ? (int) ($apply([['op' => 'create_record', 'ref' => 'f', 'node' => (string) $quellen['fi'], 'values' => [(string) $r['label'] => '__Reichelt']]])['refs']['f'] ?? 0) : 0;
+$opt = get_option('taxmod_stock_structure');
+if (is_array($opt) && $firma > 0) {
+    $opt['nodes']  += ['source' => (int) $quellen['qu'], 'firm' => (int) $quellen['fi']];
+    $opt['fields'] += ['source_firm' => (int) $quellen['qu_firma'], 'source_number' => (int) $quellen['qu_nr'], 'lager_sources' => (int) $quellen['m_quellen']];
+    update_option('taxmod_stock_structure', $opt);
+}
+$minVorher = (new StockService())->things()->lagerOf($r['t1']) === null ? null : (new StockService())->table('lager')->first((int) (new StockService())->things()->lagerOf($r['t1']), (int) $r['m_min']);
+try {
+    (new StockService())->saveSources($r['t1'], [0 => [(string) $quellen['qu_firma'] => (string) $firma, (string) $quellen['qu_nr'] => 'ABC-1']]);
+    $gespeichert = '';
+} catch (Throwable $e) {
+    $gespeichert = $e->getMessage();
+}
+$s      = new StockService();
+$zeilen = $s->sourcesOf($s->things()->lagerOf($r['t1']));
+$_GET   = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => (string) $r['t1'], 'view' => 'einkauf'];
+$html   = (new StockPage())->render();
+$_GET   = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => (string) $r['t1'], 'view' => 'lager'];
+$lagerHtml = (new StockPage())->render();
+$pruefe($gespeichert === '' && count($zeilen) === 1 && $zeilen[0]->number === 'ABC-1' && $zeilen[0]->firm === $firma
+    && $s->table('lager')->first((int) $s->things()->lagerOf($r['t1']), (int) $r['m_min']) === $minVorher
+    && str_contains($html, 'value="quellen"') && str_contains($html, 'name="quelle[0][part]"') && str_contains($html, 'quelle[1]') && ! str_contains($lagerHtml, '<h3>Bezugsquellen'),
+    'C1: «Bezugsquellen» stand in «Einkauf» in the modeller\'s controls, saving writes only them' . ($gespeichert === '' ? '' : ': ' . $gespeichert));
+
+// C2: on request each source shows the supplier's current offer with its number (taxmod_supplier_offers).
+$angebot = static fn (mixed $o, string $q): array => ['list' => $q === 'ABC-1' ? [['merchant' => '__Reichelt', 'number' => 'ABC-1', 'price' => '0.42', 'currency' => 'EUR', 'stock' => 7]] : [], 'errors' => []];
+add_filter('taxmod_supplier_offers', $angebot, 10, 2);
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => (string) $r['t1'], 'view' => 'einkauf', 'angebote' => '1'];
+$html = (new StockPage())->render();
+remove_filter('taxmod_supplier_offers', $angebot, 10);
+$pruefe(str_contains($html, '__Reichelt 0.42 EUR') && str_contains($html, 'Angebote holen'), 'C2: «Angebote holen» shows each source\'s current offer');
+
 echo $fehler === 0 ? "all green ({$kind})\n" : "{$fehler} red ({$kind})\n";
 exit($fehler === 0 ? 0 : 1);

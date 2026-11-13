@@ -1791,7 +1791,17 @@ final class StockService
             return new PlaceTypes();
         }
 
-        return $this->placeTypes ??= PlaceTypes::from($s, $this->table('location_type'), $s->hasNode('location_type_part') ? $this->table('location_type_part') : new Table([]));
+        if ($this->placeTypes !== null) {
+            return $this->placeTypes;
+        }
+
+        $parts   = $s->hasNode('location_type_part') ? $this->table('location_type_part') : new Table([]);
+        // D-1339: only the unit values the parts point at, one read (CD-7), not every amount of the model.
+        $amounts = $s->hasField('part_quantity') && $s->hasNode('money')
+            ? $this->recordsOf('money', array_values(array_filter(array_map(static fn (int $part): int => (int) $parts->first($part, $s->field('part_quantity')), $parts->ids()))))
+            : new Table([]);
+
+        return $this->placeTypes = PlaceTypes::from($s, $this->table('location_type'), $parts, $amounts);
     }
 
     /**

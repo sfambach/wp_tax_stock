@@ -32,7 +32,8 @@ final class PlaceTypes
     ) {
     }
 
-    public static function from(Structure $s, Table $types, Table $parts): self
+    /** @param Table $amounts the unit values a part's «Menge» points at (D-1339); without it «Anzahl» counts */
+    public static function from(Structure $s, Table $types, Table $parts, Table $amounts = new Table([])): self
     {
         $names = $movable = $lists = $labels = [];
         $int   = static fn (int $id, string $field): int => $s->hasField($field) ? max(0, (int) $types->first($id, $s->field($field))) : 0;
@@ -50,7 +51,12 @@ final class PlaceTypes
 
             foreach ($types->all($id, $s->field('type_parts')) as $part) {
                 $type  = (int) $parts->first((int) $part, $s->field('part_type'));
-                $count = $s->hasField('part_count') ? (int) $parts->first((int) $part, $s->field('part_count')) : 1;
+                // D-1339: «Menge» in pieces where the structure names it, else the old «Anzahl».
+                $count = match (true) {
+                    $s->hasField('part_quantity') && $s->hasField('money_amount') => (int) round((float) ($amounts->first((int) $parts->first((int) $part, $s->field('part_quantity')), $s->field('money_amount')) ?? 0)),
+                    $s->hasField('part_count') => (int) $parts->first((int) $part, $s->field('part_count')),
+                    default => 1,
+                };
 
                 // D-1151: an optional unit name for the places this line brings; empty, they take the part type's name.
                 $unit = $s->hasField('part_unit_name') ? trim((string) $parts->first((int) $part, $s->field('part_unit_name'))) : '';

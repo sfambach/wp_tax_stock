@@ -75,6 +75,18 @@ final class PlaceTypesTest extends TestCase
         return Structure::fromArray($raw);
     }
 
+    #[Test]
+    public function the_menge_in_pieces_counts_where_the_structure_names_it(): void
+    {
+        $raw = $this->structure()->toArray();
+        $raw['fields'] += ['part_quantity' => 305];
+        $s     = Structure::fromArray($raw);
+        $types = PlaceTypes::from($s, new Table([60 => [$s->field('label') => ['IKEA Alex'], 302 => ['70']], 61 => [$s->field('label') => ['Schublade Alex']]]),
+            new Table([70 => [303 => ['61'], 304 => ['9'], 305 => ['80']]]), new Table([80 => [$s->field('money_amount') => ['6']]]));
+
+        self::assertSame([[61, 6]], $types->partsOf(60));
+    }
+
     private function types(Structure $s): PlaceTypes
     {
         $label = $s->field('label');

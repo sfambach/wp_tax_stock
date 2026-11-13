@@ -1413,5 +1413,36 @@ $html = (new StockPage())->render();
 remove_filter('taxmod_supplier_offers', $angebot, 10);
 $pruefe(str_contains($html, '__Reichelt 0.42 EUR') && str_contains($html, 'Angebote holen'), 'C2: «Angebote holen» shows each source\'s current offer');
 
+// D-1337/D-1338: «Kurzzeichen erzeugen» from the kinds' Kürzel, typed ones stay; the place's colour, else its kind's.
+$kz = $apply([
+    $field('pt_kurz', (string) $arten['pt'], '__Kürzel', 1175, 'composition', '0..1'),
+    $field('lo_kurz', (string) $r['lo'], '__Kurzzeichen', 1175, 'composition', '0..1'),
+    ['op' => 'create_node', 'ref' => 'fa', 'name' => '__Farben', 'parent' => (string) $r['lo']],
+    $field('lo_farbe', (string) $r['lo'], '__Farbe', '@fa', 'aggregation', '0..*'),
+    $field('pt_farbe', (string) $arten['pt'], '__Farbe', '@fa', 'aggregation', '0..*'),
+])['refs'] ?? [];
+$farben = isset($kz['fa']) ? $apply([
+    ['op' => 'create_record', 'ref' => 'blau', 'node' => (string) $kz['fa'], 'values' => [$lbl => '__Blau']],
+    ['op' => 'create_record', 'ref' => 'rot', 'node' => (string) $kz['fa'], 'values' => [$lbl => '__Rot']],
+])['refs'] ?? [] : [];
+$opt = get_option('taxmod_stock_structure');
+if (is_array($opt) && isset($farben['rot'])) {
+    $opt['fields'] += ['type_short' => (int) $kz['pt_kurz'], 'location_short' => (int) $kz['lo_kurz'], 'location_colour' => (int) $kz['lo_farbe'], 'type_colour' => (int) $kz['pt_farbe']];
+    update_option('taxmod_stock_structure', $opt);
+}
+$neu = (new StockService())->locationTree()->childrenOf($regal);
+$apply([
+    ['op' => 'set_values', 'record' => (string) $drei, 'values' => [(string) $kz['pt_kurz'] => 'R', (string) $kz['pt_farbe'] => ['values' => [(string) $farben['blau']]]]],
+    ['op' => 'set_values', 'record' => (string) $artSaetze['fach'], 'values' => [(string) $kz['pt_kurz'] => 'F']],
+    ['op' => 'set_values', 'record' => (string) ($neu[2] ?? 0), 'values' => [(string) $kz['lo_kurz'] => 'X9', (string) $kz['lo_farbe'] => ['values' => [(string) $farben['rot']]]]],
+]);
+$vorschlag = (new StockService())->shortProposals($regal);
+(new StockService())->fillShortMarks($regal);
+$s = new StockService();
+$t = $s->locationTree();
+$pruefe($vorschlag === [$regal => 'R1', $neu[0] => 'R1-F1', $neu[1] => 'R1-F2'] && $t->shortOf($neu[1]) === 'R1-F2' && $t->shortOf($neu[2]) === 'X9'
+    && $s->coloursOf($regal) === ['colours' => ['__Blau'], 'inherited' => true] && $s->coloursOf($neu[2]) === ['colours' => ['__Rot'], 'inherited' => false],
+    'D-1337/D-1338: short marks proposed from the Kürzel along the path, a typed one stays; a place\'s own colour, else its kind\'s');
+
 echo $fehler === 0 ? "all green ({$kind})\n" : "{$fehler} red ({$kind})\n";
 exit($fehler === 0 ? 0 : 1);

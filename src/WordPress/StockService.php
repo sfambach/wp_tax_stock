@@ -38,6 +38,7 @@ use TaxmodStock\Core\Purpose;
 use TaxmodStock\Core\ReservationRow;
 use TaxmodStock\Core\Reservations;
 use TaxmodStock\Core\ReservedPlaces;
+use TaxmodStock\Core\ShortMarks;
 use TaxmodStock\Core\SourceRow;
 use TaxmodStock\Core\SplitRow;
 use TaxmodStock\Core\StockError;
@@ -2104,6 +2105,77 @@ final class StockService
         $s = $this->structure();
 
         return $s->hasField('location_place_type') ? (int) $this->table('location')->first($place, $s->field('location_place_type')) : 0;
+    }
+
+    /**
+     * D-1337: the short marks proposed for the place and every place inside it whose own is still empty — never one typed.
+     *
+     * @return array<int, string> place → proposal; none without the field «Kürzel» or without a proposal
+     */
+    public function shortProposals(int $place): array
+    {
+        $s = $this->structure();
+
+        if (! $s->hasField('type_short') || ! $s->hasField('location_short') || ! $s->hasField('location_place_type') || ! $s->hasNode('location_type')) {
+            return [];
+        }
+
+        $tree   = $this->locationTree();
+        $places = $this->table('location');
+        $types  = $this->table('location_type');
+        $kinds  = [];
+        $shorts = [];
+
+        foreach ($places->ids() as $id) {
+            $kinds[$id] = (int) $places->first($id, $s->field('location_place_type'));
+        }
+
+        foreach ($types->ids() as $id) {
+            $shorts[$id] = (string) $types->first($id, $s->field('type_short'));
+        }
+
+        $out = [];
+
+        foreach ($tree->withAllBelow($place) as $id) {
+            $proposal = $tree->shortOf($id) === '' ? ShortMarks::proposed($id, $tree, $kinds, $shorts) : '';
+
+            if ($proposal !== '') {
+                $out[$id] = $proposal;
+            }
+        }
+
+        return $out;
+    }
+
+    /** D-1337: «Kurzzeichen erzeugen» — the proposals written in one act; what was typed stays. */
+    public function fillShortMarks(int $place): array
+    {
+        $proposals = $this->shortProposals($place);
+
+        if ($proposals === []) {
+            throw StockError::nothingToBook();
+        }
+
+        $field = (string) $this->structure()->field('location_short');
+
+        return $this->model->write(array_map(static fn (int $id, string $short): array => ['op' => 'set_values', 'record' => (string) $id, 'values' => [$field => $short]], array_keys($proposals), $proposals));
+    }
+
+    /**
+     * D-1338: the colours a place shows — its own, else its kind's; `inherited` says which.
+     *
+     * @return array{colours: list<string>, inherited: bool}
+     */
+    public function coloursOf(int $place): array
+    {
+        $s    = $this->structure();
+        $own  = $s->hasField('location_colour') ? array_map('intval', $this->table('location')->all($place, $s->field('location_colour'))) : [];
+        $kind = $own === [] && $s->hasField('type_colour') && $s->hasNode('location_type') && ($type = $this->kindOf($place)) > 0
+            ? array_map('intval', $this->table('location_type')->all($type, $s->field('type_colour'))) : [];
+        $ids  = array_values(array_filter($own === [] ? $kind : $own));
+        $names = $ids === [] ? [] : $this->recordLabels($ids);
+
+        return ['colours' => array_values(array_map(static fn (int $id): string => (string) ($names[$id] ?? '#' . $id), $ids)), 'inherited' => $own === [] && $ids !== []];
     }
 
     /** D2: whether «Unterplätze anlegen» has something to do — a type with parts, no place inside yet. */

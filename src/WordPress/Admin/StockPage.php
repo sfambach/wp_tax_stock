@@ -186,7 +186,7 @@ final class StockPage
 
         $kind  = sanitize_key((string) ($_POST['booking'] ?? ''));
         // D-1058: the row buttons carry their purchase in the value, «nichteinlagern-<id>» and «einlagern-<id>».
-        $rowPurchase = preg_match('/^(nichteinlagern|einlagern|umhaengen|reservieren|freigeben|ortkopieren|ortloeschen|artkopieren|vorlagekopieren|rollewechseln|unterplaetze|artwechsel)-(\d+)$/', $kind, $m) === 1 ? (int) $m[2] : 0;
+        $rowPurchase = preg_match('/^(nichteinlagern|einlagern|umhaengen|reservieren|freigeben|ortkopieren|ortloeschen|artkopieren|vorlagekopieren|rollewechseln|unterplaetze|artwechsel|kurzzeichen)-(\d+)$/', $kind, $m) === 1 ? (int) $m[2] : 0;
         $kind        = $rowPurchase > 0 ? $m[1] : $kind;
         $today = current_time('Y-m-d');
         // The goods receipt sends «thing» as a list (one per purchase); only the other forms send one thing.
@@ -310,6 +310,7 @@ final class StockPage
                 // D-1267: the page goes back to the parent of the place deleted.
                 'ortloeschen'  => $copy = $this->stock->deletePlace($rowPurchase, current_time('Y-m-d'), __('Lagerort gelöscht', 'taxmod-stock'), ! empty($_POST['below'])),
                 'unterplaetze' => $this->stock->createSubPlaces($rowPurchase),
+                'kurzzeichen'  => $this->stock->fillShortMarks($rowPurchase),
                 // C1: only the «Bezugsquellen» lines, read back through the modeller's controls (D-1250).
                 'quellen'      => $this->stock->saveSources($thing, is_array($_POST['quelle'] ?? null) ? wp_unslash($_POST['quelle']) : []),
                 // D-1315: the way comes from the dialog, never a default.
@@ -348,6 +349,7 @@ final class StockPage
                 'vorlagekopieren' => __('Kopiert: die neue Vorlage trägt Format, Layout und Anzahl der alten; die Platzarten bleiben bei der alten.', 'taxmod-stock'),
                 'unterplaetze'   => __('Unterplätze angelegt, wie die Platzart sie vorgibt.', 'taxmod-stock'),
                 'quellen'        => __('Bezugsquellen gespeichert.', 'taxmod-stock'),
+                'kurzzeichen'    => __('Kurzzeichen erzeugt; vorhandene blieben stehen.', 'taxmod-stock'),
                 'artwechsel'     => __('Art gewechselt: die neuen Unterplätze stehen, der Bestand ist umgebucht, die alten Unterplätze sind entfernt.', 'taxmod-stock'),
                 'artkopieren'    => __('Kopiert: die neue Platzart trägt Felder und Teile der alten; die Plätze bleiben bei der alten.', 'taxmod-stock'),
                 'ortkopieren'    => __('Kopiert: der neue Ort trägt die Felder des alten, aber nichts von dem, was dort liegt.', 'taxmod-stock'),
@@ -2910,6 +2912,19 @@ final class StockPage
             [__('Beweglich (Kiste, Karton)', 'taxmod-stock'), $tree->isMovable($place) ? __('ja', 'taxmod-stock') : __('nein', 'taxmod-stock')],
             [__('Unterorte', 'taxmod-stock'), (string) (count($below) - 1)],
         ];
+        // D-1338: the place's own colour, else its kind's — said which.
+        $colours = $this->stock->coloursOf($place);
+
+        if ($colours['colours'] !== []) {
+            $facts[] = [__('Farbe', 'taxmod-stock'), implode(', ', $colours['colours']) . ($colours['inherited'] ? ' ' . __('(von der Platzart)', 'taxmod-stock') : '')];
+        }
+
+        // D-1337: what «Kurzzeichen erzeugen» would write here and below; a typed short mark stays.
+        $proposals = $this->stock->shortProposals($place);
+
+        if (isset($proposals[$place])) {
+            $facts[] = [__('Kurzzeichen-Vorschlag', 'taxmod-stock'), $proposals[$place]];
+        }
         $table = '';
 
         foreach ($facts as [$name, $value]) {
@@ -2920,7 +2935,9 @@ final class StockPage
         $groups = [
             // D-1224, his word 2026-11-07: «zur bestandsansicht wechseln» — what lies here and below, in «Platzbestand».
             ['<a class="button" href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'lagerorte', 'ort' => $place], admin_url('admin.php'))) . '">' . esc_html__('Zur Bestandsansicht', 'taxmod-stock') . '</a>'],
-            [$this->newPlaceDialog($place, 'lagerstruktur'), ...($this->stock->canCreateSubPlaces($place) ? [$this->subPlacesButton($place)] : []), $this->kindChangeDialog($place, $tree), $this->copyPlaceDialog($place, $tree, count($below) - 1), $this->movePlaceDialog($place, $tree), $this->deletePlaceDialog($place, $tree)],
+            [$this->newPlaceDialog($place, 'lagerstruktur'), ...($this->stock->canCreateSubPlaces($place) ? [$this->subPlacesButton($place)] : []), $this->kindChangeDialog($place, $tree),
+                ...($proposals === [] ? [] : [$this->formStart('kurzzeichen-' . $place) . $this->returnFields('lagerstruktur', $place) . '<button type="submit" class="button" title="'
+                    . esc_attr(sprintf(/* translators: %d: number of places */ _n('%d Platz ohne Kurzzeichen bekommt seins', '%d Plätze ohne Kurzzeichen bekommen ihrs', count($proposals), 'taxmod-stock'), count($proposals))) . '">' . esc_html__('Kurzzeichen erzeugen', 'taxmod-stock') . '</button></form>']), $this->copyPlaceDialog($place, $tree, count($below) - 1), $this->movePlaceDialog($place, $tree), $this->deletePlaceDialog($place, $tree)],
             [$this->formStart('lagerstruktur') . $this->returnFields('lagerstruktur', $place) . $this->reserveDialog($place, $flags->isFlagged($place), $all) . '</form>'],
             [$label],
         ];

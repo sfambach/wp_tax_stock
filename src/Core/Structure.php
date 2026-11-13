@@ -86,6 +86,10 @@ final class Structure
         'project_boards', 'board_revisions', 'revision_positions', 'position_part', 'position_count',
         // D-1150: a place's short mark (A1-S1), put before its name wherever the place is named.
         'location_short',
+        // D-1337: a kind's Kürzel, from which short marks are proposed. D-1338: a place's own colour over its kind's.
+        'type_short', 'location_colour', 'type_colour',
+        // D-1339: a part line counts its places as a unit value in pieces.
+        'part_quantity',
         // D-1184: a person's first name, put before the name in the contact list.
         'contact_first_name',
         // D-1249: a firm's link templates with {nr} — to an order by its number, to a product by its article number.

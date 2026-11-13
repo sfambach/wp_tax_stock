@@ -513,6 +513,15 @@ final class StockPage
 
         // The preset filter (with stock, below minimum) stays the page's own; search, column filters and order are the list's.
         $shown   = $view->apply((new StockList('', $list->filter))->apply($rows));
+
+        // D-1329 (his wish 2026-11-13): a search with exactly one hit opens that material — from the list and from the
+        // search box on top of a material.
+        if (! $branch && trim($list->search) !== '' && count($shown) === 1) {
+            $one = (int) reset($shown)['id'];
+
+            return (new self($this->stock->scopedTo($one)))->thingView($one);
+        }
+
         $visible = $view->visible();
         $open    = $this->stock->viewSettings()->expanded('material');
         $url     = fn (array $change): string => $this->listUrl($tab, $list, $change + [ListPage::SHOW_ALL => ListPage::showsAll() ? '1' : '', 'f' => $view->filters(), 'orderby' => $view->orderBy === 'name' ? '' : $view->orderBy, 'order' => $view->descending ? 'desc' : '']);
@@ -1055,7 +1064,9 @@ final class StockPage
             'verkauf' => __('Verkauf', 'taxmod-stock'),
         ];
 
-        $html = '<div class="taxmod-stock-head" style="display:flex;gap:16px;align-items:flex-start;background:#fff;border:1px solid #c3c4c7;padding:16px;margin:8px 0 0">'
+        // D-1329 (his wish 2026-11-13): the list's search on top, to go on to the next material without going back.
+        $search = ListPage::toolbar([[ListPage::searchBox('taxmod-stock-thing-search', '', __('Nächstes Material suchen …', 'taxmod-stock'), ['page' => self::PAGE, 'tab' => 'material'], __('Suchen', 'taxmod-stock'))]]);
+        $html   = $search . '<div class="taxmod-stock-head" style="display:flex;gap:16px;align-items:flex-start;background:#fff;border:1px solid #c3c4c7;padding:16px;margin:8px 0 0">'
             . ($media > 0 ? (string) wp_get_attachment_image($media, [96, 96], false, ['style' => 'width:96px;height:96px;object-fit:cover;border-radius:4px']) : '<div style="width:96px;height:96px;background:#f0f0f1;border-radius:4px"></div>')
             . '<div><p style="margin:0;color:#50575e">' . esc_html(sprintf(/* translators: %d: record id of the thing */ __('Nr. %d', 'taxmod-stock'), $thing)) . ' · ' . $this->pathLinks($node) . '</p>'
             . '<h2 style="margin:4px 0;font-size:1.6em">' . esc_html($label === '' ? '—' : $label) . '</h2>'

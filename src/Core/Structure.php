@@ -113,6 +113,8 @@ final class Structure
         'type_fit_rule', 'type_fit_level',
         // D-1178: a material handled in packs — the pack's name, how many pieces it holds, and the pieces lost per cut.
         'lager_pack_name', 'lager_pack_content', 'lager_cut_loss',
+        // D-1328: what makes two strips the same kind, and how many poles a strip has.
+        'connector_poles', 'connector_rows', 'connector_pitch', 'connector_orientation',
     ];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];

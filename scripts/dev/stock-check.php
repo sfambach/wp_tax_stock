@@ -813,6 +813,11 @@ $pruefe($s->table('purchase')->first($nachT1, $r['k_bedarf']) === (string) $beda
 $s = new StockService();
 $pruefe(in_array((string) $nachT1, $s->table('order')->all($bedarf, $r['o_pos']), true) && $s->table('order')->all($entwurf, $r['o_pos']) === [] && $s->table('order')->first($entwurf, $r['o_stat']) === (string) $r['s_storn'], 'back into the demand; the emptied draft is cancelled');
 
+// D-1328 (D9): the filters for the manufacturing module answer; without the connector fields no proposals, a cut without lot is refused.
+$cutAnswer  = apply_filters('taxmod_stock_cut_sources', null, ['things' => [$bc => 2], 'except' => 0]);
+$cutRefused = apply_filters('taxmod_stock_book_cut', null, ['reference' => 1, 'into' => $r['lager'], 'cuts' => [['from' => 999999999, 'thing' => $bc, 'pieces' => 1]], 'date' => '2026-11-13']);
+$pruefe($cutAnswer === [] && $cutRefused instanceof WP_Error, 'D9: cut_sources answers none without connector fields, book_cut refuses a cut without lot (D-1328)');
+
 // D-1038 (E1): the inbox's event sets the order status forward, once; a closed order keeps its status.
 $evOrder = (int) (wp_get_ability('taxmod/apply')->execute(['changes' => [['op' => 'create_record', 'ref' => 'evo', 'node' => (string) $r['ord'], 'values' => [(string) $r['o_stat'] => (string) $r['s_best']]]]])['refs']['evo'] ?? 0);
 do_action('taxmod_stock_event', $evOrder, 'shipped', '2026-11-12', 'mail', 'x1');

@@ -367,6 +367,41 @@ final class Bookings
     }
 
     /**
+     * D-1328 (D9): strips cut for a build order in one Vorgang «Verbrauch» whose Bezug is the order — the long strips
+     * leave their place, the pieces come into the box as new lots, what is left of a strip stays at its place as a lot
+     * of the shorter strip. `$prelude` creates rest materials first; their refs stand in `rests[].thing`.
+     *
+     * @param list<array{lot: int, place: int, take: int, thing: int, pieces: int, into: int, name: string, rests: list<array{thing: string, quantity: int, name: string}>}> $rows
+     * @param list<array<string, mixed>> $prelude
+     * @return list<array<string, mixed>>
+     */
+    public function cut(array $rows, int $reference, string $title, array $prelude = []): array
+    {
+        $s = $this->structure;
+
+        if (! $s->hasField('transaction_reference')) {
+            throw StockError::notConfigured('fields.transaction_reference');
+        }
+
+        $this->start();
+        $this->changes = $prelude;
+
+        foreach ($rows as $row) {
+            $this->line($title, (string) $row['lot'], self::signed(-$row['take']), null, $row['place']);
+
+            $pieces = $this->lot($row['name'], (string) $row['thing'], null, null, '', $row['into']);
+            $this->line($row['name'], $pieces, self::signed($row['pieces']), null, $row['into']);
+
+            foreach ($row['rests'] as $rest) {
+                $lot = $this->lot($rest['name'], $rest['thing'], null, null, '', $row['place']);
+                $this->line($rest['name'], $lot, self::signed($rest['quantity']), null, $row['place']);
+            }
+        }
+
+        return $this->finish($title, 'kind_consumption', [(string) $s->field('transaction_reference') => (string) $reference]);
+    }
+
+    /**
      * D-1143: the finished things of a build order as one Vorgang «Zugang» with the order as its Bezug — new lots at the
      * place, and cancelled pieces taken back from this order's lots.
      *

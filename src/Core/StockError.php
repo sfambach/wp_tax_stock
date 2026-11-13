@@ -100,6 +100,24 @@ final class StockError extends \RuntimeException
         return new self('place_in_use', $reasons);
     }
 
+    /** D-1328: a strip of `$from` poles cannot give pieces of `$poles`. */
+    public static function cutNotPossible(int $poles, int $from): self
+    {
+        return new self('cut_not_possible', $poles . '|' . $from);
+    }
+
+    /** D-1328: the lot to cut from is no lot in stock. */
+    public static function cutNoLot(int $lot): self
+    {
+        return new self('cut_no_lot', (string) $lot);
+    }
+
+    /** D-1328: the lot to cut from holds fewer strips (or pins) than the cut takes. */
+    public static function cutTooShort(int $lot, int $needed): self
+    {
+        return new self('cut_too_short', $lot . '|' . $needed);
+    }
+
     public static function notALocation(int $recordId): self
     {
         return new self('not_a_location', (string) $recordId);

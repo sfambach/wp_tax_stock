@@ -68,6 +68,10 @@ final class Plugin
     /** D-1038: the modeller's inbox reports «versendet» / «zugestellt» for an order (Modeller ≥ 0.2.78, D-1326). */
     public const ORDER_EVENT = 'taxmod_stock_event';
 
+    /** D-1328 (D9): longer strips to cut from, and the cuts booked, for the manufacturing module. */
+    public const CUT_SOURCES = 'taxmod_stock_cut_sources';
+    public const BOOK_CUT    = 'taxmod_stock_book_cut';
+
     public function boot(): void
     {
         // Checked at runtime rather than with «Requires Plugins»: WordPress matches that header against the folder name, and the
@@ -151,6 +155,8 @@ final class Plugin
         add_filter(self::BOOK_BACKFILL, [self::class, 'bookBackfill'], 10, 2);
         add_filter(self::LOTS_OF, [self::class, 'lotsOf'], 10, 2);
         add_action(self::ORDER_EVENT, [self::class, 'orderEvent'], 10, 2);
+        add_filter(self::CUT_SOURCES, [self::class, 'cutSources'], 10, 2);
+        add_filter(self::BOOK_CUT, [self::class, 'bookCut'], 10, 2);
         // D-1147: the rows of the material and purchase lists draw their details when opened.
         // The filter's name stands as text, so an older modeller without it does not stop the module.
         add_filter('taxmod_list_details', static fn (?string $html, string $source, array $args): ?string => match ($source) {
@@ -224,6 +230,78 @@ final class Plugin
 
         try {
             return (new StockService())->bookBuild(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Fertigung', 'taxmod-stock'))));
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1328: `apply_filters('taxmod_stock_cut_sources', null, ['things' => [thing => missing pieces], 'except' => box])`
+     * answers thing → list of ['thing', 'pins', 'lot', 'place', 'left'], shortest strip first — read only, one call.
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     `mixed`: checked here
+     */
+    public static function cutSources(mixed $previous, mixed $args): array|\WP_Error
+    {
+        if (is_array($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args   = is_array($args) ? $args : [];
+        $wanted = [];
+
+        foreach (is_array($args['things'] ?? null) ? $args['things'] : [] as $thing => $pieces) {
+            if (absint($thing) > 0 && is_numeric($pieces) && (float) $pieces > 0) {
+                $wanted[absint($thing)] = (float) $pieces;
+            }
+        }
+
+        try {
+            return (new StockService())->cutSources($wanted, absint($args['except'] ?? 0));
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1328: `apply_filters('taxmod_stock_book_cut', null, ['reference' => order, 'into' => box, 'cuts' => [['from' =>
+     * lot, 'thing' => material, 'pieces' => n], …], 'title' => …, 'date' => Y-m-d])` books all cuts in one Vorgang.
+     * Answers its id or a WP_Error.
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     `mixed`: checked here
+     */
+    public static function bookCut(mixed $previous, mixed $args): int|\WP_Error
+    {
+        if (is_int($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args = is_array($args) ? $args : [];
+        $date = sanitize_text_field((string) ($args['date'] ?? ''));
+        $cuts = [];
+
+        foreach (is_array($args['cuts'] ?? null) ? $args['cuts'] : [] as $cut) {
+            if (is_array($cut) && absint($cut['from'] ?? 0) > 0 && absint($cut['thing'] ?? 0) > 0 && absint($cut['pieces'] ?? 0) > 0) {
+                $cuts[] = ['from' => absint($cut['from']), 'thing' => absint($cut['thing']), 'pieces' => absint($cut['pieces'])];
+            }
+        }
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+            return new \WP_Error('taxmod_stock_not_a_date', __('Datum fehlt oder ist kein Datum (JJJJ-MM-TT).', 'taxmod-stock'));
+        }
+
+        try {
+            return (new StockService())->bookCut(absint($args['reference'] ?? 0), absint($args['into'] ?? 0), $cuts, $date, sanitize_text_field((string) ($args['title'] ?? __('Ablängen', 'taxmod-stock'))));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }

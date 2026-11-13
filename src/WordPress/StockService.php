@@ -3,6 +3,8 @@
 namespace TaxmodStock\WordPress;
 
 use TaxmodStock\Core\Contacts;
+use TaxmodStock\Core\CutPlan;
+use TaxmodStock\Core\CutSources;
 use TaxmodStock\Core\Bookings;
 use TaxmodStock\Core\BuildPlan;
 use TaxmodStock\Core\InboundArchive;
@@ -3170,6 +3172,204 @@ final class StockService
         }
 
         throw StockError::nothingToBook();
+    }
+
+    /**
+     * D-1328: kind and poles of some strips, in two reads (the things, then their unit values). null without the
+     * modeller's narrow read.
+     *
+     * @param list<int>       $ids
+     * @param array<int, int> $nodes thing → node
+     * @return array{kinds: array<int, string|null>, poles: array<int, int>, things: Table, values: Table}|null
+     */
+    private function stripFacts(array $ids, array $nodes): ?array
+    {
+        $s      = $this->structure();
+        $things = $ids === [] ? new Table([]) : $this->model->records($ids);
+
+        if ($things === null) {
+            return null;
+        }
+
+        $field = static fn (string $key): int => $s->hasField($key) ? $s->field($key) : 0;
+        $unit  = [$field('connector_poles'), $field('connector_rows'), $field('connector_pitch')];
+        $parts = [];
+
+        foreach ($ids as $thing) {
+            foreach ($unit as $relation) {
+                $part = $relation > 0 ? (int) $things->first($thing, $relation) : 0;
+
+                if ($part > 0) {
+                    $parts[] = $part;
+                }
+            }
+        }
+
+        $values    = $parts === [] ? new Table([]) : ($this->model->records(array_values(array_unique($parts))) ?? new Table([]));
+        $canonical = static function (int $relation, int $thing) use ($things, $values): ?string {
+            $part = $relation > 0 ? (int) $things->first($thing, $relation) : 0;
+
+            if ($part === 0) {
+                return null;
+            }
+
+            $all = $values->valuesOf($part);
+            ksort($all);
+
+            return (string) wp_json_encode($all);
+        };
+        $kinds = [];
+        $poles = [];
+
+        foreach ($ids as $thing) {
+            $form          = $field('thing_form') > 0 ? $things->first($thing, $field('thing_form')) : null;
+            $kinds[$thing] = CutSources::kindOf($nodes[$thing] ?? 0, $canonical($field('connector_rows'), $thing), $canonical($field('connector_pitch'), $thing), $things->first($thing, $field('connector_orientation')), $form);
+            $part          = (int) $things->first($thing, $field('connector_poles'));
+            $poles[$thing] = $part > 0 ? (int) round((float) $values->first($part, $s->field('money_amount'))) : 0;
+        }
+
+        return ['kinds' => $kinds, 'poles' => $poles, 'things' => $things, 'values' => $values];
+    }
+
+    /**
+     * D-1328 (D9): the longer strips of the same kind a missing strip can be cut from, for all missing things in one
+     * read (CD-7). Without the connector fields in the structure, or without the modeller's narrow read, none.
+     *
+     * @param array<int, float> $wanted thing → missing pieces
+     * @return array<int, list<array{thing: int, pins: int, lot: int, place: int, left: float}>>
+     */
+    public function cutSources(array $wanted, int $except = 0): array
+    {
+        $s = $this->structure();
+
+        if ($wanted === [] || ! $s->hasField('connector_poles') || ! $s->hasField('connector_pitch') || ! $s->hasField('connector_orientation')) {
+            return [];
+        }
+
+        $ledger = $this->ledger();
+        $stock  = [];
+
+        foreach ($ledger->stockByPlace() as $lot => $places) {
+            $thing = $ledger->thingOf($lot);
+
+            if ($thing !== null) {
+                $stock[$thing][$lot] = $places;
+            }
+        }
+
+        $nodes  = $this->model->nodesOf(array_values(array_unique([...array_keys($wanted), ...array_keys($stock)])));
+        $wanted = array_filter($wanted, static fn (int $thing): bool => ($nodes[$thing] ?? 0) > 0, ARRAY_FILTER_USE_KEY);
+        $wantedNodes = array_flip(array_map(static fn (int $thing): int => $nodes[$thing], array_keys($wanted)));
+        $stock  = array_filter($stock, static fn (int $thing): bool => isset($wantedNodes[$nodes[$thing] ?? 0]), ARRAY_FILTER_USE_KEY);
+        $facts = $this->stripFacts(array_values(array_unique([...array_keys($wanted), ...array_keys($stock)])), $nodes);
+
+        if ($facts === null) {
+            return [];
+        }
+
+        return (new CutSources($facts['kinds'], $facts['poles']))->for($wanted, $stock, $except);
+    }
+
+    /**
+     * D-1328 (D9): books the cuts of a build order in one Vorgang — the long strips leave, the pieces come into the box,
+     * what is left stays as shorter strips. A rest strip of a length no material has yet becomes a copy of the long
+     * strip's material with its poles changed.
+     *
+     * @param list<array{from: int, thing: int, pieces: int}> $cuts
+     * @return int the Vorgang
+     */
+    public function bookCut(int $reference, int $into, array $cuts, string $today, string $title): int
+    {
+        $s = $this->structure();
+
+        if ($cuts === [] || ! $s->hasField('connector_poles')) {
+            throw StockError::nothingToBook();
+        }
+
+        if (! $this->table('location')->has($into)) {
+            throw StockError::notALocation($into);
+        }
+
+        $ledger  = $this->ledger();
+        $sources = [];
+
+        foreach ($cuts as $cut) {
+            $sources[$cut['from']] = $ledger->thingOf($cut['from']) ?? throw StockError::cutNoLot($cut['from']);
+        }
+
+        $ids   = array_values(array_unique([...array_values($sources), ...array_column($cuts, 'thing')]));
+        $nodes = $this->model->nodesOf($ids);
+
+        // Every strip of these nodes, so a rest finds a material of its length that has no stock yet.
+        $all = [];
+
+        foreach (array_unique(array_values($nodes)) as $node) {
+            $all = [...$all, ...$this->model->table($node)->ids()];
+        }
+
+        $all   = array_values(array_unique([...$ids, ...$all]));
+        $facts = $this->stripFacts($all, $nodes + $this->model->nodesOf(array_values(array_diff($all, $ids))));
+
+        if ($facts === null) {
+            throw StockError::notConfigured('modeller.records');
+        }
+
+        $lager   = $this->table('lager');
+        $known   = $this->things();
+        $byKind  = [];
+
+        foreach ($all as $thing) {
+            if (($facts['kinds'][$thing] ?? null) !== null && $facts['poles'][$thing] > 0) {
+                $byKind[$facts['kinds'][$thing]][$facts['poles'][$thing]] ??= (string) $thing;
+            }
+        }
+
+        $prelude = [];
+        $rows    = [];
+        $label   = static fn (int $thing): string => (string) ($facts['things']->first($thing, $s->field('label')) ?? '#' . $thing);
+
+        foreach ($cuts as $cut) {
+            $source = $sources[$cut['from']];
+            $kind   = $facts['kinds'][$source] ?? null;
+
+            if ($kind === null || $kind !== ($facts['kinds'][$cut['thing']] ?? null)) {
+                throw StockError::cutNotPossible($facts['poles'][$cut['thing']] ?? 0, $facts['poles'][$source] ?? 0);
+            }
+
+            $record = $known->lagerOf($source);
+            $pack   = Pack::of($s, $lager, $record);
+            $loss   = $s->hasField('lager_cut_loss') && $record !== null ? max(0, (int) $lager->first($record, $s->field('lager_cut_loss'))) : 0;
+            $plan   = CutPlan::of($cut['pieces'], $facts['poles'][$cut['thing']], $facts['poles'][$source], $loss, $pack !== null);
+            $places = array_filter($ledger->placesOf($cut['from']), static fn (float $q, int $place): bool => $place !== $into && $q > 0, ARRAY_FILTER_USE_BOTH);
+            arsort($places);
+            $place  = (int) array_key_first($places);
+
+            if ($place === 0 || $places[$place] + 1e-9 < $plan->strips) {
+                throw StockError::cutTooShort($cut['from'], $plan->strips);
+            }
+
+            $rests = [];
+
+            foreach ($plan->rests as $poles => $count) {
+                if (! isset($byKind[$kind][$poles])) {
+                    $ref     = 'rest' . count($prelude);
+                    $part    = (int) $facts['things']->first($source, $s->field('connector_poles'));
+                    $unit    = $facts['values']->valuesOf($part);
+                    $prelude[] = ['op' => 'duplicate_record', 'record' => (string) $source, 'ref' => $ref];
+                    $prelude[] = ['op' => 'set_values', 'record' => '@' . $ref, 'values' => [
+                        // The copied part «0» overwritten: its unit and prefix stay, the number of poles changes.
+                        (string) $s->field('connector_poles') => ['0' => [(string) $s->field('money_amount') => (string) $poles] + array_map(static fn (array $v): string => (string) ($v[0] ?? ''), $unit)],
+                    ] + ($s->hasField('description') ? [(string) $s->field('description') => sprintf('Rest aus dem Ablängen von «%s», %d polig.', $label($source), $poles)] : [])];
+                    $byKind[$kind][$poles] = '@' . $ref;
+                }
+
+                $rests[] = ['thing' => $byKind[$kind][$poles], 'quantity' => $count, 'name' => sprintf('%s · Rest %d polig', $label($source), $poles)];
+            }
+
+            $rows[] = ['lot' => $cut['from'], 'place' => $place, 'take' => $plan->strips, 'thing' => $cut['thing'], 'pieces' => $cut['pieces'], 'into' => $into, 'name' => $label($cut['thing']), 'rests' => $rests];
+        }
+
+        return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->cut($rows, $reference, $title, $prelude)));
     }
 
     /**

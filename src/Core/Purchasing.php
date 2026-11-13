@@ -50,7 +50,8 @@ final class Purchasing
     {
         $s = $this->structure;
 
-        return $s->hasValue('status_ordered') && (int) $orders->first($order, $s->field('order_status')) === $s->value('status_ordered');
+        // D-1038: shipped and delivered are still ordered — nothing of it is booked yet.
+        return $this->statusIs($order, $orders, 'status_ordered') || $this->statusIs($order, $orders, 'status_shipped') || $this->statusIs($order, $orders, 'status_delivered');
     }
 
     public function isCancelled(int $order, Table $orders): bool
@@ -367,7 +368,8 @@ final class Purchasing
     {
         $s = $this->structure;
 
-        if (! $orders->has($order) || ! $this->isOrdered($order, $orders) || $this->merchantOf($order, $orders) === '') {
+        // Once on its way (D-1038) it is no draft again.
+        if (! $orders->has($order) || ! $this->statusIs($order, $orders, 'status_ordered') || $this->merchantOf($order, $orders) === '') {
             throw StockError::notADraft($order);
         }
 

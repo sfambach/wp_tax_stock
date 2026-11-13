@@ -65,6 +65,9 @@ final class Plugin
     /** D-1260: material → lot → rest, for the sales module to pick lots from. */
     public const LOTS_OF = 'taxmod_stock_lots_of';
 
+    /** D-1038: the modeller's inbox reports «versendet» / «zugestellt» for an order (Modeller ≥ 0.2.78, D-1326). */
+    public const ORDER_EVENT = 'taxmod_stock_event';
+
     public function boot(): void
     {
         // Checked at runtime rather than with «Requires Plugins»: WordPress matches that header against the folder name, and the
@@ -147,6 +150,7 @@ final class Plugin
         add_filter(self::CANCEL_SALE, [self::class, 'cancelSale'], 10, 2);
         add_filter(self::BOOK_BACKFILL, [self::class, 'bookBackfill'], 10, 2);
         add_filter(self::LOTS_OF, [self::class, 'lotsOf'], 10, 2);
+        add_action(self::ORDER_EVENT, [self::class, 'orderEvent'], 10, 2);
         // D-1147: the rows of the material and purchase lists draw their details when opened.
         // The filter's name stands as text, so an older modeller without it does not stop the module.
         add_filter('taxmod_list_details', static fn (?string $html, string $source, array $args): ?string => match ($source) {
@@ -222,6 +226,20 @@ final class Plugin
             return (new StockService())->bookBuild(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Fertigung', 'taxmod-stock'))));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1038: sets the order status the inbox's event names. No capability check: the event is not a request but the
+     * modeller's own import, which may run from cron after its checks; it writes nothing but the forward status.
+     */
+    public static function orderEvent(mixed $order, mixed $event): void
+    {
+        try {
+            (new StockService())->orderEvent(absint($order), sanitize_key((string) $event));
+        } catch (StockError $refused) {
+            // CD-10: not silenced — the import goes on, the refusal is logged for the order.
+            error_log(sprintf('taxmod-stock: status of order %d after «%s» not set: %s', absint($order), sanitize_key((string) $event), $refused->getMessage()));
         }
     }
 

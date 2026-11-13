@@ -120,6 +120,8 @@ final class Structure
     /** D-1001: draft and cancelled orders stand in no stage of the goods receipt cockpit. */
     private const OPTIONAL_VALUES = [
         'currency_default', 'status_draft', 'status_cancelled', 'status_ordered',
+        // D-1038: «versendet» and «zugestellt», set by the stock process on the inbox's event.
+        'status_shipped', 'status_delivered',
         'test_ok', 'test_partial', 'test_maintenance', 'test_defect', 'condition_new', 'condition_untested',
         // D-1039 «Umbuchung», D-1083 «Reservierung»: kinds of Vorgang.
         'kind_transfer', 'kind_reservation',

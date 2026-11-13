@@ -28,6 +28,7 @@ use TaxmodStock\Core\PlaceFit;
 use TaxmodStock\Core\PlaceTypes;
 use TaxmodStock\Core\ProjectBill;
 use TaxmodStock\Core\NotStocked;
+use TaxmodStock\Core\OrderStatusEvent;
 use TaxmodStock\Core\ReceiptChoice;
 use TaxmodStock\Core\ReceiptPlan;
 use TaxmodStock\Core\Purpose;
@@ -2810,6 +2811,32 @@ final class StockService
         $this->checkThings(array_keys(array_filter($lines, static fn (float $q): bool => $q > 0.0)));
         $rows   = BuildPlan::rows($this->ledger(), $place, $this->locationTree()->withAllBelow($place), $lines, $this->takenFor($reference));
         return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->build($rows, $reference, $title)));
+    }
+
+    /**
+     * D-1038: the inbox reported «versendet» or «zugestellt» for an order; the status moves forward, never back, and the
+     * same message twice writes nothing.
+     *
+     * @return array<mixed> the model's answer, empty when nothing changed
+     */
+    public function orderEvent(int $order, string $event): array
+    {
+        $s = $this->structure();
+
+        if (! $s->hasField('order_status')) {
+            return [];
+        }
+
+        $orders  = $this->table('order');
+        $current = $orders->has($order) ? (int) $orders->first($order, $s->field('order_status')) : null;
+
+        if ($current === null) {
+            return [];
+        }
+
+        $changes = (new OrderStatusEvent($s))->changes($order, $current, $event);
+
+        return $changes === [] ? [] : $this->model->write($changes);
     }
 
     /**

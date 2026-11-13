@@ -57,8 +57,9 @@ final class InboundOrder
             $this->closedWithoutStock                                                  => InboundStage::Archived,
             $is('status_received', $this->status)                                      => $archive?->isDone($this->receivedOn ?? $this->orderedOn) ? InboundStage::Archived : InboundStage::Booked,
             (bool) $archive?->isHistory($this->orderedOn)                              => InboundStage::Archived,
-            $is('status_partial', $this->status), $this->hasArrived()                   => InboundStage::Arrived,
-            $this->tracking !== []                                                      => InboundStage::Shipped,
+            // D-1038: «zugestellt» and «versendet» as the stock process set them on the inbox's event.
+            $is('status_partial', $this->status), $is('status_delivered', $this->status), $this->hasArrived() => InboundStage::Arrived,
+            $this->tracking !== [], $is('status_shipped', $this->status)               => InboundStage::Shipped,
             default                                                                     => InboundStage::Ordered,
         };
     }

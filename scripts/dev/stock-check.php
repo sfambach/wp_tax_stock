@@ -97,6 +97,8 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'create_node', 'ref' => 's_entw', 'name' => 'Entwurf', 'parent' => '@stat'],
     ['op' => 'create_node', 'ref' => 's_best', 'name' => 'bestellt', 'parent' => '@stat'],
     ['op' => 'create_node', 'ref' => 's_storn', 'name' => 'storniert', 'parent' => '@stat'],
+    ['op' => 'create_node', 'ref' => 's_vers', 'name' => 'versendet', 'parent' => '@stat'],
+    ['op' => 'create_node', 'ref' => 's_zug', 'name' => 'zugestellt', 'parent' => '@stat'],
     ['op' => 'create_node', 'ref' => 'k_res', 'name' => 'Reservierung', 'parent' => '@arten'],
     ['op' => 'create_node', 'ref' => 'quel', 'name' => '__Quellen', 'parent' => 410, 'class' => 'Choice'],
     ['op' => 'create_node', 'ref' => 'q_hand', 'name' => 'von Hand', 'parent' => '@quel'],
@@ -217,6 +219,7 @@ $struktur = [
         'kind_receipt' => $r['k_we'], 'kind_consumption' => $r['k_vb'], 'kind_count' => $r['k_in'], 'kind_transfer' => $r['k_um'], 'kind_relocation' => $r['k_ul'], 'kind_sale' => $r['k_vk'], 'source_manual' => $r['q_hand'],
         'status_partial' => $r['s_teil'], 'status_received' => $r['s_ganz'], 'location_default' => $r['lager'],
         'status_draft' => $r['s_entw'], 'status_ordered' => $r['s_best'], 'status_cancelled' => $r['s_storn'], 'kind_reservation' => $r['k_res'],
+        'status_shipped' => $r['s_vers'], 'status_delivered' => $r['s_zug'],
     ],
 ];
 update_option(StockService::OPTION, $struktur);
@@ -809,6 +812,16 @@ $pruefe($s->table('purchase')->first($nachT1, $r['k_bedarf']) === (string) $beda
 (new StockService())->unsourcePosition($entwurf, $nachT1);
 $s = new StockService();
 $pruefe(in_array((string) $nachT1, $s->table('order')->all($bedarf, $r['o_pos']), true) && $s->table('order')->all($entwurf, $r['o_pos']) === [] && $s->table('order')->first($entwurf, $r['o_stat']) === (string) $r['s_storn'], 'back into the demand; the emptied draft is cancelled');
+
+// D-1038 (E1): the inbox's event sets the order status forward, once; a closed order keeps its status.
+$evOrder = (int) (wp_get_ability('taxmod/apply')->execute(['changes' => [['op' => 'create_record', 'ref' => 'evo', 'node' => (string) $r['ord'], 'values' => [(string) $r['o_stat'] => (string) $r['s_best']]]]])['refs']['evo'] ?? 0);
+do_action('taxmod_stock_event', $evOrder, 'shipped', '2026-11-12', 'mail', 'x1');
+$afterShipped = (new StockService())->table('order')->first($evOrder, $r['o_stat']);
+do_action('taxmod_stock_event', $evOrder, 'shipped', '2026-11-12', 'mail', 'x1');
+do_action('taxmod_stock_event', $evOrder, 'delivered', '2026-11-13', 'mail', 'x1');
+$afterDelivered = (new StockService())->table('order')->first($evOrder, $r['o_stat']);
+do_action('taxmod_stock_event', $evOrder, 'shipped', '2026-11-13', 'mail', 'x1');
+$pruefe($afterShipped === (string) $r['s_vers'] && $afterDelivered === (string) $r['s_zug'] && (new StockService())->table('order')->first($evOrder, $r['o_stat']) === (string) $r['s_zug'], 'E1: «versendet» then «zugestellt» set the order status, never back (D-1038)');
 (new StockService())->removePosition($bedarf, $nachT1);
 $s = new StockService();
 $pruefe(count($s->table('order')->all($bedarf, $r['o_pos'])) === 1 && ! $s->table('purchase')->has($nachT1), 'a position removed leaves its demand and is gone');

@@ -211,8 +211,7 @@ final class ContactsPage
         $form   = (string) apply_filters('taxmod_record_editor', '', $contact, $back, $undo);
 
         return ($return === [] ? '<p><a href="' . esc_url($list) . '">' . esc_html__('← zur Liste', 'taxmod-stock') . '</a></p>' : '')
-            . ($form === '' ? ListPage::toolbar([['<a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $contact], admin_url('admin.php'))) . '">'
-                . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a>'], ...$undo]) : $form);
+            . ($form === '' ? ListPage::toolbar([[StockPage::editorMissing()], ...$undo]) : $form);
     }
 
     /** «+ Neuer Kontakt» in the chosen node: the name (and a person's first name) only. */

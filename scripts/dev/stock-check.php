@@ -871,6 +871,14 @@ $s     = new StockService();
 $offenR = $s->reservations()->forSubject($r['t2']);
 $pruefe($offenR !== null && count($s->table('transaction')->all($offenR, $r['v_pos'])) === 2 && ($s->reservations()->reservedByThing()[$bc] ?? 0.0) === 3.0, 'one reservation per subject, holding both positions');
 
+// His wish 2026-11-11 «links aus logistik auf tax modeller … ablösung»: no page of the module links into the modeller's screens.
+$hinaus = array_filter(array_map(static fn (string $f): string => str_contains((string) file_get_contents($f), 'taxmod_open_record') ? basename($f) : '', glob(__DIR__ . '/../../src/WordPress/Admin/*.php') ?: []));
+$einKauf = (int) ((new StockService())->table('purchase')->ids()[0] ?? 0);
+$_GET   = ['page' => TaxmodStock\WordPress\Admin\PurchasePage::PAGE, 'kauf' => (string) $einKauf];
+$kauf   = (new TaxmodStock\WordPress\Admin\PurchasePage())->render();
+$_GET   = [];
+$pruefe($hinaus === [] && str_contains($kauf, 'Kauf – ') && str_contains($kauf, 'taxmod-back'), 'no link leads into the modeller; a purchase opens in «Einkauf» with its editor and the way back' . ($hinaus === [] ? '' : ': ' . implode(', ', $hinaus)));
+
 // D-1301: the manufacturing module reserves, reads and releases for its order in one call each.
 $t1Ledger  = (new StockService())->ledger();
 $t1Lot     = $t1Ledger->proposedLot($bc);

@@ -1160,8 +1160,7 @@ final class StockPage
             [['<a class="button" href="' . esc_url($this->thingUrl($thing, 'daten')) . '">' . esc_html__('Abbrechen', 'taxmod-stock') . '</a>']]);
 
         if ($form === '') {
-            return '<p><a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $thing], admin_url('admin.php'))) . '">'
-                . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a></p>';
+            return self::editorMissing();
         }
 
         return $form;
@@ -1372,10 +1371,10 @@ final class StockPage
                     . '<td>' . ($first ? esc_html($name) : '') . '</td><td>' . esc_html($places[$place] ?? '—') . $this->reservedMark($place, $flags) . '</td><td>' . esc_html($this->number($quantity)) . '</td>'
                     . '<td>' . ($first ? esc_html($amount ?? '—') : '') . '</td>'
                     // D-1310, his wishes 2026-11-11 «Absprung zum Kauf … in einem neuen Tab», «link zur internen bestellung»: the purchase opens
-                    // its order's view in the Wareneingang; without an order, the purchase itself in the modeller.
+                    // its order's view in the Wareneingang; without an order, its own view in «Einkauf».
                     . '<td>' . ($first ? ($purchase === null ? esc_html__('Inventur', 'taxmod-stock')
                         : '<a href="' . esc_url(isset($orderOf[(int) $purchase]) ? InboundPage::url(['order' => $orderOf[(int) $purchase]]) . '#taxmod-stock-purchase-' . (int) $purchase
-                            : add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => (int) $purchase], admin_url('admin.php'))) . '" target="_blank" rel="noopener">#' . esc_html((string) $purchase) . '</a>') : '') . '</td>'
+                            : PurchasePage::url(['kauf' => (string) (int) $purchase])) . '" target="_blank" rel="noopener">#' . esc_html((string) $purchase) . '</a>') : '') . '</td>'
                     . '<td>' . ($first ? esc_html(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10)) : '') . '</td>'
                     . '<td style="text-align:right;white-space:nowrap">' . ($quantity > 0.0 ? $this->transferDialog($thing, $lot, $place, $quantity, $places) : '')
                     . ' ' . $this->bookOutButton(add_query_arg(['page' => self::PAGE, 'tab' => 'verbrauch', 'thing' => $thing, 'lot' => $lot, 'place' => $place], admin_url('admin.php')))
@@ -1452,6 +1451,12 @@ final class StockPage
             . '<input type="hidden" name="return_tab" value="' . esc_attr(self::BACK_TO_LIST) . '" form="' . esc_attr(self::BULK_FORM) . '">';
 
         return ['taxmod-stock-bulk-group' => [__('Verschieben nach …', 'taxmod-stock'), '<div class="alignleft actions">' . ListPage::dialogAction('taxmod-stock-bulk-group', __('Verschieben nach …', 'taxmod-stock'), __('Ausgewählte in andere Gruppe', 'taxmod-stock'), $body, 'booking', 'sammelverschieben', __('Verschieben', 'taxmod-stock'), self::BULK_FORM) . '</div>']];
+    }
+
+    /** His wish 2026-11-11: no link out into the modeller; without its record editor the page says the modeller is too old. */
+    public static function editorMissing(): string
+    {
+        return '<div class="notice notice-warning inline"><p>' . esc_html__('Der Taxonomy Modeller ist zu alt: ihm fehlt der Satz-Editor für diese Seite. Bitte den Modeller aktualisieren.', 'taxmod-stock') . '</p></div>';
     }
 
     /** D8, D-1331: «+ Neue Untergruppe» of the group chosen in «Gruppenbestand»; nothing while the modeller cannot make one. */
@@ -2642,7 +2647,8 @@ final class StockPage
             $extra   = $edit
                 ? $this->stock->placeChooser('parent[' . $place . ']', $tree->parentOf($place), '', [$place]) . ' '
                     . '<button type="submit" class="button button-small" name="booking" value="umhaengen-' . esc_attr((string) $place) . '">' . esc_html__('Umhängen', 'taxmod-stock') . '</button> '
-                    . '<a class="button button-small" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $place], admin_url('admin.php')) . '#taxmod-preview-edit') . '">' . esc_html__('Bearbeiten', 'taxmod-stock') . '</a> '
+                    // His wish 2026-11-11: no way out of the Logistik into the modeller — the place's own view has the record editor.
+                    . '<a class="button button-small" href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'lagerstruktur', 'ort' => $place], admin_url('admin.php'))) . '">' . esc_html__('Bearbeiten', 'taxmod-stock') . '</a> '
                     . $this->reserveDialog($place, $flags->isFlagged($place), $all)
                 : implode(', ', $links);
             $body .= '<tr><th scope="row" class="check-column"></th><td>' . $name . '</td><td>' . esc_html($project ?? '') . '</td>'
@@ -2841,7 +2847,7 @@ final class StockPage
         ];
         $form = (string) apply_filters('taxmod_record_editor', '', $place, $back, $groups);
         $html = $this->placeHead($place, $tree)
-            . ($form === '' ? ListPage::toolbar([['<a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $place], admin_url('admin.php'))) . '">' . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a>'], ...$groups])
+            . ($form === '' ? ListPage::toolbar([[self::editorMissing()], ...$groups])
                 . '<table class="widefat striped" style="max-width:40em">' . $table . '</table>' : $form)
             . $this->childList($place, $tree, $rows);
 
@@ -3153,7 +3159,7 @@ final class StockPage
 
             // D7, his word «Kopf in einer Zeile»: «Platzarten – Name».
             return '<h2>' . esc_html(sprintf(/* translators: %s: name of the place type */ __('Platzarten – %s', 'taxmod-stock'), $types->nameOf($chosen))) . '</h2>' . ($form === '' ? ListPage::toolbar($copy) : '')
-                . ($form === '' ? '<p><a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $chosen], admin_url('admin.php'))) . '">' . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a></p>' : $form)
+                . ($form === '' ? self::editorMissing() : $form)
                 . ($return === [] ? '<p><a href="' . esc_url($list) . '">' . esc_html__('← alle Platzarten', 'taxmod-stock') . '</a></p>' : '');
         }
 
@@ -3231,7 +3237,7 @@ final class StockPage
             return $html . ($form === '' ? ListPage::toolbar($copy) : '')
                 . '<h3>' . esc_html($name) . ' <span class="description" style="font-weight:normal">· Id: ' . esc_html((string) $chosen) . '</span></h3>'
                 . $this->templatePreview($chosen, $template)
-                . ($form === '' ? '<p><a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $chosen], admin_url('admin.php'))) . '">' . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a></p>' : $form)
+                . ($form === '' ? self::editorMissing() : $form)
                 . '<p><a href="' . esc_url($list) . '">' . esc_html__('← alle Etiketten', 'taxmod-stock') . '</a></p>';
         }
 
@@ -3533,7 +3539,7 @@ final class StockPage
 
         return '<p><a href="' . esc_url($list) . '">' . esc_html__('← Drucker und Rollen', 'taxmod-stock') . '</a></p>'
             . '<h2>' . esc_html($name) . '</h2>'
-            . ($form === '' ? ListPage::toolbar([['<a class="button" href="' . esc_url(add_query_arg(['page' => 'taxmod', 'taxmod_open_record' => $record], admin_url('admin.php'))) . '">' . esc_html__('Im Taxonomy Modeller bearbeiten', 'taxmod-stock') . '</a>'], [$actions]]) : '')
+            . ($form === '' ? ListPage::toolbar([[self::editorMissing()], [$actions]]) : '')
             // D-1220: the facts beside the form on wide screens, above it on narrow ones — the shared block.
             . (method_exists(ListPage::class, 'beside')
                 ? ListPage::beside($form, '<table class="widefat striped">' . $facts . '</table>')

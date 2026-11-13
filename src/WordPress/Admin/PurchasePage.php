@@ -132,6 +132,17 @@ final class PurchasePage
         exit;
     }
 
+    /** One purchase in the modeller's record editor, the way back to «Einkauf» first in its toolbar (D-1316). */
+    private function purchaseView(int $purchase): string
+    {
+        $word   = (string) ($this->stock->recordsOf('purchase', [$purchase])->first($purchase, $this->stock->structure()->field('label')) ?? '#' . $purchase);
+        $return = method_exists(ListPage::class, 'back') ? [[ListPage::back(self::url(), __('Zum Einkauf', 'taxmod-stock'))]] : [];
+        $form   = (string) apply_filters('taxmod_record_editor', '', $purchase, self::url(['kauf' => (string) $purchase]), $return);
+
+        return '<h2>' . esc_html(sprintf(/* translators: %s: the purchase's word */ __('Kauf – %s', 'taxmod-stock'), $word)) . '</h2>'
+            . ($form === '' ? ListPage::toolbar($return) . StockPage::editorMissing() : $form);
+    }
+
     private function body(): string
     {
         $s         = $this->stock->structure();
@@ -140,6 +151,12 @@ final class PurchasePage
         $purchases = $this->stock->table('purchase');
         $tab       = sanitize_key((string) ($_GET['tab'] ?? self::TABS[0]));
         $open      = absint($_GET['order'] ?? 0);
+        $single    = absint($_GET['kauf'] ?? 0);
+
+        // His wish 2026-11-11: a purchase without an order opens here, not in the modeller.
+        if ($single > 0 && $this->stock->recordsOf('purchase', [$single])->has($single)) {
+            return $this->purchaseView($single);
+        }
 
         if (! $s->hasValue('status_draft') || ! $s->hasValue('status_ordered') || ! $s->hasField('purchase_demand') || ! $s->hasField('order_merchant')) {
             throw StockError::notConfigured(! $s->hasField('purchase_demand') ? 'fields.purchase_demand' : 'values.status_ordered');

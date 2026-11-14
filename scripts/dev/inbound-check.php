@@ -252,6 +252,11 @@ $html = (new InboundPage())->render();
 $pruefe(! str_contains($html, 'Amazon-Historie 2004'), 'an order from before the start day is not «Bestellt»');
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'archived'];
 $pruefe(str_contains((new InboundPage())->render(), 'Amazon-Historie 2004'), 'it stands under «Archiviert»');
+// D-1357, his report 2026-11-14 «im Archiv funktioniert der Filter nicht»: the page's search knows «*» like every list.
+$_GET = ['page' => InboundPage::PAGE, 'tab' => 'archived', 's' => 'amaz*2004'];
+$pruefe(str_contains((new InboundPage())->render(), 'Amazon-Historie 2004'), 'D-1357: the search «amaz*2004» finds the archived order');
+$_GET = ['page' => InboundPage::PAGE, 'tab' => 'archived', 's' => '2004*amaz'];
+$pruefe(! str_contains((new InboundPage())->render(), 'Amazon-Historie 2004'), 'D-1357: «*» keeps the order of the pieces');
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'all'];
 $pruefe(! str_contains((new InboundPage())->render(), 'Amazon-Historie 2004'), '«Alle» shows what is not archived');
 $pruefe(str_contains($bar = (new InboundPage())->render(), 'taxmod-step') && ! str_contains($bar, 'taxmod-steps-all'), 'His word 2026-11-09: the stages are arrows, «Alle» is no arrow any more');

@@ -19,6 +19,8 @@ final class StockList
         public readonly string $filter = '',
         public readonly string $orderBy = 'name',
         public readonly bool $descending = false,
+        /** D-1357: the one search rule (`Wildcard::matches`), handed in by the boundary — `(text, term): bool`. */
+        private readonly ?\Closure $matches = null,
     ) {
     }
 
@@ -50,8 +52,10 @@ final class StockList
             return true;
         }
 
+        $rule = $this->matches ?? throw new \LogicException('A search needs its rule (D-1357).');
+
         foreach ([(string) $row['id'], $row['name'], ...$row['words']] as $word) {
-            if (mb_stripos($word, $search) !== false) {
+            if ($rule($word, $search)) {
                 return true;
             }
         }

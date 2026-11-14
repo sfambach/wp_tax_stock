@@ -4,6 +4,7 @@ namespace TaxmodStock\WordPress\Admin;
 
 use Taxmod\Core\Listing\ListColumn;
 use Taxmod\Core\Listing\ListView;
+use Taxmod\Core\Listing\Wildcard;
 use Taxmod\Core\Printing\LabelContent;
 use Taxmod\Core\Printing\LabelDocument;
 use Taxmod\Core\Printing\LabelFormat;
@@ -2372,7 +2373,7 @@ final class StockPage
                 'words' => array_merge(...array_map(static fn (string $purchase): array => $words[(int) $purchase] ?? [], $table->all($id, $s->field('order_lines'))))];
         }
 
-        $shown = (new StockList($list->search, '', $list->orderBy, $list->descending))->apply($rows);
+        $shown = (new StockList($list->search, '', $list->orderBy, $list->descending, Wildcard::matches(...)))->apply($rows);
         $auto  = $this->stock->viewSettings()->expanded('wareneingang');
         $html  = $this->tools('wareneingang', $list, [['status', [
             'open'     => __('Nicht eingegangen', 'taxmod-stock'),
@@ -4693,7 +4694,8 @@ final class StockPage
             sanitize_text_field(wp_unslash((string) ($_GET['s'] ?? ''))),
             sanitize_key((string) ($_GET['filter'] ?? '')),
             in_array($orderBy, StockList::ORDER_BY, true) ? $orderBy : 'name',
-            sanitize_key((string) ($_GET['order'] ?? '')) === 'desc'
+            sanitize_key((string) ($_GET['order'] ?? '')) === 'desc',
+            Wildcard::matches(...)
         );
     }
 

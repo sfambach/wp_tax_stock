@@ -3,6 +3,7 @@
 namespace TaxmodStock\WordPress\Admin;
 
 use Taxmod\Core\Listing\ListView;
+use Taxmod\Core\Listing\Wildcard;
 use Taxmod\WordPress\Admin\ListPage;
 use Taxmod\WordPress\Admin\Tiles;
 use TaxmodStock\Core\Contacts;
@@ -146,7 +147,7 @@ final class ContactsPage
     {
         $search = sanitize_text_field(wp_unslash((string) ($_GET['s'] ?? '')));
         $all    = $this->stock->contacts($node);
-        $rows   = Contacts::filter($all, $search);
+        $rows   = Contacts::filter($all, $search, Wildcard::matches(...));
         $paged  = absint($_GET['paged'] ?? 1);
         $url    = static fn (array $change): string => self::url($change + ['tab' => (string) $node, 's' => $search]);
         $count  = sprintf(/* translators: %d: number of contacts */ _n('%d Kontakt', '%d Kontakte', count($rows), 'taxmod-stock'), count($rows));

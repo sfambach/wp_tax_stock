@@ -1539,5 +1539,10 @@ $pruefe(is_int($qkVorgang) && count($qkLots) === 2 && $gesperrt && str_contains(
 
 $pruefe(apply_filters('taxmod_stock_test_place', null) === (int) ((new StockService())->testSettings([])->place ?? 0) || apply_filters('taxmod_stock_test_place', null) === 0, 'D-1342: taxmod_stock_test_place answers the place «Test», 0 without');
 
+// D-1357: the Lager's searches take the one rule from the modeller; the core gets it handed in, never a copy of its own.
+$quelle = static fn (string $datei): string => (string) file_get_contents(dirname(__DIR__, 2) . '/src/' . $datei);
+$pruefe(substr_count($quelle('WordPress/Admin/StockPage.php'), 'Wildcard::matches(...)') >= 2 && str_contains($quelle('WordPress/Admin/ContactsPage.php'), 'Wildcard::matches(...)')
+    && ! str_contains($quelle('Core/StockList.php'), 'mb_stripos') && ! str_contains($quelle('Core/Contacts.php'), 'str_contains'), 'D-1357: stock and contact search use «*» through Wildcard, the core holds no rule of its own');
+
 echo $fehler === 0 ? "all green ({$kind})\n" : "{$fehler} red ({$kind})\n";
 exit($fehler === 0 ? 0 : 1);

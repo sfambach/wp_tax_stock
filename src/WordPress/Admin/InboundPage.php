@@ -2,6 +2,7 @@
 
 namespace TaxmodStock\WordPress\Admin;
 
+use Taxmod\Core\Listing\Wildcard;
 use Taxmod\WordPress\Admin\ListPage;
 use TaxmodStock\Core\InboundOrder;
 use TaxmodStock\Core\InboundStage;
@@ -705,10 +706,11 @@ final class InboundPage
     /** @param list<string> $tracking */
     private function matches(string $search, string $label, string $about, array $tracking): bool
     {
-        $haystack = mb_strtolower($label . ' ' . $about . ' ' . implode(' ', $tracking));
+        $haystack = $label . ' ' . $about . ' ' . implode(' ', $tracking);
 
-        foreach (preg_split('/\s+/', mb_strtolower(trim($search))) ?: [] as $word) {
-            if ($word !== '' && ! str_contains($haystack, $word)) {
+        // D-1357: every word must match, each by the one rule with «*».
+        foreach (preg_split('/\s+/', trim($search)) ?: [] as $word) {
+            if ($word !== '' && ! Wildcard::matches($haystack, $word)) {
                 return false;
             }
         }

@@ -75,7 +75,7 @@ final class Contacts
      * @param array<int, int> $sources contact → number of sources naming it
      * @return list<array{id: int, name: string, node: int, group: string, sources: int}>
      */
-    public static function rows(array $tree, int $root, int $chosen, array $records, array $sources, string $search = ''): array
+    public static function rows(array $tree, int $root, int $chosen, array $records, array $sources, string $search = '', ?\Closure $matches = null): array
     {
         $rows = [];
 
@@ -87,7 +87,7 @@ final class Contacts
 
         usort($rows, static fn (array $a, array $b): int => strnatcasecmp($a['name'], $b['name']) ?: $a['id'] <=> $b['id']);
 
-        return self::filter($rows, $search);
+        return trim($search) === '' ? $rows : self::filter($rows, $search, $matches ?? throw new \LogicException('A search needs its rule (D-1357).'));
     }
 
     /**
@@ -96,11 +96,12 @@ final class Contacts
      * @param list<array{id: int, name: string, node: int, group: string, sources: int}> $rows
      * @return list<array{id: int, name: string, node: int, group: string, sources: int}>
      */
-    public static function filter(array $rows, string $search): array
+    public static function filter(array $rows, string $search, \Closure $matches): array
     {
-        $needle = mb_strtolower(trim($search));
+        $needle = trim($search);
 
-        return $needle === '' ? $rows : array_values(array_filter($rows, static fn (array $row): bool => str_contains(mb_strtolower($row['name'] . ' ' . $row['group'] . ' ' . $row['id']), $needle)));
+        // D-1357: `$matches` is the one search rule (`Wildcard::matches`), `(text, term): bool`, handed in by the boundary.
+        return $needle === '' ? $rows : array_values(array_filter($rows, static fn (array $row): bool => $matches($row['name'] . ' ' . $row['group'] . ' ' . $row['id'], $needle)));
     }
     /**
      * D-1185: the nodes below the root as menu items, in tree order. A node with nodes below it is a group of the menu (`path` ends

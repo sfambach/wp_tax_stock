@@ -12,9 +12,9 @@ final class StockListTest extends TestCase
     #[Test]
     public function it_searches_name_id_and_words(): void
     {
-        self::assertSame([43124], $this->ids(new StockList('bc6')));
-        self::assertSame([43200], $this->ids(new StockList('43200')));
-        self::assertSame([43201], $this->ids(new StockList('Werkstatt')));
+        self::assertSame([43124], $this->ids(new StockList('bc6', matches: self::contains(...))));
+        self::assertSame([43200], $this->ids(new StockList('43200', matches: self::contains(...))));
+        self::assertSame([43201], $this->ids(new StockList('Werkstatt', matches: self::contains(...))));
     }
 
     #[Test]
@@ -31,6 +31,19 @@ final class StockListTest extends TestCase
         self::assertSame([43201, 43200, 43124], $this->ids(new StockList('', '', 'name', true)));
         self::assertSame([43201, 43200, 43124], $this->ids(new StockList('', '', 'stock')));
         self::assertSame([43124, 43200, 43201], $this->ids(new StockList('', '', 'stock', true)));
+    }
+
+    #[Test]
+    public function a_search_without_its_rule_is_refused(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->ids(new StockList('bc6'));
+    }
+
+    /** A stand-in for the boundary's rule; the rule itself is tested in the modeller (D-1357). */
+    private static function contains(string $text, string $term): bool
+    {
+        return mb_stripos($text, $term) !== false;
     }
 
     /** @return list<int> */

@@ -40,9 +40,9 @@ final class ContactsTest extends TestCase
     {
         $records = [13 => [1 => 'Reichelt'], 100 => [2 => 'Mouser']];
 
-        self::assertSame([2], array_column(Contacts::rows(self::tree(), 3083, 3083, $records, [], 'liefer'), 'id'));
-        self::assertSame([1], array_column(Contacts::rows(self::tree(), 3083, 3083, $records, [], 'reich'), 'id'));
-        self::assertSame([2], array_column(Contacts::rows(self::tree(), 3083, 3083, $records, [], '2'), 'id'));
+        self::assertSame([2], array_column(Contacts::rows(self::tree(), 3083, 3083, $records, [], 'liefer', static fn (string $text, string $term): bool => mb_stripos($text, $term) !== false), 'id'));
+        self::assertSame([1], array_column(Contacts::rows(self::tree(), 3083, 3083, $records, [], 'reich', static fn (string $text, string $term): bool => mb_stripos($text, $term) !== false), 'id'));
+        self::assertSame([2], array_column(Contacts::rows(self::tree(), 3083, 3083, $records, [], '2', static fn (string $text, string $term): bool => mb_stripos($text, $term) !== false), 'id'));
     }
 
     #[Test]

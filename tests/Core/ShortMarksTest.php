@@ -24,4 +24,22 @@ final class ShortMarksTest extends TestCase
         self::assertSame('', ShortMarks::proposed(6, $tree, $kinds, [10 => 'R', 20 => 'F']));
         self::assertSame('', ShortMarks::proposed(1, $tree, $kinds, [10 => 'R']));
     }
+
+    #[Test]
+    public function the_number_follows_the_highest_one_typed_and_the_prefix_is_the_mark_above(): void
+    {
+        // Regal 1 › Fach 1 › Displays (typed R1-F1-B6), Kabel, Ablage (no kind)
+        $tree  = new LocationTree(
+            [1 => 'R1 Regal 1', 2 => 'R1-F1 Fach 1', 3 => 'R1-F1-B6 Displays', 4 => 'Kabel', 5 => 'Ablage', 6 => 'Zubehör'],
+            [2 => 1, 3 => 2, 4 => 2, 5 => 2, 6 => 2],
+            titles: [1 => 'Regal 1', 2 => 'Fach 1', 3 => 'Displays'],
+            shorts: [1 => 'R1', 2 => 'R1-F1', 3 => 'R1-F1-B6']
+        );
+        $kinds  = [1 => 10, 2 => 20, 3 => 40, 4 => 40, 6 => 40];
+        $shorts = [10 => 'R', 20 => 'F', 40 => 'B'];
+
+        self::assertSame('R1-F1-B7', ShortMarks::proposed(4, $tree, $kinds, $shorts), 'D-1368: after a typed B6 comes B7, never a B6 again');
+        self::assertSame('R1-F1-B8', ShortMarks::proposed(6, $tree, $kinds, $shorts), 'the open ones follow by their title');
+        self::assertSame('', ShortMarks::proposed(5, $tree, $kinds, $shorts), 'a place without a kind gets no proposal');
+    }
 }

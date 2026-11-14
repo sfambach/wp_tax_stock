@@ -1544,5 +1544,13 @@ $quelle = static fn (string $datei): string => (string) file_get_contents(dirnam
 $pruefe(substr_count($quelle('WordPress/Admin/StockPage.php'), 'Wildcard::matches(...)') >= 2 && str_contains($quelle('WordPress/Admin/ContactsPage.php'), 'Wildcard::matches(...)')
     && ! str_contains($quelle('Core/StockList.php'), 'mb_stripos') && ! str_contains($quelle('Core/Contacts.php'), 'str_contains'), 'D-1357: stock and contact search use «*» through Wildcard, the core holds no rule of its own');
 
+// D-1368 (ergänzt D-1337), his report 2026-11-14 «das r1 wird nicht erzeugt … und er setzt es auf b6»: the next number follows
+// the highest one typed, the prefix is the mark above, a place without a kind gets none.
+$baum = new \TaxmodStock\Core\LocationTree([1 => 'R1 Regal 1', 2 => 'R1-F1 Fach 1', 3 => 'R1-F1-B6 Din', 4 => 'Pinheader', 5 => 'Ablage'], [2 => 1, 3 => 2, 4 => 2, 5 => 2],
+    titles: [1 => 'Regal 1', 2 => 'Fach 1', 3 => 'Din'], shorts: [1 => 'R1', 2 => 'R1-F1', 3 => 'R1-F1-B6']);
+$arten = [1 => 10, 2 => 20, 3 => 40, 4 => 40];
+$pruefe(\TaxmodStock\Core\ShortMarks::proposed(4, $baum, $arten, [10 => 'R', 20 => 'F', 40 => 'B']) === 'R1-F1-B7'
+    && \TaxmodStock\Core\ShortMarks::proposed(5, $baum, $arten, [10 => 'R', 20 => 'F', 40 => 'B']) === '', 'D-1368: siblings typed up to B6 make the next proposal B7; a place without a kind gets none');
+
 echo $fehler === 0 ? "all green ({$kind})\n" : "{$fehler} red ({$kind})\n";
 exit($fehler === 0 ? 0 : 1);

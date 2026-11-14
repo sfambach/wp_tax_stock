@@ -123,7 +123,8 @@ final class Purchasing
         $this->start();
 
         if ($demand !== null) {
-            if (! $orders->has($demand) || ! $this->isDemand($demand, $orders)) {
+            // His word 2026-11-14 «wenn ich in der Bestellung bin … eine Position hinzufügen»: a supplier's draft takes one as well.
+            if (! $orders->has($demand) || ! ($this->isDemand($demand, $orders) || $this->isSupplierDraft($demand, $orders))) {
                 throw StockError::notADemand($demand);
             }
 

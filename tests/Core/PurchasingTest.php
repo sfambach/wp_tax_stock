@@ -47,13 +47,18 @@ final class PurchasingTest extends TestCase
     }
 
     #[Test]
-    public function reorder_into_a_supplier_draft_or_without_a_name_is_refused(): void
+    public function reorder_into_an_order_already_placed_or_without_a_name_is_refused(): void
     {
         $p = new Purchasing(self::structure(), '2026-10-30');
 
+        // His word 2026-11-14 «wenn ich in der Bestellung bin … eine Position hinzufügen»: a supplier's draft takes a position
+        // (D-1320, ergänzt); what is ordered already does not.
+        self::assertNotSame([], $p->reorder([1 => ['label' => 'x', 'quantity' => '1']], self::DRAFT, '', $this->orders(), $this->purchases()));
+        $p = new Purchasing(self::structure(), '2026-10-30');
+
         try {
-            $p->reorder([1 => ['label' => 'x', 'quantity' => '1']], self::DRAFT, '', $this->orders(), $this->purchases());
-            self::fail('a supplier draft is no demand');
+            $p->reorder([1 => ['label' => 'x', 'quantity' => '1']], self::ORDER, '', $this->orders(), $this->purchases());
+            self::fail('an order placed takes no position');
         } catch (StockError $e) {
             self::assertSame('not_a_demand', $e->reason);
         }

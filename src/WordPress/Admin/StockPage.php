@@ -4434,6 +4434,12 @@ final class StockPage
             . '</span>';
     }
 
+    /** Stefan 2026-11-14 «einfach ein Material wählen»: the material chooser of the stock with what it needs, for another page. */
+    public function materialPicker(string $name): string
+    {
+        return $this->recordPicker($name, null, '') . $this->modellerAssets(false);
+    }
+
     /**
      * The modeller's stylesheet and script for {@see self::recordPicker()}, and the one element its script reads the material
      * endpoints from: search, the tree's groups and a group's things.

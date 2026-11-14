@@ -932,6 +932,21 @@ foreach (['bedarf', 'bestellen', 'bestellt', 'verworfen'] as $reiter) {
 $_GET = [];
 $pruefe($einkaufOk && ! in_array(false, $einkaufSeiten, true) && $einkaufSeiten !== [], 'D-1183: no row of «Einkauf» opens; each links to its own page, which leads back into its tab (' . implode(', ', array_keys($einkaufSeiten)) . ')');
 
+// D-1320 ergänzt, his word 2026-11-14 «noch eine Position hinzufügen … einfach ein Material wählen»: a demand's page offers
+// «Position hinzufügen» with the stock's material chooser, inside the form that sends it.
+$einBedarf = 0;
+$_GET = ['page' => TaxmodStock\WordPress\Admin\PurchasePage::PAGE, 'tab' => 'bedarf'];
+
+if (preg_match('/bedarf=(\d+)"><strong>/', (new TaxmodStock\WordPress\Admin\PurchasePage())->render(), $m) === 1) {
+    $einBedarf = (int) $m[1];
+}
+
+$_GET = ['page' => TaxmodStock\WordPress\Admin\PurchasePage::PAGE, 'bedarf' => (string) $einBedarf];
+$bedarfsSeite = $einBedarf > 0 ? (new TaxmodStock\WordPress\Admin\PurchasePage())->render() : '';
+$_GET = [];
+$pruefe(preg_match('/<form[^>]*>(?:(?!<\/form>).)*name="op" value="add"(?:(?!<\/form>).)*Position hinzufügen(?:(?!<\/form>).)*name="thing"(?:(?!<\/form>).)*name="quantity"/s', $bedarfsSeite) === 1,
+    'D-1320: a demand\'s page offers «Position hinzufügen»: material chooser and quantity inside the form that sends them');
+
 // His wish 2026-11-11 «links aus logistik auf tax modeller … ablösung»: no page of the module links into the modeller's screens.
 $hinaus = array_filter(array_map(static fn (string $f): string => str_contains((string) file_get_contents($f), 'taxmod_open_record') ? basename($f) : '', glob(__DIR__ . '/../../src/WordPress/Admin/*.php') ?: []));
 $einKauf = (int) ((new StockService())->table('purchase')->ids()[0] ?? 0);

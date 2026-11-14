@@ -97,6 +97,8 @@ final class PurchasePage
         try {
             $result = match ($op) {
                 'reorder'   => $this->stock->reorder($this->quantities(), absint($_POST['demand'] ?? 0) ?: null, $text('name')),
+                // His word 2026-11-14 «noch eine Position hinzufügen … einfach ein Material wählen»: the same as «Nachbestellen», into this demand.
+                'add'       => $this->stock->reorder([absint($_POST['thing'] ?? 0) ?: throw StockError::nothingToBook() => $text('quantity')], $order, ''),
                 'source'    => $this->stock->sourcePosition($order, $purchase, absint($_POST['firm'] ?? 0) ?: null, $text('merchant'), $text('number'), $text('price') === '' ? null : $text('price')),
                 'unsource'  => $this->stock->unsourcePosition($order, $purchase),
                 'quantity'  => $this->stock->setPositionQuantity($order, $purchase, $text('quantity')),
@@ -120,6 +122,7 @@ final class PurchasePage
                 'unsource', 'restore' => ['tab' => 'bedarf'],
                 'back'    => ['tab' => 'bestellen', 'order' => $order],
                 'move'    => ['bedarf' => $order],
+                'add'     => $tab === 'bestellen' ? ['tab' => 'bestellen', 'order' => $order] : ['bedarf' => $order],
                 default   => $back,
             };
         } catch (StockError $e) {
@@ -129,7 +132,7 @@ final class PurchasePage
                 $back = ['tab' => 'neu', 'things' => implode(',', array_keys($this->quantities()))];
             }
 
-            if ($op === 'move') {
+            if ($op === 'move' || ($op === 'add' && $tab !== 'bestellen')) {
                 $back = ['bedarf' => $order];
             }
         }
@@ -177,7 +180,7 @@ final class PurchasePage
         return '<h2>' . esc_html(sprintf(/* translators: %s: the demand's name */ __('Bedarf – %s', 'taxmod-stock'), $label === '' ? '#' . $demand : $label)) . '</h2>'
             . '<form method="post" id="' . esc_attr($form) . '" action="' . esc_url(admin_url('admin-post.php')) . '">' . $this->hidden('move', 'bedarf')
             . '<input type="hidden" name="order" value="' . esc_attr((string) $demand) . '"></form>'
-            . ListPage::toolbar([...($back === [] ? [] : [$back]), [$move]])
+            . ListPage::toolbar([...($back === [] ? [] : [$back]), [$this->addDialog($demand, 'bedarf'), $move]])
             . $this->details('bedarf', $demand, $lines, $this->sourcedFrom($demand, $purchases), $orders, $purchases, $form);
     }
 
@@ -396,6 +399,21 @@ final class PurchasePage
         ], $buttons, '', false);
     }
 
+    /**
+     * His word 2026-11-14 «noch eine Position hinzufügen … einfach ein Material wählen»: a material and its quantity into this
+     * demand or draft — the same way as «Nachbestellen». The dialog sits inside its form, so the chooser's choice goes along.
+     */
+    private function addDialog(int $order, string $tab): string
+    {
+        return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">' . $this->hidden('add', $tab)
+            . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
+            . ListPage::dialogAction('taxmod-stock-add-' . $order, __('Position hinzufügen', 'taxmod-stock'), __('Position hinzufügen', 'taxmod-stock'),
+                '<span style="display:block">' . esc_html__('Material', 'taxmod-stock') . '</span>' . (new StockPage($this->stock))->materialPicker('thing')
+                . '<label style="display:block;margin-top:.5em">' . esc_html__('Menge', 'taxmod-stock') . '<br><input type="text" inputmode="decimal" name="quantity" style="width:8em"></label>',
+                'op', 'add', __('Hinzufügen', 'taxmod-stock'))
+            . '</form>';
+    }
+
     /** The buttons of an order in its tab — in its row and on its own page alike. */
     private function rowButtons(string $tab, int $order): string
     {
@@ -419,7 +437,7 @@ final class PurchasePage
         $lines = array_map('intval', $orders->all($order, $s->field('order_lines')));
 
         return '<h2>' . esc_html($label === '' ? '#' . $order : $label) . ' <span class="description">#' . esc_html((string) $order) . '</span></h2>'
-            . ListPage::toolbar([...($back === [] ? [] : [$back]), [$this->rowButtons($tab, $order)]])
+            . ListPage::toolbar([...($back === [] ? [] : [$back]), [...($tab === 'bestellen' ? [$this->addDialog($order, $tab)] : []), $this->rowButtons($tab, $order)]])
             . $this->details($tab, $order, $lines, [], $orders, $purchases);
     }
 

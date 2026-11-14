@@ -394,7 +394,7 @@ final class BookingsTest extends TestCase
 
         self::assertSame($s->node('lager'), $changes[2]['node'], 'D-1071: the Lager record is created with the material');
         self::assertSame('@' . $changes[0]['ref'], $changes[3]['values'][(string) $s->field('lager_thing')]);
-        self::assertSame('5', $changes[3]['values'][(string) $s->field('lager_location')]);
+        self::assertSame(['values' => ['5']], $changes[3]['values'][(string) $s->field('lager_location')], 'D-1360: the row\'s place is the first Standard-Lagerort');
         self::assertSame('@' . $changes[0]['ref'], $changes[4]['values'][(string) $s->field('purchase_model')]);
     }
 

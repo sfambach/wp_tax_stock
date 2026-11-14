@@ -43,6 +43,8 @@ final class MaterialCopy
             array_map(static fn (SourceRow $row): SourceRow => new SourceRow(null, $row->firm, '', $row->content), $sources),
             $id('lager_unit'),
             $id('lager_prefix'),
+            // D-1360: the copy keeps every Standard-Lagerort, in order.
+            $s->hasField('lager_location') ? array_values(array_slice(array_filter(array_map('intval', $lagerRecords->all($lager, $s->field('lager_location')))), 1)) : [],
         );
 
         return [...$changes, ...(new LagerChanges($s))->save('@kopie', null, $input, 'kopielager')];

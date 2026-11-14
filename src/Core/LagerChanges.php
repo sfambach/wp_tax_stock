@@ -34,6 +34,12 @@ final class LagerChanges
             }
         }
 
+        // D-1360: the Standard-Lagerorte go as one ordered list, the first is the proposal. ⚠️ Always as a list: a plain value
+        // leaves a field taking several unchanged (measured 2026-11-14 on the dev model).
+        if ($s->hasField('lager_location') && $input->location !== null) {
+            $values[(string) $s->field('lager_location')] = ['values' => array_map('strval', [$input->location, ...$input->moreLocations])];
+        }
+
         [$parts, $removed] = $this->sources($input);
 
         if ($lagerRecord !== null) {
@@ -45,7 +51,7 @@ final class LagerChanges
             ];
         }
 
-        $values = array_filter($values, static fn (string $v): bool => $v !== '');
+        $values = array_filter($values, static fn (string|array $v): bool => $v !== '');
 
         return [
             ['op' => 'create_record', 'ref' => $ref, 'node' => $s->node('lager')],

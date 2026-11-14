@@ -1457,9 +1457,39 @@ final class StockService
     }
 
     /**
+     * D-1360: the Standard-Lagerorte of some materials, in their order, in one read.
+     *
+     * @param list<int> $things
+     * @return array<int, list<int>> material → places; a material without any is left out
+     */
+    public function standardPlaces(array $things): array
+    {
+        $s = $this->structure();
+
+        if ($things === [] || ! $s->hasField('lager_location')) {
+            return [];
+        }
+
+        $lager = $this->table('lager');
+        $all   = $this->things();
+        $out   = [];
+
+        foreach (array_unique($things) as $thing) {
+            $record = $all->lagerOf($thing);
+            $places = $record === null ? [] : array_values(array_filter(array_map('intval', $lager->all($record, $s->field('lager_location')))));
+
+            if ($places !== []) {
+                $out[$thing] = $places;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * D-972: the place proposed for each purchase of the plan — the thing's own Standard-Lagerort, else its group's (D-1259).
      * D-1111: «Lagerort für Test» instead, where the lot will wait for its test (D-1002); a place saved with «Zuordnung
-     * speichern» is his own choice and stays.
+     * speichern» is his own choice and stays — unless it is the group's proposal and the material got a place since (D-1361).
      *
      * @param array<int, array{lock: string|null, model: int|null, proposal: ReceiptChoice|null}> $plan
      * @return array<int, int> purchase → location record
@@ -1490,7 +1520,11 @@ final class StockService
             $usual  = $rules->propose($own > 0 ? $own : null, $node);
 
             // The lot is made by this receipt, so it has no condition yet: '' — new goods would carry «neu» (D-1002).
-            $out[$purchase] = $planned[$purchase] ?? ($testing ? $queue->receiptPlace($usual, $node ?: null, '', $parents, $tests) : $usual);
+            $proposed = $testing ? $queue->receiptPlace($usual, $node ?: null, '', $parents, $tests) : $usual;
+            // D-1361: a saved place is his choice and stays — unless it is only what the group proposed before the material
+            // had a place of its own (his report 2026-11-14: «übernimmt er immer noch nicht den Lagerort … im Material»).
+            $before   = $own > 0 ? $rules->propose(null, $node) : null;
+            $out[$purchase] = isset($planned[$purchase]) && ! ($own > 0 && $planned[$purchase] === $before) ? $planned[$purchase] : $proposed;
         }
 
         return $out;
@@ -1932,7 +1966,7 @@ final class StockService
      *
      * @param list<int> $exclude places left out with everything under them
      */
-    public function placeChooser(string $name, int $chosen = 0, string $form = '', array $exclude = []): string
+    public function placeChooser(string $name, int $chosen = 0, string $form = '', array $exclude = [], array $preferred = []): string
     {
         try {
             $s = $this->structure();
@@ -1950,6 +1984,8 @@ final class StockService
                 'exclude'      => $exclude,
                 'preselected'  => $chosen,
                 'form'         => $form,
+                // D-1360: the material's Standard-Lagerorte on top as «Bevorzugt» (modeller 0.2.95; an older one ignores it).
+                'preferred'    => $preferred,
             ], static fn (mixed $v): bool => $v !== '' && $v !== 0 && $v !== []));
 
             if ($choice !== '') {
@@ -2233,7 +2269,8 @@ final class StockService
         }
 
         $lagerTable = $this->table('lager');
-        $lager      = $s->hasField('lager_location') ? array_values(array_filter($lagerTable->ids(), static fn (int $id): bool => in_array((int) $lagerTable->first($id, $s->field('lager_location')), $gone, true))) : [];
+        // D-1360: a material whose Standard-Lagerorte name a place that goes, any of them.
+        $lager      = $s->hasField('lager_location') ? array_values(array_filter($lagerTable->ids(), static fn (int $id): bool => array_intersect(array_map('intval', $lagerTable->all($id, $s->field('lager_location'))), $gone) !== [])) : [];
         $groups     = array_keys(array_filter($this->model->ownProperties(array_keys($this->tree()), self::PLACE_PROPERTY), static fn (bool|int $at): bool => is_int($at) && in_array($at, $gone, true)));
         $settings   = [(int) ($this->locationSettings([])->unreferenced ?? 0), (int) ($this->testSettings([])->place ?? 0)];
 
@@ -2283,8 +2320,14 @@ final class StockService
             }
         }
 
+        $lagerTable = $plan['lager'] === [] ? null : $this->table('lager');
+
         foreach ($plan['lager'] as $record) {
-            $changes[] = ['op' => 'set_values', 'record' => (string) $record, 'values' => [(string) $s->field('lager_location') => $parent > 0 ? (string) $parent : '']];
+            // D-1360: only the entry naming the place that goes moves to its parent; the others stay, in their order.
+            $changes[] = ['op' => 'set_values', 'record' => (string) $record, 'values' => [(string) $s->field('lager_location') => self::placesReplaced(
+                array_map('intval', $lagerTable->all($record, $s->field('lager_location'))),
+                static fn (int $at): int => in_array($at, $gone, true) ? $parent : $at
+            )]];
         }
 
         foreach ($plan['groups'] as $node) {
@@ -2362,7 +2405,7 @@ final class StockService
         $targets = PlaceKindChange::targets($tree->nestedBelow($place), $this->placeTypes()->has($type) ? $this->placeTypes()->brought($type) : [], $way);
         $gone    = array_keys($targets);
         $lagerOf = $s->hasField('lager_location') ? $this->table('lager') : new Table([]);
-        $lager   = $s->hasField('lager_location') ? array_values(array_filter($lagerOf->ids(), static fn (int $id): bool => in_array((int) $lagerOf->first($id, $s->field('lager_location')), $gone, true))) : [];
+        $lager   = $s->hasField('lager_location') ? array_values(array_filter($lagerOf->ids(), static fn (int $id): bool => array_intersect(array_map('intval', $lagerOf->all($id, $s->field('lager_location'))), $gone) !== [])) : [];
         $left    = [];
 
         foreach ($gone === [] ? [] : $this->model->referrersOf($gone) as $referrers) {
@@ -2405,7 +2448,11 @@ final class StockService
         }
 
         foreach ($lager as $record) {
-            $changes[] = ['op' => 'set_values', 'record' => (string) $record, 'values' => [(string) $s->field('lager_location') => (string) $to((int) $lagerOf->first($record, $s->field('lager_location')))]];
+            // D-1360: each Standard-Lagerort that goes follows its place; the others stay.
+            $changes[] = ['op' => 'set_values', 'record' => (string) $record, 'values' => [(string) $s->field('lager_location') => self::placesReplaced(
+                array_map('intval', $lagerOf->all($record, $s->field('lager_location'))),
+                static fn (int $at): int => in_array($at, $gone, true) ? (int) $to($at) : $at
+            )]];
         }
 
         foreach (array_filter($this->model->ownProperties(array_keys($this->tree()), self::PLACE_PROPERTY), static fn (bool|int $at): bool => is_int($at) && in_array($at, $gone, true)) as $node => $at) {
@@ -4681,5 +4728,20 @@ final class StockService
                 throw StockError::notAGroup($thing->node);
             }
         }
+    }
+
+    /**
+     * D-1360: a material's Standard-Lagerorte with some of them replaced, as set_values takes them — an ordered list (a plain
+     * value would leave a field taking several unchanged), none empty; a place standing twice afterwards stays once.
+     *
+     * @param list<int> $places
+     * @param callable(int): int $replace
+     * @return string|array{values: list<string>}
+     */
+    private static function placesReplaced(array $places, callable $replace): string|array
+    {
+        $out = array_values(array_unique(array_filter(array_map($replace, $places), static fn (int $at): bool => $at > 0)));
+
+        return $out === [] ? '' : ['values' => array_map('strval', $out)];
     }
 }

@@ -66,7 +66,7 @@ final class CopyTest extends TestCase
             $s->field('lager_thing')    => ['7'],
             $s->field('lager_single')   => ['1'],
             $s->field('lager_min')      => ['5'],
-            $s->field('lager_location') => ['4'],
+            $s->field('lager_location') => ['4', '7'],
         ]]);
 
         self::assertSame([
@@ -77,7 +77,7 @@ final class CopyTest extends TestCase
                 (string) $s->field('lager_thing')    => '@kopie',
                 (string) $s->field('lager_single')   => '1',
                 (string) $s->field('lager_min')      => '5',
-                (string) $s->field('lager_location') => '4',
+                (string) $s->field('lager_location') => ['values' => ['4', '7']],
                 (string) $s->field('lager_sources')  => ['new0' => [
                     (string) $s->field('source_firm')    => '11',
                     (string) $s->field('source_number')  => '',

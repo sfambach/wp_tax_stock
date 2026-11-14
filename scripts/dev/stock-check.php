@@ -307,6 +307,7 @@ $pruefe(($orte[$r['kaufC']] ?? 0) === $r['platz'], 'the receipt proposes the pla
 $html = (new StockPage())->render();
 // D-1186, A4 (his word 2026-11-06 «sollte tree chooser mit suche sein»): the place is chosen in the modeller's tree with search.
 $pruefe(str_contains($html, 'name="location[' . $r['kaufC'] . ']" value="' . $r['platz'] . '" checked') && str_contains($html, 'taxmod-tree-filter'), 'the receipt form shows the proposed place in the tree chooser with search, changeable');
+$pruefe(str_contains($html, 'class="taxmod-stock-receipt-place" data-drawn="' . $r['platz'] . '"'), 'D-1361: the row\'s place cell says what the server proposed, so closing the material dialog can swap only it');
 
 // His report 2026-11-09 «wenn ich ein material neu anlege wird der lagerort aus dem neuen material nicht übernommen»: a row left at
 // the place shown before the new material existed takes the new material's own (its group's); a place he changed stays.
@@ -375,6 +376,29 @@ $pruefe($record !== null && $lager->first($record, $r['m_use']) === (string) $r[
 (new StockService())->saveLager($r['t1'], new LagerInput(true, null, null, null));
 $s = new StockService();
 $pruefe($s->things()->lagerOf($r['t1']) === $record && $s->table('lager')->first($record, $r['m_use']) === null && $s->table('lager')->first($record, $r['m_einz']) === '1', 'saving again updates the same record and clears what was left empty');
+
+// D-1361, his report 2026-11-14 «übernimmt er immer noch nicht den Lagerort, den ich eingestellt habe im Material»: a saved place
+// that is only the group's proposal gives way to the material's own place set later; a place he chose stays.
+$ort = static fn (): int => (int) ((new StockService())->receiptLocations([$r['kaufC'] => $plan[$r['kaufC']]])[$r['kaufC']] ?? 0);
+(new StockService())->planPlaces([$r['kaufC'] => $r['platz']]);
+(new StockService())->saveLager($r['t1'], new LagerInput(true, null, $r['lager'], null));
+$folgt = $ort();
+(new StockService())->planPlaces([$r['kaufC'] => $r['lager']]);
+(new StockService())->saveLager($r['t1'], new LagerInput(true, null, $r['platz'], null));
+$bleibt = $ort();
+(new StockService())->planPlaces([$r['kaufC'] => 0]);
+// D-1360: several Standard-Lagerorte, the first is the proposal; the Lager tab shows each and one free chooser.
+(new StockService())->saveLager($r['t1'], new LagerInput(true, null, $r['platz'], null, null, null, null, [$r['lager']]));
+$zwei   = (new StockService())->table('lager')->all((int) (new StockService())->things()->lagerOf($r['t1']), $r['m_ort']);
+$erster = $ort();
+$_GET   = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => $r['t1'], 'view' => 'lager'];
+$reiter = (new StockPage())->render();
+$pruefe($zwei === [(string) $r['platz'], (string) $r['lager']] && $erster === $r['platz'], 'D-1360: a material keeps several Standard-Lagerorte in order, and the first is the receipt\'s proposal');
+$bevorzugt = (new StockService())->placeChooser('probe', 0, '', [], (new StockService())->standardPlaces([$r['t1']])[$r['t1']] ?? []);
+$pruefe(! defined('Taxmod\\WordPress\\Plugin::VERSION') || version_compare(\Taxmod\WordPress\Plugin::VERSION, '0.2.95', '<') || str_contains($bevorzugt, '★ '), 'D-1360: the receipt row\'s place chooser shows the material\'s Standard-Lagerorte on top');
+$pruefe(str_contains($reiter, 'name="locations[0]"') && str_contains($reiter, 'name="locations[1]"') && str_contains($reiter, 'name="locations[2]"'), 'D-1360: the Lager tab shows each Standard-Lagerort and one free chooser');
+(new StockService())->saveLager($r['t1'], new LagerInput(true, null, null, null));
+$pruefe($r['lager'] !== $r['platz'] && $folgt === $r['lager'] && $bleibt === $r['lager'], 'D-1361: the group\'s saved proposal gives way to the material\'s own place; a place chosen in the row stays');
 
 // D-1039 · «Umbuchen» books − old place / + new place; the lot keeps the place it came in at (0.11.0).
 $von = (new StockService())->ledger()->homeOf($lot);

@@ -17,6 +17,8 @@ final class LagerInput
         /** D-1019: the base unit and its prefix (node ids); none means «Stück». */
         public readonly ?int $unit = null,
         public readonly ?int $prefix = null,
+        /** D-1360: the further Standard-Lagerorte after `$location`, in their order. @var list<int> */
+        public readonly array $moreLocations = [],
     ) {
     }
 }

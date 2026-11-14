@@ -1400,7 +1400,16 @@ final class StockPage
             . '<table class="form-table" role="presentation"><tbody>';
 
         if ($s->hasField('lager_location')) {
-            $html .= '<tr><th>' . esc_html__('Standard-Lagerort', 'taxmod-stock') . '</th><td>' . $this->stock->placeChooser('location', (int) $value('lager_location')) . '</td></tr>';
+            // D-1360, his word 2026-11-14 «einmal im Erdgeschoss und einmal im Obergeschoss … das erste erstmal angezeigt»: every
+            // Standard-Lagerort in its order, the first is the proposal, and one free chooser for another.
+            $places = $record === null ? [] : array_values(array_filter(array_map('intval', $lager->all($record, $s->field('lager_location')))));
+            $html  .= '<tr><th>' . esc_html__('Standard-Lagerorte', 'taxmod-stock') . '</th><td>';
+
+            foreach ([...$places, 0] as $i => $place) {
+                $html .= '<div style="margin-bottom:4px">' . $this->stock->placeChooser('locations[' . $i . ']', $place) . '</div>';
+            }
+
+            $html .= '<p class="description">' . esc_html__('Der erste ist der Vorschlag im Wareneingang und beim Einbuchen; leer lassen entfernt einen.', 'taxmod-stock') . '</p></td></tr>';
         }
 
         $html .= '<tr><th>' . esc_html__('Mindestbestand', 'taxmod-stock') . '</th><td><input type="number" min="0" name="minimum" style="width:8em" value="' . esc_attr($value('lager_min')) . '"></td></tr>'
@@ -2638,6 +2647,11 @@ final class StockPage
         $about  = $this->purchaseAbout(array_keys($plan));
         $models = $this->stock->recordLabels(array_values(array_filter(array_column($plan, 'model'))));
         $where  = $this->stock->receiptLocations($plan);
+        // D-1360: each row's chooser shows its material's Standard-Lagerorte on top.
+        $preferred = $this->stock->standardPlaces(array_values(array_filter(array_column($plan, 'model'))));
+        // His wish 2026-11-14: «wenn es ein Bild zu der Position gibt, dann würde ich das gerne sehen. Vielleicht ganz vorne» —
+        // the purchase's picture in front of its name, all of them in one read (CD-7).
+        $thumbs = method_exists(ListPage::class, 'thumbnails') ? ListPage::thumbnails($this->stock->titleImages(array_keys($plan))) : [];
         $closing = $this->stock->canCloseWithoutStock();
         $bought  = $this->stock->table('purchase');
         $amount  = $this->stock->structure()->field('purchase_quantity');
@@ -2678,7 +2692,8 @@ final class StockPage
             $quantity = (string) $bought->first($purchase, $amount);
             $html    .= '<tr id="taxmod-stock-purchase-' . esc_attr((string) $purchase) . '"><th scope="row" class="check-column"><input type="checkbox" name="purchases[]" value="' . esc_attr((string) $purchase) . '"'
                 . ($lock === null && $model !== null ? ' checked' : '') . ($lock === null ? '' : ' disabled') . '></th>'
-                . '<td>' . esc_html($labels[$purchase] ?? '#' . $purchase) . ($lock === null ? '' : ' <em>(' . esc_html(Messages::lockReason($lock)) . ')</em>')
+                . '<td>' . (($thumbs[$purchase] ?? '') === '' ? '' : '<span style="float:left;margin:0 8px 4px 0">' . $thumbs[$purchase] . '</span>')
+                . esc_html($labels[$purchase] ?? '#' . $purchase) . ($lock === null ? '' : ' <em>(' . esc_html(Messages::lockReason($lock)) . ')</em>')
                 . (($about[$purchase] ?? '') === '' ? '' : '<br><span class="description">' . esc_html($about[$purchase]) . '</span>') . '</td>';
 
             if ($lock !== null) {
@@ -2705,7 +2720,8 @@ final class StockPage
                 . $this->recordPicker('thing[' . $purchase . ']', $model, $model === null ? '' : ($models[$model] ?? '#' . $model), $purchase) . '</td>'
                 // His wish 2026-11-05: «Menge 1, geliefert wurden 40» — the quantity is corrected here, not in the purchase.
                 . '<td><input type="number" min="1" step="1" style="width:5em" name="quantity[' . esc_attr((string) $purchase) . ']" value="' . esc_attr($quantity) . '"></td>'
-                . '<td>' . $this->stock->placeChooser('location[' . $purchase . ']', $where[$purchase] ?? 0) . '</td>'
+                // The place the server proposed, so the page can tell it from one he chose in the row (D-1361).
+                . '<td class="taxmod-stock-receipt-place" data-drawn="' . esc_attr((string) ($where[$purchase] ?? 0)) . '">' . $this->stock->placeChooser('location[' . $purchase . ']', $where[$purchase] ?? 0, '', [], $model === null ? [] : ($preferred[$model] ?? [])) . '</td>'
                 . $actions(($model === null ? $this->newThingDialog($purchase, $groups ??= $this->groupOptions()) : $this->materialDialog($purchase, $model)) . ($closing ? $this->closeControls($purchase) : '')) . '</tr>';
         }
 
@@ -4373,14 +4389,18 @@ final class StockPage
     {
         $minimum = sanitize_text_field(wp_unslash((string) ($_POST['minimum'] ?? '')));
 
+        // D-1360: the Standard-Lagerorte in their order, empty and repeated ones left out; a single «location» as before.
+        $places = array_values(array_unique(array_filter(array_map('absint', is_array($_POST['locations'] ?? null) ? array_values($_POST['locations']) : [absint($_POST['location'] ?? 0)]))));
+
         return new LagerInput(
             ! empty($_POST['single']),
             absint($_POST['use'] ?? 0) ?: null,
-            absint($_POST['location'] ?? 0) ?: null,
+            $places[0] ?? null,
             $minimum === '' ? null : absint($minimum),
             null,
             absint($_POST['unit'] ?? 0) ?: null,
-            absint($_POST['prefix'] ?? 0) ?: null
+            absint($_POST['prefix'] ?? 0) ?: null,
+            array_slice($places, 1)
         );
     }
 
@@ -4501,6 +4521,16 @@ final class StockPage
             . 'document.addEventListener("change",function(e){var sw=e.target;if(!sw.classList||!sw.classList.contains("taxmod-dialog-switch")||!sw.checked){return;}'
             // A group already chosen in the row's search is the group «Neues Material» proposes (his report 2026-11-01).
             . 'var nm=/^taxmod-stock-new-(\\d+)$/.exec(sw.id||"");if(nm){var r=document.querySelector("input[name=\\"thing["+nm[1]+"]\\"]:checked"),g=r&&/^new-(\\d+)$/.exec(r.value),gid=g?g[1]:(browsed[nm[1]]||""),sel=document.querySelector("select[name=\\"newgroup["+nm[1]+"]\\"]");if(gid&&sel&&sel.querySelector("option[value=\\""+gid+"\\"]")){sel.value=gid;}var rb=gid&&document.querySelector("input[name=\\"newgroup["+nm[1]+"]\\"][value=\\""+gid+"\\"]");if(rb){rb.checked=true;var ch=rb.closest(".taxmod-chooser"),tx=rb.parentNode.textContent.trim();if(ch){ch.querySelectorAll(":scope > .taxmod-dialog-open, .taxmod-chooser-current").forEach(function(e){e.textContent=tx;});}}}});'
+            // D-1361, his report 2026-11-14 «übernimmt er immer noch nicht den Lagerort, den ich eingestellt habe im Material … wenn
+            // ich den Dialog schließe»: the server draws the order's rows again and only this row's place is swapped — when he
+            // has not chosen another one in the row meanwhile. Nothing is saved until «Zuordnung speichern» or the booking.
+            . 'document.addEventListener("change",function(e){var sw=e.target,m=sw&&sw.id&&/^taxmod-stock-material-(\\d+)$/.exec(sw.id);if(!m||sw.checked){return;}'
+            . 'var row=document.getElementById("taxmod-stock-purchase-"+m[1]),cell=row&&row.querySelector("td.taxmod-stock-receipt-place"),box=row&&row.closest(".taxmod-stock-positions");if(!cell||!box||!box.dataset.order){return;}'
+            . 'var now=function(c){var f=c.querySelector("input[name=\\"location["+m[1]+"]\\"]:checked")||c.querySelector("input[type=hidden][name=\\"location["+m[1]+"]\\"],select[name=\\"location["+m[1]+"]\\"]");return f?String(f.value||"0"):"0";};'
+            . 'if(now(cell)!==cell.dataset.drawn){return;}'
+            . 'fetch(pos+"&order="+encodeURIComponent(box.dataset.order)+(box.dataset.back?"&back="+encodeURIComponent(box.dataset.back):"")+(box.dataset.assign?"&assign=1":""),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){'
+            . 'var doc=new DOMParser().parseFromString((j.data&&j.data.html)||"","text/html"),fr=doc.getElementById("taxmod-stock-purchase-"+m[1]),fc=fr&&fr.querySelector("td.taxmod-stock-receipt-place");'
+            . 'if(!fc||fc.dataset.drawn===cell.dataset.drawn||now(cell)!==cell.dataset.drawn){return;}fc=document.importNode(fc,true);cell.replaceWith(fc);var cb=row.querySelector("input[name=\\"purchases[]\\"]");if(cb&&!cb.disabled){cb.checked=true;}});});'
             . '(function(){var mo=(new URLSearchParams(location.search).get("material")||"").replace(/\\D/g,""),n=0;if(!mo){return;}'
             // The rows of an order arrive after the page (lazy details), so the switch is looked for until it is there.
             . 'var t=setInterval(function(){var ms=document.getElementById("taxmod-stock-material-"+mo);if(ms){clearInterval(t);ms.checked=true;ms.dispatchEvent(new Event("change",{bubbles:true}));}else if(++n>40){clearInterval(t);}},250);})();'

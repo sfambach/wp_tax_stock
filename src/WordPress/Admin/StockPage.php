@@ -2759,8 +2759,12 @@ final class StockPage
         if (! $edit) {
             $structure = add_query_arg(['page' => self::PAGE, 'tab' => 'lagerstruktur'], admin_url('admin.php'));
 
+            // His word 2026-11-14: the bar above the list as on every other list (count, filter, group by).
+            $count = sprintf(/* translators: %d: number of places */ _n('%d Lagerort', '%d Lagerorte', count($rows), 'taxmod-stock'), count($rows));
+
             return '<p>' . esc_html__('Jeder Lagerort mit den Posten, die dort Bestand haben; eine Kiste gehört mit allem darin zu ihrem Projekt.', 'taxmod-stock')
-                . ' <a href="' . esc_url($structure) . '">' . esc_html__('Lagerstruktur bearbeiten', 'taxmod-stock') . '</a></p>' . $table;
+                . ' <a href="' . esc_url($structure) . '">' . esc_html__('Lagerstruktur bearbeiten', 'taxmod-stock') . '</a></p>'
+                . ListPage::bulkBar(self::PLACE_FORM, self::ACTION, [], $count, '', false) . $table;
         }
 
         if (! $s->hasField('location_parent')) {
@@ -3743,8 +3747,9 @@ final class StockPage
         // «Zur Bestandsansicht» (D-1224), first in the toolbar (D-1308).
         return $this->placeHead($place, $tree)
             . ListPage::toolbar([['<a class="button" href="' . esc_url($structure) . '">' . esc_html__('Zur Layout-Sicht', 'taxmod-stock') . '</a>']])
-            . '<p>' . esc_html(sprintf(/* translators: %d: lots at the place and below it */ _n('%d Posten hier und darunter.', '%d Posten hier und darunter.', $count, 'taxmod-stock'), $count)) . '</p>'
-            . ($count > 0 ? $this->placeLotsBar($place, $count) : '')
+            // His word 2026-11-14: «in Lagerplatzbestand … sieht irgendwie die Leiste oben noch anders aus als in anderen» — the
+            // count stands in the list's bar like everywhere, and the bar stands also when nothing lies here.
+            . $this->placeLotsBar($place, $count)
             . ListPage::table([[__('Posten', 'taxmod-stock'), '6em'], [__('Material', 'taxmod-stock'), ''], [__('Unterort', 'taxmod-stock'), '12em'], [__('Menge', 'taxmod-stock'), '6em'], [__('Buchungsdatum', 'taxmod-stock'), '8em']], $body === '' ? $this->noItems(5) : $body);
     }
 

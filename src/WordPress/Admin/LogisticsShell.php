@@ -175,7 +175,8 @@ final class LogisticsShell
 
         foreach (ModulePage::all() as $module) {
             if ($module['area'] === $area) {
-                $items[] = ['key' => 'module-' . sanitize_key($module['slug']), 'label' => $module['label'], 'page' => Pages::MODULE, 'tab' => '', 'module' => $module['slug'], 'path' => $module['path']];
+                $items[] = ['key' => 'module-' . sanitize_key($module['slug']), 'label' => $module['label'], 'page' => Pages::MODULE, 'tab' => '', 'module' => $module['slug'], 'path' => $module['path']]
+                    + ($module['opens_area'] ? ['opens_area' => true] : []);
             }
         }
 
@@ -268,7 +269,9 @@ final class LogisticsShell
             // an area with exactly one item is that item: no list below it, the area opens it. A second item brings both back.
             $single = count($area['items']) === 1 && ! isset($area['items'][0]['path']);
             // D-1128: the area itself opens its overview with a tile per item.
-            $link  = $area['url'] ?? ($single ? self::url($area['items'][0]) : CockpitPage::overviewUrl($area['key']));
+            // His report 2026-11-14 «warum so und nicht so»: an item a module marks `opens_area` is what its area opens.
+            $head  = array_values(array_filter($area['items'], static fn (array $item): bool => ! empty($item['opens_area'])))[0] ?? null;
+            $link  = $area['url'] ?? ($single ? self::url($area['items'][0]) : ($head !== null ? self::url($head) : CockpitPage::overviewUrl($area['key'])));
             $html .= '<li class="taxmod-shell-area' . ($here ? ' is-open' : '') . '"><a href="' . esc_url(add_query_arg(self::VIA_MENU, '1', $link)) . '"'
                 . ($here && $single ? ' class="is-current" aria-current="page"' : '') . '>' . esc_html($area['label']) . '</a>';
 

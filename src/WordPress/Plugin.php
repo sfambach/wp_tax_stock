@@ -199,7 +199,6 @@ final class Plugin
         // The filter's name stands as text, so an older modeller without it does not stop the module.
         add_filter('taxmod_list_details', static fn (?string $html, string $source, array $args): ?string => match ($source) {
             StockPage::DETAILS_MATERIAL => (new StockPage())->listDetails($html, $source, $args),
-            PurchasePage::DETAILS       => (new PurchasePage())->listDetails($html, $source, $args),
             ContactsPage::DETAILS       => (new ContactsPage())->listDetails($html, $source, $args),
             default                     => $html,
         }, 10, 3);

@@ -32,7 +32,6 @@ final class PurchasePage
     private const BULK_FORM = 'taxmod-stock-purchase-bulk';
 
     /** D-1147: the source name under which an order's row draws its positions when opened. */
-    public const DETAILS = 'stock-purchase';
 
     /**
      * D-1027 E6: supplier modules answer a search with offers — `['list' => [offer, …], 'errors' => [merchant => text]]`,
@@ -117,7 +116,7 @@ final class PurchasePage
             $back = match ($op) {
                 'reorder', 'again' => ['tab' => 'bedarf'],
                 'ordered' => ['tab' => 'bestellt'],
-                'source'  => ['tab' => 'bedarf', 'order' => $order],
+                'source'  => ['bedarf' => $order],
                 'unsource', 'restore' => ['tab' => 'bedarf'],
                 'back'    => ['tab' => 'bestellen', 'order' => $order],
                 'move'    => ['bedarf' => $order],
@@ -206,6 +205,12 @@ final class PurchasePage
 
         if (! $s->hasValue('status_draft') || ! $s->hasValue('status_ordered') || ! $s->hasField('purchase_demand') || ! $s->hasField('order_merchant')) {
             throw StockError::notConfigured(! $s->hasField('purchase_demand') ? 'fields.purchase_demand' : 'values.status_ordered');
+        }
+
+        // D-1183 for Einkauf, his word 2026-11-14 «ausserdem ist hier wieder die aufklapp logik»: no row opens; a draft,
+        // an order or a dropped one is a page of its own with the way back into its tab.
+        if ($open > 0 && $orders->has($open) && in_array($tab, ['bestellen', 'bestellt', 'verworfen'], true)) {
+            return $this->orderView($tab, $open, $orders, $purchases);
         }
 
         $groups = ['bedarf' => [], 'bestellen' => [], 'bestellt' => [], 'verworfen' => []];
@@ -380,46 +385,42 @@ final class PurchasePage
         $sourced  = $tab === 'bedarf' ? $this->sourcedFrom($order, $purchases) : [];
         $count    = sprintf(/* translators: %d: positions */ _n('%d Position', '%d Positionen', count($lines), 'taxmod-stock'), count($lines))
             . ($sourced === [] ? '' : ' · ' . sprintf(/* translators: %d: positions at a supplier */ __('%d beim Händler', 'taxmod-stock'), count($sourced)));
-        $again    = $tab === 'verworfen' ? '' : $this->button('again', $order, 0, __('Nochmal bestellen', 'taxmod-stock'), $tab, false);
-        $buttons  = $again . match ($tab) {
+        // D-1088, his word 2026-11-14 «von bedarf muss man doch auf bestellen und nicht auf nochmal bestellen»: a copy only of
+        // what was ordered or dropped; a demand's own step is «Bestellen», which opens its choice of merchant.
+        $buttons  = $this->rowButtons($tab, $order);
+
+        return ListPage::row(self::BULK_FORM, (string) $order, [
+            '<a href="' . esc_url(self::url($tab === 'bedarf' ? ['bedarf' => $order] : ['tab' => $tab, 'order' => $order])) . '"><strong>' . esc_html($label === '' ? '#' . $order : $label) . '</strong></a> <span class="description">#' . esc_html((string) $order) . ($number === '' ? '' : ' · ' . esc_html($number)) . '</span>',
+            esc_html($merchant === '' ? '—' : $merchant),
+            esc_html($count),
+        ], $buttons, '', false);
+    }
+
+    /** The buttons of an order in its tab — in its row and on its own page alike. */
+    private function rowButtons(string $tab, int $order): string
+    {
+        $again    = in_array($tab, ['bestellt', 'verworfen'], true) ? $this->button('again', $order, 0, __('Nochmal bestellen', 'taxmod-stock'), $tab, false)
+            : ($tab === 'bedarf' ? '<a class="button button-primary" href="' . esc_url(self::url(['bedarf' => $order])) . '">' . esc_html__('Bestellen', 'taxmod-stock') . '</a> ' : '');
+        return $again . match ($tab) {
             'bedarf', 'bestellen' => $this->button('discard', $order, 0, __('Verwerfen', 'taxmod-stock'), $tab, false, __('Verwerfen? Er wird storniert, nicht gelöscht, und lässt sich unter «Verworfen» wiederherstellen.', 'taxmod-stock')),
             'bestellt'  => $this->button('back', $order, 0, __('Zurück zu Entwurf', 'taxmod-stock'), $tab, false)
                 . '<a class="button" href="' . esc_url(InboundPage::url(['tab' => 'ordered'])) . '">' . esc_html__('Wareneingang', 'taxmod-stock') . '</a>',
             default     => $this->button('restore', $order, 0, __('Wiederherstellen', 'taxmod-stock'), $tab, true),
         };
-
-        return ListPage::row(self::BULK_FORM, (string) $order, [
-            ($tab === 'bedarf' ? '<a href="' . esc_url(self::url(['bedarf' => $order])) . '"><strong>' . esc_html($label === '' ? '#' . $order : $label) . '</strong></a>' : '<strong>' . esc_html($label === '' ? '#' . $order : $label) . '</strong>') . ' <span class="description">#' . esc_html((string) $order) . ($number === '' ? '' : ' · ' . esc_html($number)) . '</span>',
-            esc_html($merchant === '' ? '—' : $merchant),
-            esc_html($count),
-        ], $buttons, ListPage::lazyDetails(self::DETAILS, ['tab' => $tab, 'order' => $order]), $open);
     }
 
-    /**
-     * D-1147: an order's positions, drawn when its row opens. Capability as for the page; the nonce was checked by the
-     * modeller's handler.
-     *
-     * @param array<string, string> $args
-     */
-    public function listDetails(?string $html, string $source, array $args): ?string
+    /** D-1183 for Einkauf: a draft, an order or a dropped one on a page of its own — its buttons, positions and the way back. */
+    private function orderView(string $tab, int $order, Table $orders, Table $purchases): string
     {
-        if ($source !== self::DETAILS || ! current_user_can('manage_options')) {
-            return $html;
-        }
-
-        $s         = $this->stock->structure();
-        $orders    = $this->stock->table('order');
-        $purchases = $this->stock->table('purchase');
-        $tab       = sanitize_key($args['tab'] ?? '');
-        $order     = absint($args['order'] ?? 0);
-
-        if (! in_array($tab, self::TABS, true) || ! $orders->has($order)) {
-            return null;
-        }
-
+        $s     = $this->stock->structure();
+        $label = (string) $orders->first($order, $s->field('label'));
+        $names = ['bestellen' => __('Bestellen', 'taxmod-stock'), 'bestellt' => __('Bestellt', 'taxmod-stock'), 'verworfen' => __('Verworfen', 'taxmod-stock')];
+        $back  = method_exists(ListPage::class, 'back') ? [ListPage::back(self::url(['tab' => $tab]), sprintf(/* translators: %s: tab */ __('Zurück zu «%s»', 'taxmod-stock'), $names[$tab]))] : [];
         $lines = array_map('intval', $orders->all($order, $s->field('order_lines')));
 
-        return $this->details($tab, $order, $lines, $tab === 'bedarf' ? $this->sourcedFrom($order, $purchases) : [], $orders, $purchases);
+        return '<h2>' . esc_html($label === '' ? '#' . $order : $label) . ' <span class="description">#' . esc_html((string) $order) . '</span></h2>'
+            . ListPage::toolbar([...($back === [] ? [] : [$back]), [$this->rowButtons($tab, $order)]])
+            . $this->details($tab, $order, $lines, [], $orders, $purchases);
     }
 
     /**
@@ -481,7 +482,7 @@ final class PurchasePage
 
     /**
      * The suppliers' offers for one open position of a demand, searched by the material's name (or what he types);
-     * «Übernehmen» chooses the offer as the position's source, with its number and the price for the quantity.
+     * «Bestellen bei …» chooses the offer as the position's source, with its number and the price for the quantity.
      */
     private function offersView(int $demand, int $purchase, Table $orders, Table $purchases): string
     {
@@ -523,7 +524,7 @@ final class PurchasePage
                 . '<td style="text-align:right"><form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">' . $this->hidden('source', 'bedarf')
                 . '<input type="hidden" name="order" value="' . esc_attr((string) $demand) . '"><input type="hidden" name="purchase" value="' . esc_attr((string) $purchase) . '">'
                 . '<input type="hidden" name="merchant" value="' . esc_attr($text('merchant')) . '"><input type="hidden" name="number" value="' . esc_attr($text('number')) . '">'
-                . '<input type="hidden" name="price" value="' . esc_attr($price) . '">' . get_submit_button(__('Übernehmen', 'taxmod-stock'), 'small primary', '', false) . '</form></td></tr>';
+                . '<input type="hidden" name="price" value="' . esc_attr($price) . '">' . get_submit_button(sprintf(/* translators: %s: merchant */ __('Bestellen bei %s', 'taxmod-stock'), $text('merchant')), 'small primary', '', false) . '</form></td></tr>';
         }
 
         return $html . '<table class="widefat striped" style="margin-top:12px"><thead><tr><th>' . esc_html__('Händler', 'taxmod-stock') . '</th><th>' . esc_html__('Art.-Nr.', 'taxmod-stock') . '</th><th>'
@@ -543,7 +544,7 @@ final class PurchasePage
             . '<input type="text" name="merchant" placeholder="' . esc_attr__('oder Händler', 'taxmod-stock') . '" style="width:8em">'
             . '<input type="text" name="number" placeholder="' . esc_attr__('Art.-Nr.', 'taxmod-stock') . '" style="width:8em" value="' . esc_attr($first->number ?? '') . '">'
             . '<input type="text" inputmode="decimal" name="price" placeholder="' . esc_attr__('€/Stück', 'taxmod-stock') . '" style="width:6em">'
-            . get_submit_button(__('Übernehmen', 'taxmod-stock'), 'small', '', false) . '</form>';
+            . get_submit_button(__('Bestellen bei …', 'taxmod-stock'), 'small', '', false) . '</form>';
     }
 
     /** @return list<int> purchases that point at this demand and stand in another order now */

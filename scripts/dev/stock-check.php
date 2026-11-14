@@ -903,6 +903,35 @@ $s     = new StockService();
 $offenR = $s->reservations()->forSubject($r['t2']);
 $pruefe($offenR !== null && count($s->table('transaction')->all($offenR, $r['v_pos'])) === 2 && ($s->reservations()->reservedByThing()[$bc] ?? 0.0) === 3.0, 'one reservation per subject, holding both positions');
 
+// D-1088, his word 2026-11-14 «von bedarf muss man doch auf bestellen und nicht auf nochmal bestellen»: a demand offers «Bestellen»,
+// never «Nochmal bestellen»; the copy stays for what was ordered.
+$_GET  = ['page' => TaxmodStock\WordPress\Admin\PurchasePage::PAGE, 'tab' => 'bedarf'];
+$bedarfSeite = (new TaxmodStock\WordPress\Admin\PurchasePage())->render();
+$_GET  = [];
+$pruefe(str_contains($bedarfSeite, '>Bestellen</a>') && ! str_contains($bedarfSeite, 'Nochmal bestellen') && ! str_contains((string) file_get_contents(__DIR__ . '/../../src/WordPress/Admin/PurchasePage.php'), "__('Übernehmen'"),
+    'D-1088: a demand offers «Bestellen», no «Nochmal bestellen»; choosing a merchant reads «Bestellen bei …»');
+
+// D-1183 for Einkauf, his word 2026-11-14 «ausserdem ist hier wieder die aufklapp logik»: no row opens; each links to a page
+// of its own, which leads back into its tab.
+$einkaufSeiten = [];
+$einkaufOk     = true;
+
+foreach (['bedarf', 'bestellen', 'bestellt', 'verworfen'] as $reiter) {
+    $_GET  = ['page' => TaxmodStock\WordPress\Admin\PurchasePage::PAGE, 'tab' => $reiter];
+    $liste = (new TaxmodStock\WordPress\Admin\PurchasePage())->render();
+    $einkaufOk = $einkaufOk && ! str_contains($liste, 'data-source="stock-purchase"');
+    preg_match_all('/<a href="[^"]*(?:bedarf=|tab=' . $reiter . '&#038;order=)(\d+)"><strong>/', $liste, $treffer);
+    $einkaufOk = $einkaufOk && count($treffer[1]) === substr_count($liste, 'name="selected[]"');
+
+    foreach ($reiter === 'bedarf' ? [] : array_slice($treffer[1], 0, 1) as $id) {
+        $_GET = ['page' => TaxmodStock\WordPress\Admin\PurchasePage::PAGE, 'tab' => $reiter, 'order' => $id];
+        $einkaufSeiten[$reiter] = str_contains((new TaxmodStock\WordPress\Admin\PurchasePage())->render(), 'Zurück zu «');
+    }
+}
+
+$_GET = [];
+$pruefe($einkaufOk && ! in_array(false, $einkaufSeiten, true) && $einkaufSeiten !== [], 'D-1183: no row of «Einkauf» opens; each links to its own page, which leads back into its tab (' . implode(', ', array_keys($einkaufSeiten)) . ')');
+
 // His wish 2026-11-11 «links aus logistik auf tax modeller … ablösung»: no page of the module links into the modeller's screens.
 $hinaus = array_filter(array_map(static fn (string $f): string => str_contains((string) file_get_contents($f), 'taxmod_open_record') ? basename($f) : '', glob(__DIR__ . '/../../src/WordPress/Admin/*.php') ?: []));
 $einKauf = (int) ((new StockService())->table('purchase')->ids()[0] ?? 0);

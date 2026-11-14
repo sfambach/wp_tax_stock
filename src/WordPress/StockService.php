@@ -4731,8 +4731,8 @@ final class StockService
     }
 
     /**
-     * D-1360: a material's Standard-Lagerorte with some of them replaced, as set_values takes them — an ordered list (a plain
-     * value would leave a field taking several unchanged), none empty; a place standing twice afterwards stays once.
+     * D-1360: a material's Standard-Lagerorte with some of them replaced, as set_values takes them — an ordered list (the
+     * modeller refuses a plain value on a field holding several), none empty; a place standing twice afterwards stays once.
      *
      * @param list<int> $places
      * @param callable(int): int $replace

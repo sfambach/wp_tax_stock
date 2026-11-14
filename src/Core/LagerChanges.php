@@ -34,8 +34,8 @@ final class LagerChanges
             }
         }
 
-        // D-1360: the Standard-Lagerorte go as one ordered list, the first is the proposal. ⚠️ Always as a list: a plain value
-        // leaves a field taking several unchanged (measured 2026-11-14 on the dev model).
+        // D-1360: the Standard-Lagerorte go as one ordered list, the first is the proposal. ⚠️ Always as a list: the modeller refuses
+        // a plain value on a field that already holds several.
         if ($s->hasField('lager_location') && $input->location !== null) {
             $values[(string) $s->field('lager_location')] = ['values' => array_map('strval', [$input->location, ...$input->moreLocations])];
         }

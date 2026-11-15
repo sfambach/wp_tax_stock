@@ -11,6 +11,7 @@ use TaxmodStock\WordPress\Admin\CockpitPage;
 use TaxmodStock\WordPress\Admin\ContactsPage;
 use TaxmodStock\WordPress\Admin\InboundPage;
 use TaxmodStock\WordPress\Admin\LogisticsShell;
+use TaxmodStock\WordPress\Admin\MaterialPicker;
 use TaxmodStock\WordPress\Admin\Messages;
 use TaxmodStock\WordPress\Admin\ModulePage;
 use TaxmodStock\WordPress\Admin\Pages;
@@ -148,6 +149,7 @@ final class Plugin
             add_action('admin_post_' . StockPage::FORM_LABELS, static fn () => Acts::run(static fn () => (new StockPage())->saveFormLabels()));
             add_action('admin_post_' . StockPage::MAKER, static fn () => Acts::json(static fn () => (new StockPage())->maker()));
             add_action('admin_post_' . StockPage::THING_SEARCH, static fn () => Acts::json(static fn () => (new StockPage())->thingSearch()));
+            add_action('admin_post_' . MaterialPicker::PLACES, static fn () => Acts::json(static fn () => MaterialPicker::placesAnswer()));
             add_action('admin_post_' . StockPage::THING_NODES, static fn () => Acts::json(static fn () => (new StockPage())->thingNodes()));
             add_action('admin_post_' . StockPage::THING_BRANCH, static fn () => Acts::json(static fn () => (new StockPage())->thingBranch()));
             add_action('admin_post_' . StockPage::LOT_SEARCH, static fn () => Acts::json(static fn () => (new StockPage())->lotSearch()));
@@ -170,6 +172,8 @@ final class Plugin
         ]);
         add_filter(self::BOOK_BUILD, [self::class, 'bookBuild'], 10, 2);
         add_filter(self::PLACES_OF, [self::class, 'placesOf'], 10, 2);
+        // D-1387: the material search as a building block for other modules' dialogs.
+        add_filter(MaterialPicker::FILTER, [MaterialPicker::class, 'filter'], 10, 2);
         add_filter(self::BOOK_PICK, [self::class, 'bookPick'], 10, 2);
         add_filter(self::BOOK_OUTPUT, [self::class, 'bookOutput'], 10, 2);
         add_filter(self::CREATE_THING, [self::class, 'createThing'], 10, 2);

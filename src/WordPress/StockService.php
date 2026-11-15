@@ -964,6 +964,28 @@ final class StockService
     }
 
     /**
+     * D-1387: these materials as hits of the material search — name, group — in the order given, unknown ids left out.
+     *
+     * @param list<int> $things
+     * @return list<array{id: int, word: string, node: string}>
+     */
+    public function thingHits(array $things): array
+    {
+        $tree   = $this->pickerTree();
+        $nodes  = $things === [] ? [] : $this->model->nodesOf($things);
+        $labels = $this->recordLabels(array_keys($nodes), $nodes);
+        $out    = [];
+
+        foreach ($things as $thing) {
+            if (isset($nodes[$thing], $tree[$nodes[$thing]])) {
+                $out[] = ['id' => $thing, 'word' => ($labels[$thing] ?? '') === '' ? '#' . $thing : $labels[$thing], 'node' => $tree[$nodes[$thing]]['name']];
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * D-1385: the material hits of the search with what is in stock of each — one ledger for all hits (CD-7).
      *
      * @param list<array{id: int|string, word: string, node: string}> $hits
@@ -2877,7 +2899,7 @@ final class StockService
 
                 if ($left > 0.000001 && $there > 0.000001) {
                     $part  = min($there, $left);
-                    $out[] = new ReservationRow($row->thing, rtrim(rtrim(number_format($part, 6, '.', ''), '0'), '.'), $lot);
+                    $out[] = new ReservationRow($row->thing, rtrim(rtrim(number_format($part, 6, '.', ''), '0'), '.'), $lot, $row->position);
                     $left -= $part;
                 }
             }
@@ -3868,19 +3890,25 @@ final class StockService
         }
 
         $ledger = $this->ledger();
-        $bound  = $this->boundLots();
+        // D-1387: what the order itself reserved is taken first and redeems its reservation; others' stays untouched.
+        $own    = $this->reservations()->boundLotsOf($reference);
+        $bound  = array_diff_key($this->boundLots(), $own);
         $rows   = [];
+        $moved  = [];
 
         foreach ($lines as $line) {
             $left = $line['quantity'];
+            $lots = $ledger->lotsOf($line['thing']);
+            usort($lots, static fn (int $a, int $b): int => (int) isset($own[$b]) <=> (int) isset($own[$a]));
 
-            foreach ($ledger->lotsOf($line['thing']) as $lot) {
+            foreach ($lots as $lot) {
                 $there = isset($bound[$lot]) ? 0.0 : $ledger->restAt($lot, $line['from']);
 
                 if ($left > 0.000001 && $there > 0.000001) {
-                    $part   = min($there, $left);
-                    $rows[] = new TransferRow($lot, $line['from'], $box, rtrim(rtrim(number_format($part, 6, '.', ''), '0'), '.'));
-                    $left  -= $part;
+                    $part        = min($there, $left);
+                    $rows[]      = new TransferRow($lot, $line['from'], $box, rtrim(rtrim(number_format($part, 6, '.', ''), '0'), '.'));
+                    $moved[$lot] = ($moved[$lot] ?? 0.0) + $part;
+                    $left       -= $part;
                 }
             }
 
@@ -3889,7 +3917,23 @@ final class StockService
             }
         }
 
-        return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $bound, $reference)));
+        $deal   = $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $bound, $reference)));
+        $redeem = [];
+
+        foreach ($this->reservationsOf([$reference])[$reference] ?? [] as $position) {
+            $lot = (int) $position['lot'];
+
+            if ($lot > 0 && ($moved[$lot] ?? 0.0) + 0.000001 >= $position['quantity']) {
+                $redeem[]     = $position['line'];
+                $moved[$lot] -= $position['quantity'];
+            }
+        }
+
+        if ($redeem !== []) {
+            $this->releaseReservations($reference, $redeem, $today, $title);
+        }
+
+        return $deal;
     }
 
     /**

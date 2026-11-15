@@ -51,7 +51,7 @@ final class CockpitPage
                     . (new PeriodPage($this->inbound->stock()))->render()
                 : $this->processBar($found['key'], $group) . $this->tiles($this->overviewTiles($found, $group))
                     // D-1385, his correction 2026-11-15: the material search on the page «Bestand» opens, below its tiles.
-                    . ($found['key'] === 'stock' && $group === '' ? LogisticsShell::materialSearch() : '');
+                    . ($found['key'] === 'stock' && $group === '' ? MaterialPicker::page() : '');
         } catch (StockError $e) {
             $html .= '<div class="notice notice-error"><p>' . esc_html(Messages::of($e)) . '</p></div>';
         }

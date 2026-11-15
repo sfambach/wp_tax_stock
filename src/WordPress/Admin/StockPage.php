@@ -2554,6 +2554,11 @@ final class StockPage
         try {
             $hits = $this->stock->searchThings(sanitize_text_field(wp_unslash((string) ($_GET['term'] ?? ''))), empty($_GET['stock']) ? 30 : 8, ! empty($_GET['groups']));
 
+            // D-1387: materials a module prefers (compatible replacements) stand first, as their own group.
+            $preferred = array_values(array_filter(array_map('absint', explode(',', sanitize_text_field(wp_unslash((string) ($_GET['preferred'] ?? '')))))));
+            $first     = $preferred === [] ? [] : array_map(static fn (array $hit): array => $hit + ['preferred' => true], $this->stock->thingHits($preferred));
+            $hits      = [...$first, ...array_values(array_filter($hits, static fn (array $hit): bool => ! in_array($hit['id'], $preferred, true)))];
+
             wp_send_json_success(empty($_GET['stock']) ? $hits
                 : array_map(static fn (array $hit): array => $hit + ['url' => self::thingUrl($hit['id'], 'bestand')], $this->stock->withStock($hits)));
         } catch (StockError $e) {

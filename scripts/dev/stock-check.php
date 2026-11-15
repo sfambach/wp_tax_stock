@@ -1029,6 +1029,20 @@ $t1Pos     = array_values(array_filter(is_array($resOf) ? ($resOf[$auftrag] ?? [
 $pruefe(($t1Pos['lot'] ?? null) !== null && isset($t1Pos['places'][$t1Ort]), 'D-1301: a row naming a place reserves the lot lying there, which stays where it is');
 $pruefe(is_array($resAnswer) && count($resLines) === 2 && is_array($resPart) && count($resAfter[$auftrag] ?? []) === 1 && is_array($resAll) && ($resEnd[$auftrag] ?? null) === [], 'D-1301: reserve two positions in one call, release one, then the rest; reservations_of reads each step' . ($resAnswer instanceof WP_Error ? ': ' . $resAnswer->get_error_message() : ''));
 
+// D-1387 (asked by the manufacturing 2026-11-15): a row reserved at a place keeps its position, and picking it into the
+// order's box takes that very lot and redeems the reservation.
+$rsS     = new StockService();
+$rsOrt   = (int) array_key_first(array_filter($rsS->ledger()->placesOf($t1Lot), static fn (float $q, int $p): bool => $q >= 1.0 && $p > 0, ARRAY_FILTER_USE_BOTH));
+$rsBox   = (int) (array_values(array_filter(array_keys($rsS->places()), static fn (int $p): bool => $p !== $rsOrt && $rsS->reservedPlaces()->reservingPlaceOf($p) === null))[0] ?? 0);
+$rsRes   = apply_filters('taxmod_stock_reserve', null, ['subject' => $auftrag, 'rows' => [['thing' => $bc, 'quantity' => 1, 'place' => $rsOrt, 'position' => $r['t1']]], 'date' => '2026-11-15', 'title' => 'Reservierung Pickprobe']);
+$rsVor   = apply_filters('taxmod_stock_reservations_of', null, ['subjects' => [$auftrag]]);
+$rsLot   = (int) (($rsVor[$auftrag][0]['lot'] ?? 0));
+$rsPick  = apply_filters('taxmod_stock_book_pick', null, ['reference' => $auftrag, 'place' => $rsBox, 'date' => '2026-11-15', 'lines' => [['thing' => $bc, 'from' => $rsOrt, 'qty' => 1]]]);
+$rsNach  = apply_filters('taxmod_stock_reservations_of', null, ['subjects' => [$auftrag]]);
+$pruefe(is_array($rsRes) && ($rsVor[$auftrag][0]['position'] ?? 0) === $r['t1'] && $rsLot > 0 && is_int($rsPick) && ($rsNach[$auftrag] ?? null) === []
+    && (new StockService())->ledger()->restAt($rsLot, $rsBox) >= 1.0,
+    'D-1387: a row reserved at a place keeps its position; picking it into the order\'s box moves that lot and redeems the reservation' . ($rsPick instanceof WP_Error ? ': ' . $rsPick->get_error_message() : ''));
+
 // D-1097, his word «eine Position gehört zu genau einem Kopf»: after every booking above, each line and each purchase has one head.
 $s = new StockService();
 foreach ([['line', 'transaction', $r['v_pos']], ['purchase', 'order', $r['o_pos']]] as [$teil, $kopf, $liste]) {
@@ -1726,6 +1740,16 @@ $pruefe(in_array($r['t1'], $mitMy, true) && in_array($r['t1'], $mitU, true) && (
     && str_contains($seite, 'id="taxmod-material-search"') && str_contains($seite, 'stock=1') && ! str_contains($navi, 'taxmod-material-search"'),
     'D-1385: the material search on the page «Bestand» opens (not in the navigation) finds «µ» and «u» alike, the label number finds the material first, each hit with its stock');
 $apply([['op' => 'set_values', 'record' => (string) $r['t1'], 'values' => [$lblFeld => $altName]]]);
+
+// D-1387 (asked by the manufacturing 2026-11-15): the material search as a picker for another module's dialog — prefilled,
+// the preferred materials first, several on one page, the choice as fields; the preferred hits name each material.
+$pk1  = (string) apply_filters('taxmod_stock_material_picker', '', ['key' => 'pos1', 'name' => 'wahl[1]', 'term' => 'BC327', 'preferred' => [$r['t1']]]);
+$pk2  = (string) apply_filters('taxmod_stock_material_picker', '', ['key' => 'pos2', 'name' => 'wahl[2]']);
+$pkHt = (new StockService())->thingHits([$r['t1'], 999999999]);
+$pruefe(str_contains($pk1, 'value="BC327"') && str_contains($pk1, 'name="wahl[1][thing]"') && str_contains($pk1, 'name="wahl[1][place]"') && str_contains($pk1, 'name="wahl[1][quantity]"')
+    && str_contains($pk1, 'preferred=' . $r['t1']) && str_contains($pk1, 'action=' . TaxmodStock\WordPress\Admin\MaterialPicker::PLACES)
+    && str_contains($pk2, 'id="taxmod-material-pick-pos2"') && substr_count($pk1 . $pk2, 'window.taxmodMaterialSearch') <= 1 && count($pkHt) === 1 && $pkHt[0]['id'] === $r['t1'],
+    'D-1387: the picker filter draws a prefilled search with the preferred materials first, place and quantity as fields, several on one page');
 
 // D-1139 (CD-7), asked by the manufacturing 2026-11-15: presentInEach reads once for many boxes and says for each what presentIn says.
 $s      = new StockService();

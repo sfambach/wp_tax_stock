@@ -2552,7 +2552,10 @@ final class StockPage
         Acts::ajaxNonce(self::THING_SEARCH);
 
         try {
-            wp_send_json_success($this->stock->searchThings(sanitize_text_field(wp_unslash((string) ($_GET['term'] ?? ''))), 30, ! empty($_GET['groups'])));
+            $hits = $this->stock->searchThings(sanitize_text_field(wp_unslash((string) ($_GET['term'] ?? ''))), empty($_GET['stock']) ? 30 : 8, ! empty($_GET['groups']));
+
+            wp_send_json_success(empty($_GET['stock']) ? $hits
+                : array_map(static fn (array $hit): array => $hit + ['url' => self::thingUrl($hit['id'], 'bestand')], $this->stock->withStock($hits)));
         } catch (StockError $e) {
             wp_send_json_error(['message' => Messages::of($e)]);
         }

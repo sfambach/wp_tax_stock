@@ -964,6 +964,21 @@ final class StockService
     }
 
     /**
+     * D-1385: the material hits of the search with what is in stock of each — one ledger for all hits (CD-7).
+     *
+     * @param list<array{id: int|string, word: string, node: string}> $hits
+     * @return list<array{id: int, word: string, node: string, quantity: string}>
+     */
+    public function withStock(array $hits): array
+    {
+        $ledger = $this->ledger();
+
+        return array_map(static fn (array $hit): array => $hit + [
+            'quantity' => rtrim(rtrim(number_format($ledger->stockOf((int) $hit['id']), 3, ',', ''), '0'), ','),
+        ], array_values(array_filter($hits, static fn (array $hit): bool => is_int($hit['id']))));
+    }
+
+    /**
      * The groups of things as rows of a tree, depth first, for the tree beside the material search (D-1011).
      *
      * @return list<array{id: int, name: string, depth: int}>

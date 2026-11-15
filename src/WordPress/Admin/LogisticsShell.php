@@ -279,6 +279,11 @@ final class LogisticsShell
                 $html .= self::items($area['items'], 0, $here ? $active['item'] : '', $area['key'], $here ? (string) ($active['group'] ?? '') : '');
             }
 
+            // D-1385, his wish 2026-11-15 «im menü bestand unten suchmaske für material»: below «Bestand», open or not.
+            if ($area['key'] === 'stock') {
+                $html .= self::materialSearch();
+            }
+
             $html .= '</li>';
         }
 
@@ -287,6 +292,44 @@ final class LogisticsShell
             . '<input type="hidden" name="return" value="' . esc_attr($back) . '"><button type="submit" class="button-link">'
             . ($full ? esc_html__('Mit WordPress-Leisten', 'taxmod-stock') : esc_html__('Vollbild', 'taxmod-stock')) . '</button></form>'
             . ($full ? '<p class="taxmod-shell-mode"><a href="' . esc_url(admin_url()) . '">' . esc_html__('Zu WordPress', 'taxmod-stock') . '</a></p>' : '');
+    }
+
+    /**
+     * D-1385: the material search under «Bestand» — hits while typing (name, group, stock), arrows and Enter or a click open
+     * the material's stock; Enter without a hit chosen opens the material list with the term, one hit opening that material
+     * (D-1329). The matching itself is the server's (D-1378, D-1287), so the script holds no copy of its rules.
+     */
+    private static function materialSearch(): string
+    {
+        $hits = add_query_arg(['action' => StockPage::THING_SEARCH, '_ajax_nonce' => wp_create_nonce(StockPage::THING_SEARCH), 'stock' => '1'], admin_url('admin-post.php'));
+        $unit = __('St.', 'taxmod-stock');
+
+        return '<form class="taxmod-shell-search" role="search" method="get" action="' . esc_url(admin_url('admin.php')) . '">'
+            . '<input type="hidden" name="page" value="' . esc_attr(Pages::STOCK) . '"><input type="hidden" name="tab" value="material">'
+            . '<label class="screen-reader-text" for="taxmod-shell-search">' . esc_html__('Material suchen', 'taxmod-stock') . '</label>'
+            . '<span class="taxmod-shell-search-field"><span class="dashicons dashicons-search" aria-hidden="true"></span>'
+            . '<input type="search" id="taxmod-shell-search" name="s" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="taxmod-shell-search-hits" aria-autocomplete="list" placeholder="'
+            . esc_attr__('Material suchen …', 'taxmod-stock') . '" data-hits="' . esc_url($hits) . '" data-unit="' . esc_attr($unit) . '" data-none="' . esc_attr__('Kein Material gefunden', 'taxmod-stock') . '"></span>'
+            . '<ul id="taxmod-shell-search-hits" class="taxmod-shell-search-hits" role="listbox" hidden></ul>'
+            . '<p class="taxmod-shell-search-hint">' . esc_html__('u = µ · ohm = Ω · * = beliebig · Nummer vom Etikett (M-…)', 'taxmod-stock') . '</p></form>'
+            . '<script>(function(){var f=document.getElementById("taxmod-shell-search");if(!f||f.dataset.ready){return;}f.dataset.ready="1";'
+            . 'var list=document.getElementById("taxmod-shell-search-hits"),timer=null,ask=0,at=-1,rows=[];'
+            . 'function show(open){list.hidden=!open;f.setAttribute("aria-expanded",open?"true":"false");}'
+            . 'function mark(i){at=i;Array.prototype.forEach.call(list.children,function(li,n){li.setAttribute("aria-selected",n===i?"true":"false");li.classList.toggle("is-active",n===i);});'
+            . 'if(i>=0&&list.children[i]){f.setAttribute("aria-activedescendant",list.children[i].id);list.children[i].scrollIntoView({block:"nearest"});}else{f.removeAttribute("aria-activedescendant");}}'
+            . 'function draw(hits){rows=hits;list.innerHTML="";at=-1;if(!hits.length){var e=document.createElement("li");e.className="is-empty";e.textContent=f.dataset.none;list.appendChild(e);show(true);return;}'
+            . 'hits.forEach(function(h,n){var li=document.createElement("li"),a=document.createElement("a"),w=document.createElement("span"),m=document.createElement("span"),q=document.createElement("span");'
+            . 'li.id="taxmod-shell-search-hit-"+n;li.setAttribute("role","option");a.href=h.url;w.className="w";w.textContent=h.word;m.className="m";m.textContent=h.node;'
+            . 'q.className="q"+(parseFloat(String(h.quantity).replace(",","."))>0?"":" is-zero");q.textContent=h.quantity+" "+f.dataset.unit;'
+            . 'a.appendChild(w);a.appendChild(q);a.appendChild(m);li.appendChild(a);li.addEventListener("mouseenter",function(){mark(n);});list.appendChild(li);});show(true);}'
+            . 'f.addEventListener("input",function(){clearTimeout(timer);var t=f.value.trim();if(t.length<2&&!/^\d/.test(t)){show(false);return;}'
+            . 'timer=setTimeout(function(){var me=++ask;fetch(f.dataset.hits+"&term="+encodeURIComponent(t),{credentials:"same-origin"}).then(function(r){return r.json();})'
+            . '.then(function(r){if(me===ask&&r&&r.success){draw(r.data||[]);}}).catch(function(){});},250);});'
+            . 'f.addEventListener("keydown",function(e){var n=list.children.length;if(e.key==="Enter"&&at<0&&rows.length===1){e.preventDefault();window.location.href=rows[0].url;return;}if(list.hidden||!rows.length){return;}'
+            . 'if(e.key==="ArrowDown"){e.preventDefault();mark((at+1)%n);}else if(e.key==="ArrowUp"){e.preventDefault();mark(at<=0?n-1:at-1);}'
+            . 'else if(e.key==="Enter"&&at>=0){e.preventDefault();window.location.href=rows[at].url;}else if(e.key==="Escape"){show(false);}});'
+            . 'f.addEventListener("blur",function(){setTimeout(function(){show(false);},200);});'
+            . 'f.addEventListener("focus",function(){if(rows.length&&f.value.trim()!==""){show(true);}});})();</script>';
     }
 
     /**
@@ -379,6 +422,17 @@ final class LogisticsShell
             . '.taxmod-shell-group>a{color:#2271b1}.taxmod-shell-group:not(.is-open)>ul{display:none}'
             . '.taxmod-shell-nav a.is-current{font-weight:600;border-left-color:#2271b1;background:#f0f6fc}'
             . '.taxmod-shell-nav a:focus{box-shadow:0 0 0 2px #2271b1;outline:none}'
+            // D-1385: the material search under «Bestand».
+            . '.taxmod-shell-search{position:relative;margin:6px 12px 8px}.taxmod-shell-search-field{position:relative;display:block}'
+            . '.taxmod-shell-search-field .dashicons{position:absolute;left:8px;top:50%;transform:translateY(-50%);color:#8c8f94;pointer-events:none}'
+            . '.taxmod-shell-search input[type=search]{width:100%;box-sizing:border-box;padding:4px 8px 4px 32px;min-height:32px;border-radius:16px}'
+            . '.taxmod-shell-search-hits{position:absolute;z-index:100;left:0;right:0;top:36px;margin:0;max-height:22em;overflow-y:auto;background:#fff;border:1px solid #c3c4c7;border-radius:4px;box-shadow:0 4px 12px rgba(0,0,0,.15)}'
+            . '.taxmod-shell-search-hits li{margin:0;border-bottom:1px solid #f0f0f1}.taxmod-shell-search-hits li:last-child{border-bottom:0}'
+            . '.taxmod-shell-search-hits a{display:grid;grid-template-columns:1fr auto;gap:0 8px;padding:6px 10px;border-left:0;color:#1d2327;text-decoration:none}'
+            . '.taxmod-shell-search-hits .w{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.taxmod-shell-search-hits .q{color:#007017;white-space:nowrap}'
+            . '.taxmod-shell-search-hits .q.is-zero{color:#8c8f94}.taxmod-shell-search-hits .m{grid-column:1/-1;font-size:12px;color:#646970}'
+            . '.taxmod-shell-search-hits li.is-active a,.taxmod-shell-search-hits a:hover{background:#f0f6fc}.taxmod-shell-search-hits .is-empty{padding:8px 10px;color:#646970}'
+            . '.taxmod-shell-search-hint{margin:4px 2px 0;font-size:11px;color:#646970}'
             . '.taxmod-shell-mode{margin:10px 12px 0;padding-top:8px;border-top:1px solid #dcdcde}.taxmod-shell-mode+.taxmod-shell-mode{border-top:0;padding-top:0;margin-top:4px}'
             . '.taxmod-shell-main{overflow-x:auto}.taxmod-shell-main>.wrap{margin-top:0}'
             . '.taxmod-shell-back{margin:0 0 6px}.taxmod-shell-back a{text-decoration:none;font-weight:600}'

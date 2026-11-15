@@ -1706,5 +1706,24 @@ $pruefe($ability !== null && $ohne instanceof WP_Error && $falsch instanceof WP_
     && is_array($gebucht) && abs($s->ledger()->restOf($korrLos) - ($vorher + 1)) < 1e-9 && count($s->ledger()->lotsOf($r['t1'])) === $vorAnz + 1,
     'D-1382: taxmod-stock/book-correction books +1 on a lot and a new lot through the inventory booking; without a note or with an unknown place nothing is booked, the error names the row' . ($gebucht instanceof WP_Error ? ': ' . $gebucht->get_error_message() : ''));
 
+// D-1385, his wish 2026-11-15 «im menü bestand unten suchmaske für material»: the search under «Bestand» finds «µ» and «u»
+// alike, the number from the label opens the material, each hit with its stock — and it stands in the navigation.
+$s       = new StockService();
+$lblFeld = (string) $s->structure()->field('label');
+$altName = (string) ($s->recordLabels([$r['t1']])[$r['t1']] ?? '');
+$apply([['op' => 'set_values', 'record' => (string) $r['t1'], 'values' => [$lblFeld => '__47 µF Suchelko']]]);
+$s       = new StockService();
+$ids     = static fn (array $hits): array => array_column($hits, 'id');
+$mitMy   = $ids($s->searchThings('47 µF Suchelko'));
+$mitU    = $ids($s->searchThings('47uf suchelko'));
+$perNr   = $s->withStock($s->searchThings('M-' . $r['t1']));
+$_GET    = ['page' => StockPage::PAGE, 'tab' => 'material'];
+$navi    = TaxmodStock\WordPress\Admin\LogisticsShell::wrap(StockPage::PAGE, '<div></div>');
+$pruefe(in_array($r['t1'], $mitMy, true) && in_array($r['t1'], $mitU, true) && ($perNr[0]['id'] ?? 0) === $r['t1']
+    && ($perNr[0]['quantity'] ?? '') === rtrim(rtrim(number_format($s->ledger()->stockOf($r['t1']), 3, ',', ''), '0'), ',')
+    && str_contains($navi, 'id="taxmod-shell-search"') && str_contains($navi, 'stock=1'),
+    'D-1385: the material search under «Bestand» finds «µ» and «u» alike, the label number finds the material first, each hit with its stock');
+$apply([['op' => 'set_values', 'record' => (string) $r['t1'], 'values' => [$lblFeld => $altName]]]);
+
 echo $fehler === 0 ? "all green ({$kind})\n" : "{$fehler} red ({$kind})\n";
 exit($fehler === 0 ? 0 : 1);

@@ -1683,5 +1683,23 @@ $pruefe($kopfLos > 0 && $unter > 0 && str_contains($html, 'Inhalt von Set-Posten
 $apply([['op' => 'set_values', 'record' => (string) $unter, 'values' => [(string) ($setNeu['ausset'] ?? 0) => '']]]);
 update_option('taxmod_stock_structure', $vor);
 
+// D-1382: a correction over MCP runs through the inventory's own booking — a line on an existing lot, a new lot at its
+// place with its purchase; refused whole without a note or with an unknown place, the error naming the row.
+$s        = new StockService();
+$korrLos  = (int) ($s->ledger()->lotsOf($r['t1'])[0] ?? 0);
+$korrOrt  = (int) array_key_first(array_filter($s->ledger()->placesOf($korrLos), static fn (float $q): bool => $q > 0.0) ?: [$s->ledger()->homeOf($korrLos) => 0]);
+$vorher   = $s->ledger()->restOf($korrLos);
+$vorAnz   = count($s->ledger()->lotsOf($r['t1']));
+$ability  = wp_get_ability(TaxmodStock\WordPress\CorrectionAbility::NAME);
+$ohne     = $ability?->execute(['note' => ' ', 'rows' => [['lot' => $korrLos, 'place' => $korrOrt, 'quantity' => '1']]]);
+$falsch   = $ability?->execute(['note' => 'Prüfung', 'rows' => [['lot' => $korrLos, 'place' => $korrOrt, 'quantity' => '1'], ['thing' => $r['t1'], 'place' => 999999999, 'quantity' => '1']]]);
+$s        = new StockService();
+$unberuehrt = abs($s->ledger()->restOf($korrLos) - $vorher) < 1e-9 && count($s->ledger()->lotsOf($r['t1'])) === $vorAnz;
+$gebucht  = $ability?->execute(['note' => 'D-1381: Set-Kopf wiederhergestellt', 'date' => '2026-11-15', 'rows' => [['lot' => $korrLos, 'place' => $korrOrt, 'quantity' => '1'], ['thing' => $r['t1'], 'place' => $korrOrt, 'quantity' => '1', 'value' => '0']]]);
+$s        = new StockService();
+$pruefe($ability !== null && $ohne instanceof WP_Error && $falsch instanceof WP_Error && str_contains($falsch->get_error_message(), 'row 2') && $unberuehrt
+    && is_array($gebucht) && abs($s->ledger()->restOf($korrLos) - ($vorher + 1)) < 1e-9 && count($s->ledger()->lotsOf($r['t1'])) === $vorAnz + 1,
+    'D-1382: taxmod-stock/book-correction books +1 on a lot and a new lot through the inventory booking; without a note or with an unknown place nothing is booked, the error names the row' . ($gebucht instanceof WP_Error ? ': ' . $gebucht->get_error_message() : ''));
+
 echo $fehler === 0 ? "all green ({$kind})\n" : "{$fehler} red ({$kind})\n";
 exit($fehler === 0 ? 0 : 1);

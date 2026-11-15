@@ -1614,6 +1614,56 @@ final class StockService
     }
 
     /**
+     * D-1382: a correction booked for a reader over MCP — the inventory's own Vorgang, every lot and place checked first,
+     * all or nothing. The note is required: it titles the Vorgang and stands on every new lot, so the book shows why.
+     *
+     * @param list<array{lot?: int, thing?: int, purchase?: int, place: int, quantity: string, value?: ?string}> $rows
+     * @return array<string, mixed>
+     */
+    public function bookCorrection(array $rows, string $note, string $today): array
+    {
+        $note = trim($note);
+
+        if ($note === '') {
+            throw new \InvalidArgumentException('A correction needs a note saying why.');
+        }
+
+        $s      = $this->structure();
+        $lots   = $this->table('lot');
+        $places = $this->table('location');
+        $plain  = [];
+
+        foreach (array_values($rows) as $i => $row) {
+            $step  = sprintf('row %d', $i + 1);
+            $lot   = (int) ($row['lot'] ?? 0);
+            $thing = (int) ($row['thing'] ?? 0);
+            $place = (int) ($row['place'] ?? 0);
+
+            if (! $places->has($place)) {
+                throw new \InvalidArgumentException($step . ': place ' . $place . ' is no storage place.');
+            }
+
+            if ($lot > 0 && ! $lots->has($lot)) {
+                throw new \InvalidArgumentException($step . ': lot ' . $lot . ' does not exist.');
+            }
+
+            if ($lot === 0 && $thing <= 0) {
+                throw new \InvalidArgumentException($step . ': name a lot to correct, or a material for a new lot.');
+            }
+
+            if ($lot === 0) {
+                $this->checkThings([$thing]);
+            }
+
+            $name    = $lot > 0 ? (string) ($lots->first($lot, $s->field('label')) ?? '') : (string) ($this->recordLabels([$thing])[$thing] ?? '');
+            $plain[] = ['lot' => $lot, 'thing' => $thing, 'purchase' => (int) ($row['purchase'] ?? 0), 'place' => $place,
+                'quantity' => (string) ($row['quantity'] ?? ''), 'value' => isset($row['value']) && $row['value'] !== '' ? (string) $row['value'] : null, 'name' => $name];
+        }
+
+        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->correction($plain, 'Korrektur: ' . $note, $note));
+    }
+
+    /**
      * @param array<int, ReceiptChoice> $choices purchase id → its thing
      * @return array<string, mixed>
      */

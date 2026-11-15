@@ -419,6 +419,33 @@ final class BookingsTest extends TestCase
      * @param list<array<string, mixed>> $changes
      * @return array<int, array<string, mixed>>
      */
+    #[Test]
+    public function a_correction_adds_to_an_existing_lot_at_its_place_and_brings_a_new_lot_in(): void
+    {
+        $s       = Fixture::structure();
+        $changes = (new Bookings($s, '2026-11-15'))->correction([
+            ['lot' => 900, 'thing' => 0, 'purchase' => 0, 'place' => 70, 'quantity' => '1', 'value' => null, 'name' => 'Set'],
+            ['lot' => 0, 'thing' => 3912, 'purchase' => 71, 'place' => 70, 'quantity' => '1', 'value' => '0', 'name' => 'Elko-Set'],
+        ], 'Korrektur: D-1381', 'D-1381');
+        $lines   = array_values(array_filter($changes, static fn (array $c): bool => $c['op'] === 'set_values' && isset($c['values'][(string) $s->field('line_lot')])));
+        $values  = $this->valuesByNode($changes);
+
+        self::assertSame('900', $lines[0]['values'][(string) $s->field('line_lot')], 'D-1382: the existing lot gets a line, its record is not touched');
+        self::assertSame('1', $lines[0]['values'][(string) $s->field('line_quantity')]);
+        self::assertCount(1, array_filter($changes, static fn (array $c): bool => $c['op'] === 'create_record' && $c['node'] === $s->node('lot')), 'only the new lot is created');
+        self::assertSame('71', $values[$s->node('lot')][(string) $s->field('lot_purchase')], 'the purchase stays the origin');
+        self::assertSame('70', $values[$s->node('lot')][(string) $s->field('lot_location')]);
+        self::assertSame('203', $values[$s->node('transaction')][(string) $s->field('transaction_kind')], 'the inventory\'s own kind');
+        self::assertSame('Korrektur: D-1381', $values[$s->node('transaction')][(string) $s->field('label')]);
+    }
+
+    #[Test]
+    public function a_correction_without_a_quantity_for_a_lot_is_refused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        (new Bookings(Fixture::structure(), '2026-11-15'))->correction([['lot' => 900, 'thing' => 0, 'purchase' => 0, 'place' => 70, 'quantity' => '0', 'value' => null, 'name' => 'x']], 'K', 'n');
+    }
+
     private function valuesByNode(array $changes): array
     {
         $nodeOf = [];

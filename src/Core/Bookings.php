@@ -458,6 +458,52 @@ final class Bookings
     }
 
     /**
+     * D-1382: a correction as the inventory books it, for a reader over MCP — one Vorgang «Inventur/Korrektur» whose lines
+     * add to or take from an existing lot at a place, or bring a new lot in at its place. Nothing is set on a lot's place
+     * directly (D-1233); a new lot's place is where its first line puts it.
+     *
+     * @param list<array{lot: int, thing: int, purchase: int, place: int, quantity: string, value: ?string, name: string}> $rows
+     * @return list<array<string, mixed>>
+     */
+    public function correction(array $rows, string $title, string $note): array
+    {
+        if ($rows === []) {
+            throw StockError::nothingToBook();
+        }
+
+        $this->start();
+
+        foreach ($rows as $row) {
+            if ($row['place'] <= 0) {
+                throw new \InvalidArgumentException('A correction names its place.');
+            }
+
+            if ($row['lot'] > 0) {
+                $amount = trim($row['quantity']);
+
+                if (! is_numeric($amount) || (float) $amount === 0.0) {
+                    throw new \InvalidArgumentException('A correction of a lot needs a quantity other than 0.');
+                }
+
+                $this->line($row['name'], (string) $row['lot'], $amount, null, $row['place']);
+
+                continue;
+            }
+
+            if ($row['thing'] <= 0) {
+                throw StockError::nothingToBook();
+            }
+
+            $quantity = Quantity::positive($row['quantity']);
+            $value    = $row['value'] === null ? null : $this->moneyPart(Quantity::amount($row['value']), null);
+            $lot      = $this->lot($row['name'], (string) $row['thing'], $row['purchase'] > 0 ? (string) $row['purchase'] : null, $value, $note, $row['place']);
+            $this->line($row['name'], $lot, $quantity, $quantity, $row['place']);
+        }
+
+        return $this->finish($title, 'kind_count', []);
+    }
+
+    /**
      * D-1260: the goods of a sale leave in one Vorgang «Verkauf» whose Bezug is the sale.
      *
      * @param list<array{lot: int, place: int|null, quantity: string}> $rows

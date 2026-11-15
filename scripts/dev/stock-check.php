@@ -1719,10 +1719,12 @@ $mitU    = $ids($s->searchThings('47uf suchelko'));
 $perNr   = $s->withStock($s->searchThings('M-' . $r['t1']));
 $_GET    = ['page' => StockPage::PAGE, 'tab' => 'material'];
 $navi    = TaxmodStock\WordPress\Admin\LogisticsShell::wrap(StockPage::PAGE, '<div></div>');
+$_GET    = ['page' => TaxmodStock\WordPress\Admin\Pages::COCKPIT, TaxmodStock\WordPress\Admin\CockpitPage::AREA => 'stock'];
+$seite   = (new TaxmodStock\WordPress\Admin\CockpitPage())->render();
 $pruefe(in_array($r['t1'], $mitMy, true) && in_array($r['t1'], $mitU, true) && ($perNr[0]['id'] ?? 0) === $r['t1']
     && ($perNr[0]['quantity'] ?? '') === rtrim(rtrim(number_format($s->ledger()->stockOf($r['t1']), 3, ',', ''), '0'), ',')
-    && str_contains($navi, 'id="taxmod-shell-search"') && str_contains($navi, 'stock=1'),
-    'D-1385: the material search under «Bestand» finds «µ» and «u» alike, the label number finds the material first, each hit with its stock');
+    && str_contains($seite, 'id="taxmod-material-search"') && str_contains($seite, 'stock=1') && ! str_contains($navi, 'taxmod-material-search"'),
+    'D-1385: the material search on the page «Bestand» opens (not in the navigation) finds «µ» and «u» alike, the label number finds the material first, each hit with its stock');
 $apply([['op' => 'set_values', 'record' => (string) $r['t1'], 'values' => [$lblFeld => $altName]]]);
 
 echo $fehler === 0 ? "all green ({$kind})\n" : "{$fehler} red ({$kind})\n";

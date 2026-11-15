@@ -1455,7 +1455,7 @@ $pruefe($oben((new StockPage())->render(), 'rows[0][quantity]'), 'D-1308: «Inve
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'verbrauch'];
 $pruefe($oben((new StockPage())->render(), 'Bestandsposten'), 'D-1308: «Verbrauch buchen» in the toolbar above the fields');
 
-// D-1315 (Gesamtkonzept D3): «Art wechseln …» of a place with places inside — claimed in the editor (D-1334), refused
+// D-1315 (Gesamtkonzept D3): «Platzart ändern …» of a place with places inside — claimed in the editor (D-1334), refused
 // without a way, then the new places stand, the stock moved by an Umbuchung, the old places gone.
 $arten = $apply([
     ['op' => 'create_node', 'ref' => 'pt', 'name' => '__Platzarten', 'parent' => (string) $r['lo']],
@@ -1500,11 +1500,11 @@ $neu    = $s->locationTree()->childrenOf($regal);
 $pruefe(count($faecher) === 2 && isset($claim[(int) $arten['lo_art']]) && str_contains((string) $claim[(int) $arten['lo_art']]['url'], 'artwechsel=1') && $ohneWeg
     && $s->kindOf($regal) === $drei && count($neu) === 3 && array_intersect($neu, $faecher) === [] && ! $s->table('location')->has($faecher[0])
     && $s->ledger()->restAt($weLot, $neu[1]) === 1.0 && $s->ledger()->restAt($weLot, $faecher[1]) === 0.0,
-    'D-1315: «Art wechseln …» is claimed, refused without a way, then the new places stand, the stock moved 1:1 by an Umbuchung, the old places gone');
+    'D-1315: «Platzart ändern …» is claimed, refused without a way, then the new places stand, the stock moved 1:1 by an Umbuchung, the old places gone');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'lagerstruktur', 'ort' => (string) $regal, 'artwechsel' => '1'];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'value="artwechsel-' . $regal . '"') && preg_match('/id="taxmod-stock-kind-' . $regal . '"[^>]*checked/', $html) === 1 && ! preg_match('/name="way"[^>]*checked/', $html),
-    'D-1315: the place opens with «Art wechseln …» open, no way preselected');
+    'D-1315: the place opens with «Platzart ändern …» open, no way preselected');
 
 // C1 (D-1320): «Bezugsquellen» live in the material's «Einkauf», in the modeller's controls (D-1250); saving writes only them.
 $quellen = $apply([

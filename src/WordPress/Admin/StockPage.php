@@ -4033,14 +4033,14 @@ final class StockPage
             . '<button type="submit" class="button">' . esc_html__('Unterplätze anlegen', 'taxmod-stock') . '</button></form>';
     }
 
-    /** D-1315: where the claimed field «Platzart» leads — the place's page with «Art wechseln …» open. */
+    /** D-1315: where the claimed field «Platzart» leads — the place's page with «Platzart ändern …» open. */
     public static function kindChangeUrl(int $place): string
     {
         return add_query_arg(['page' => self::PAGE, 'tab' => 'lagerstruktur', 'ort' => $place, 'artwechsel' => 1], admin_url('admin.php'));
     }
 
     /**
-     * D-1315 (Gesamtkonzept D3): «Art wechseln …» — the new kind, and for a place with places inside where their stock goes;
+     * D-1315 (Gesamtkonzept D3): «Platzart ändern …» — the new kind, and for a place with places inside where their stock goes;
      * no way is preselected. Moves only as an «Umbuchung» (D-1233).
      */
     private function kindChangeDialog(int $place, LocationTree $tree): string
@@ -4054,7 +4054,7 @@ final class StockPage
         }
 
         if ($plan['refused'] !== '') {
-            return '<button type="button" class="button" disabled title="' . esc_attr($plan['refused']) . '">' . esc_html__('Art wechseln …', 'taxmod-stock') . '</button>';
+            return '<button type="button" class="button" disabled title="' . esc_attr($plan['refused']) . '">' . esc_html__('Platzart ändern …', 'taxmod-stock') . '</button>';
         }
 
         $options = '<option value="">' . esc_html__('— wählen —', 'taxmod-stock') . '</option>';
@@ -4087,7 +4087,7 @@ final class StockPage
 
         $switch = 'taxmod-stock-kind-' . $place;
         $html   = $this->formStart('lagerstruktur') . $this->returnFields('lagerstruktur', $place)
-            . ListPage::dialogAction($switch, __('Art wechseln …', 'taxmod-stock'), sprintf(/* translators: %s: the place, by its path */ __('Art wechseln: %s', 'taxmod-stock'), $tree->pathOf($place)), $body, 'booking', 'artwechsel-' . $place, __('Wechseln', 'taxmod-stock'))
+            . ListPage::dialogAction($switch, __('Platzart ändern …', 'taxmod-stock'), sprintf(/* translators: %s: the place, by its path */ __('Platzart ändern: %s', 'taxmod-stock'), $tree->pathOf($place)), $body, 'booking', 'artwechsel-' . $place, __('Ändern', 'taxmod-stock'))
             . '</form>';
 
         // The claimed field's button (D-1334) lands here with the dialog open.

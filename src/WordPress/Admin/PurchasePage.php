@@ -388,7 +388,7 @@ final class PurchasePage
         $sourced  = $tab === 'bedarf' ? $this->sourcedFrom($order, $purchases) : [];
         $count    = sprintf(/* translators: %d: positions */ _n('%d Position', '%d Positionen', count($lines), 'taxmod-stock'), count($lines))
             . ($sourced === [] ? '' : ' · ' . sprintf(/* translators: %d: positions at a supplier */ __('%d beim Händler', 'taxmod-stock'), count($sourced)));
-        // D-1088, his word 2026-11-14 «von bedarf muss man doch auf bestellen und nicht auf nochmal bestellen»: a copy only of
+        // D-1320, his word 2026-11-14 «von bedarf muss man doch auf bestellen und nicht auf nochmal bestellen»: a copy only of
         // what was ordered or dropped; a demand's own step is «Bestellen», which opens its choice of merchant.
         $buttons  = $this->rowButtons($tab, $order);
 

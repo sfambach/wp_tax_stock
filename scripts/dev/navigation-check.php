@@ -235,7 +235,7 @@ $pruefe((new StockService())->viewSettings()->expanded('material'), 'the view of
 $tab = new TaxmodStock\WordPress\Admin\SettingsTab();
 $pruefe(str_contains($tab->render(), 'taxmod_stock_structure') && ! str_contains($tab->render(), 'taxmod_stock_not_material'), 'the Configuration tab «Lager» keeps only the technical structure');
 
-// D-1369 (ergänzt D-1128), his report 2026-11-14 «warum so und nicht so»: a page a module marks `opens_area` is what its area's
+// D-1372 (ergänzt D-1128), his report 2026-11-14 «warum so und nicht so»: a page a module marks `opens_area` is what its area's
 // head opens instead of the tile overview; where two mark one, the first by position wins.
 add_filter(ModulePage::FILTER, static fn (array $pages): array => [...$pages,
     ['slug' => '__navcheck-head-1', 'label' => 'Kopf 1', 'area' => 'production', 'opens_area' => true, 'render' => static fn (): string => ''],
@@ -245,7 +245,7 @@ ModulePage::capture();
 $_GET = ['page' => CockpitPage::PAGE];
 $kopf = LogisticsShell::wrap(CockpitPage::PAGE, '<p>x</p>');
 $pruefe(preg_match('/<a href="[^"]*module=__navcheck-head-1[^"]*">Fertigung<\/a>/', $kopf) === 1 && preg_match('/<a href="[^"]*area=stock[^"]*">Bestand<\/a>/', $kopf) === 1,
-    'D-1369: Fertigung opens the page its module marks (the first of two), Bestand still its overview');
+    'D-1372: Fertigung opens the page its module marks (the first of two), Bestand still its overview');
 
 printf("\n%s\n", $fehler === 0 ? 'navigation-check: green' : "navigation-check: {$fehler} FAIL");
 exit($fehler === 0 ? 0 : 1);

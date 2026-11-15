@@ -84,7 +84,7 @@ final class StockPage
     private const PER_PAGE  = 50;
     private const ROWS      = 6;
     private const MANUFACTURING = 'taxmod-fertigung';
-    /** D-1373: the bookings that go back to where their form was opened. */
+    /** D-1377: the bookings that go back to where their form was opened. */
     private const RETURNING = ['verbrauch', 'umbuchen', 'postenumbuchen', 'sammelumbuchen', 'inventur', 'wareneingang', 'einlagern'];
 
     private const TABS      = ['wareneingang', 'material', 'gruppenbestand', 'inventur', 'verbrauch', 'reservierungen', 'lagerorte', 'lagerstruktur', 'platzarten', 'etikettenvorlagen', 'drucker', 'fertigung'];
@@ -425,7 +425,7 @@ final class StockPage
             };
         }
 
-        // D-1373, his word 2026-11-15 «nach ausbuchen des verbrauch sollte der zurück springen woher er kam»: a booking goes back
+        // D-1377, his word 2026-11-15 «nach ausbuchen des verbrauch sollte der zurück springen woher er kam»: a booking goes back
         // to where its form was opened; without that, to where it always went.
         if (in_array($kind, self::RETURNING, true) && ! ($failed ?? false) && ($return = self::returnUrl((string) ($_POST['return'] ?? ''))) !== '') {
             wp_safe_redirect($return);
@@ -2130,7 +2130,7 @@ final class StockPage
 
     private function bookOutButton(string $url): string
     {
-        // D-1373: the page it was pressed on travels along.
+        // D-1377: the page it was pressed on travels along.
         $here = self::here();
         $url  = $here === '' ? $url : add_query_arg('return', rawurlencode($here), $url);
 
@@ -4207,7 +4207,7 @@ final class StockPage
             : (is_ssl() ? 'https://' : 'http://') . sanitize_text_field(wp_unslash((string) ($_SERVER['HTTP_HOST'] ?? ''))) . wp_unslash((string) ($_SERVER['REQUEST_URI'] ?? '')));
     }
 
-    /** D-1373: a page of this admin to go back to, '' for anything else. */
+    /** D-1377: a page of this admin to go back to, '' for anything else. */
     private static function returnUrl(string $raw): string
     {
         $url = esc_url_raw(rawurldecode(wp_unslash($raw)));
@@ -4704,7 +4704,7 @@ final class StockPage
 
     private function formStart(string $booking): string
     {
-        // D-1373: where a booking returns to — the page that opened its form (`return`), else the page the form stands on.
+        // D-1377: where a booking returns to — the page that opened its form (`return`), else the page the form stands on.
         // Einbuchen only with an explicit `return`: without it, it goes to the lot as ever.
         $return = in_array($booking, self::RETURNING, true)
             ? (self::returnUrl((string) ($_GET['return'] ?? '')) ?: (in_array($booking, ['wareneingang', 'einlagern', 'verbrauch', 'inventur'], true) ? '' : self::returnUrl(rawurlencode(self::here()))))

@@ -977,7 +977,7 @@ foreach ($einkaufDienst->table('order')->ids() as $id) {
 
 $pruefe($uebergangOk, 'D-1320: a demand passed on stands under «Beendet» or «Archiviert» with «Als neuen Bedarf kopieren», never under «Bedarf» (' . $uebergegangen . ' passed on)');
 
-// D-1373, his word 2026-11-15 «nach ausbuchen des verbrauch sollte der zurück springen woher er kam»: every booking form carries
+// D-1377, his word 2026-11-15 «nach ausbuchen des verbrauch sollte der zurück springen woher er kam»: every booking form carries
 // where it was opened, an outside address never; Einbuchen without one keeps its old target.
 $formStart = new ReflectionMethod(StockPage::class, 'formStart');
 $zurueck   = admin_url('admin.php?page=' . StockPage::PAGE . '&tab=lagerorte&ort=1');
@@ -992,7 +992,7 @@ foreach (['verbrauch', 'umbuchen', 'postenumbuchen', 'sammelumbuchen', 'inventur
 
 $_GET = [];
 $pruefe($formenOk && ! str_contains($formStart->invoke(new StockPage(), 'wareneingang'), 'name="return"') && ! str_contains($formStart->invoke(new StockPage(), 'ort'), 'name="return"'),
-    'D-1373: every booking form carries the page it was opened from, never an outside address; Einbuchen without one and non-bookings carry none');
+    'D-1377: every booking form carries the page it was opened from, never an outside address; Einbuchen without one and non-bookings carry none');
 
 // His wish 2026-11-11 «links aus logistik auf tax modeller … ablösung»: no page of the module links into the modeller's screens.
 $hinaus = array_filter(array_map(static fn (string $f): string => str_contains((string) file_get_contents($f), 'taxmod_open_record') ? basename($f) : '', glob(__DIR__ . '/../../src/WordPress/Admin/*.php') ?: []));

@@ -1680,6 +1680,11 @@ $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => (string) $r[
 $html = (new StockPage())->render();
 $pruefe($kopfLos > 0 && $unter > 0 && str_contains($html, 'Inhalt von Set-Posten P-' . $kopfLos) && str_contains($html, '#taxmod-stock-lot-' . $unter . '">P-' . $unter . '</a>') && str_contains($html, 'nicht im Set'),
     'D-1381: the set\'s Bestand shows what its set lot holds, the sub-lot linked, a kind not wanted marked «nicht im Set»');
+$setTab = (string) strstr((string) strstr($html, 'Inhalt von Set-Posten P-' . $kopfLos), '</table>', true);
+$zeile  = (string) strstr((string) strstr($setTab, '<tbody>'), '</tr>', true);
+$wort   = $s->things()->word($unterDing);
+$pruefe($wort !== '' && str_contains($zeile, '>' . esc_html($wort) . '</a>') && substr_count($zeile, '<td') === 6,
+    'D-1381: a set row names each material by its own label, not only the one the view is scoped to, and fills the row to the «Actions» column');
 $apply([['op' => 'set_values', 'record' => (string) $unter, 'values' => [(string) ($setNeu['ausset'] ?? 0) => '']]]);
 update_option('taxmod_stock_structure', $vor);
 

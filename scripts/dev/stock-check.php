@@ -1727,5 +1727,12 @@ $pruefe(in_array($r['t1'], $mitMy, true) && in_array($r['t1'], $mitU, true) && (
     'D-1385: the material search on the page «Bestand» opens (not in the navigation) finds «µ» and «u» alike, the label number finds the material first, each hit with its stock');
 $apply([['op' => 'set_values', 'record' => (string) $r['t1'], 'values' => [$lblFeld => $altName]]]);
 
+// D-1139 (CD-7), asked by the manufacturing 2026-11-15: presentInEach reads once for many boxes and says for each what presentIn says.
+$s      = new StockService();
+$kisten = array_values(array_slice(array_keys($s->places()), 0, 3));
+$jede   = $s->presentInEach($kisten);
+$pruefe($kisten !== [] && array_filter($kisten, static fn (int $k): bool => ($jede[$k] ?? null) != (new StockService())->presentIn($k)) === [] && $s->presentInEach([]) === [],
+    'D-1139: presentInEach gives each box what presentIn gives for it, one read for all');
+
 echo $fehler === 0 ? "all green ({$kind})\n" : "{$fehler} red ({$kind})\n";
 exit($fehler === 0 ? 0 : 1);

@@ -2184,7 +2184,30 @@ final class StockService
     /** @return array<int, float> D-1139: thing → pieces lying on the place and on every place in it */
     public function presentIn(int $place): array
     {
-        return ProjectBill::present($this->ledger(), $this->locationTree()->withAllBelow($place));
+        return $this->presentInEach([$place])[$place] ?? [];
+    }
+
+    /**
+     * D-1139 for many boxes at once: one ledger and one place tree for all of them (CD-7), as the manufacturing asks.
+     *
+     * @param list<int> $boxes
+     * @return array<int, array<int, float>> box → thing → pieces lying on it and on every place in it
+     */
+    public function presentInEach(array $boxes): array
+    {
+        if ($boxes === []) {
+            return [];
+        }
+
+        $ledger = $this->ledger();
+        $tree   = $this->locationTree();
+        $out    = [];
+
+        foreach ($boxes as $box) {
+            $out[$box] = ProjectBill::present($ledger, $tree->withAllBelow($box));
+        }
+
+        return $out;
     }
 
     /**

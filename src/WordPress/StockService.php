@@ -351,8 +351,13 @@ final class StockService
                 continue;
             }
 
+            // A material's scoped view holds only that material's row in its node; the others are read like the rest (D-1381).
             foreach ($ids as $id) {
-                $out[$id] = $name($this->tables[$node], $id);
+                if ($this->tables[$node]->has($id)) {
+                    $out[$id] = $name($this->tables[$node], $id);
+                } else {
+                    $rest[] = $id;
+                }
             }
         }
 

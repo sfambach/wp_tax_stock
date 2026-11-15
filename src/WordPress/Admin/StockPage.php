@@ -1565,10 +1565,10 @@ final class StockPage
                     }
                 }
 
-                $rows .= '<tr><th scope="row" class="check-column"></th><td><a href="' . esc_url(self::thingUrl($row['thing'], 'bestand')) . '">' . esc_html($names[$row['thing']] ?? '#' . $row['thing']) . '</a></td>'
+                $rows .= '<tr><th scope="row" class="check-column"></th><td><a href="' . esc_url(self::thingUrl($row['thing'], 'bestand')) . '">' . esc_html(($names[$row['thing']] ?? '') !== '' ? $names[$row['thing']] : '#' . $row['thing']) . '</a></td>'
                     . '<td>' . ($at === [] ? '—' : implode('<br>', $at)) . '</td>'
                     . '<td>' . esc_html($this->number($row['held'])) . '</td><td>' . esc_html($row['wanted'] === null ? '—' : $this->number($row['wanted'])) . '</td>'
-                    . '<td>' . esc_html($words[$row['state']] ?? $row['state']) . '</td></tr>';
+                    . '<td>' . esc_html($words[$row['state']] ?? $row['state']) . '</td><td></td></tr>';
             }
 
             $title = $head > 0

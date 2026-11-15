@@ -560,6 +560,29 @@ final class InboundPage
         };
     }
 
+    /**
+     * D-1375: the warning beside a unit price — how far above the last purchase, and a link to that one.
+     *
+     * @param array{previous: int, previous_unit: float, unit: float, percent: float, previous_order: ?int}|null $warning
+     */
+    private function priceWarning(?array $warning): string
+    {
+        if ($warning === null) {
+            return '';
+        }
+
+        $order   = $warning['previous_order'];
+        $text    = sprintf(
+            /* translators: 1: percent above, 2: the earlier unit price in euro */
+            __('%1$s %% über dem letzten Kauf (%2$s €)', 'taxmod-stock'),
+            number_format_i18n($warning['percent'], 0),
+            number_format_i18n($warning['previous_unit'], 2)
+        );
+        $shown   = $order === null ? esc_html($text) : '<a href="' . esc_url(self::url(['order' => $order]) . '#taxmod-stock-purchase-' . $warning['previous']) . '">' . esc_html($text) . '</a>';
+
+        return '<br><span class="taxmod-stock-price-warning" style="color:#b32d2e;white-space:nowrap" title="' . esc_attr__('Bitte prüfen: Packungspreis statt Stückpreis?', 'taxmod-stock') . '">⚠ ' . $shown . '</span>';
+    }
+
     private function details(InboundOrder $order, InboundStage $stage, string $tab, bool $open): string
     {
         if ($stage === InboundStage::Arrived) {
@@ -604,6 +627,8 @@ final class InboundPage
 
         // D-1291, his word 2026-11-09 «auch fehlt die einheit (€)»: the prices as the modeller words them, with their unit.
         $words = $stock->fieldWords($ids, ['purchase_unit_price', 'purchase_total_price']);
+        // D-1375: a unit price far above the last purchase of the same material is marked, before anything is booked.
+        $warned = $done ? [] : $this->inbound->priceWarnings($ids);
 
         foreach ($purchases as $purchase) {
             $purchase = (int) $purchase;
@@ -631,7 +656,7 @@ final class InboundPage
                 . ($done ? $this->purchaseNumber($order->id) : $this->purchaseFacts($table, $order->id, $purchase)) . '</td>'
                 . ($went === null ? '' : '<td>' . $went['material'] . '</td><td>' . $went['place'] . '</td><td>' . $went['date'] . '</td>')
                 . '<td style="text-align:right">' . esc_html($count > 0.0 ? (string) (0 + $count) : '—') . '</td>'
-                . '<td style="text-align:right">' . esc_html($words['purchase_unit_price'][$purchase] ?? $shown($each)) . '</td>'
+                . '<td style="text-align:right">' . esc_html($words['purchase_unit_price'][$purchase] ?? $shown($each)) . $this->priceWarning($warned[$purchase] ?? null) . '</td>'
                 . '<td style="text-align:right">' . esc_html($words['purchase_total_price'][$purchase] ?? $shown($total)) . '</td>'
                 . '<td style="text-align:right;white-space:nowrap">' . $button . '</td></tr>';
         }

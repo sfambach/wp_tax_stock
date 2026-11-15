@@ -217,6 +217,44 @@ final class PurchasingTest extends TestCase
         self::assertSame(['C1234 10'], (new Purchasing(self::structure(), '2026-10-30'))->cartLines(self::DRAFT, $this->orders(), $this->purchases()));
     }
 
+    #[Test]
+    public function a_demand_whose_positions_all_went_to_suppliers_has_passed_on(): void
+    {
+        $s        = self::structure();
+        $p        = new Purchasing($s, '2026-10-30');
+        $status   = $s->field('order_status');
+        $orders   = new Table([
+            self::DEMAND => [$s->field('label') => ['Kiselev'], $status => ['209']],
+            63           => [$s->field('label') => ['Leer'], $status => ['209']],
+        ]);
+        $brackets = $p->brackets($this->purchases());
+
+        self::assertSame([self::DEMAND => true], $brackets);
+        self::assertTrue($p->hasPassedOn(self::DEMAND, $orders, $brackets), 'no position of its own, one at a supplier: passed on');
+        self::assertFalse($p->hasPassedOn(63, $orders, $brackets), 'an empty demand nothing went from stays to be filled or dropped');
+        self::assertFalse($p->hasPassedOn(self::DEMAND, $this->orders(), $brackets), 'a demand with positions of its own stays');
+    }
+
+    #[Test]
+    public function a_finished_demand_is_ended_and_archived_a_while_after_its_newest_order(): void
+    {
+        $s        = self::structure();
+        $p        = new Purchasing($s, '2026-10-30');
+        $status   = $s->field('order_status');
+        $orders   = new Table([
+            self::DEMAND => [$s->field('label') => ['Kiselev'], $status => ['209']],
+            self::ORDER  => [$s->field('label') => ['Mouser'], $status => ['210'], $s->field('order_merchant') => ['Mouser'], $s->field('order_lines') => ['72']],
+        ]);
+        $brackets = $p->brackets($this->purchases());
+        $into     = $p->passedInto($orders, $this->purchases());
+
+        self::assertSame([self::DEMAND => [self::ORDER]], $into);
+        self::assertSame('beendet', $p->endState(self::DEMAND, $orders, $brackets, $into, [self::ORDER => '2026-11-01'], '2026-11-15', 30));
+        self::assertSame('archiviert', $p->endState(self::DEMAND, $orders, $brackets, $into, [self::ORDER => '2026-10-01'], '2026-11-15', 30));
+        self::assertSame('beendet', $p->endState(self::DEMAND, $orders, $brackets, $into, [], '2026-11-15', 30), 'without a date it stays ended');
+        self::assertSame('', $p->endState(self::DEMAND, $this->orders(), $brackets, $into, [], '2026-11-15', 30), 'a demand with positions of its own is open');
+    }
+
     private function orders(): Table
     {
         $s = self::structure();

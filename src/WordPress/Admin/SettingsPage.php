@@ -179,6 +179,11 @@ final class SettingsPage
             . '<span class="description">' . esc_html__('Ältere Bestellungen gelten als Kaufhistorie und stehen gleich unter «Archiviert».', 'taxmod-stock') . '</span></p>'
             . '<p><label>' . esc_html__('Archivieren nach', 'taxmod-stock') . ' <input type="number" min="1" name="taxmod_stock_inbound_archive_days" value="' . esc_attr((string) $stock->inboundArchiveDays()) . '" style="width:6em"> ' . esc_html__('Tagen', 'taxmod-stock') . '</label> '
             . '<span class="description">' . esc_html__('Eingebuchte Bestellungen wandern so viele Tage nach «Eingegangen am» unter «Archiviert».', 'taxmod-stock') . '</span></p>'
+            . '<p><label>' . esc_html__('Beendeten Bedarf archivieren nach', 'taxmod-stock') . ' <input type="number" min="1" name="taxmod_stock_demand_archive_days" value="' . esc_attr((string) $stock->demandArchiveDays()) . '" style="width:6em"> ' . esc_html__('Tagen', 'taxmod-stock') . '</label> '
+            . '<span class="description">' . esc_html__('Ein Bedarf, der ganz in Bestellungen übergegangen ist, steht unter «Beendet» und so viele Tage nach seiner letzten Bestellung unter «Archiviert».', 'taxmod-stock') . '</span></p>'
+            // D-1375, his wish 2026-11-15: «prozentsatz in den einstellungen festlegbar ist default 20%».
+            . '<p><label>' . esc_html__('Preiswarnung ab', 'taxmod-stock') . ' <input type="number" min="1" name="taxmod_stock_price_warn_percent" value="' . esc_attr((string) $stock->priceWarnPercent()) . '" style="width:6em"> ' . esc_html__('% über dem letzten Kauf', 'taxmod-stock') . '</label> '
+            . '<span class="description">' . esc_html__('Der Wareneingang warnt, wenn der Stückpreis so viel über dem letzten Kauf desselben Materials liegt.', 'taxmod-stock') . '</span></p>'
             // D-1111: an ordinary place the setting names, never a name in code.
             . '<p><label>' . esc_html__('Lagerort für Test', 'taxmod-stock') . ' ' . $stock->placeChooser('taxmod_stock_test_place', (int) $settings->place) . '</label> '
             . '<span class="description">' . esc_html__('Der Wareneingang schlägt diesen Ort für Gebrauchtware aus diesen Gruppen vor (nicht für Neuware); leer: der übliche Vorschlag.', 'taxmod-stock') . '</span></p>'
@@ -241,6 +246,14 @@ final class SettingsPage
 
             if (absint($post['taxmod_stock_inbound_archive_days'] ?? 0) > 0) {
                 update_option(StockService::INBOUND_ARCHIVE_DAYS, absint($post['taxmod_stock_inbound_archive_days']), false);
+            }
+
+            if (absint($post['taxmod_stock_demand_archive_days'] ?? 0) > 0) {
+                update_option(StockService::DEMAND_ARCHIVE_DAYS, absint($post['taxmod_stock_demand_archive_days']), false);
+            }
+
+            if (absint($post['taxmod_stock_price_warn_percent'] ?? 0) > 0) {
+                update_option(StockService::PRICE_WARN_PERCENT, absint($post['taxmod_stock_price_warn_percent']), false);
             }
         }
     }

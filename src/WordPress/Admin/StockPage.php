@@ -84,6 +84,9 @@ final class StockPage
     private const PER_PAGE  = 50;
     private const ROWS      = 6;
     private const MANUFACTURING = 'taxmod-fertigung';
+    /** D-1373: the bookings that go back to where their form was opened. */
+    private const RETURNING = ['verbrauch', 'umbuchen', 'postenumbuchen', 'sammelumbuchen', 'inventur', 'wareneingang', 'einlagern'];
+
     private const TABS      = ['wareneingang', 'material', 'gruppenbestand', 'inventur', 'verbrauch', 'reservierungen', 'lagerorte', 'lagerstruktur', 'platzarten', 'etikettenvorlagen', 'drucker', 'fertigung'];
     private const VIEWS     = ['daten', 'bearbeiten', 'einkauf', 'lager', 'bestand', 'verkauf'];
     private const FILTER_FORM = 'taxmod-stock-filter';
@@ -399,6 +402,7 @@ final class StockPage
                 default        => ['material', $thing > 0 ? ['thing' => $thing, 'view' => 'bestand'] : []],
             };
         } catch (StockError $e) {
+            $failed = true;
             $this->remember('error', Messages::of($e));
             $back = match ($kind) {
                 'wareneingang', 'zuordnen', 'nichteinlagern', 'einlagern' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
@@ -419,6 +423,13 @@ final class StockPage
                     ? ['material', ['thing' => $thing, 'view' => 'bestand']] : ['reservierungen', []],
                 default             => [$kind, []],
             };
+        }
+
+        // D-1373, his word 2026-11-15 «nach ausbuchen des verbrauch sollte der zurück springen woher er kam»: a booking goes back
+        // to where its form was opened; without that, to where it always went.
+        if (in_array($kind, self::RETURNING, true) && ! ($failed ?? false) && ($return = self::returnUrl((string) ($_POST['return'] ?? ''))) !== '') {
+            wp_safe_redirect($return);
+            exit;
         }
 
         // D-1090: the split pages go back to the place that was open.
@@ -2119,6 +2130,10 @@ final class StockPage
 
     private function bookOutButton(string $url): string
     {
+        // D-1373: the page it was pressed on travels along.
+        $here = self::here();
+        $url  = $here === '' ? $url : add_query_arg('return', rawurlencode($here), $url);
+
         return self::icon('ICON_BOOK_OUT') === '' || ! method_exists(ListPage::class, 'iconLink')
             ? '<a class="button" href="' . esc_url($url) . '">' . esc_html__('Ausbuchen', 'taxmod-stock') . '</a>'
             : ListPage::iconLink(self::icon('ICON_BOOK_OUT'), __('Ausbuchen', 'taxmod-stock'), $url);
@@ -4185,6 +4200,21 @@ final class StockPage
         return str_replace('<form ', '<form id="taxmod-stock-consumption" ', $this->formStart('verbrauch')) . self::actForm($rows, $submit) . '</form>';
     }
 
+    /** The page being drawn; details drawn later come by admin-ajax, so there it is the page that asked for them. '' unknown. */
+    private static function here(): string
+    {
+        return esc_url_raw(wp_doing_ajax() ? (string) wp_get_referer()
+            : (is_ssl() ? 'https://' : 'http://') . sanitize_text_field(wp_unslash((string) ($_SERVER['HTTP_HOST'] ?? ''))) . wp_unslash((string) ($_SERVER['REQUEST_URI'] ?? '')));
+    }
+
+    /** D-1373: a page of this admin to go back to, '' for anything else. */
+    private static function returnUrl(string $raw): string
+    {
+        $url = esc_url_raw(rawurldecode(wp_unslash($raw)));
+
+        return $url !== '' && str_starts_with($url, admin_url()) ? (string) wp_validate_redirect($url, '') : '';
+    }
+
     /**
      * The architecture thread 2026-11-09: a form for an act, not a record, through the modeller's shared form block
      * (`ListPage::form`, modeller 0.2.33) — label left, the hint as «?», the buttons below; plain labels on an older one.
@@ -4674,9 +4704,16 @@ final class StockPage
 
     private function formStart(string $booking): string
     {
+        // D-1373: where a booking returns to — the page that opened its form (`return`), else the page the form stands on.
+        // Einbuchen only with an explicit `return`: without it, it goes to the lot as ever.
+        $return = in_array($booking, self::RETURNING, true)
+            ? (self::returnUrl((string) ($_GET['return'] ?? '')) ?: (in_array($booking, ['wareneingang', 'einlagern', 'verbrauch', 'inventur'], true) ? '' : self::returnUrl(rawurlencode(self::here()))))
+            : '';
+
         return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">'
             . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
             . '<input type="hidden" name="booking" value="' . esc_attr($booking) . '">'
+            . ($return === '' ? '' : '<input type="hidden" name="return" value="' . esc_attr($return) . '">')
             . wp_nonce_field(self::ACTION, '_wpnonce', true, false);
     }
 

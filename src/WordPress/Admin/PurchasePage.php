@@ -28,7 +28,7 @@ final class PurchasePage
     public const PAGE   = Pages::PURCHASE;
     public const ACTION = 'taxmod_stock_purchase';
 
-    private const TABS      = ['nachbestellen', 'bedarf', 'bestellen', 'bestellt', 'verworfen'];
+    private const TABS      = ['nachbestellen', 'bedarf', 'bestellen', 'bestellt', 'beendet', 'archiviert', 'verworfen'];
     private const BULK_FORM = 'taxmod-stock-purchase-bulk';
 
     /** D-1147: the source name under which an order's row draws its positions when opened. */
@@ -177,10 +177,16 @@ final class PurchasePage
         $back  = method_exists(ListPage::class, 'back') ? [ListPage::back(self::url(['tab' => 'bedarf']), __('Zum Bedarf', 'taxmod-stock'))] : [];
         $lines = array_map('intval', $orders->all($demand, $s->field('order_lines')));
 
-        return '<h2>' . esc_html(sprintf(/* translators: %s: the demand's name */ __('Bedarf – %s', 'taxmod-stock'), $label === '' ? '#' . $demand : $label)) . '</h2>'
+        // D-1320 ergänzt: a demand that passed on names the orders it went into and offers its copy.
+        $into   = $p->passedInto($orders, $purchases)[$demand] ?? [];
+        $ended  = $lines === [] && $into !== [];
+        $passed = $into === [] ? '' : '<p>' . esc_html__('Übergegangen in:', 'taxmod-stock') . ' ' . implode(', ', array_map(fn (int $o): string => '<a href="' . esc_url($this->orderLink($o, $orders)) . '">'
+            . esc_html((string) $orders->first($o, $s->field('label')) ?: '#' . $o) . '</a>', $into)) . '</p>';
+
+        return '<h2>' . esc_html(sprintf(/* translators: %s: the demand's name */ __('Bedarf – %s', 'taxmod-stock'), $label === '' ? '#' . $demand : $label)) . '</h2>' . $passed
             . '<form method="post" id="' . esc_attr($form) . '" action="' . esc_url(admin_url('admin-post.php')) . '">' . $this->hidden('move', 'bedarf')
             . '<input type="hidden" name="order" value="' . esc_attr((string) $demand) . '"></form>'
-            . ListPage::toolbar([...($back === [] ? [] : [$back]), [$this->addDialog($demand, 'bedarf'), $move]])
+            . ListPage::toolbar([...($back === [] ? [] : [$back]), [...($ended ? [$this->button('again', $demand, 0, __('Als neuen Bedarf kopieren', 'taxmod-stock'), 'beendet', true)] : []), $this->addDialog($demand, 'bedarf'), $move]])
             . $this->details('bedarf', $demand, $lines, $this->sourcedFrom($demand, $purchases), $orders, $purchases, $form);
     }
 
@@ -216,10 +222,17 @@ final class PurchasePage
             return $this->orderView($tab, $open, $orders, $purchases);
         }
 
-        $groups = ['bedarf' => [], 'bestellen' => [], 'bestellt' => [], 'verworfen' => []];
+        $groups = ['bedarf' => [], 'bestellen' => [], 'bestellt' => [], 'beendet' => [], 'archiviert' => [], 'verworfen' => []];
+
+        $brackets = $p->brackets($purchases);
+        $into     = $p->passedInto($orders, $purchases);
+        $placed   = array_filter(array_map(static fn ($o): string => (string) $o->orderedOn, $this->inbound->orders()));
+        $days     = $this->stock->demandArchiveDays();
+        $today    = current_time('Y-m-d');
 
         foreach ($orders->ids() as $id) {
             $group = match (true) {
+                ($end = $p->endState($id, $orders, $brackets, $into, $placed, $today, $days)) !== '' => $end,
                 $p->isDemand($id, $orders)                                                           => 'bedarf',
                 $p->isSupplierDraft($id, $orders)                                                    => 'bestellen',
                 $p->isOrdered($id, $orders) && ($this->inbound->orders()[$id]->receivedOn ?? '') === '' => 'bestellt',
@@ -238,6 +251,8 @@ final class PurchasePage
             ['bedarf', __('Bedarf', 'taxmod-stock'), count($groups['bedarf'])],
             ['bestellen', __('Bestellen', 'taxmod-stock'), count($groups['bestellen'])],
             ['bestellt', __('Bestellt', 'taxmod-stock'), count($groups['bestellt'])],
+            ['beendet', __('Beendet', 'taxmod-stock'), count($groups['beendet'])],
+            ['archiviert', __('Archiviert', 'taxmod-stock'), count($groups['archiviert'])],
             ['verworfen', __('Verworfen', 'taxmod-stock'), count($groups['verworfen'])],
         ];
         $bar     = ListPage::tabs($tabs, match ($tab) { 'neu' => 'nachbestellen', 'angebote' => 'bedarf', default => $tab }, static fn (string $slug): string => self::url(['tab' => $slug]));
@@ -266,6 +281,8 @@ final class PurchasePage
             'bedarf'    => __('Was gebraucht wird, noch ohne Händler. Je Position eine Bezugsquelle wählen: sie wandert in den Entwurf des Händlers, der Bedarf bleibt als Klammer.', 'taxmod-stock'),
             'bestellen' => __('Je Händler ein Entwurf. Beim Händler selbst bestellen (Warenkorb-Liste kopieren), dann «Als bestellt markieren».', 'taxmod-stock'),
             'bestellt'  => __('Bestellt und noch nicht angekommen. Weiter geht es im Wareneingang.', 'taxmod-stock'),
+            'beendet'   => __('Bedarfe, die ganz in Bestellungen übergegangen sind. «Als neuen Bedarf kopieren» legt dieselben Materialien als neuen Bedarf an.', 'taxmod-stock'),
+            'archiviert' => __('Beendete Bedarfe, deren letzte Bestellung länger zurückliegt als in den Einstellungen festgelegt.', 'taxmod-stock'),
             default     => __('Verworfene Bedarfe und Entwürfe; «Wiederherstellen» macht sie wieder zum Entwurf.', 'taxmod-stock'),
         };
 
@@ -393,10 +410,22 @@ final class PurchasePage
         $buttons  = $this->rowButtons($tab, $order);
 
         return ListPage::row(self::BULK_FORM, (string) $order, [
-            '<a href="' . esc_url(self::url($tab === 'bedarf' ? ['bedarf' => $order] : ['tab' => $tab, 'order' => $order])) . '"><strong>' . esc_html($label === '' ? '#' . $order : $label) . '</strong></a> <span class="description">#' . esc_html((string) $order) . ($number === '' ? '' : ' · ' . esc_html($number)) . '</span>',
+            '<a href="' . esc_url(self::url(in_array($tab, ['bedarf', 'beendet', 'archiviert'], true) ? ['bedarf' => $order] : ['tab' => $tab, 'order' => $order])) . '"><strong>' . esc_html($label === '' ? '#' . $order : $label) . '</strong></a> <span class="description">#' . esc_html((string) $order) . ($number === '' ? '' : ' · ' . esc_html($number)) . '</span>',
             esc_html($merchant === '' ? '—' : $merchant),
             esc_html($count),
         ], $buttons, '', false);
+    }
+
+    /** Where an order a demand went into opens: its draft or its placed order here, else its view in the goods receipt. */
+    private function orderLink(int $order, Table $orders): string
+    {
+        $p = $this->stock->purchasing();
+
+        return match (true) {
+            $p->isSupplierDraft($order, $orders) => self::url(['tab' => 'bestellen', 'order' => $order]),
+            $p->isOrdered($order, $orders)       => self::url(['tab' => 'bestellt', 'order' => $order]),
+            default                              => InboundPage::orderUrl($order, ''),
+        };
     }
 
     /**
@@ -417,10 +446,12 @@ final class PurchasePage
     /** The buttons of an order in its tab — in its row and on its own page alike. */
     private function rowButtons(string $tab, int $order): string
     {
-        $again    = in_array($tab, ['bestellt', 'verworfen'], true) ? $this->button('again', $order, 0, __('Nochmal bestellen', 'taxmod-stock'), $tab, false)
-            : ($tab === 'bedarf' ? '<a class="button button-primary" href="' . esc_url(self::url(['bedarf' => $order])) . '">' . esc_html__('Bestellen', 'taxmod-stock') . '</a> ' : '');
+        $again    = in_array($tab, ['beendet', 'archiviert'], true) ? $this->button('again', $order, 0, __('Als neuen Bedarf kopieren', 'taxmod-stock'), $tab, true)
+            : (in_array($tab, ['bestellt', 'verworfen'], true) ? $this->button('again', $order, 0, __('Nochmal bestellen', 'taxmod-stock'), $tab, false)
+            : ($tab === 'bedarf' ? '<a class="button button-primary" href="' . esc_url(self::url(['bedarf' => $order])) . '">' . esc_html__('Bestellen', 'taxmod-stock') . '</a> ' : ''));
         return $again . match ($tab) {
             'bedarf', 'bestellen' => $this->button('discard', $order, 0, __('Verwerfen', 'taxmod-stock'), $tab, false, __('Verwerfen? Er wird storniert, nicht gelöscht, und lässt sich unter «Verworfen» wiederherstellen.', 'taxmod-stock')),
+            'beendet', 'archiviert' => '',
             'bestellt'  => $this->button('back', $order, 0, __('Zurück zu Entwurf', 'taxmod-stock'), $tab, false)
                 . '<a class="button" href="' . esc_url(InboundPage::url(['tab' => 'ordered'])) . '">' . esc_html__('Wareneingang', 'taxmod-stock') . '</a>',
             default     => $this->button('restore', $order, 0, __('Wiederherstellen', 'taxmod-stock'), $tab, true),

@@ -97,6 +97,12 @@ final class StockService
     /** Days after its receipt a booked order moves to «Archiviert» (D-1008). */
     public const INBOUND_ARCHIVE_DAYS = 'taxmod_stock_inbound_archive_days';
 
+    /** D-1320 ergänzt: days after the newest order of a finished demand until it counts as archived. */
+    public const DEMAND_ARCHIVE_DAYS = 'taxmod_stock_demand_archive_days';
+
+    /** D-1375, his wish 2026-11-15: the price warning's share, in percent. */
+    public const PRICE_WARN_PERCENT = 'taxmod_stock_price_warn_percent';
+
     /** His word: «nach einem Monat oder so». */
     public const INBOUND_ARCHIVE_DAYS_DEFAULT = 30;
 
@@ -1134,6 +1140,22 @@ final class StockService
         $days = (int) get_option(self::INBOUND_ARCHIVE_DAYS, self::INBOUND_ARCHIVE_DAYS_DEFAULT);
 
         return $days > 0 ? $days : self::INBOUND_ARCHIVE_DAYS_DEFAULT;
+    }
+
+    /** D-1320 ergänzt, his words 2026-11-15 «nach nem monat geht er nach archiviert»: a setting, 30 days unless changed. */
+    public function demandArchiveDays(): int
+    {
+        $days = (int) get_option(self::DEMAND_ARCHIVE_DAYS, self::INBOUND_ARCHIVE_DAYS_DEFAULT);
+
+        return $days > 0 ? $days : self::INBOUND_ARCHIVE_DAYS_DEFAULT;
+    }
+
+    /** D-1375: the share above the last purchase from which the Wareneingang warns, a Lager setting. */
+    public function priceWarnPercent(): int
+    {
+        $percent = (int) get_option(self::PRICE_WARN_PERCENT, \TaxmodStock\Core\PriceCheck::DEFAULT_PERCENT);
+
+        return $percent > 0 ? $percent : \TaxmodStock\Core\PriceCheck::DEFAULT_PERCENT;
     }
 
     public function inboundArchive(string $today): InboundArchive
@@ -4605,8 +4627,14 @@ final class StockService
         }
 
         $quantities = [];
+        $lines      = $orders->all($order, $s->field('order_lines'));
 
-        foreach ($orders->all($order, $s->field('order_lines')) as $line) {
+        // D-1320 ergänzt: a finished demand holds nothing of its own — its materials are the positions it passed on.
+        if ($lines === [] && $s->hasField('purchase_demand')) {
+            $lines = array_values(array_filter($purchases->ids(), static fn (int $id): bool => (int) $purchases->first($id, $s->field('purchase_demand')) === $order));
+        }
+
+        foreach ($lines as $line) {
             $thing = (int) ($purchases->first((int) $line, $s->field('purchase_model')) ?? 0);
 
             if ($thing > 0) {

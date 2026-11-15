@@ -40,6 +40,89 @@ final class Purchasing
         return $this->isDraft($order, $orders) && $this->merchantOf($order, $orders) === '';
     }
 
+    /**
+     * D-1320 ergänzt, his word 2026-11-14 «wenn ein bedarf bestellt ist geht er in ein oder mehrere bestellungen über»: a demand
+     * with no position of its own whose positions all went to suppliers has passed on. It stays as their bracket, unlisted.
+     *
+     * @param array<int, true> $brackets demands that purchases name as theirs, from {@see self::brackets()}
+     */
+    public function hasPassedOn(int $order, Table $orders, array $brackets): bool
+    {
+        return isset($brackets[$order]) && $this->isDemand($order, $orders) && $orders->all($order, $this->structure->field('order_lines')) === [];
+    }
+
+    /**
+     * D-1320 ergänzt, his words 2026-11-15 «den bedarf auf beendet setzen und nach nem monat geht er nach archiviert»: what a
+     * passed-on demand is now — «beendet», or «archiviert» once every order it went into is placed and the newest was placed
+     * at least `$days` ago. Reckoned from the positions and the dates, never stored. '' for a demand still open.
+     *
+     * @param array<int, true>      $brackets  from {@see self::brackets()}
+     * @param array<int, list<int>> $into      demand → the orders its positions stand in, from {@see self::passedInto()}
+     * @param array<int, string>    $orderedOn order → the day it was placed, YYYY-MM-DD
+     */
+    public function endState(int $demand, Table $orders, array $brackets, array $into, array $orderedOn, string $today, int $days): string
+    {
+        if (! $this->hasPassedOn($demand, $orders, $brackets)) {
+            return '';
+        }
+
+        $newest = '';
+
+        foreach ($into[$demand] ?? [] as $order) {
+            if ($this->isDraft($order, $orders) || ($orderedOn[$order] ?? '') === '') {
+                return 'beendet';
+            }
+
+            $newest = max($newest, substr($orderedOn[$order], 0, 10));
+        }
+
+        return $newest !== '' && $newest <= date('Y-m-d', (int) strtotime($today . ' -' . max(1, $days) . ' days')) ? 'archiviert' : 'beendet';
+    }
+
+    /**
+     * The orders the positions of each demand stand in now, in one pass over the orders.
+     *
+     * @return array<int, list<int>> demand → orders
+     */
+    public function passedInto(Table $orders, Table $purchases): array
+    {
+        $field = $this->structure->field('purchase_demand');
+        $into  = [];
+
+        foreach ($orders->ids() as $order) {
+            foreach ($orders->all($order, $this->structure->field('order_lines')) as $line) {
+                $demand = (int) $purchases->first((int) $line, $field);
+
+                if ($demand > 0 && $demand !== $order && ! in_array($order, $into[$demand] ?? [], true)) {
+                    $into[$demand][] = $order;
+                }
+            }
+        }
+
+        return $into;
+    }
+
+    /**
+     * The demands some purchase names as its bracket, in one pass.
+     *
+     * @return array<int, true>
+     */
+    public function brackets(Table $purchases): array
+    {
+        $field = $this->structure->field('purchase_demand');
+        $out   = [];
+
+        foreach ($purchases->ids() as $id) {
+            $demand = (int) $purchases->first($id, $field);
+
+            if ($demand > 0) {
+                $out[$demand] = true;
+            }
+        }
+
+        return $out;
+    }
+
     /** A supplier's draft: a draft with a supplier, not yet ordered. */
     public function isSupplierDraft(int $order, Table $orders): bool
     {

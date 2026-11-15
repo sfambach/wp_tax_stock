@@ -261,6 +261,14 @@ $_GET = ['page' => InboundPage::PAGE, 'tab' => 'all'];
 $pruefe(! str_contains((new InboundPage())->render(), 'Amazon-Historie 2004'), '«Alle» shows what is not archived');
 $pruefe(str_contains($bar = (new InboundPage())->render(), 'taxmod-step') && ! str_contains($bar, 'taxmod-steps-all'), 'His word 2026-11-09: the stages are arrows, «Alle» is no arrow any more');
 
+// D-1375, his wish 2026-11-15: a unit price far above the last purchase is marked at goods-in; the share is a Lager setting.
+$quelle = static fn (string $file): string => (string) file_get_contents(dirname(__DIR__, 2) . '/src/' . $file);
+$pruefe(str_contains($quelle('WordPress/Admin/InboundPage.php'), '$this->inbound->priceWarnings($ids)') && str_contains($quelle('WordPress/Admin/InboundPage.php'), '$this->priceWarning($warned[$purchase] ?? null)'), 'D-1375: the purchases of an order carry the price warning beside their unit price');
+$pruefe(str_contains($quelle('WordPress/Admin/SettingsPage.php'), 'taxmod_stock_price_warn_percent') && str_contains($quelle('WordPress/Admin/SettingsPage.php'), 'StockService::PRICE_WARN_PERCENT'), 'D-1375: the share is set and saved in the Lager settings');
+delete_option(StockService::PRICE_WARN_PERCENT);
+$pruefe((new StockService())->priceWarnPercent() === 20, 'D-1375: 20 % unless changed');
+$pruefe((new InboundService())->priceWarnings(array_values(array_map('intval', (new StockService())->table('purchase')->ids()))) === [], 'D-1375: without unit prices nothing warns, and nothing breaks');
+
 // His word 2026-11-05: no rows to open any more — a click on an order opens its own view with its purchases.
 $details = static function (string $tab): string {
     $html = '';

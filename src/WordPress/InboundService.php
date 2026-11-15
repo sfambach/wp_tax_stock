@@ -6,6 +6,7 @@ use TaxmodStock\Core\InboundChanges;
 use TaxmodStock\Core\InboundOrder;
 use TaxmodStock\Core\NotStocked;
 use TaxmodStock\Core\PlatformLink;
+use TaxmodStock\Core\PriceCheck;
 use TaxmodStock\Core\ReceiptReversal;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\TestQueue;
@@ -293,6 +294,62 @@ final class InboundService
         usort($lots, static fn (int $a, int $b): int => strcmp((string) $stock->table('lot')->first($b, $date), (string) $stock->table('lot')->first($a, $date)) ?: $b <=> $a);
 
         return $lots;
+    }
+
+    /**
+     * D-1375: the purchases among these whose unit price lies more than the set share above the last earlier purchase of
+     * the same material, compared in the reference currency. One read of the purchases, their orders and their amounts (CD-7).
+     *
+     * @param list<int> $checked
+     * @return array<int, array{previous: int, previous_unit: float, unit: float, percent: float, previous_order: ?int}>
+     */
+    public function priceWarnings(array $checked): array
+    {
+        $stock     = $this->stock;
+        $s         = $stock->structure();
+        $purchases = $stock->table('purchase');
+        $wanted    = [];
+
+        foreach ($checked as $id) {
+            $material = (int) ($purchases->first($id, $s->field('purchase_model')) ?? 0);
+
+            if ($material > 0) {
+                $wanted[$material] = true;
+            }
+        }
+
+        if ($wanted === []) {
+            return [];
+        }
+
+        $about = array_values(array_filter($purchases->ids(), static fn (int $id): bool => isset($wanted[(int) ($purchases->first($id, $s->field('purchase_model')) ?? 0)])));
+        $parts = array_combine($about, array_map(static fn (int $id): int => (int) ($purchases->first($id, $s->field('purchase_unit_price')) ?? 0), $about)) ?: [];
+        $money = $stock->recordsOf('money', array_values(array_unique(array_filter($parts))));
+        $orders = $stock->table('order');
+        $orderOf = $this->orderOfPurchase();
+        // The frozen rate the modeller keeps at a foreign amount (D-966): 1 euro = rate units; a euro amount has none.
+        $rateField = (int) get_option('taxmod_unit_value_rate_field', 0);
+        $reference = $s->hasValue('currency_default') ? (string) $s->value('currency_default') : '';
+        $facts     = [];
+
+        foreach ($about as $id) {
+            $part   = $parts[$id];
+            $amount = $part > 0 ? $money->first($part, $s->field('money_amount')) : null;
+            $unit   = $part > 0 ? (string) ($money->first($part, $s->field('money_unit')) ?? '') : '';
+            $rate   = $part > 0 && $rateField > 0 ? $money->first($part, $rateField) : null;
+            $value  = match (true) {
+                $amount === null || ! is_numeric($amount)          => null,
+                $unit === '' || $unit === $reference               => (float) $amount,
+                is_numeric($rate) && (float) $rate > 0.0           => (float) $amount / (float) $rate,
+                default                                            => null,
+            };
+            $order  = $orderOf[$id] ?? null;
+            $date   = $order === null || ! $s->hasField('order_date') ? '' : substr(trim((string) $orders->first($order, $s->field('order_date'))), 0, 10);
+
+            $facts[$id] = ['material' => (int) $purchases->first($id, $s->field('purchase_model')), 'date' => $date, 'unit' => $value];
+        }
+
+        return array_map(static fn (array $w): array => $w + ['previous_order' => $orderOf[$w['previous']] ?? null], PriceCheck::warnings($checked, $facts, (float) $stock->priceWarnPercent()));
     }
 
     /** @return array<int, int> purchase → the order it is a line of */

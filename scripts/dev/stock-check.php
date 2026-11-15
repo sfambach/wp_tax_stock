@@ -947,6 +947,53 @@ $_GET = [];
 $pruefe(preg_match('/<form[^>]*>(?:(?!<\/form>).)*name="op" value="add"(?:(?!<\/form>).)*Position hinzufügen(?:(?!<\/form>).)*name="thing"(?:(?!<\/form>).)*name="quantity"/s', $bedarfsSeite) === 1,
     'D-1320: a demand\'s page offers «Position hinzufügen»: material chooser and quantity inside the form that sends them');
 
+// D-1320 ergänzt, his words 2026-11-15 «den bedarf auf beendet setzen und nach nem monat geht er nach archiviert, in beiden
+// könnte man ihn kopieren als neuen bedarf»: a demand passed on to suppliers stands under «Beendet» or «Archiviert», never
+// under «Bedarf», with «Als neuen Bedarf kopieren»; reckoned, never stored.
+$einkaufDienst = new StockService();
+$klammern      = $einkaufDienst->purchasing()->brackets($einkaufDienst->table('purchase'));
+$seiten        = [];
+
+foreach (['bedarf', 'beendet', 'archiviert'] as $reiter) {
+    $_GET            = ['page' => TaxmodStock\WordPress\Admin\PurchasePage::PAGE, 'tab' => $reiter];
+    $seiten[$reiter] = (new TaxmodStock\WordPress\Admin\PurchasePage())->render();
+}
+
+$_GET          = [];
+$uebergangOk   = str_contains($seiten['beendet'], '>Beendet') && str_contains($seiten['beendet'], '>Archiviert');
+$uebergegangen = 0;
+
+foreach ($einkaufDienst->table('order')->ids() as $id) {
+    if (! $einkaufDienst->purchasing()->isDemand($id, $einkaufDienst->table('order'))) {
+        continue;
+    }
+
+    $weg           = $einkaufDienst->purchasing()->hasPassedOn($id, $einkaufDienst->table('order'), $klammern);
+    $uebergegangen += $weg ? 1 : 0;
+    $zeile         = 'bedarf=' . $id . '"><strong>';
+    $uebergangOk   = $uebergangOk && str_contains($seiten['bedarf'], $zeile) === ! $weg
+        && (! $weg || ((str_contains($seiten['beendet'], $zeile) || str_contains($seiten['archiviert'], $zeile)) && str_contains($seiten['beendet'] . $seiten['archiviert'], 'Als neuen Bedarf kopieren')));
+}
+
+$pruefe($uebergangOk, 'D-1320: a demand passed on stands under «Beendet» or «Archiviert» with «Als neuen Bedarf kopieren», never under «Bedarf» (' . $uebergegangen . ' passed on)');
+
+// D-1373, his word 2026-11-15 «nach ausbuchen des verbrauch sollte der zurück springen woher er kam»: every booking form carries
+// where it was opened, an outside address never; Einbuchen without one keeps its old target.
+$formStart = new ReflectionMethod(StockPage::class, 'formStart');
+$zurueck   = admin_url('admin.php?page=' . StockPage::PAGE . '&tab=lagerorte&ort=1');
+$formenOk  = true;
+
+foreach (['verbrauch', 'umbuchen', 'postenumbuchen', 'sammelumbuchen', 'inventur', 'wareneingang', 'einlagern'] as $buchung) {
+    $_GET     = ['return' => rawurlencode($zurueck)];
+    $formenOk = $formenOk && str_contains($formStart->invoke(new StockPage(), $buchung), 'name="return" value="' . esc_attr($zurueck) . '"');
+    $_GET     = ['return' => rawurlencode('https://example.org/')];
+    $formenOk = $formenOk && ! str_contains($formStart->invoke(new StockPage(), $buchung), 'name="return"');
+}
+
+$_GET = [];
+$pruefe($formenOk && ! str_contains($formStart->invoke(new StockPage(), 'wareneingang'), 'name="return"') && ! str_contains($formStart->invoke(new StockPage(), 'ort'), 'name="return"'),
+    'D-1373: every booking form carries the page it was opened from, never an outside address; Einbuchen without one and non-bookings carry none');
+
 // His wish 2026-11-11 «links aus logistik auf tax modeller … ablösung»: no page of the module links into the modeller's screens.
 $hinaus = array_filter(array_map(static fn (string $f): string => str_contains((string) file_get_contents($f), 'taxmod_open_record') ? basename($f) : '', glob(__DIR__ . '/../../src/WordPress/Admin/*.php') ?: []));
 $einKauf = (int) ((new StockService())->table('purchase')->ids()[0] ?? 0);

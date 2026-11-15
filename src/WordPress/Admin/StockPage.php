@@ -1476,7 +1476,7 @@ final class StockPage
 
             foreach ($where as $place => $quantity) {
                 // D-1227: a lot's further places and its «Vorgänge» move with its first row when the list is sorted or grouped.
-                $rows .= '<tr' . ($first ? ' id="taxmod-stock-lot-' . esc_attr((string) $lot) . '"' : ' class="taxmod-list-more"') . '><th scope="row" class="check-column"></th><td>' . ($first ? '#' . esc_html((string) $lot) . (in_array($lot, $blocked, true) ? self::blockedMark() : '') : '') . '</td>'
+                $rows .= '<tr' . ($first ? ' id="taxmod-stock-lot-' . esc_attr((string) $lot) . '"' : ' class="taxmod-list-more"') . '><th scope="row" class="check-column"></th><td>' . ($first ? '#' . esc_html((string) $lot) . (in_array($lot, $blocked, true) ? self::blockedMark() : '') . $this->fromSetMark($this->stock->setHeadOf($lot)) : '') . '</td>'
                     // His wish 2026-11-08: «Bitte auch das Material anzeigen hier in der Liste».
                     . '<td>' . ($first ? esc_html($name) : '') . '</td><td>' . esc_html($places[$place] ?? '—') . $this->reservedMark($place, $flags) . '</td><td>' . esc_html($this->number($quantity)) . '</td>'
                     . '<td>' . ($first ? esc_html($amount ?? '—') : '') . '</td>'
@@ -1511,7 +1511,76 @@ final class StockPage
             . ($rows === '' ? '<p>' . esc_html__('Kein Bestandsposten.', 'taxmod-stock') . '</p>' : ListPage::table([
                 [__('Posten', 'taxmod-stock'), '6em'], [__('Material', 'taxmod-stock'), ''], [__('Ort', 'taxmod-stock'), ''], [__('Menge', 'taxmod-stock'), '6em'], [__('Wert je Stück', 'taxmod-stock'), '8em'],
                 [__('Kauf', 'taxmod-stock'), '7em'], [__('Buchungsdatum', 'taxmod-stock'), '8em'],
-            ], $rows));
+            ], $rows))
+            . $this->setSection($thing, $ledger->lotsOf($thing));
+    }
+
+    /** D-1381: on a sub-lot, the set lot it came from, linked to that lot's row. */
+    private function fromSetMark(int $head): string
+    {
+        if ($head <= 0) {
+            return '';
+        }
+
+        $thing = $this->stock->thingOfLot($head);
+
+        return '<br><span class="description">' . esc_html__('aus Set', 'taxmod-stock') . ' <a href="' . esc_url(self::lotUrl($thing, $head)) . '">P-' . esc_html((string) $head) . '</a></span>';
+    }
+
+    /**
+     * D-1381, his words 2026-11-15 «ein bestand der unterbestände hat»: below a set's lots, what each set lot holds against
+     * what the set should contain — a section per set lot in the record's layout (D-1376); the set's wanted content alone
+     * while no lot of it holds anything yet.
+     *
+     * @param list<int> $lots this material's lots
+     */
+    private function setSection(int $thing, array $lots): string
+    {
+        $wanted   = $this->stock->setContentOf($thing);
+        $holdings = $this->stock->setHoldings($lots);
+        $mine     = array_keys($holdings);
+
+        if ($wanted === [] && $mine === []) {
+            return '';
+        }
+
+        $places = $this->stock->places();
+        $names  = $this->stock->recordLabels(array_values(array_unique(array_merge(array_keys($wanted), ...array_map(static fn (array $held): array => array_column($held, 'thing'), array_values($holdings))))));
+        $words  = ['ok' => __('vollständig', 'taxmod-stock'), 'weniger' => __('weniger', 'taxmod-stock'), 'mehr' => __('mehr', 'taxmod-stock'),
+            'fehlt' => __('fehlt', 'taxmod-stock'), 'nicht im Set' => __('nicht im Set', 'taxmod-stock')];
+        $html   = '';
+
+        foreach ($mine === [] ? [0] : $mine as $head) {
+            $held   = $holdings[$head] ?? [];
+            $where  = array_column($held, 'places', 'lot');
+
+            $rows = '';
+
+            foreach (\TaxmodStock\Core\SetContent::rows($wanted, array_map(static fn (array $one): array => ['lot' => $one['lot'], 'thing' => $one['thing'], 'quantity' => $one['quantity']], $held)) as $row) {
+                $at = [];
+
+                foreach ($row['lots'] as $sub) {
+                    foreach (array_keys(array_filter($where[$sub] ?? [], static fn (float $q): bool => $q > 0.0)) as $place) {
+                        $at[] = '<a href="' . esc_url(self::lotUrl($row['thing'], $sub)) . '">P-' . esc_html((string) $sub) . '</a> ' . esc_html($places[$place] ?? '#' . $place);
+                    }
+                }
+
+                $rows .= '<tr><th scope="row" class="check-column"></th><td><a href="' . esc_url(self::thingUrl($row['thing'], 'bestand')) . '">' . esc_html($names[$row['thing']] ?? '#' . $row['thing']) . '</a></td>'
+                    . '<td>' . ($at === [] ? '—' : implode('<br>', $at)) . '</td>'
+                    . '<td>' . esc_html($this->number($row['held'])) . '</td><td>' . esc_html($row['wanted'] === null ? '—' : $this->number($row['wanted'])) . '</td>'
+                    . '<td>' . esc_html($words[$row['state']] ?? $row['state']) . '</td></tr>';
+            }
+
+            $title = $head > 0
+                /* translators: %d: the set lot */
+                ? sprintf(__('Inhalt von Set-Posten P-%d', 'taxmod-stock'), $head)
+                : __('Set-Inhalt (Soll)', 'taxmod-stock');
+            $html .= '<section class="taxmod-record-section"><h3>' . esc_html($title) . '</h3>' . ListPage::table([
+                [__('Material', 'taxmod-stock'), ''], [__('Posten und Ort', 'taxmod-stock'), ''], [__('Ist', 'taxmod-stock'), '6em'], [__('Soll', 'taxmod-stock'), '6em'], [__('Stand', 'taxmod-stock'), '8em'],
+            ], $rows) . '</section>';
+        }
+
+        return $html;
     }
 
     /**

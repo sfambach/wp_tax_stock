@@ -3325,6 +3325,97 @@ final class StockService
      *
      * @return list<SourceRow>
      */
+    /**
+     * D-1381: a set material's wanted content, material → quantity; empty where the model has no «Set-Inhalt» yet.
+     *
+     * @return array<int, float>
+     */
+    public function setContentOf(int $thing): array
+    {
+        $s      = $this->structure();
+        $record = $this->things()->lagerOf($thing);
+
+        if ($record === null || ! $s->hasNode('set_content') || ! $s->hasField('lager_set_content') || ! $s->hasField('set_content_thing')) {
+            return [];
+        }
+
+        $parts = $this->table('set_content');
+        $out   = [];
+
+        foreach ($this->table('lager')->all($record, $s->field('lager_set_content')) as $part) {
+            $material = (int) ($parts->first((int) $part, $s->field('set_content_thing')) ?? 0);
+
+            if ($material > 0) {
+                $amount          = $s->hasField('set_content_quantity') ? $parts->first((int) $part, $s->field('set_content_quantity')) : null;
+                $out[$material]  = ($out[$material] ?? 0.0) + (is_numeric($amount) ? (float) $amount : 0.0);
+            }
+        }
+
+        return $out;
+    }
+
+    /** D-1381: the set lot a lot came from, 0 for none — read from the lot's own row, so a material's scoped view has it. */
+    public function setHeadOf(int $lot): int
+    {
+        $s    = $this->structure();
+        $head = $s->hasField('lot_from_set') ? (int) ($this->table('lot')->first($lot, $s->field('lot_from_set')) ?? 0) : 0;
+
+        return \TaxmodStock\Core\SetContent::allowed($lot, $head, []) ? $head : 0;
+    }
+
+    /** D-1381: the material of any lot, also one outside a scoped view. */
+    public function thingOfLot(int $lot): int
+    {
+        $s = $this->structure();
+
+        if ($this->table('lot')->has($lot)) {
+            return (int) ($this->table('lot')->first($lot, $s->field('lot_thing')) ?? 0);
+        }
+
+        return (int) ((($this->model->records([$lot]) ?? new Table([]))->first($lot, $s->field('lot_thing'))) ?? 0);
+    }
+
+    /**
+     * D-1381: what these lots hold as set lots — the lots naming them as «aus Set», with material, rest and places. The
+     * sub-lots are other materials' lots, so they are found by reference and counted from their own material's ledger,
+     * never from this (possibly scoped) one (CD-7: one read per material).
+     *
+     * @param list<int> $heads
+     * @return array<int, list<array{lot: int, thing: int, quantity: float, places: array<int, float>}>>
+     */
+    public function setHoldings(array $heads): array
+    {
+        $s = $this->structure();
+
+        if ($heads === [] || ! $s->hasField('lot_from_set')) {
+            return [];
+        }
+
+        $subs = $this->model->referrers($heads, $s->field('lot_from_set')) ?? [];
+
+        if ($subs === []) {
+            return [];
+        }
+
+        $rows    = $this->model->records($subs) ?? new Table([]);
+        $ledgers = [];
+        $out     = [];
+
+        foreach ($subs as $sub) {
+            $head  = (int) ($rows->first($sub, $s->field('lot_from_set')) ?? 0);
+            $thing = (int) ($rows->first($sub, $s->field('lot_thing')) ?? 0);
+
+            if ($thing <= 0 || ! in_array($head, $heads, true) || ! \TaxmodStock\Core\SetContent::allowed($sub, $head, [])) {
+                continue;
+            }
+
+            $ledgers[$thing] ??= (new self($this->model))->scopedTo($thing)->ledger();
+            $out[$head][]      = ['lot' => $sub, 'thing' => $thing, 'quantity' => $ledgers[$thing]->restOf($sub), 'places' => $ledgers[$thing]->placesOf($sub)];
+        }
+
+        return $out;
+    }
+
     public function sourcesOf(?int $lagerRecord): array
     {
         $s = $this->structure();

@@ -1646,5 +1646,42 @@ $arten = [1 => 10, 2 => 20, 3 => 40, 4 => 40];
 $pruefe(\TaxmodStock\Core\ShortMarks::proposed(4, $baum, $arten, [10 => 'R', 20 => 'F', 40 => 'B']) === 'R1-F1-B7'
     && \TaxmodStock\Core\ShortMarks::proposed(5, $baum, $arten, [10 => 'R', 20 => 'F', 40 => 'B']) === '', 'D-1368: siblings typed up to B6 make the next proposal B7; a place without a kind gets none');
 
+// D-1381, his words 2026-11-15 «ein bestand der unterbestände hat», card «Beides»: a sub-lot names its set lot; the set's
+// Bestand lists what each set lot holds against the set's wanted content, the sub-lot links back to its set.
+$setNeu = $apply([
+    ['op' => 'create_node', 'ref' => 'sinh', 'name' => '__Set-Inhalt', 'parent' => (string) $r['mat']],
+    ['op' => 'add_field', 'ref' => 'sinh_mat', 'node' => '@sinh', 'target' => 402, 'name' => '__Material', 'kind' => 'aggregation', 'multiplicity' => '1..1'],
+    ['op' => 'add_field', 'ref' => 'sinh_menge', 'node' => '@sinh', 'target' => 1173, 'name' => '__Menge', 'kind' => 'composition', 'multiplicity' => '1..1'],
+    ['op' => 'add_field', 'ref' => 'sinh_feld', 'node' => (string) $r['mat'], 'target' => '@sinh', 'name' => '__Set-Inhalt', 'kind' => 'composition', 'multiplicity' => '0..*'],
+    ['op' => 'add_field', 'ref' => 'ausset', 'node' => (string) $r['lot'], 'target' => (string) $r['lot'], 'name' => '__aus Set', 'kind' => 'aggregation', 'multiplicity' => '0..1'],
+])['refs'] ?? [];
+$opt = get_option('taxmod_stock_structure');
+$vor = $opt;
+if (is_array($opt) && isset($setNeu['ausset'])) {
+    $opt['nodes']['set_content']            = (int) $setNeu['sinh'];
+    $opt['fields']['lager_set_content']     = (int) $setNeu['sinh_feld'];
+    $opt['fields']['set_content_thing']     = (int) $setNeu['sinh_mat'];
+    $opt['fields']['set_content_quantity']  = (int) $setNeu['sinh_menge'];
+    $opt['fields']['lot_from_set']          = (int) $setNeu['ausset'];
+    update_option('taxmod_stock_structure', $opt);
+}
+$s       = new StockService();
+$kopfLos = (int) ($s->ledger()->lotsOf($r['t1'])[0] ?? 0);
+$unter   = 0;
+foreach ($s->table('lot')->ids() as $l) {
+    $unter = $unter ?: ((int) $s->table('lot')->first($l, $s->structure()->field('lot_thing')) !== $r['t1'] && $s->ledger()->restOf($l) > 0.0 ? $l : 0);
+}
+$unterDing = (int) $s->table('lot')->first($unter, $s->structure()->field('lot_thing'));
+$apply([['op' => 'set_values', 'record' => (string) $unter, 'values' => [(string) ($setNeu['ausset'] ?? 0) => (string) $kopfLos]]]);
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => (string) $unterDing, 'view' => 'bestand'];
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'aus Set <a href="') && str_contains($html, '#taxmod-stock-lot-' . $kopfLos . '">P-' . $kopfLos . '</a>'), 'D-1381: a sub-lot links to the set lot it came from');
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => (string) $r['t1'], 'view' => 'bestand'];
+$html = (new StockPage())->render();
+$pruefe($kopfLos > 0 && $unter > 0 && str_contains($html, 'Inhalt von Set-Posten P-' . $kopfLos) && str_contains($html, '#taxmod-stock-lot-' . $unter . '">P-' . $unter . '</a>') && str_contains($html, 'nicht im Set'),
+    'D-1381: the set\'s Bestand shows what its set lot holds, the sub-lot linked, a kind not wanted marked «nicht im Set»');
+$apply([['op' => 'set_values', 'record' => (string) $unter, 'values' => [(string) ($setNeu['ausset'] ?? 0) => '']]]);
+update_option('taxmod_stock_structure', $vor);
+
 echo $fehler === 0 ? "all green ({$kind})\n" : "{$fehler} red ({$kind})\n";
 exit($fehler === 0 ? 0 : 1);

@@ -30,6 +30,8 @@ final class Structure
     private const OPTIONAL_NODES = ['lager_use', 'source', 'firm', 'base_units', 'prefixes', 'project', 'sale',
         // D-1123: the kinds of place and the parts a kind brings along.
         'location_type', 'location_type_part',
+        // D-1381: the lines of a set's wanted content.
+        'set_content',
         // D-1139: a project's boards, their revisions and the revisions' positions — the parts list of a project box.
         'board', 'board_revision', 'bom_position',
         // D-1153, D-1159: the labels; D-1160: the category a material prints from.
@@ -128,6 +130,8 @@ final class Structure
         'connector_poles', 'connector_rows', 'connector_pitch', 'connector_orientation',
         // D-1303: the stage of a lot on the production's receipt line.
         'lot_stage',
+        // D-1381: a bought set — the set material's wanted content (material and quantity per line), and the set lot a lot came from.
+        'lager_set_content', 'set_content_thing', 'set_content_quantity', 'lot_from_set',
     ];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];

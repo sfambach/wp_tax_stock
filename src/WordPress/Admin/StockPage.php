@@ -921,11 +921,11 @@ final class StockPage
      * How many labels, as the model's own integer field (his word 2026-11-08: «kein Standard-Int-Feld. Sondern wieder was
      * Eigenes.»); empty means each record's own number, said beside the field.
      */
-    private static function copiesInput(string $formId, string $emptyMeans): string
+    private static function copiesInput(string $formId, string $emptyMeans, ?int $value = null): string
     {
         $input = class_exists(\Taxmod\Core\Renderer\DialogNumber::class)
-            ? \Taxmod\Core\Renderer\DialogNumber::input('copies', null, 1, 50, $formId)
-            : '<input type="number" name="copies" min="1" max="50" step="1" form="' . esc_attr($formId) . '">';
+            ? \Taxmod\Core\Renderer\DialogNumber::input('copies', $value, 1, 50, $formId)
+            : '<input type="number" name="copies" min="1" max="50" step="1" form="' . esc_attr($formId) . '"' . ($value === null ? '' : ' value="' . esc_attr((string) $value) . '"') . '>';
 
         return $input . ' <span class="description">' . esc_html($emptyMeans) . '</span>';
     }
@@ -3095,7 +3095,7 @@ final class StockPage
             ['name="action" id="' . self::CHILD_FORM . '-action"', '</form>'],
             ['name="bulk" id="' . self::CHILD_FORM . '-action"', '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
                 . '<input type="hidden" name="return_tab" value="lagerstruktur"><input type="hidden" name="return_ort" value="' . esc_attr((string) $place) . '"></form>'],
-            self::bulkBar(self::CHILD_FORM, $count, '', $this->childLabelDialog() + $this->childMoveDialog($place))
+            self::bulkBar(self::CHILD_FORM, $count, '', $this->childLabelDialog($children, $tree) + $this->childMoveDialog($place))
         );
 
         return '<h3 style="margin-top:1.5em">' . esc_html__('Unterorte', 'taxmod-stock') . '</h3>' . $bar
@@ -3133,20 +3133,51 @@ final class StockPage
             . esc_html($prefix . '-' . $id . ' · ' . $title . ($subtitle === '' ? '' : ' · ' . $subtitle)) . '</p>';
     }
 
-    /** «Etiketten drucken …» for the ticked Unterorte: the format, then the print service or one PDF with a page per label. */
-    /** @return array<string, array{0: string, 1: string}> */
-    private function childLabelDialog(): array
+    /**
+     * «Etiketten drucken …» for the ticked Unterorte: the label, then the print service or one PDF with a page per label.
+     * D-1380, his report 2026-11-15 «62x20 wird nicht angeboten … das sollte hier auch angezeigt werden»: the label templates
+     * come first and the one the places' kind names is chosen; the count shows the number the kinds hold, not a rule in words.
+     *
+     * @param list<int> $children
+     * @return array<string, array{0: string, 1: string}>
+     */
+    private function childLabelDialog(array $children, LocationTree $tree): array
     {
         if (! class_exists(LabelFormat::class) || ! class_exists(DialogMarkup::class)) {
             return [];
         }
 
+        $s         = $this->stock->structure();
+        $templates = $s->hasNode('label_template') ? $this->stock->labelTemplates() : null;
+        $types     = $s->hasField('location_place_type') ? $this->stock->placeTypes() : null;
+        $table     = $this->stock->table('location');
+        $used      = [];
+        $copies    = [];
+
+        foreach ($children as $child) {
+            $type = $types === null ? 0 : (int) $table->first($child, $s->field('location_place_type'));
+            [$own, $count] = $templates === null || $types === null ? [null, $tree->isMovable($child) ? 2 : 1] : $templates->forPlace($types, $type, $tree->isMovable($child));
+            $id   = $own === null || $types === null ? 0 : $types->labelTemplateOf($type);
+            $used[$id] = ($used[$id] ?? 0) + 1;
+            $copies[$count] = true;
+        }
+
+        arsort($used);
+        $chosen  = (int) array_key_first($used);
         $options = '';
 
+        foreach ($templates === null ? [] : $templates->all() as $id => $template) {
+            $options .= '<option value="' . esc_attr('vorlage-' . $id) . '"' . selected($id, $chosen, false) . '>'
+                . esc_html($template['name'] . ' · ' . $template['format']['w'] . ' × ' . $template['format']['h'] . ' mm') . '</option>';
+        }
+
         foreach (LabelFormat::shipped() as $format) {
-            $options .= '<option value="' . esc_attr($format->key) . '"' . selected($format->key, 'holder62', false) . '>'
+            $options .= '<option value="' . esc_attr($format->key) . '"' . selected($chosen === 0 && $format->key === 'holder62', true, false) . '>'
                 . esc_html(PrintTab::formatName($format) . ' · ' . PrintTab::size($format)) . '</option>';
         }
+
+        // One number for all when the kinds agree; otherwise empty, and each place prints what its kind holds.
+        $same = count($copies) === 1 ? (int) array_key_first($copies) : null;
 
         $service = PrintService::isSetUp();
         $form    = ' form="' . esc_attr(self::CHILD_FORM) . '"';
@@ -3154,7 +3185,7 @@ final class StockPage
             . '<select name="format"' . $form . '>' . $options . '</select></label>'
             // D-1152: empty means each place's own number — 2 for a box, 1 otherwise; a number holds for every ticked place.
             . '<label style="display:block;margin-bottom:.5em"><span style="display:block;font-weight:600">' . esc_html__('Anzahl je Ort', 'taxmod-stock') . '</span>'
-            . self::copiesInput(self::CHILD_FORM, __('leer: 2 bei beweglichen, sonst 1', 'taxmod-stock')) . '</label>'
+            . self::copiesInput(self::CHILD_FORM, $same === null ? __('leer: je Ort die Anzahl seiner Platzart', 'taxmod-stock') : __('wie bei der Platzart hinterlegt', 'taxmod-stock'), $same) . '</label>'
             . '<span class="description" style="display:block">' . esc_html__('Ein Etikett je angehaktem Ort, beschriftet wie sein eigenes.', 'taxmod-stock')
             . ($service ? '' : ' ' . esc_html__('Kein Druckdienst eingerichtet: die Etiketten öffnen sich als PDF.', 'taxmod-stock')) . '</span>';
         $foot    = ($service ? '<button type="submit" class="button button-primary" name="booking" value="etiketten-service"' . $form . '>' . esc_html__('Drucken', 'taxmod-stock') . '</button>' : '')
@@ -3196,7 +3227,10 @@ final class StockPage
     private function printPlaceLabels(array $places, int $back, bool $toService): void
     {
         $url    = add_query_arg(['page' => self::PAGE, 'tab' => 'lagerstruktur'] + ($back > 0 ? ['ort' => $back] : []), admin_url('admin.php'));
-        $format = class_exists(LabelFormat::class) ? (LabelFormat::shipped()[sanitize_key((string) ($_POST['format'] ?? ''))] ?? null) : null;
+        $picked = sanitize_key((string) ($_POST['format'] ?? ''));
+        // D-1380: what is chosen in the dialog holds for every ticked place — a template or a shipped format.
+        $use    = str_starts_with($picked, 'vorlage-') && $this->stock->labelTemplates()->has((int) substr($picked, 8)) ? (int) substr($picked, 8) : 0;
+        $format = class_exists(LabelFormat::class) ? (LabelFormat::shipped()[$picked] ?? null) : null;
         $tree   = $this->stock->locationTree();
         $table  = $this->stock->table('location');
         $labels = [];
@@ -3208,9 +3242,10 @@ final class StockPage
 
         foreach ($places as $place) {
             if ($table->has($place)) {
-                [$prefix, $id, $title, $subtitle, $copies, $template] = $this->placeLabel($place, $tree);
+                [$prefix, $id, $title, $subtitle, $copies, $template] = $this->placeLabel($place, $tree, $use);
                 $label = LabelContent::of(LabelPrefix::from($prefix), $id, $title, $subtitle);
-                $own   = $fills ? LabelButton::filled($label, $template) : null;
+                // D-1380, his report 2026-11-15 «trotz andre wahl 62x20»: a shipped format chosen in the dialog wins over the kind's template.
+                $own   = $fills && ($use > 0 || $format === null) ? LabelButton::filled($label, $template) : null;
 
                 // D-1162: the copies travel together, as one job with that many pages.
                 $count = min(50, $asked > 0 ? $asked : $copies);

@@ -5163,7 +5163,7 @@ final class StockService
      *
      * @return array<string, mixed>
      */
-    public function moveLot(int $lot, int $from, int $location, string $quantity, string $today, string $title): array
+    public function moveLot(int $lot, int $from, int $location, string $quantity, string $today, string $title, bool $emptySource = false): array
     {
         $this->guardUnblocked([$lot]);
 
@@ -5175,7 +5175,55 @@ final class StockService
             throw StockError::notALocation($location);
         }
 
-        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer([new TransferRow($lot, $from, $location, $quantity)], $title, $this->ledger(), '', $this->reservedPlaces(), $this->boundLots()));
+        return $this->writeTransfer([new TransferRow($lot, $from, $location, $quantity)], $today, $title, $this->ledger(), $emptySource);
+    }
+
+    /**
+     * D-1414: an «Umbuchung», and with «Quelle danach leer» what is left of its lots at the source booked out as a Vorgang
+     * «Inventur» (kind_count, D-1382) — both in one write, so one undo takes both back.
+     *
+     * @param list<TransferRow>          $rows
+     * @param list<array{0: int, 1: int}> $source the lots and places emptied besides those of the rows
+     * @return array<string, mixed>
+     */
+    private function writeTransfer(array $rows, string $today, string $title, Ledger $ledger, bool $emptySource, array $source = []): array
+    {
+        $bookings = new Bookings($this->structureWithKinds(), $today);
+        $changes  = $bookings->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $this->boundLots());
+
+        if (! $emptySource) {
+            return $this->model->write($changes);
+        }
+
+        $lots   = $this->table('lot');
+        $s      = $this->structure();
+        $moved  = [];
+        $rest   = [];
+
+        foreach ($rows as $row) {
+            $moved[$row->lot . ':' . $row->from] = ($moved[$row->lot . ':' . $row->from] ?? 0.0) + (float) str_replace(',', '.', $row->quantity);
+        }
+
+        foreach ([...array_map(static fn (TransferRow $r): array => [$r->lot, $r->from], $rows), ...$source] as [$lot, $place]) {
+            $key = $lot . ':' . $place;
+
+            if (isset($rest[$key])) {
+                continue;
+            }
+
+            $left = $ledger->restAt($lot, $place) - ($moved[$key] ?? 0.0);
+
+            if ($left > 1e-9) {
+                $rest[$key] = ['lot' => $lot, 'thing' => 0, 'purchase' => 0, 'place' => $place, 'value' => null,
+                    'quantity' => '-' . rtrim(rtrim(number_format($left, 6, '.', ''), '0'), '.'), 'name' => (string) ($lots->first($lot, $s->field('label')) ?? '')];
+            }
+        }
+
+        if ($rest !== []) {
+            $changes = [...$changes, ...$bookings->correction(array_values($rest), 'Inventur: Quelle nach Umbuchen leer', 'Quelle nach Umbuchen leer')];
+        }
+
+        return $this->model->write($changes);
     }
 
     /**
@@ -5185,7 +5233,7 @@ final class StockService
      * @param list<int> $lots
      * @return array<string, mixed>
      */
-    public function moveLots(array $lots, int $from, int $location, string $quantity, string $today, string $title): array
+    public function moveLots(array $lots, int $from, int $location, string $quantity, string $today, string $title, bool $emptySource = false): array
     {
         $this->guardUnblocked($lots);
 
@@ -5215,7 +5263,8 @@ final class StockService
             throw StockError::nothingToBook();
         }
 
-        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $this->boundLots()));
+        // D-1414: with «Quelle danach leer» every lot of the line counts, also one nothing was taken from.
+        return $this->writeTransfer($rows, $today, $title, $ledger, $emptySource, array_map(static fn (int $lot): array => [$lot, $from], $lots));
     }
 
     /**

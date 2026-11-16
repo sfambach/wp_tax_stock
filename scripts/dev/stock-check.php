@@ -406,6 +406,20 @@ $von = (new StockService())->ledger()->homeOf($lot);
 $ledger = (new StockService())->ledger();
 $pruefe($ledger->restAt($lot, $r['platz']) === 1.0 && (new StockService())->table('lot')->first($lot, $r['l_lo']) !== (string) $r['platz'], '«Umbuchen» moves one piece to the chosen place as a Vorgang, the lot keeps its own place');
 
+// D-1414 · «Umbuchen, Quelle danach leer»: the rest left at the source goes out as a Vorgang «Inventur» in the same act,
+// and one undo takes both back.
+$vorher = (new StockService())->ledger()->restAt($lot, $von);
+$leer   = $vorher > 1.0 ? (new StockService())->moveLot($lot, $von, $r['platz'], '1', '2026-11-16', 'Umbuchung, Quelle leer', true) : [];
+$nach   = (new StockService())->ledger();
+$zurueck = isset($leer['act']) ? $apply([['op' => 'undo_act', 'act' => $leer['act']]]) : [];
+$wieder = (new StockService())->ledger();
+$pruefe($vorher > 1.0 && $nach->restAt($lot, $von) === 0.0 && $nach->restAt($lot, $r['platz']) === 2.0
+    && ! is_wp_error($zurueck) && $wieder->restAt($lot, $von) === $vorher && $wieder->restAt($lot, $r['platz']) === 1.0,
+    'D-1414: «Quelle danach leer» books the rest at the source out by inventory in the same act; one undo takes both back');
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => $r['t1'], 'view' => 'bestand'];
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'value="umbuchenleer"') && str_contains($html, 'data-taxmod-confirm="Am alten Ort liegen'), 'D-1414: the «Umbuchen» dialog offers «Quelle danach leer» behind a confirm that names the quantity');
+
 // The page renders its tabs from the same data.
 foreach (['material' => '>' . $r['lm'] . '</a></td>', 'inventur' => 'Material suchen', 'wareneingang' => 'Bestellung 1', 'verbrauch' => 'Bestandsposten'] as $tab => $erwartet) {
     // D-1147: the material list waits for a search; «Alle anzeigen» draws it all.

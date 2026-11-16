@@ -195,6 +195,9 @@ final class StockPage
         // D-1058: the row buttons carry their purchase in the value, «nichteinlagern-<id>» and «einlagern-<id>».
         $rowPurchase = preg_match('/^(nichteinlagern|einlagern|bilduebernehmen|umhaengen|reservieren|freigeben|ortkopieren|ortloeschen|artkopieren|vorlagekopieren|rollewechseln|unterplaetze|artwechsel|kurzzeichen)-(\d+)$/', $kind, $m) === 1 ? (int) $m[2] : 0;
         $kind        = $rowPurchase > 0 ? $m[1] : $kind;
+        // D-1414: «Umbuchen, Quelle leer» is «Umbuchen» that also books the rest left at the source out by inventory.
+        $emptySource = $kind === 'umbuchenleer';
+        $kind        = $emptySource ? 'umbuchen' : $kind;
         $today = current_time('Y-m-d');
         $arrivedPick = array_values(array_filter(array_map('absint', (array) ($_POST['purchases'] ?? []))));
         $undone      = ['done' => [], 'skipped' => []];
@@ -259,14 +262,16 @@ final class StockPage
                     absint($_POST['location'] ?? 0),
                     sanitize_text_field(wp_unslash((string) ($_POST['quantity'] ?? ''))),
                     $today,
-                    $this->title(__('Umbuchung', 'taxmod-stock'), $today)
+                    $this->title(__('Umbuchung', 'taxmod-stock'), $today),
+                    $emptySource
                 ) : $this->stock->moveLot(
                     absint($_POST['lot'] ?? 0),
                     absint($_POST['from'] ?? 0),
                     absint($_POST['location'] ?? 0),
                     sanitize_text_field(wp_unslash((string) ($_POST['quantity'] ?? ''))),
                     $today,
-                    $this->title(__('Umbuchung', 'taxmod-stock'), $today)
+                    $this->title(__('Umbuchung', 'taxmod-stock'), $today),
+                    $emptySource
                 ),
                 'reservieren'  => $this->stock->reserve(
                     absint($_POST['subject'] ?? 0),
@@ -363,7 +368,9 @@ final class StockPage
             Notice::remember('success', match ($kind) {
                 'umhaengen'      => __('Umgehängt: der Ort liegt jetzt dort, mit allem, was in ihm liegt.', 'taxmod-stock'),
                 'orteverschieben' => __('Verschoben: die gewählten Orte liegen jetzt dort, mit allem, was in ihnen liegt.', 'taxmod-stock'),
-                'umbuchen'       => __('Umgebucht: ein Vorgang «Umbuchung» mit Abgang am alten und Zugang am neuen Ort.', 'taxmod-stock'),
+                'umbuchen'       => $emptySource
+                    ? __('Umgebucht; der Rest am alten Ort ist per Inventur auf 0 ausgebucht. Ein Undo nimmt beides zurück.', 'taxmod-stock')
+                    : __('Umgebucht: ein Vorgang «Umbuchung» mit Abgang am alten und Zugang am neuen Ort.', 'taxmod-stock'),
                 'sammelverschieben' => __('Verschoben: die gewählten Materialien stehen jetzt in der neuen Gruppe.', 'taxmod-stock'),
                 'gruppeanlegen'  => __('Gruppe angelegt.', 'taxmod-stock'),
                 'sammelumbuchen' => __('Umgebucht: alle gewählten Materialien liegen jetzt am neuen Ort, als ein Vorgang «Umbuchung».', 'taxmod-stock'),
@@ -1634,6 +1641,15 @@ final class StockPage
                     'hint' => __('Weniger als alles teilt den Posten auf zwei Orte.', 'taxmod-stock')],
                 ['label' => __('Nach', 'taxmod-stock'), 'control' => $this->stock->placeChooser('location', 0, '', [$from]),
                     'hint' => __('Bucht die Menge vom bisherigen Ort ab und am neuen zu, als Vorgang «Umbuchung»; «Stornieren» bei den Vorgängen nimmt es zurück.', 'taxmod-stock')],
+                // D-1414: his wish 2026-11-16 «angeben können, dass die Quelle jetzt leer ist» — a rest left there goes out
+                // only by inventory, and only after the dialog has named it.
+                ['label' => __('Quelle leer', 'taxmod-stock'), 'control' => '<button type="submit" class="button" name="booking" value="umbuchenleer"'
+                    . ListPage::confirm(sprintf(
+                        /* translators: 1: quantity at the source now */
+                        __('Am alten Ort liegen von diesem Posten jetzt %1$s. Was nach dem Umbuchen dort übrig bleibt (%1$s minus Menge), wird per Inventur auf 0 ausgebucht. Ein Undo nimmt Umbuchung und Inventur zusammen zurück. Fortfahren?', 'taxmod-stock'),
+                        rtrim(rtrim(number_format($quantity, 3, ',', ''), '0'), ',')
+                    )) . '>' . esc_html__('Umbuchen, Quelle danach leer', 'taxmod-stock') . '</button>',
+                    'hint' => __('Für «hier ist nichts mehr»: ein Rest am alten Ort wird nach Rückfrage per Inventur ausgebucht.', 'taxmod-stock')],
             ]);
 
         return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'

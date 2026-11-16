@@ -2,6 +2,7 @@
 
 namespace TaxmodStock\WordPress\Admin;
 
+use Taxmod\WordPress\Admin\ListPage;
 use TaxmodStock\WordPress\Plugin;
 
 /**
@@ -96,11 +97,11 @@ final class ModulePage
         $module = self::all()[$slug] ?? null;
 
         if ($module === null) {
-            return '<div class="wrap"><div class="notice notice-error"><p>' . esc_html__('Diese Seite gibt es nicht.', 'taxmod-stock') . '</p></div></div>';
+            return ListPage::page(__('Logistik', 'taxmod-stock'), [], [['html' => '<div class="notice notice-error"><p>' . esc_html__('Diese Seite gibt es nicht.', 'taxmod-stock') . '</p></div>']], (string) TAXMOD_STOCK_VERSION);
         }
 
         if (! current_user_can($module['capability'])) {
-            return '<div class="wrap"><div class="notice notice-error"><p>' . esc_html__('Keine Berechtigung.', 'taxmod-stock') . '</p></div></div>';
+            return ListPage::page(__('Logistik', 'taxmod-stock'), [], [['html' => '<div class="notice notice-error"><p>' . esc_html__('Keine Berechtigung.', 'taxmod-stock') . '</p></div>']], (string) TAXMOD_STOCK_VERSION);
         }
 
         if ($module['render'] !== null) {
@@ -110,7 +111,7 @@ final class ModulePage
         $hook = self::hook($slug);
 
         if (! has_action($hook)) {
-            return '<div class="wrap"><div class="notice notice-error"><p>' . esc_html__('Das Modul zeichnet diese Seite nicht.', 'taxmod-stock') . '</p></div></div>';
+            return ListPage::page(__('Logistik', 'taxmod-stock'), [], [['html' => '<div class="notice notice-error"><p>' . esc_html__('Das Modul zeichnet diese Seite nicht.', 'taxmod-stock') . '</p></div>']], (string) TAXMOD_STOCK_VERSION);
         }
 
         // CD-8 exception: the module's page callback echoes; its output is taken as it is, the module escapes its own.

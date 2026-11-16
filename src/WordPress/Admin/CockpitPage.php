@@ -40,7 +40,7 @@ final class CockpitPage
         $found = $area === '' || $area === 'cockpit' ? null : self::areaOf($area);
 
         $title = $found === null ? __('Logistik', 'taxmod-stock') : $found['label'] . ($group === '' ? '' : ' › ' . str_replace('/', ' › ', $group));
-        $html  = '<div class="wrap">' . ListPage::heading($title, (string) TAXMOD_STOCK_VERSION);
+        $html  = '';
 
         try {
             // *The cockpit adds the key figures chosen on any node of the model (D-1149); an overview keeps to its items.*
@@ -56,7 +56,8 @@ final class CockpitPage
             $html .= '<div class="notice notice-error"><p>' . esc_html(Messages::of($e)) . '</p></div>';
         }
 
-        return $html . '</div>';
+        // D-1373: the page in the modeller's template.
+        return ListPage::page($title, [], [['html' => $html]], (string) TAXMOD_STOCK_VERSION);
     }
 
     /**

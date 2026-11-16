@@ -151,7 +151,7 @@ final class StockPage
         $tab  = sanitize_key((string) ($_GET['tab'] ?? self::TABS[0]));
         $tab  = in_array($tab, self::TABS, true) ? $tab : self::TABS[0];
         $list = $this->listRequest();
-        $html = '<div class="wrap">' . ListPage::heading(__('Lager', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . Notice::take(self::NOTICE, true);
+        $html = Notice::take(self::NOTICE, true);
 
         try {
             $thing = absint($_GET['thing'] ?? 0);
@@ -178,7 +178,8 @@ final class StockPage
             $html .= '<div class="notice notice-error"><p>' . esc_html(Messages::of($e)) . '</p></div>';
         }
 
-        return $html . $this->script($tab === 'wareneingang') . '</div>';
+        // D-1373: the page in the modeller's template.
+        return ListPage::page(__('Lager', 'taxmod-stock'), [], [['html' => $html . $this->script($tab === 'wareneingang')]], (string) TAXMOD_STOCK_VERSION);
     }
 
     /** admin-post handler: capability → nonce → validate → sanitize → act → back to the page with a notice. */
@@ -659,17 +660,13 @@ final class StockPage
         $group  = $this->sideChosen(self::GROUP_TREE, absint($_GET['group'] ?? 0));
         $group  = isset($this->stock->tree()[$group]) ? $group : 0;
         $pick   = add_query_arg(['page' => self::PAGE, 'tab' => 'gruppenbestand', 'group' => '{id}'], admin_url('admin.php'));
-        // The fixed tree needs the modeller from 0.1.167; before that the groups stand in a choice list.
-        $inline = version_compare((string) \Taxmod\WordPress\Plugin::VERSION, '0.1.167', '>=');
-        $tree   = $inline ? $this->stock->groupChooser('taxmod_stock_group', $group, '', $pick) : '';
+        $tree   = $this->stock->groupChooser('taxmod_stock_group', $group, '', $pick);
 
         $this->side = $tree !== '' && method_exists(ListPage::class, 'sideTree')
             ? ListPage::sideTree(self::GROUP_TREE, __('Materialgruppen', 'taxmod-stock'), $tree, '', 'taxmod-stock-places')
             : '<div class="taxmod-stock-places"><div class="taxmod-stock-places-head"><p class="taxmod-shell-title">'
                 . esc_html__('Materialgruppen', 'taxmod-stock') . '</p></div>'
-                . ($tree !== '' ? $tree : '<form method="get" action="' . esc_url(admin_url('admin.php')) . '">'
-                    . '<input type="hidden" name="page" value="' . esc_attr(self::PAGE) . '"><input type="hidden" name="tab" value="gruppenbestand">'
-                    . '<select name="group" style="width:100%" onchange="this.form.requestSubmit()">' . $this->groupOptions($group) . '</select></form>')
+                . $tree
                 . '</div>' . $this->placeTreeScript();
 
         $newGroup = $group > 0 ? $this->newGroupDialog($group) : '';

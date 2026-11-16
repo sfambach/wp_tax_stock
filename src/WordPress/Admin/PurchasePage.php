@@ -60,7 +60,7 @@ final class PurchasePage
 
     public function render(): string
     {
-        $html = '<div class="wrap">' . ListPage::heading(__('Einkauf', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . Notice::take();
+        $html = Notice::take();
 
         try {
             $html .= $this->body();
@@ -68,7 +68,8 @@ final class PurchasePage
             $html .= '<div class="notice notice-error"><p>' . esc_html(Messages::of($e)) . '</p></div>';
         }
 
-        return $html . '</div>';
+        // D-1373: the page in the modeller's template.
+        return ListPage::page(__('Einkauf', 'taxmod-stock'), [], [['html' => $html]], (string) TAXMOD_STOCK_VERSION);
     }
 
     /** admin-post handler: capability → nonce → validate → sanitize → act → back to the tab with a notice. */
@@ -512,7 +513,7 @@ final class PurchasePage
         if ($tab === 'bestellen') {
             $cart  = implode("\n", $p->cartLines($order, $orders, $purchases));
             $html .= '<p><label><strong>' . esc_html__('Warenkorb-Liste', 'taxmod-stock') . '</strong> <span class="description">' . esc_html__('(Art.-Nr. Menge, für die Schnellbestellung des Shops)', 'taxmod-stock') . '</span><br>'
-                . '<textarea readonly rows="' . esc_attr((string) max(2, count($lines))) . '" style="width:100%;max-width:480px;font-family:monospace" onclick="this.select()">' . esc_textarea($cart) . '</textarea></label></p>'
+                . '<textarea readonly rows="' . esc_attr((string) max(2, count($lines))) . '" style="width:100%;max-width:480px;font-family:monospace">' . esc_textarea($cart) . '</textarea></label></p>'
                 . '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">' . $this->hidden('ordered', $tab) . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
                 . '<label>' . esc_html__('Bestellnummer des Händlers', 'taxmod-stock') . ' <input type="text" name="number" class="regular-text"></label> '
                 . get_submit_button(__('Als bestellt markieren', 'taxmod-stock'), 'primary', '', false) . '</form>';

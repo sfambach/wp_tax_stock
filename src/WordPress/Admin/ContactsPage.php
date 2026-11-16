@@ -49,23 +49,25 @@ final class ContactsPage
     /** @return array{side: string, main: string} */
     public function render(): array
     {
-        $html = '<div class="wrap">' . ListPage::heading(__('Kontakte', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . Notice::take(self::NOTICE, true);
+        $html = Notice::take(self::NOTICE, true);
+        // D-1373: the page in the modeller's template.
+        $page = static fn (string $body): string => ListPage::page(__('Kontakte', 'taxmod-stock'), [], [['html' => $body]], (string) TAXMOD_STOCK_VERSION);
 
         try {
             $tree = $this->stock->contactTree();
             $root = $this->stock->contactRoot();
 
             if ($root === 0 || $tree === []) {
-                return ['side' => '', 'main' => $html . '<p class="description">' . esc_html__('Das Modell kennt keinen Kontakt-Ast (nodes.contact in der Lager-Struktur).', 'taxmod-stock') . '</p></div>'];
+                return ['side' => '', 'main' => $page($html . '<p class="description">' . esc_html__('Das Modell kennt keinen Kontakt-Ast (nodes.contact in der Lager-Struktur).', 'taxmod-stock') . '</p>')];
             }
 
             $node    = absint($_GET['tab'] ?? 0);
             $node    = isset($tree[$node]) ? $node : $root;
             $contact = absint($_GET['kontakt'] ?? 0);
 
-            return ['side' => '', 'main' => $html . ($contact > 0 ? $this->editor($contact, $node) : $this->list($tree, $root, $node)) . '</div>'];
+            return ['side' => '', 'main' => $page($html . ($contact > 0 ? $this->editor($contact, $node) : $this->list($tree, $root, $node)))];
         } catch (StockError $e) {
-            return ['side' => '', 'main' => $html . '<div class="notice notice-error"><p>' . esc_html(Messages::of($e)) . '</p></div></div>'];
+            return ['side' => '', 'main' => $page($html . '<div class="notice notice-error"><p>' . esc_html(Messages::of($e)) . '</p></div>')];
         }
     }
 

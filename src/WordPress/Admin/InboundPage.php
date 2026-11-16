@@ -88,7 +88,7 @@ final class InboundPage
 
     public function render(): string
     {
-        $html = '<div class="wrap">' . ListPage::heading(__('Wareneingang', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . Notice::take();
+        $html = Notice::take();
 
         try {
             $html .= $this->body();
@@ -96,7 +96,8 @@ final class InboundPage
             $html .= '<div class="notice notice-error"><p>' . esc_html(Messages::of($e)) . '</p></div>';
         }
 
-        return $html . '</div>';
+        // D-1373: the page in the modeller's template.
+        return ListPage::page(__('Wareneingang', 'taxmod-stock'), [], [['html' => $html]], (string) TAXMOD_STOCK_VERSION);
     }
 
     /** admin-post handler: capability → nonce → validate → sanitize → act → back to the tab with a notice. */

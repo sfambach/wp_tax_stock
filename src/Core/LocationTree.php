@@ -25,6 +25,7 @@ final class LocationTree
      * @param array<int, int>    $projectIds place id → the record id of its project, only where one is set
      * @param array<int, string> $titles   place id → its Bezeichnung alone, where a short mark stands before it in `$names`
      * @param array<int, string> $shorts   place id → its short mark (Kurzzeichen), only where one is set
+     * @param array<int, int>    $orders   place id → its rank among its siblings (D-1095), only where one is set
      */
     public function __construct(
         private readonly array $names,
@@ -34,6 +35,7 @@ final class LocationTree
         private readonly array $projectIds = [],
         private readonly array $titles = [],
         private readonly array $shorts = [],
+        private readonly array $orders = [],
     ) {
     }
 
@@ -57,7 +59,7 @@ final class LocationTree
     /** @param array<int, string> $projectNames project record id → name */
     public static function from(Structure $s, Table $places, array $projectNames, PlaceTypes $types = new PlaceTypes()): self
     {
-        $names = $parents = $projects = $movable = $projectIds = $titles = $shorts = [];
+        $names = $parents = $projects = $movable = $projectIds = $titles = $shorts = $orders = [];
 
         foreach ($places->ids() as $id) {
             $names[$id]   = (string) ($places->first($id, $s->field('label')) ?? '#' . $id);
@@ -68,6 +70,12 @@ final class LocationTree
                 $shorts[$id] = $short;
                 $titles[$id] = $names[$id];
                 $names[$id]  = $short . ' ' . $names[$id];
+            }
+
+            $rank = $s->hasField('location_order') ? $places->first($id, $s->field('location_order')) : null;
+
+            if ($rank !== null && $rank !== '' && is_numeric($rank)) {
+                $orders[$id] = (int) $rank;
             }
 
             $parents[$id] = $s->hasField('location_parent') ? (int) $places->first($id, $s->field('location_parent')) : 0;
@@ -87,7 +95,7 @@ final class LocationTree
             }
         }
 
-        return new self($names, $parents, $projects, $movable, $projectIds, $titles, $shorts);
+        return new self($names, $parents, $projects, $movable, $projectIds, $titles, $shorts, $orders);
     }
 
     /** @return list<int> the record ids of the projects some place names */
@@ -183,7 +191,7 @@ final class LocationTree
             $children[$this->parentOf($id)][] = $id;
         }
 
-        $byName = fn (int $a, int $b): int => strnatcasecmp($this->names[$a], $this->names[$b]);
+        $byName = $this->siblingOrder(...);
         $out    = [];
         $stack  = [];
         $top    = $children[0] ?? [];
@@ -211,9 +219,31 @@ final class LocationTree
     public function childrenOf(int $id): array
     {
         $children = array_values(array_filter(array_keys($this->names), fn (int $place): bool => $place !== $id && $this->parentOf($place) === $id));
-        usort($children, fn (int $a, int $b): int => strnatcasecmp($this->names[$a], $this->names[$b]));
+        usort($children, $this->siblingOrder(...));
 
         return $children;
+    }
+
+    /**
+     * D-1095: siblings by their own rank; those without one follow, by short mark, then name (natural) — the name already
+     * starts with the short mark (D-1150).
+     */
+    public function siblingOrder(int $a, int $b): int
+    {
+        $rankA = $this->orders[$a] ?? null;
+        $rankB = $this->orders[$b] ?? null;
+
+        if ($rankA !== null || $rankB !== null) {
+            return $rankA === null ? 1 : ($rankB === null ? -1 : ($rankA <=> $rankB ?: strnatcasecmp($this->nameOf($a), $this->nameOf($b))));
+        }
+
+        return strnatcasecmp($this->nameOf($a), $this->nameOf($b));
+    }
+
+    /** D-1095: the rank a place carries, null where none is set. */
+    public function orderOf(int $id): ?int
+    {
+        return $this->orders[$id] ?? null;
     }
 
     /**

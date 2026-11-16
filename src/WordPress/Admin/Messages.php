@@ -113,6 +113,7 @@ final class Messages
             /* translators: %s: record id of the lot */
             'already_reserved'          => sprintf(__('Posten #%s ist schon reserviert und darf nicht in einen für die Produktion reservierten Bereich.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id of the place */
+            'not_same_level'            => sprintf(__('Lagerort #%s liegt auf einer anderen Ebene: einreihen geht nur zwischen Geschwistern. Zum Verschieben auf die Zeile selbst ziehen.', 'taxmod-stock'), $error->detail),
             'reserved_for_production'   => sprintf(__('Lagerort #%s ist reserviert: verbraucht wird dort nur für seinen Bezug (sein Projekt, sonst «für Produktion»), für alles andere erst aus dem Bereich umbuchen.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id of the lot */
             'reserved_for_other'        => sprintf(__('Posten #%s ist reserviert: verbraucht werden darf nur, was frei ist, oder für genau den Bezug der Reservierung.', 'taxmod-stock'), $error->detail),

@@ -315,6 +315,8 @@ final class StockPage
                 'ortloeschen'  => $copy = $this->stock->deletePlace($rowPurchase, current_time('Y-m-d'), __('Lagerort gelöscht', 'taxmod-stock'), ! empty($_POST['below'])),
                 'unterplaetze' => $this->stock->createSubPlaces($rowPurchase),
                 'kurzzeichen'  => $this->stock->fillShortMarks($rowPurchase),
+                // D-1095: dragged above or below a sibling in the place tree.
+                'reihenfolge'  => $this->stock->rankPlace(absint($_POST['place'] ?? 0), absint($_POST['target'] ?? 0), ($_POST['where'] ?? '') === 'after'),
                 // C1: only the «Bezugsquellen» lines, read back through the modeller's controls (D-1250).
                 'quellen'      => $this->stock->saveSources($thing, is_array($_POST['quelle'] ?? null) ? wp_unslash($_POST['quelle']) : []),
                 // D-1315: the way comes from the dialog, never a default.
@@ -354,6 +356,7 @@ final class StockPage
                 'unterplaetze'   => __('Unterplätze angelegt, wie die Platzart sie vorgibt.', 'taxmod-stock'),
                 'quellen'        => __('Bezugsquellen gespeichert.', 'taxmod-stock'),
                 'kurzzeichen'    => __('Kurzzeichen erzeugt; vorhandene blieben stehen.', 'taxmod-stock'),
+                'reihenfolge'    => __('Eingereiht: die Orte dieser Ebene stehen jetzt in der neuen Reihenfolge.', 'taxmod-stock'),
                 'artwechsel'     => __('Art gewechselt: die neuen Unterplätze stehen, der Bestand ist umgebucht, die alten Unterplätze sind entfernt.', 'taxmod-stock'),
                 'artkopieren'    => __('Kopiert: die neue Platzart trägt Felder und Teile der alten; die Plätze bleiben bei der alten.', 'taxmod-stock'),
                 'ortkopieren'    => __('Kopiert: der neue Ort trägt die Felder des alten, aber nichts von dem, was dort liegt.', 'taxmod-stock'),
@@ -399,6 +402,7 @@ final class StockPage
                 'vorlagekopieren' => ['etikettenvorlagen', array_filter(['vorlage' => $copy])],
                 'rollewechseln' => ['drucker', []],
                 'umhaengen', 'orteverschieben', 'ort', 'reservieren', 'freigeben' => ['lagerstruktur', []],
+                'reihenfolge'  => ['lagerstruktur', ['ort' => absint($_POST['place'] ?? 0)]],
                 default        => ['material', $thing > 0 ? ['thing' => $thing, 'view' => 'bestand'] : []],
             };
         } catch (StockError $e) {
@@ -411,7 +415,7 @@ final class StockPage
                 'gruppeanlegen'     => ['gruppenbestand', array_filter(['group' => absint($_POST['group'] ?? 0)])],
                 'vorlagekopieren'   => ['etikettenvorlagen', array_filter(['vorlage' => $rowPurchase])],
                 'rollewechseln'     => ['drucker', []],
-                'umhaengen', 'orteverschieben', 'ort', 'reservieren', 'freigeben' => ['lagerstruktur', []],
+                'umhaengen', 'orteverschieben', 'ort', 'reservieren', 'freigeben', 'reihenfolge' => ['lagerstruktur', []],
                 'aufteilen'         => ['wareneingang', ['order' => absint($_POST['order'] ?? 0), 'split' => absint($_POST['purchase'] ?? 0)]],
                 'quellen'           => ['material', ['thing' => $thing, 'view' => 'einkauf']],
                 'lager', 'umbuchen', 'storno', 'verbrauchstorno', 'inventurstorno' => ['material', ['thing' => $thing, 'view' => $kind === 'lager' ? 'lager' : 'bestand']],
@@ -2992,6 +2996,9 @@ final class StockPage
             'pick_url'     => add_query_arg(['page' => self::PAGE, 'tab' => $tab, 'ort' => '{id}'], admin_url('admin.php')),
             'drag'         => true,
             'suffix'       => $suffix,
+            // D-1095: the places' own order among their siblings; with the field a drop above or below a row reorders.
+            'rank'         => array_filter(array_map(static fn (int $id): ?int => $tree->orderOf($id), array_combine(array_keys($this->stock->places()), array_keys($this->stock->places()))), static fn (?int $rank): bool => $rank !== null),
+            'rank_drop'    => $s->hasField('location_order'),
         ]);
     }
 
@@ -4209,8 +4216,14 @@ final class StockPage
             . '</form>'
             . $this->formStart('umbuchen') . $this->returnFields($tab, $place)
             . ListPage::dialogAction('taxmod-stock-drop-lot', __('Umbuchen', 'taxmod-stock'), __('Umbuchen', 'taxmod-stock'), $lotBody, 'booking', 'umbuchen', __('Umbuchen', 'taxmod-stock'))
+            . '</form>'
+            // D-1095: «davor»/«danach» reorders at once — it moves nothing and is undone by dragging back.
+            . str_replace('<form ', '<form class="taxmod-stock-rank-form" ', $this->formStart('reihenfolge')) . $this->returnFields($tab, $place)
+            . '<input type="hidden" name="place" value=""><input type="hidden" name="target" value=""><input type="hidden" name="where" value="">'
             . '</form></div>'
             . '<script>(function(){'
+            . 'document.addEventListener("taxmod-record-drop",function(e){var d=e.detail,g;if(d.record===null||(d.where!=="before"&&d.where!=="after")){return;}'
+            . 'e.stopImmediatePropagation();g=document.querySelector(".taxmod-stock-rank-form");g.elements.place.value=d.record;g.elements.target.value=d.target;g.elements.where.value=d.where;g.submit();},true);'
             . 'var paths=' . wp_json_encode((object) $paths) . ',movable=' . wp_json_encode($movable) . ',texts=' . wp_json_encode($texts) . ';'
             . 'function fill(t,a){return t.replace(/%(\\d)\\$s/g,function(m,n){return a[parseInt(n,10)-1];});}'
             . 'function open(id){var sw=document.getElementById(id);sw.checked=true;sw.dispatchEvent(new Event("change",{bubbles:true}));return sw.closest("form");}'

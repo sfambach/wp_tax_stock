@@ -299,6 +299,12 @@ final class StockError extends \RuntimeException
         return new self('already_reserved', (string) $lot);
     }
 
+    /** D-1095: a place is ranked only among its own siblings — dragged onto another level it is moved, not ranked. */
+    public static function notSameLevel(int $place): self
+    {
+        return new self('not_same_level', (string) $place);
+    }
+
     /** D-1082: nothing is consumed inside a reserved area before it is moved out. */
     public static function reservedForProduction(int $place): self
     {

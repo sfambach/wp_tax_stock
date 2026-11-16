@@ -1660,6 +1660,14 @@ $arten = [1 => 10, 2 => 20, 3 => 40, 4 => 40];
 $pruefe(\TaxmodStock\Core\ShortMarks::proposed(4, $baum, $arten, [10 => 'R', 20 => 'F', 40 => 'B']) === 'R1-F1-B7'
     && \TaxmodStock\Core\ShortMarks::proposed(5, $baum, $arten, [10 => 'R', 20 => 'F', 40 => 'B']) === '', 'D-1368: siblings typed up to B6 make the next proposal B7; a place without a kind gets none');
 
+// D-1095, his word «order fehlt wird nach name sortier»: a place with its own rank stands first among its siblings, the rest by
+// short mark and name; dragged above or below a sibling, the level is renumbered in one write and the tree drops before/after.
+$baum = new \TaxmodStock\Core\LocationTree([1 => 'A1 Alex', 2 => 'A1-S1 Schublade', 3 => 'A1-S2 Schublade', 4 => 'A1-S3 Schublade'], [2 => 1, 3 => 1, 4 => 1], orders: [4 => 1]);
+$pruefe($baum->childrenOf(1) === [4, 2, 3] && $baum->orderOf(2) === null && array_column($baum->ordered(), 0) === [1, 4, 2, 3],
+    'D-1095: a place with its own rank stands first among its siblings, the others follow by short mark and name');
+$pruefe(str_contains($quelle('WordPress/StockService.php'), 'public function rankPlace(') && str_contains($quelle('WordPress/Admin/StockPage.php'), "'rank_drop'")
+    && str_contains($quelle('WordPress/Admin/StockPage.php'), "'reihenfolge'  => \$this->stock->rankPlace("), 'D-1095: «davor»/«danach» in the place tree reorders the level through rankPlace');
+
 // D-1381, his words 2026-11-15 «ein bestand der unterbestände hat», card «Beides»: a sub-lot names its set lot; the set's
 // Bestand lists what each set lot holds against the set's wanted content, the sub-lot links back to its set.
 $setNeu = $apply([

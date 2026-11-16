@@ -2351,6 +2351,34 @@ final class StockService
     }
 
     /**
+     * D-1095: a place dragged before or after a sibling — the siblings get their ranks 1…n in the new order, in one write.
+     *
+     * @return array<string, mixed>
+     */
+    public function rankPlace(int $place, int $target, bool $after): array
+    {
+        $s = $this->structure();
+
+        if (! $s->hasField('location_order')) {
+            throw StockError::nothingToBook();
+        }
+
+        $tree   = $this->locationTree();
+        $parent = $tree->parentOf($target);
+
+        if ($place === $target || ! isset($this->places()[$place]) || $tree->parentOf($place) !== $parent) {
+            throw StockError::notSameLevel($place);
+        }
+
+        $siblings = array_values(array_filter($tree->childrenOf($parent), static fn (int $id): bool => $id !== $place));
+        $at       = (int) array_search($target, $siblings, true) + ($after ? 1 : 0);
+        array_splice($siblings, $at, 0, [$place]);
+        $field = (string) $s->field('location_order');
+
+        return $this->model->write(array_map(static fn (int $id, int $rank): array => ['op' => 'set_values', 'record' => (string) $id, 'values' => [$field => (string) ($rank + 1)]], $siblings, array_keys($siblings)));
+    }
+
+    /**
      * D-1338: the colours a place shows — its own, else its kind's; `inherited` says which.
      *
      * @return array{colours: list<string>, inherited: bool}

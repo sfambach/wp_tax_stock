@@ -94,6 +94,8 @@ final class Structure
         'type_short', 'location_colour', 'type_colour',
         // D-1339: a part line counts its places as a unit value in pieces.
         'part_quantity',
+        // D-1095: a place's own rank among its siblings — the setting «position» every record has (D-1250).
+        'location_order',
         // D-1184: a person's first name, put before the name in the contact list.
         'contact_first_name',
         // D-1249: a firm's link templates with {nr} — to an order by its number, to a product by its article number.

@@ -1791,5 +1791,10 @@ $jede   = $s->presentInEach($kisten);
 $pruefe($kisten !== [] && array_filter($kisten, static fn (int $k): bool => ($jede[$k] ?? null) != (new StockService())->presentIn($k)) === [] && $s->presentInEach([]) === [],
     'D-1139: presentInEach gives each box what presentIn gives for it, one read for all');
 
+// D-1408 (modeller live.js): a form sent with .submit() passes the background send by; set-up scripts run again after a swap.
+$quellen = implode('', array_map('file_get_contents', glob(dirname(__DIR__, 2) . '/src/WordPress/Admin/*.php')));
+$pruefe(! preg_match('/[.]submit\(\)/', $quellen) && substr_count($quellen, 'taxmod:replaced') >= 2 && ! str_contains($quellen, 'dataset.ready'),
+    'D-1408: no form is sent past the background send, and the Lager scripts set up again (once per element) after a swap');
+
 echo $fehler === 0 ? "all green ({$kind})\n" : "{$fehler} red ({$kind})\n";
 exit($fehler === 0 ? 0 : 1);

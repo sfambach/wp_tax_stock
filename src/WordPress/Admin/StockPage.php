@@ -666,7 +666,7 @@ final class StockPage
                 . esc_html__('Materialgruppen', 'taxmod-stock') . '</p></div>'
                 . ($tree !== '' ? $tree : '<form method="get" action="' . esc_url(admin_url('admin.php')) . '">'
                     . '<input type="hidden" name="page" value="' . esc_attr(self::PAGE) . '"><input type="hidden" name="tab" value="gruppenbestand">'
-                    . '<select name="group" style="width:100%" onchange="this.form.submit()">' . $this->groupOptions($group) . '</select></form>')
+                    . '<select name="group" style="width:100%" onchange="this.form.requestSubmit()">' . $this->groupOptions($group) . '</select></form>')
                 . '</div>' . $this->placeTreeScript();
 
         $newGroup = $group > 0 ? $this->newGroupDialog($group) : '';
@@ -3093,6 +3093,7 @@ final class StockPage
             . 'var on=box.querySelector(".taxmod-chooser-row input[type=radio]:checked"),list=box.querySelector(".taxmod-chooser-tree");if(!on||!list){return;}'
             . 'var row=on.closest(".taxmod-tree-row"),r=row.getBoundingClientRect(),l=list.getBoundingClientRect(),head=box.querySelector(".taxmod-tree-search"),top=l.top+(head?head.offsetHeight:0);'
             . 'if(r.top<top||r.bottom>l.bottom){list.scrollTop+=r.top-top-(l.bottom-top)/3;}}'
+            . 'document.addEventListener("taxmod:replaced",run);'
             . 'if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",run);}else{run();}})();</script>';
     }
 
@@ -4356,7 +4357,7 @@ final class StockPage
             . '</form></div>'
             . '<script>(function(){'
             . 'document.addEventListener("taxmod-record-drop",function(e){var d=e.detail,g;if(d.record===null||(d.where!=="before"&&d.where!=="after")){return;}'
-            . 'e.stopImmediatePropagation();g=document.querySelector(".taxmod-stock-rank-form");g.elements.place.value=d.record;g.elements.target.value=d.target;g.elements.where.value=d.where;g.submit();},true);'
+            . 'e.stopImmediatePropagation();g=document.querySelector(".taxmod-stock-rank-form");g.elements.place.value=d.record;g.elements.target.value=d.target;g.elements.where.value=d.where;g.requestSubmit();},true);'
             . 'var paths=' . wp_json_encode((object) $paths) . ',movable=' . wp_json_encode($movable) . ',texts=' . wp_json_encode($texts) . ';'
             . 'function fill(t,a){return t.replace(/%(\\d)\\$s/g,function(m,n){return a[parseInt(n,10)-1];});}'
             . 'function open(id){var sw=document.getElementById(id);sw.checked=true;sw.dispatchEvent(new Event("change",{bubbles:true}));return sw.closest("form");}'
@@ -4800,24 +4801,27 @@ final class StockPage
             . 'document.addEventListener("change",function(e){if(!e.target.closest||!e.target.closest(".taxmod-stock-maker")){makers();}});makers();'
             // D-1203: a message in the field beside the heading; a page without it keeps the browser's own.
             . 'function say(t,ok){if(window.taxmodMessage){window.taxmodMessage(t,ok?"ok":"bad");}else{window.alert(t);}}'
+            // D-1408: the modeller swaps what an act changed (taxmod:replaced); an element kept across the swap is bound once.
+            . 'var done=new WeakSet();function once(el){if(done.has(el)){return false;}done.add(el);return true;}'
             . 'function bind(root){if(root!==document){makers();}'
-            . 'root.querySelectorAll(".taxmod-stock-filter").forEach(function(f){var s=document.getElementById(f.dataset.for);if(!s){return;}var o=Array.prototype.slice.call(s.options);'
+            . 'root.querySelectorAll(".taxmod-stock-filter").forEach(function(f){if(!once(f)){return;}var s=document.getElementById(f.dataset.for);if(!s){return;}var o=Array.prototype.slice.call(s.options);'
             . 'f.addEventListener("input",function(){var q=f.value.toLowerCase(),first=null;o.forEach(function(x){var fix=x.value===""||x.value==="new"||x.value==="keep"||x.value==="search";x.hidden=q!==""&&!fix&&x.text.toLowerCase().indexOf(q)<0;if(!fix&&!x.hidden&&!first){first=x;}});if(q!==""&&first){s.value=first.value;}});});'
-            . 'root.querySelectorAll(".taxmod-stock-thing-search").forEach(function(f){var t=document.getElementById(f.dataset.for),l=document.getElementById(f.getAttribute("list")),w;'
+            . 'root.querySelectorAll(".taxmod-stock-thing-search").forEach(function(f){if(!once(f)){return;}var t=document.getElementById(f.dataset.for),l=document.getElementById(f.getAttribute("list")),w;'
             . 'f.addEventListener("input",function(){var m=f.value.match(/^#(\\d+)/);if(m){t.value=m[1];return;}t.value="";clearTimeout(w);if(f.value.trim().length<2){return;}'
             . 'w=setTimeout(function(){fetch(url+"&term="+encodeURIComponent(f.value),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){l.innerHTML="";(j.data||[]).forEach(function(h){var x=document.createElement("option");x.value="#"+h.id+" · "+h.word+(h.node?" ("+h.node+")":"");l.appendChild(x);});});},250);});});'
             // INF-116: an order not yet arrived keeps its choice without a reload; the form comes back drawn anew.
-            . 'root.querySelectorAll("form.taxmod-stock-assign").forEach(function(f){f.addEventListener("submit",function(e){var b=e.submitter;if(b&&b.name==="booking"&&b.value!=="zuordnen"){return;}e.preventDefault();var fd=new FormData(f);fd.set("action",' . wp_json_encode(self::ASSIGN) . ');fd.set("booking","zuordnen");'
+            . 'root.querySelectorAll("form.taxmod-stock-assign").forEach(function(f){if(!once(f)){return;}f.addEventListener("submit",function(e){var b=e.submitter;if(b&&b.name==="booking"&&b.value!=="zuordnen"){return;}e.preventDefault();var fd=new FormData(f);fd.set("action",' . wp_json_encode(self::ASSIGN) . ');fd.set("booking","zuordnen");'
             . 'var box=f.closest(".taxmod-stock-positions")||f.parentNode;fetch(post,{method:"POST",body:fd,credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){var d=j.data||{};if(j.success&&d.html){box.innerHTML=d.html;bind(box);}say(d.message||' . wp_json_encode($failed) . ',!!j.success);})'
             . '.catch(function(){say(' . wp_json_encode($failed) . ',false);});});});'
-            . 'root.querySelectorAll("tr").forEach(function(tr){var cb=tr.querySelector("input[name=\\"purchases[]\\"]");if(!cb||cb.disabled||tr.closest("form.taxmod-stock-assign")){return;}tr.querySelectorAll("select,input[type=text],input[type=search]").forEach(function(f){f.addEventListener("change",function(){cb.checked=true;});});});'
+            . 'root.querySelectorAll("tr").forEach(function(tr){if(!once(tr)){return;}var cb=tr.querySelector("input[name=\\"purchases[]\\"]");if(!cb||cb.disabled||tr.closest("form.taxmod-stock-assign")){return;}tr.querySelectorAll("select,input[type=text],input[type=search]").forEach(function(f){f.addEventListener("change",function(){cb.checked=true;});});});'
             . '}bind(document);'
             . 'function load(box){if(box.dataset.loaded){return;}box.dataset.loaded="1";var cell=box;cell.textContent="…";'
             . 'fetch(pos+"&order="+encodeURIComponent(box.dataset.order)+(box.dataset.back?"&back="+encodeURIComponent(box.dataset.back):"")+(box.dataset.assign?"&assign=1":"")+(box.dataset.pick?"&pick="+encodeURIComponent(box.dataset.pick):""),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){cell.innerHTML=(j.data&&j.data.html)||"";bind(cell);var h=location.hash&&document.getElementById(location.hash.slice(1));if(h&&cell.contains(h)){h.scrollIntoView({block:"center"});}})'
             . '.catch(function(){delete box.dataset.loaded;cell.textContent=' . wp_json_encode(__('Positionen konnten nicht geladen werden.', 'taxmod-stock')) . ';});}'
             // An order's purchases load once its details row shows: opened by hand, by «Expand all», or open from the start.
             . 'var seen="IntersectionObserver" in window?new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){seen.unobserve(e.target);load(e.target);}});},{rootMargin:"200px"}):null;'
-            . 'document.querySelectorAll(".taxmod-stock-positions:not([data-loaded])").forEach(function(box){if(seen){seen.observe(box);}else{load(box);}});'
+            . 'function boxes(r){r.querySelectorAll(".taxmod-stock-positions:not([data-loaded])").forEach(function(box){if(seen){seen.observe(box);}else{load(box);}});}boxes(document);'
+            . 'document.addEventListener("taxmod:replaced",function(e){var r=e.target&&e.target.querySelectorAll?e.target:document;bind(r);boxes(r);});'
             // D-1087: the branch he opened in the tree beside the material search is the group «Neues Material» proposes.
             . 'var browsed={};document.addEventListener("taxmod-browse-node",function(e){var pick=e.target.closest?e.target.closest("tr"):null,f=pick&&pick.querySelector("[name^=\\"thing[\\"]"),m=f&&/^thing\\[(\\d+)\\]/.exec(f.name);if(m){browsed[m[1]]=String(e.detail.node);}});'
             // D-1309: a view dialog's frame is loaded by the modeller's view-dialog.js, which STYLE_ACTION brings (modeller 0.2.69).

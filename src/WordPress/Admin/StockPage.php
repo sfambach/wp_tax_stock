@@ -3143,7 +3143,9 @@ final class StockPage
             'label_field'  => $this->stock->placeWords(),
             'preselected'  => $chosen > 0 ? $chosen : null,
             'inline'       => true,
-            'pick_url'     => add_query_arg(['page' => self::PAGE, 'tab' => $tab, 'ort' => '{id}'], admin_url('admin.php')),
+            // His report 2026-11-16 «er scrollt nur ganz nach unten»: the modeller puts a page back at the offset of the page
+            // before; an anchor goes first (D-788), so a chosen place opens at the top.
+            'pick_url'     => add_query_arg(['page' => self::PAGE, 'tab' => $tab, 'ort' => '{id}'], admin_url('admin.php')) . '#wpbody',
             'drag'         => true,
             'suffix'       => $suffix,
             // D-1095: the places' own order among their siblings; with the field a drop above or below a row reorders.

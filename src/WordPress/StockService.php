@@ -5427,7 +5427,12 @@ final class StockService
     /** @return array<string, mixed> */
     public function markOrdered(int $draft, string $number): array
     {
-        return $this->model->write($this->purchasing()->markOrdered($draft, $number, $this->table('order')));
+        $orders   = $this->table('order');
+        $s        = $this->structure();
+        $merchant = $s->hasField('order_merchant') ? (string) $orders->first($draft, $s->field('order_merchant')) : '';
+
+        // D-1405 (INFERRED): a firm is a platform when it carries an order link template (D-1249) — the model marks nothing else.
+        return $this->model->write($this->purchasing()->markOrdered($draft, $number, $orders, $this->linkTemplates($merchant)['order'] !== ''));
     }
 
     /**

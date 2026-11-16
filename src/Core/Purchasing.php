@@ -478,11 +478,12 @@ final class Purchasing
     }
 
     /**
-     * «Als bestellt markieren»: he has ordered at the supplier; the order gets its number and today's date.
+     * «Als bestellt markieren»: he has ordered at the supplier; the order gets its number and today's date. D-1405: when the
+     * merchant is a platform the order also names it as «Plattform», so the mail import finds the order by platform and number.
      *
      * @return list<array<string, mixed>>
      */
-    public function markOrdered(int $draft, string $number, Table $orders): array
+    public function markOrdered(int $draft, string $number, Table $orders, bool $merchantIsPlatform = false): array
     {
         $s = $this->structure;
 
@@ -502,6 +503,13 @@ final class Purchasing
 
         if ($s->hasField('order_date')) {
             $values[(string) $s->field('order_date')] = $this->today;
+        }
+
+        $merchant = $this->merchantOf($draft, $orders);
+
+        // D-1250: only an empty «Plattform» is filled.
+        if ($merchantIsPlatform && $merchant !== '' && $s->hasField('order_platform') && trim((string) $orders->first($draft, $s->field('order_platform'))) === '') {
+            $values[(string) $s->field('order_platform')] = $merchant;
         }
 
         return [['op' => 'set_values', 'record' => (string) $draft, 'values' => $values]];

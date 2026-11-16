@@ -2758,12 +2758,12 @@ final class StockPage
 
         if ($assign) {
             // Stefan 16.11. «nicht möglich zu sagen dass einzelne teile angekommen sind».
-            $asks['taxmod-stock-arrive-' . $order] = $ask('taxmod-stock-arrive-' . $order, __('Angehakte angekommen …', 'taxmod-stock'), __('Angehakte Käufe angekommen', 'taxmod-stock'),
+            $asks['taxmod-stock-arrive-' . $order] = $ask('taxmod-stock-arrive-' . $order, __('Angekommen …', 'taxmod-stock'), __('Angehakte Käufe angekommen', 'taxmod-stock'),
                 '<p>' . esc_html__('Die Zuordnung wird gespeichert, die Bestellung kommt an, und der Wareneingang öffnet mit genau diesen Käufen angehakt.', 'taxmod-stock') . '</p>', 'angekommen', __('Angekommen', 'taxmod-stock'));
         }
 
         if ($canClose) {
-            $asks['taxmod-stock-close-all-' . $order] = $ask('taxmod-stock-close-all-' . $order, __('Angehakte nicht einlagern …', 'taxmod-stock'), __('Angehakte ohne Lager abschließen', 'taxmod-stock'),
+            $asks['taxmod-stock-close-all-' . $order] = $ask('taxmod-stock-close-all-' . $order, __('Nicht einlagern …', 'taxmod-stock'), __('Angehakte ohne Lager abschließen', 'taxmod-stock'),
                 self::actForm([['label' => __('Grund', 'taxmod-stock'), 'control' => '<input type="text" list="taxmod-stock-reasons" name="bulk_reason" form="' . esc_attr($formId) . '" style="width:100%">',
                     'hint' => __('Gilt für alle angehakten Käufe.', 'taxmod-stock')]]), 'sammelnichteinlagern', __('Nicht einlagern', 'taxmod-stock'));
         }
@@ -2902,7 +2902,7 @@ final class StockPage
             // ⚠️ *Enter in a reason field must book, not close the first row: the browser presses the first submit button.*
             . '<button type="submit" name="booking" value="' . esc_attr($first) . '" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px"></button>'
             . ($closing ? '<datalist id="taxmod-stock-reasons">' . implode('', array_map(static fn (string $r): string => '<option value="' . esc_attr($r) . '">', self::notStockedReasons())) . '</datalist>' : '')
-            . ($assign ? '<p>' . esc_html__('Schon vor dem Eintreffen je Kauf das Material wählen oder als «Neues Material» in seiner Gruppe anlegen; die Felder kommen aus der Gruppe. Gespeichert wird nur die Zuordnung, eingebucht wird erst beim Wareneingang. Was angekommen ist: anhaken, dann in der Auswahl «Angehakte angekommen …».', 'taxmod-stock') . '</p>' : '')
+            . ($assign ? '<p>' . esc_html__('Schon vor dem Eintreffen je Kauf das Material wählen oder als «Neues Material» in seiner Gruppe anlegen; die Felder kommen aus der Gruppe. Gespeichert wird nur die Zuordnung, eingebucht wird erst beim Wareneingang. Was angekommen ist: anhaken, dann in der Sammelauswahl «Angekommen …».', 'taxmod-stock') . '</p>' : '')
             . ($assign ? '' : '<p>' . esc_html__('Je Kauf das Material: vorgeschlagen ist das «Modell» des Kaufs; «Zurücksetzen» (Pfeil) gibt die Suche frei; «Neues Material» (oder eine Gruppe in der Suche) legt ein neues Material in der Gruppe an. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seiner Gruppe; Gebrauchtware aus einem Zweig mit Test nach dem Wareneingang geht an den «Lagerort für Test», wenn einer eingestellt ist. Der Materialtext öffnet das Material wie der Knopf «Material». Die Menge ist die gekaufte Anzahl (bei Ware in Packungen: Packungen); geändert wird sie beim Buchen oder Speichern in den Kauf geschrieben.', 'taxmod-stock') . '</p>');
         $head  = '<tr><td class="manage-column column-cb check-column"><input type="checkbox" aria-label="' . esc_attr__('Alle wählen', 'taxmod-stock') . '"></td>'
             . '<th scope="col" class="manage-column" style="width:28%">' . esc_html__('Kauf', 'taxmod-stock') . '</th><th scope="col" class="manage-column" style="width:28%">' . esc_html__('Material', 'taxmod-stock')

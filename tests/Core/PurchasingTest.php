@@ -199,6 +199,13 @@ final class PurchasingTest extends TestCase
 
         self::assertSame([['op' => 'set_values', 'record' => '62', 'values' => [(string) $s->field('order_status') => '209']]], $p->backToDraft(self::ORDER, $this->orders(), ''));
 
+        // D-1405: a merchant that is a platform is named as «Plattform» too, so the mail import finds the order.
+        $raw = $s->toArray();
+        $raw['fields']['order_platform'] = 990;
+        $withPlatform = Structure::fromArray($raw);
+        self::assertSame('LCSC', (new Purchasing($withPlatform, '2026-10-30'))->markOrdered(self::DRAFT, 'X1', $this->orders(), true)[0]['values']['990'] ?? null);
+        self::assertArrayNotHasKey('990', (new Purchasing($withPlatform, '2026-10-30'))->markOrdered(self::DRAFT, 'X1', $this->orders())[0]['values']);
+
         $this->expectException(StockError::class);
         $p->backToDraft(self::ORDER, $this->orders(), '2026-11-02');
     }

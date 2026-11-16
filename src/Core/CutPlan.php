@@ -7,7 +7,7 @@ namespace TaxmodStock\Core;
  * loss per cut of D-1178.
  *
  * A strip counted as strips gives up whole strips; what is left of each becomes a shorter strip. A strip counted in
- * pins (a pack, D-1178) gives up pins: the pieces and one loss per cut.
+ * pins (a pack, D-1178) is cut by `StripCut` (D-1398).
  *
  * ```mermaid
  * flowchart LR
@@ -18,24 +18,20 @@ namespace TaxmodStock\Core;
 final class CutPlan
 {
     /**
-     * @param int             $strips strips (or, in pins, pins) taken from the long lot
+     * @param int             $strips strips taken from the long lot
      * @param array<int, int> $rests  poles of a rest strip → how many such strips are left
      */
     private function __construct(public readonly int $strips, public readonly array $rests)
     {
     }
 
-    public static function of(int $pieces, int $poles, int $from, int $lossPerCut, bool $countedInPins): self
+    public static function of(int $pieces, int $poles, int $from, int $lossPerCut): self
     {
         if ($pieces < 1 || $poles < 1 || $from <= $poles) {
             throw StockError::cutNotPossible($poles, $from);
         }
 
         $loss = max(0, $lossPerCut);
-
-        if ($countedInPins) {
-            return new self($pieces * ($poles + $loss), []);
-        }
 
         // The last piece of a strip needs no cut where nothing is left behind it.
         $perStrip = intdiv($from + $loss, $poles + $loss);

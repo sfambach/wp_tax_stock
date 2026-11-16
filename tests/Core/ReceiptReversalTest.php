@@ -135,6 +135,32 @@ final class ReceiptReversalTest extends TestCase
         (new ReceiptReversal(Fixture::structure()))->reverse(70, $orders, new Table([]), new Table([]), $transactions);
     }
 
+    #[Test]
+    public function taking_back_per_purchase_skips_the_used_one_and_reverses_the_other(): void
+    {
+        // Architecture 16.11. («alle rückgängig»): purchase 72 has a consumption on its lot 62 and stays; 71 goes back.
+        $s      = Fixture::structure();
+        $orders = new Table([70 => [$s->field('order_lines') => ['71', '72'], $s->field('order_status') => ['206']]]);
+        $lots   = new Table([60 => [$s->field('lot_purchase') => ['71']], 62 => [$s->field('lot_purchase') => ['72']]]);
+        $deals  = new Table([
+            90 => [$s->field('transaction_order') => ['70'], $s->field('transaction_kind') => ['201'], $s->field('transaction_lines') => ['80', '85']],
+            91 => [$s->field('transaction_kind') => ['202'], $s->field('transaction_lines') => ['86']],
+        ]);
+        $lines  = new Table([
+            80 => [$s->field('line_lot') => ['60'], $s->field('line_quantity') => ['1']],
+            85 => [$s->field('line_lot') => ['62'], $s->field('line_quantity') => ['1']],
+            86 => [$s->field('line_lot') => ['62'], $s->field('line_quantity') => ['-1']],
+        ]);
+
+        $plan = (new ReceiptReversal($s))->reverseFree(70, $orders, $lots, $lines, $deals);
+
+        self::assertSame([71], $plan['done']);
+        self::assertSame([72 => 62], $plan['skipped']);
+        self::assertContains(['op' => 'remove_record', 'record' => '60'], $plan['changes']);
+        self::assertNotContains(['op' => 'remove_record', 'record' => '62'], $plan['changes']);
+        self::assertNotContains(['op' => 'remove_record', 'record' => '90'], $plan['changes']);
+    }
+
     /** @param list<string> $lines @return Table the receipt 90 and an Umbuchung 92 */
     private function moved(\TaxmodStock\Core\Structure $s, array $lines = ['82', '83']): Table
     {

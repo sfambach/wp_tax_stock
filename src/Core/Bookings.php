@@ -322,15 +322,22 @@ final class Bookings
      * project — and its reason («Grund», e.g. «Reparatur») in its description. «Für Produktion» names no record; the
      * place it is taken from says enough.
      *
+     * @param list<array{thing: int, quantity: int, name: string, value?: array{amount: string, unit: string|null}|null}> $rests D-1398: rest strips, new lots at the place
      * @return list<array<string, mixed>>
      */
-    public function consumption(int $lot, string $quantity, Purpose $purpose, string $title, ?int $place = null, string $reason = '', int $art = 0): array
+    public function consumption(int $lot, string $quantity, Purpose $purpose, string $title, ?int $place = null, string $reason = '', int $art = 0, array $rests = []): array
     {
         $s      = $this->structure;
         $amount = Quantity::positive($quantity);
 
         $this->start();
         $this->line($title, (string) $lot, '-' . $amount, null, $place);
+
+        // D-1398: what the opened strips leave comes back where they lay, as lots of the same material.
+        foreach ($rests as $rest) {
+            $new = $this->lot($rest['name'], (string) $rest['thing'], null, $this->valueOf($rest['value'] ?? null), '', $place);
+            $this->line($rest['name'], $new, self::signed($rest['quantity']), null, $place);
+        }
 
         $field = $s->hasField('transaction_reference') ? 'transaction_reference' : 'transaction_project';
         $extra = $purpose->subject > 0 && $s->hasField($field) ? [(string) $s->field($field) => (string) $purpose->subject] : [];
@@ -377,8 +384,10 @@ final class Bookings
      * D-1328 (D9): strips cut for a build order in one Vorgang «Verbrauch» whose Bezug is the order — the long strips
      * leave their place, the pieces come into the box as new lots, what is left of a strip stays at its place as a lot
      * of the shorter strip. `$prelude` creates rest materials first; their refs stand in `rests[].thing`.
+     * D-1398: a strip counted in pins may also take from rest lots (`more`), and its rests go back as lots of the same
+     * material where their strip lay (`rests[].place`).
      *
-     * @param list<array{lot: int, place: int, take: int, thing: int, pieces: int, into: int, name: string, rests: list<array{thing: string, quantity: int, name: string}>}> $rows
+     * @param list<array{lot: int, place: int, take: int, thing: int, pieces: int, into: int, name: string, more?: list<array{lot: int, place: int, take: int}>, value?: array{amount: string, unit: string|null}|null, rests: list<array{thing: string, quantity: int, name: string, place?: int, value?: array{amount: string, unit: string|null}|null}>}> $rows
      * @param list<array<string, mixed>> $prelude
      * @return list<array<string, mixed>>
      */
@@ -394,14 +403,20 @@ final class Bookings
         $this->changes = $prelude;
 
         foreach ($rows as $row) {
-            $this->line($title, (string) $row['lot'], self::signed(-$row['take']), null, $row['place']);
+            foreach ([['lot' => $row['lot'], 'place' => $row['place'], 'take' => $row['take']], ...($row['more'] ?? [])] as $take) {
+                if ($take['take'] > 0) {
+                    $this->line($title, (string) $take['lot'], self::signed(-$take['take']), null, $take['place']);
+                }
+            }
 
-            $pieces = $this->lot($row['name'], (string) $row['thing'], null, null, '', $row['into']);
+            // D-1398: pieces and rests keep the strip's value per pin.
+            $pieces = $this->lot($row['name'], (string) $row['thing'], null, $this->valueOf($row['value'] ?? null), '', $row['into']);
             $this->line($row['name'], $pieces, self::signed($row['pieces']), null, $row['into']);
 
             foreach ($row['rests'] as $rest) {
-                $lot = $this->lot($rest['name'], $rest['thing'], null, null, '', $row['place']);
-                $this->line($rest['name'], $lot, self::signed($rest['quantity']), null, $row['place']);
+                $at  = $rest['place'] ?? $row['place'];
+                $lot = $this->lot($rest['name'], $rest['thing'], null, $this->valueOf($rest['value'] ?? null), '', $at);
+                $this->line($rest['name'], $lot, self::signed($rest['quantity']), null, $at);
             }
         }
 
@@ -998,6 +1013,17 @@ final class Bookings
         }
 
         return $this->moneyPart(self::signed((float) Quantity::amount($row->total) / (float) $quantity), null);
+    }
+
+    /**
+     * D-1398: a value per piece handed in as amount and unit, as a new money part; none stays none.
+     *
+     * @param array{amount: string, unit: string|null}|null $value
+     * @return array<string, array<string, string>>|null
+     */
+    private function valueOf(?array $value): ?array
+    {
+        return $value === null ? null : $this->moneyPart($value['amount'], $value['unit']);
     }
 
     private function moneyPart(string $amount, ?string $unit): array

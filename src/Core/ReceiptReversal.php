@@ -33,6 +33,23 @@ final class ReceiptReversal
     /** @return list<array<string, mixed>> */
     public function reverse(int $order, Table $orders, Table $lots, Table $lines, Table $transactions): array
     {
+        $plan = $this->reverseFree($order, $orders, $lots, $lines, $transactions);
+
+        if ($plan['skipped'] !== []) {
+            throw StockError::lotAlreadyUsed((int) array_values($plan['skipped'])[0]);
+        }
+
+        return $plan['changes'];
+    }
+
+    /**
+     * Architecture 16.11. (Stefan «alle rückgängig»): every purchase whose lots are still untouched goes back; one whose
+     * lot was used is skipped and named, the others go on. All skipped is refused like before.
+     *
+     * @return array{changes: list<array<string, mixed>>, skipped: array<int, int>, done: list<int>} skipped: purchase → its used lot
+     */
+    public function reverseFree(int $order, Table $orders, Table $lots, Table $lines, Table $transactions): array
+    {
         $s         = $this->structure;
         $purchases = array_map('intval', $orders->all($order, $s->field('order_lines')));
         $mine      = array_values(array_filter($lots->ids(), static fn (int $lot): bool => in_array((int) $lots->first($lot, $s->field('lot_purchase')), $purchases, true)));
@@ -47,7 +64,7 @@ final class ReceiptReversal
 
         foreach ($receipts as $receipt) {
             foreach ($transactions->all($receipt, $s->field('transaction_lines')) as $line) {
-                $ofReceipt[(int) $line] = true;
+                $ofReceipt[(int) $line] = $receipt;
             }
         }
 
@@ -81,6 +98,7 @@ final class ReceiptReversal
         $onMine = [];
         $moved  = [];
         $net    = [];
+        $used   = [];
 
         foreach ($lines->ids() as $line) {
             $lot = (int) $lines->first($line, $s->field('line_lot'));
@@ -91,7 +109,7 @@ final class ReceiptReversal
 
             if (isset($ofReceipt[$line])) {
                 if (isset($onMine[$lot])) {
-                    throw StockError::lotAlreadyUsed($lot);
+                    $used[$lot] = true;
                 }
 
                 $onMine[$lot] = $line;
@@ -102,30 +120,68 @@ final class ReceiptReversal
 
             // A Storno and the line it takes back cancel out, whatever their kind — a consumption taken back used nothing.
             if (! in_array($kind, $moves, true) && ! isset($cancelled[$line])) {
-                throw StockError::lotAlreadyUsed($lot);
+                $used[$lot] = true;
             }
 
-            $moved[$line] = $owner[$line] ?? 0;
-            $net[$lot]    = ($net[$lot] ?? 0.0) + (float) $lines->first($line, $s->field('line_quantity'));
+            $moved[$lot][$line] = $owner[$line] ?? 0;
+            $net[$lot]          = ($net[$lot] ?? 0.0) + (float) $lines->first($line, $s->field('line_quantity'));
         }
 
         foreach ($net as $lot => $sum) {
             if (abs($sum) > 1e-9) {
-                throw StockError::lotAlreadyUsed($lot);
+                $used[$lot] = true;
             }
         }
 
-        $remove  = static fn (int $id): array => ['op' => 'remove_record', 'record' => (string) $id];
-        $changes = $this->withoutMoves($moved, $transactions, $lines);
-        $changes = [
-            ...$changes,
-            ...array_map($remove, $receipts),
-            ...($s->composes('transaction_lines') ? [] : array_map($remove, array_keys($ofReceipt))),
-            ...array_map($remove, $mine),
-        ];
-        $changes[] = ['op' => 'set_values', 'record' => (string) $order, 'values' => [(string) $s->field('order_status') => '']];
+        $purchaseOf = [];
 
-        return $changes;
+        foreach ($mine as $lot) {
+            $purchaseOf[$lot] = (int) $lots->first($lot, $s->field('lot_purchase'));
+        }
+
+        $skipped = [];
+
+        foreach (array_keys($used) as $lot) {
+            $skipped[$purchaseOf[$lot]] ??= $lot;
+        }
+
+        $free = array_values(array_filter($mine, static fn (int $lot): bool => ! isset($skipped[$purchaseOf[$lot]])));
+
+        if ($free === []) {
+            throw StockError::lotAlreadyUsed((int) array_key_first($used));
+        }
+
+        $remove = static fn (int $id): array => ['op' => 'remove_record', 'record' => (string) $id];
+        $done   = array_values(array_unique(array_map(static fn (int $lot): int => $purchaseOf[$lot], $free)));
+
+        if ($skipped === []) {
+            $changes = $this->withoutMoves(array_replace([], ...array_values($moved)), $transactions, $lines);
+            $changes = [
+                ...$changes,
+                ...array_map($remove, $receipts),
+                ...($s->composes('transaction_lines') ? [] : array_map($remove, array_keys($ofReceipt))),
+                ...array_map($remove, $mine),
+            ];
+            $changes[] = ['op' => 'set_values', 'record' => (string) $order, 'values' => [(string) $s->field('order_status') => '']];
+
+            return ['changes' => $changes, 'skipped' => [], 'done' => $done];
+        }
+
+        // Only the free lots: their receipt lines and moves leave their Vorgänge (an emptied one goes whole), then the lots.
+        $drop = [];
+
+        foreach ($free as $lot) {
+            $drop += $moved[$lot] ?? [];
+
+            if (isset($onMine[$lot])) {
+                $drop[$onMine[$lot]] = $ofReceipt[$onMine[$lot]];
+            }
+        }
+
+        $changes   = [...$this->withoutMoves($drop, $transactions, $lines), ...array_map($remove, $free)];
+        $changes[] = ['op' => 'set_values', 'record' => (string) $order, 'values' => [(string) $s->field('order_status') => $s->hasValue('status_partial') ? (string) $s->value('status_partial') : '']];
+
+        return ['changes' => $changes, 'skipped' => $skipped, 'done' => $done];
     }
 
     /**

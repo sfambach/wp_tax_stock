@@ -49,7 +49,7 @@ final class ContactsPage
     /** @return array{side: string, main: string} */
     public function render(): array
     {
-        $html = '<div class="wrap">' . ListPage::heading(__('Kontakte', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . $this->notice();
+        $html = '<div class="wrap">' . ListPage::heading(__('Kontakte', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . Notice::take(self::NOTICE, true);
 
         try {
             $tree = $this->stock->contactTree();
@@ -91,7 +91,7 @@ final class ContactsPage
                     sanitize_text_field(wp_unslash((string) ($_POST['first_name'] ?? '')))
                 );
                 set_transient(self::UNDO . $user, $created, 15 * MINUTE_IN_SECONDS);
-                $this->remember('success', __('Kontakt angelegt; die weiteren Felder stehen jetzt zum Ausfüllen da.', 'taxmod-stock'));
+                Notice::remember('success', __('Kontakt angelegt; die weiteren Felder stehen jetzt zum Ausfüllen da.', 'taxmod-stock'), self::NOTICE);
                 $back['kontakt'] = (string) $created;
             } elseif ($kind === 'zuruecknehmen') {
                 $record = absint($_POST['kontakt'] ?? 0);
@@ -103,12 +103,12 @@ final class ContactsPage
 
                 $this->stock->removeContact($record);
                 delete_transient(self::UNDO . $user);
-                $this->remember('success', __('Zurückgenommen: der neue Kontakt ist wieder entfernt.', 'taxmod-stock'));
+                Notice::remember('success', __('Zurückgenommen: der neue Kontakt ist wieder entfernt.', 'taxmod-stock'), self::NOTICE);
             } else {
                 throw StockError::nothingToBook();
             }
         } catch (StockError $e) {
-            $this->remember('error', Messages::of($e));
+            Notice::remember('error', Messages::of($e), self::NOTICE);
         }
 
         wp_safe_redirect(self::url($back));
@@ -153,9 +153,9 @@ final class ContactsPage
         $count  = sprintf(/* translators: %d: number of contacts */ _n('%d Kontakt', '%d Kontakte', count($rows), 'taxmod-stock'), count($rows));
         $html   = '<h2>' . esc_html($node === $root ? __('Alle Kontakte', 'taxmod-stock') : $tree[$node]['name']) . '</h2>'
             . $this->tiles($tree, $node, $all)
-            . ($node === $root ? '' : ListPage::toolbar([[$this->newDialog($node, $tree[$node]['name'])]]))
             . ListPage::searchBox(self::SEARCH, $search, __('Name, Gruppe, Nummer …', 'taxmod-stock'), ['page' => self::PAGE, 'tab' => (string) $node])
-            . ListPage::bulkBar(self::BULK_FORM, self::ACTION, [], $count);
+            // D-1403, his word 2026-11-16 «was ist aus der einen toolbar geworden»: «Neu» stands in the bulk bar's row.
+            . ListPage::bulkBar(self::BULK_FORM, self::ACTION, [], $count, $node === $root ? '' : '<div class="alignleft actions">' . ListPage::toolbar([[$this->newDialog($node, $tree[$node]['name'])]]) . '</div>');
         $body   = '';
 
         foreach (ListView::page($rows, $paged, self::PER_PAGE) as $row) {
@@ -253,23 +253,5 @@ final class ContactsPage
             . wp_nonce_field(self::ACTION, '_wpnonce', true, false);
     }
 
-    private function remember(string $type, string $text): void
-    {
-        set_transient(self::NOTICE . get_current_user_id(), ['type' => $type, 'text' => $text], 60);
-    }
 
-    private function notice(): string
-    {
-        $notice = get_transient(self::NOTICE . get_current_user_id());
-
-        if (! is_array($notice)) {
-            $said = isset($_GET['taxmod_message']) ? sanitize_text_field(rawurldecode(wp_unslash((string) $_GET['taxmod_message']))) : '';
-
-            return $said === '' ? '' : '<div class="notice notice-' . ($said === 'ok' ? 'success' : 'info') . ' is-dismissible"><p>' . esc_html($said === 'ok' ? __('Gespeichert.', 'taxmod-stock') : $said) . '</p></div>';
-        }
-
-        delete_transient(self::NOTICE . get_current_user_id());
-
-        return '<div class="notice notice-' . esc_attr($notice['type'] === 'success' ? 'success' : 'error') . '"><p>' . esc_html((string) $notice['text']) . '</p></div>';
-    }
 }

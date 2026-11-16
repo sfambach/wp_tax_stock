@@ -36,31 +36,24 @@ final class CutTest extends TestCase
     #[Test]
     public function cutting_strips_counts_loss_per_cut_and_leaves_rests(): void
     {
-        $plan = CutPlan::of(3, 8, 40, 1, false);
+        $plan = CutPlan::of(3, 8, 40, 1);
         self::assertSame(1, $plan->strips);
         self::assertSame([13 => 1], $plan->rests, '40 − 3 × (8 + 1) = 13');
 
-        $plan = CutPlan::of(5, 8, 40, 0, false);
+        $plan = CutPlan::of(5, 8, 40, 0);
         self::assertSame(1, $plan->strips);
         self::assertSame([], $plan->rests, 'five pieces use the whole strip');
 
-        $plan = CutPlan::of(6, 10, 40, 1, false);
+        $plan = CutPlan::of(6, 10, 40, 1);
         self::assertSame(2, $plan->strips, 'three pieces fit one strip: (40 + 1) over 11');
         self::assertSame([7 => 2], $plan->rests, 'each strip leaves 40 − 3 × 11');
     }
 
-    #[Test]
-    public function a_strip_counted_in_pins_gives_pins_and_no_rest(): void
-    {
-        $plan = CutPlan::of(3, 8, 40, 1, true);
-        self::assertSame(27, $plan->strips);
-        self::assertSame([], $plan->rests);
-    }
 
     #[Test]
     public function a_strip_not_longer_than_the_piece_is_refused(): void
     {
         $this->expectException(StockError::class);
-        CutPlan::of(1, 40, 40, 0, false);
+        CutPlan::of(1, 40, 40, 0);
     }
 }

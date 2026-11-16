@@ -87,7 +87,8 @@ final class InboundService
                 $table->first($id, $fields['received_at']),
                 $tracking,
                 $stages,
-                NotStocked::wholeOrder($s, $table, $id, $booked, $closed)
+                NotStocked::wholeOrder($s, $table, $id, $booked, $closed),
+                NotStocked::allIn($s, $table, $id, $booked, $closed)
             );
         }
 
@@ -219,6 +220,22 @@ final class InboundService
         $this->pick([$id]);
 
         return $stock->write((new ReceiptReversal($stock->structureWithKinds()))->reverse($id, $stock->table('order'), $stock->table('lot'), $stock->table('line'), $stock->table('transaction')));
+    }
+
+    /**
+     * Architecture 16.11. («alle rückgängig»): each booked purchase whose lots are untouched goes back; one whose lot was
+     * moved on or used stays with its lot, and the others go on.
+     *
+     * @return array{done: list<int>, skipped: array<int, int>} purchases taken back; skipped purchase → its lot
+     */
+    public function unbookFree(int $id): array
+    {
+        $stock = $this->stock;
+        $this->pick([$id]);
+        $plan  = (new ReceiptReversal($stock->structureWithKinds()))->reverseFree($id, $stock->table('order'), $stock->table('lot'), $stock->table('line'), $stock->table('transaction'));
+        $stock->write($plan['changes']);
+
+        return ['done' => $plan['done'], 'skipped' => $plan['skipped']];
     }
 
     /** @return array<string, mixed> */

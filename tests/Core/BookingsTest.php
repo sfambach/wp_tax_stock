@@ -462,6 +462,57 @@ final class BookingsTest extends TestCase
         return $out;
     }
 
+    #[Test]
+    public function a_goods_out_in_pieces_takes_whole_strips_and_brings_the_rest_back_as_a_lot(): void
+    {
+        $s       = Fixture::structure();
+        $changes = (new Bookings($s, '2026-11-16'))->consumption(501, '80', Purpose::production(), 'Verbrauch', 7, '', 0, [['thing' => 40, 'quantity' => 4, 'name' => 'Rest 4', 'value' => ['amount' => '0.0125', 'unit' => null]], ['thing' => 40, 'quantity' => 16, 'name' => 'Rest 16']]);
+        $lines   = [];
+        $values  = [];
+
+        foreach ($changes as $c) {
+            $v = $c['values'] ?? [];
+
+            if ($c['op'] === 'set_values' && isset($v[(string) $s->field('line_quantity')])) {
+                $lines[] = [$v[(string) $s->field('line_quantity')], (string) ($v[(string) $s->field('line_location')] ?? '')];
+            }
+        }
+
+        foreach ($changes as $c) {
+            if ($c['op'] === 'set_values' && isset($c['values'][(string) $s->field('lot_value')])) {
+                $values[] = $c['values'][(string) $s->field('lot_value')]['neu'][(string) $s->field('money_amount')];
+            }
+        }
+
+        self::assertSame([['-80', '7'], ['4', '7'], ['16', '7']], $lines, 'D-1398: two strips out, rests 1×4 and 1×16 back at the place');
+        self::assertSame(['0.0125'], $values, 'a rest keeps the value per pin; none stays none');
+    }
+
+    #[Test]
+    public function a_cut_in_pins_takes_from_each_strip_and_puts_each_rest_where_its_strip_lay(): void
+    {
+        $s       = Fixture::structure();
+        $changes = (new Bookings($s, '2026-11-16'))->cut([[
+            'lot' => 501, 'place' => 7, 'take' => 40, 'thing' => 66, 'pieces' => 10, 'into' => 9, 'name' => '1×6',
+            'more' => [['lot' => 502, 'place' => 8, 'take' => 40]],
+            'rests' => [['thing' => '40', 'quantity' => 4, 'name' => 'Rest 4', 'place' => 7], ['thing' => '40', 'quantity' => 16, 'name' => 'Rest 16', 'place' => 8]],
+        ]], 3001, 'Ablängen');
+        $lines = [];
+
+        foreach ($changes as $c) {
+            $v = $c['values'] ?? [];
+
+            if ($c['op'] === 'set_values' && isset($v[(string) $s->field('line_quantity')])) {
+                $lines[] = [(string) ($v[(string) $s->field('line_lot')] ?? ''), $v[(string) $s->field('line_quantity')], (string) ($v[(string) $s->field('line_location')] ?? '')];
+            }
+        }
+
+        $taken = array_values(array_filter($lines, static fn (array $l): bool => in_array($l[0], ['501', '502'], true)));
+        self::assertSame([['501', '-40', '7'], ['502', '-40', '8']], $taken, 'D-1398: two strips opened, each from where it lies');
+        self::assertContains(['4', '7'], array_map(static fn (array $l): array => [$l[1], $l[2]], $lines), 'the rest 1×4 stays where its strip lay');
+        self::assertContains(['16', '8'], array_map(static fn (array $l): array => [$l[1], $l[2]], $lines));
+    }
+
     /** @param list<array<string, mixed>> $changes */
     private function purchaseModel(array $changes, int $purchase): ?string
     {

@@ -118,6 +118,19 @@ final class NotStocked
         return $status === null ? [] : [['op' => 'set_values', 'record' => (string) $order, 'values' => [(string) $s->field('order_status') => $status]]];
     }
 
+    /**
+     * An order whose every purchase is booked or closed without stock, one at least booked: nothing left to receive.
+     *
+     * @param array<int, true> $booked
+     * @param array<int, mixed> $closed
+     */
+    public static function allIn(Structure $s, Table $orders, int $order, array $booked, array $closed): bool
+    {
+        $lines = array_map('intval', $orders->all($order, $s->field('order_lines')));
+
+        return $lines !== [] && array_diff($lines, array_keys($booked), array_keys($closed)) === [] && array_intersect($lines, array_keys($booked)) !== [];
+    }
+
     /** An order whose every purchase was closed without stock and none booked: private, straight to the archive. */
     public static function wholeOrder(Structure $s, Table $orders, int $order, array $booked, array $closed): bool
     {

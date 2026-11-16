@@ -84,7 +84,7 @@ final class InboundPage
 
     public function render(): string
     {
-        $html = '<div class="wrap">' . ListPage::heading(__('Wareneingang', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . $this->notice();
+        $html = '<div class="wrap">' . ListPage::heading(__('Wareneingang', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . Notice::take();
 
         try {
             $html .= $this->body();
@@ -135,9 +135,9 @@ final class InboundPage
                 ),
                 default   => throw StockError::nothingToBook(),
             };
-            $this->remember('success', $text);
+            Notice::remember('success', $text);
         } catch (StockError $e) {
-            $this->remember('error', Messages::of($e));
+            Notice::remember('error', Messages::of($e));
         }
 
         $tab = in_array($tab, self::tabSlugs(), true) ? $tab : '';
@@ -249,6 +249,7 @@ final class InboundPage
         $orderOf   = $this->inbound->orderOfPurchase();
         $orders    = $stock->labels('order');
         $places    = $stock->places();
+        $steps     = $stock->testStepsOf($lots);
         $rows      = '';
 
         foreach ($lots as $lot) {
@@ -261,7 +262,7 @@ final class InboundPage
                 esc_html(substr((string) $table->first($lot, $s->field('lot_date')), 0, 10)),
                 esc_html(($at = (int) $table->first($lot, $s->field('lot_location'))) > 0 ? ($places[$at] ?? $this->inbound->stock()->locationTree()->pathOf($at)) : ''),
                 esc_html(rtrim(rtrim(number_format($ledger->restOf($lot), 3, ',', '.'), '0'), ',')),
-            ], '', $this->testForm($lot), true);
+            ], '', $this->testForm($lot, $steps[$lot] ?? []), true);
         }
 
         $rows = $rows !== '' ? $rows : '<tr class="no-items"><td class="colspanchange" colspan="7">' . esc_html__('Nichts zu testen.', 'taxmod-stock') . '</td></tr>';
@@ -271,7 +272,8 @@ final class InboundPage
                 [__('Lagerort', 'taxmod-stock'), '10em'], [__('Menge', 'taxmod-stock'), '6em']], $rows);
     }
 
-    private function testForm(int $lot): string
+    /** @param list<array{instruction: string, firmware: string}> $steps D-1396: the revision's test steps, in order */
+    private function testForm(int $lot, array $steps = []): string
     {
         $choices = [
             TestResult::Ok->value          => __('OK', 'taxmod-stock'),
@@ -289,7 +291,16 @@ final class InboundPage
             $radios .= '<label style="margin-right:1.5em"><input type="radio" name="result" value="' . esc_attr($value) . '" required> ' . esc_html($label) . '</label>';
         }
 
+        // D-1396: the revision's test steps to tick off while testing; the ticks guide, the result is what is stored.
+        $list = '';
+
+        foreach ($steps as $n => $step) {
+            $list .= '<li><label><input type="checkbox" name="steps[]" value="' . esc_attr((string) ($n + 1)) . '"> ' . esc_html($step['instruction']) . '</label>'
+                . ($step['firmware'] === '' ? '' : ' <span class="description">' . esc_html(sprintf(/* translators: %s: firmware name and version */ __('Firmware: %s', 'taxmod-stock'), $step['firmware'])) . '</span>') . '</li>';
+        }
+
         return $html . StockPage::actForm([
+            ...($list === '' ? [] : [['label' => __('Prüfschritte', 'taxmod-stock'), 'control' => '<ol style="margin:0 0 0 1.5em">' . $list . '</ol>']]),
             ['label' => __('Ergebnis', 'taxmod-stock'), 'control' => $radios],
             ['label' => __('Begründung', 'taxmod-stock'), 'for' => 'taxmod-stock-test-reason-' . $lot, 'control' => '<textarea id="taxmod-stock-test-reason-' . esc_attr((string) $lot) . '" name="reason" rows="2" class="large-text"></textarea>',
                 'hint' => __('Bei «Teilweise OK» und «Wartung nötig» Pflicht, z. B. «Kondensatoren tauschen».', 'taxmod-stock')],
@@ -358,8 +369,9 @@ final class InboundPage
             . '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1em;flex-wrap:wrap">'
             . '<div><h2 style="margin:.2em 0">' . esc_html($label) . ($late ? ' <span style="color:#b32d2e;font-size:.8em">' . esc_html__('überfällig', 'taxmod-stock') . '</span>' : '') . '</h2>'
             . ($about === '' ? '' : '<p class="description" style="margin-top:0">' . esc_html($about) . '</p>') . '</div></div>'
-            // D-1308: the order's acts as the toolbar, top left under its name.
-            . ListPage::toolbar([$this->buttons($order, $stage, $counts['booked'], $tab)])
+            // D-1308: the order's acts as the toolbar, top left under its name — unless the purchases come as the one table,
+            // whose bar carries them (D-1403, his word 2026-11-16 «was ist aus der einen toolbar geworden»).
+            . (self::oneTable($stage, $counts['total']) ? '' : ListPage::toolbar([$this->buttons($order, $stage, $counts['booked'], $tab)]))
             . '<div style="display:flex;gap:1em;align-items:flex-start;flex-wrap:wrap;margin-bottom:1em">'
             . '<table class="widefat" style="max-width:40em"><tbody>'
             . $fact(__('Stufe', 'taxmod-stock'), esc_html(self::stageName($stage)))
@@ -373,6 +385,28 @@ final class InboundPage
             . (in_array($stage, [InboundStage::Booked, InboundStage::Archived], true) ? $this->materialPictures($order->id) : '') . '</div>'
             . $this->details($order, $stage, $tab, true)
             . (new StockPage($this->inbound->stock()))->script(true);
+    }
+
+    /** D-1403: the stages whose purchases stand in the one table of the Lager page, with the order's acts in its bar. */
+    private static function oneTable(InboundStage $stage, int $purchases): bool
+    {
+        return $stage === InboundStage::Arrived || ($purchases > 0 && in_array($stage, [InboundStage::Ordered, InboundStage::Shipped], true));
+    }
+
+    /** D-1403: the order's own acts for the bar of the one table, as its view would show them. */
+    public function orderActs(int $id): string
+    {
+        $stock = $this->inbound->stock();
+        $order = $this->inbound->orders()[$id] ?? null;
+
+        if ($order === null) {
+            return '';
+        }
+
+        $stage        = $order->stage($stock->structure(), $stock->inboundArchive(current_time('Y-m-d')));
+        $this->detail = true;
+
+        return $this->buttons($order, $stage, $this->inbound->purchaseCounts($id)['booked'], $stage->value);
     }
 
     private function tabName(string $tab): string
@@ -523,9 +557,9 @@ final class InboundPage
      * INF-116: what tells two purchases apart before they arrive — the description (variant, pack) and the article number,
      * in full under the name; the number links to the product at the platform where its firm has a template (D-1249).
      */
-    private function purchaseFacts(Table $table, int $order, int $purchase): string
+    public static function purchaseFacts(InboundService $inbound, Table $table, int $order, int $purchase): string
     {
-        $s     = $this->inbound->stock()->structure();
+        $s     = $inbound->stock()->structure();
         $facts = [];
 
         foreach (['description' => '', 'purchase_number' => __('Artikelnummer', 'taxmod-stock')] as $key => $name) {
@@ -535,7 +569,7 @@ final class InboundPage
                 continue;
             }
 
-            $link    = $key === 'purchase_number' ? $this->inbound->productLink($order, $value) : null;
+            $link    = $key === 'purchase_number' ? $inbound->productLink($order, $value) : null;
             $facts[] = ($name === '' ? '' : esc_html($name) . ': ')
                 . ($link === null ? esc_html($value) : '<a href="' . esc_url($link) . '" target="_blank" rel="noopener noreferrer">' . esc_html($value) . '</a>');
         }
@@ -565,7 +599,7 @@ final class InboundPage
      *
      * @param array{previous: int, previous_unit: float, unit: float, percent: float, previous_order: ?int}|null $warning
      */
-    private function priceWarning(?array $warning): string
+    public static function priceWarning(?array $warning): string
     {
         if ($warning === null) {
             return '';
@@ -586,18 +620,21 @@ final class InboundPage
     private function details(InboundOrder $order, InboundStage $stage, string $tab, bool $open): string
     {
         if ($stage === InboundStage::Arrived) {
-            return '<div class="taxmod-stock-positions" data-order="' . esc_attr((string) $order->id) . '" data-back="' . esc_attr(self::BACK) . '"></div>';
+            $pick = implode(',', array_filter(array_map('absint', explode(',', sanitize_text_field(wp_unslash((string) ($_GET['pick'] ?? '')))))));
+
+            return '<div class="taxmod-stock-positions" data-order="' . esc_attr((string) $order->id) . '" data-back="' . esc_attr(self::BACK) . '"' . ($pick === '' ? '' : ' data-pick="' . esc_attr($pick) . '"') . '></div>';
         }
 
         $labels    = $this->inbound->stock()->labels('purchase');
         $s         = $this->inbound->stock()->structure();
         $purchases = $this->inbound->stock()->table('order')->all($order->id, $s->field('order_lines'));
         $done      = in_array($stage, [InboundStage::Booked, InboundStage::Archived], true);
+        $merged    = $purchases !== [] && in_array($stage, [InboundStage::Ordered, InboundStage::Shipped], true);
         $rows      = '';
         $table     = $this->inbound->stock()->table('purchase');
         $parts     = [];
 
-        foreach ($purchases as $purchase) {
+        foreach ($merged ? [] : $purchases as $purchase) {
             foreach (['purchase_unit_price', 'purchase_total_price'] as $key) {
                 if ($s->hasField($key)) {
                     $parts[] = (int) $table->first((int) $purchase, $s->field($key));
@@ -619,7 +656,7 @@ final class InboundPage
         $booked  = $stock->receivedPurchases();
         // His wish 2026-11-09 (INF-116): «um zu entscheiden ob etwas angekommen ist ist das wenig info» — the picture (D-1204),
         // and what the purchase already says, read from the one table of this order's purchases (CD-7).
-        $ids      = array_map('intval', $purchases);
+        $ids      = $merged ? [] : array_map('intval', $purchases);
         $pictures = method_exists(ListPage::class, 'thumbnails') ? ListPage::thumbnails($stock->titleImages($ids)) : [];
         // D-1264, «Bild übernehmen»: offered where the purchase has a picture its material does not hold yet — one read for both.
         $models   = array_filter(array_combine($ids, array_map(static fn (int $p): int => (int) $table->first($p, $s->field('purchase_model')), $ids)) ?: []);
@@ -628,9 +665,9 @@ final class InboundPage
         // D-1291, his word 2026-11-09 «auch fehlt die einheit (€)»: the prices as the modeller words them, with their unit.
         $words = $stock->fieldWords($ids, ['purchase_unit_price', 'purchase_total_price']);
         // D-1375: a unit price far above the last purchase of the same material is marked, before anything is booked.
-        $warned = $done ? [] : $this->inbound->priceWarnings($ids);
+        $warned = $done || $merged ? [] : $this->inbound->priceWarnings($ids);
 
-        foreach ($purchases as $purchase) {
+        foreach ($merged ? [] : $purchases as $purchase) {
             $purchase = (int) $purchase;
             $reason   = $closing ? $stock->notStockedReason($purchase) : '';
             // D-1060: private purchases are marked here, before anything arrives; a marked one can always be taken back.
@@ -653,10 +690,10 @@ final class InboundPage
             $went  = $done ? $this->whereItWent($purchase) : null;
             // D-1310: a link to one purchase jumps to its row.
             $rows .= '<tr id="taxmod-stock-purchase-' . esc_attr((string) $purchase) . '"><th scope="row" class="check-column"></th><td style="white-space:normal">' . ($pictures[$purchase] ?? '') . ' ' . esc_html($labels[$purchase] ?? '#' . $purchase)
-                . ($done ? $this->purchaseNumber($order->id) : $this->purchaseFacts($table, $order->id, $purchase)) . '</td>'
+                . ($done ? $this->purchaseNumber($order->id) : self::purchaseFacts($this->inbound, $table, $order->id, $purchase)) . '</td>'
                 . ($went === null ? '' : '<td>' . $went['material'] . '</td><td>' . $went['place'] . '</td><td>' . $went['date'] . '</td>')
                 . '<td style="text-align:right">' . esc_html($count > 0.0 ? (string) (0 + $count) : '—') . '</td>'
-                . '<td style="text-align:right">' . esc_html($words['purchase_unit_price'][$purchase] ?? $shown($each)) . $this->priceWarning($warned[$purchase] ?? null) . '</td>'
+                . '<td style="text-align:right">' . esc_html($words['purchase_unit_price'][$purchase] ?? $shown($each)) . self::priceWarning($warned[$purchase] ?? null) . '</td>'
                 . '<td style="text-align:right">' . esc_html($words['purchase_total_price'][$purchase] ?? $shown($total)) . '</td>'
                 . '<td style="text-align:right;white-space:nowrap">' . $button . '</td></tr>';
         }
@@ -667,14 +704,10 @@ final class InboundPage
             $done ? [[__('Material', 'taxmod-stock'), '14em'], [__('Lagerort', 'taxmod-stock'), '12em'], [__('Eingebucht am', 'taxmod-stock'), '8em']] : [],
             [[__('Menge', 'taxmod-stock'), '5em'], [__('Preis je Stück', 'taxmod-stock'), '7em'], [__('Gesamt', 'taxmod-stock'), '7em']]
         );
-        $html = '<h4 style="margin-bottom:.3em">' . esc_html__('Käufe', 'taxmod-stock') . '</h4>' . ListPage::table($columns, $rows);
-
         // His choice 2026-11-09 (INF-116): «Material schon am Kauf wählen» — the receipt's own choosing, before anything arrives;
-        // it keeps the choice and books nothing.
-        if ($purchases !== [] && in_array($stage, [InboundStage::Ordered, InboundStage::Shipped], true)) {
-            $html .= '<h4 style="margin-bottom:.3em">' . esc_html__('Material zuordnen', 'taxmod-stock') . '</h4>'
-                . '<div class="taxmod-stock-positions" data-order="' . esc_attr((string) $order->id) . '" data-back="' . esc_attr(self::BACK) . '" data-assign="1"></div>';
-        }
+        // it keeps the choice and books nothing. His word 2026-11-16 «eine bitte nur mit beiden funktionen»: then it is the one table.
+        $html = '<h4 style="margin-bottom:.3em">' . esc_html__('Käufe', 'taxmod-stock') . '</h4>'
+            . ($merged ? '<div class="taxmod-stock-positions" data-order="' . esc_attr((string) $order->id) . '" data-back="' . esc_attr(self::BACK) . '" data-assign="1"></div>' : ListPage::table($columns, $rows));
 
         $html .= $this->events($order);
 
@@ -800,21 +833,5 @@ final class InboundPage
         };
     }
 
-    private function remember(string $type, string $text): void
-    {
-        set_transient(StockPage::NOTICE . get_current_user_id(), ['type' => $type, 'text' => $text], 60);
-    }
 
-    private function notice(): string
-    {
-        $notice = get_transient(StockPage::NOTICE . get_current_user_id());
-
-        if (! is_array($notice)) {
-            return '';
-        }
-
-        delete_transient(StockPage::NOTICE . get_current_user_id());
-
-        return '<div class="notice notice-' . esc_attr($notice['type'] === 'success' ? 'success' : 'error') . '"><p>' . esc_html((string) $notice['text']) . '</p></div>';
-    }
 }

@@ -36,7 +36,7 @@ final class SettingsPage
             return $this->userSettings();
         }
 
-        return '<div class="wrap">' . ListPage::heading(__('Grundeinstellungen', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . $this->notice()
+        return '<div class="wrap">' . ListPage::heading(__('Grundeinstellungen', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . Notice::take()
             . '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">'
             . wp_nonce_field(self::ACTION, '_wpnonce', true, false) . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
             // D-1308: «Speichern» in the toolbar above the form.
@@ -56,7 +56,7 @@ final class SettingsPage
 
         $post = wp_unslash($_POST);
         $this->save(is_array($post) ? $post : []);
-        set_transient(StockPage::NOTICE . get_current_user_id(), ['type' => 'success', 'text' => __('Gespeichert.', 'taxmod-stock')], 60);
+        Notice::remember('success', __('Gespeichert.', 'taxmod-stock'));
         wp_safe_redirect(self::url());
         exit;
     }
@@ -67,7 +67,7 @@ final class SettingsPage
      */
     private function userSettings(): string
     {
-        return '<div class="wrap">' . ListPage::heading(__('Benutzereinstellungen', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . $this->notice()
+        return '<div class="wrap">' . ListPage::heading(__('Benutzereinstellungen', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . Notice::take()
             . '<p>' . esc_html(sprintf(/* translators: %s: the user's display name */ __('Gilt nur für %s.', 'taxmod-stock'), wp_get_current_user()->display_name)) . '</p>'
             . '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">'
             . wp_nonce_field(self::USER_ACTION, '_wpnonce', true, false) . '<input type="hidden" name="action" value="' . esc_attr(self::USER_ACTION) . '">'
@@ -92,7 +92,7 @@ final class SettingsPage
 
         Acts::nonce(self::USER_ACTION);
         $this->saveUser(! empty($_POST['fullscreen']), ! empty($_POST['reset_columns']), ! empty($_POST['reset_trees']));
-        set_transient(StockPage::NOTICE . get_current_user_id(), ['type' => 'success', 'text' => __('Gespeichert.', 'taxmod-stock')], 60);
+        Notice::remember('success', __('Gespeichert.', 'taxmod-stock'));
         wp_safe_redirect(add_query_arg('tab', self::USER_TAB, self::url()));
         exit;
     }
@@ -258,16 +258,4 @@ final class SettingsPage
         }
     }
 
-    private function notice(): string
-    {
-        $notice = get_transient(StockPage::NOTICE . get_current_user_id());
-
-        if (! is_array($notice)) {
-            return '';
-        }
-
-        delete_transient(StockPage::NOTICE . get_current_user_id());
-
-        return '<div class="notice notice-' . esc_attr((string) $notice['type']) . ' is-dismissible"><p>' . esc_html((string) $notice['text']) . '</p></div>';
-    }
 }

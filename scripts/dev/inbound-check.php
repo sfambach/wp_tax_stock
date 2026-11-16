@@ -263,7 +263,9 @@ $pruefe(str_contains($bar = (new InboundPage())->render(), 'taxmod-step') && ! s
 
 // D-1375, his wish 2026-11-15: a unit price far above the last purchase is marked at goods-in; the share is a Lager setting.
 $quelle = static fn (string $file): string => (string) file_get_contents(dirname(__DIR__, 2) . '/src/' . $file);
-$pruefe(str_contains($quelle('WordPress/Admin/InboundPage.php'), '$this->inbound->priceWarnings($ids)') && str_contains($quelle('WordPress/Admin/InboundPage.php'), '$this->priceWarning($warned[$purchase] ?? null)'), 'D-1375: the purchases of an order carry the price warning beside their unit price');
+// D-1400 (his word 2026-11-16 «eine bitte nur mit beiden funktionen»): before arrival the warning stands in the one table.
+$pruefe(str_contains($quelle('WordPress/Admin/InboundPage.php'), '$this->inbound->priceWarnings($ids)') && str_contains($quelle('WordPress/Admin/InboundPage.php'), 'self::priceWarning($warned[$purchase] ?? null)')
+    && str_contains($quelle('WordPress/Admin/StockPage.php'), 'InboundPage::priceWarning($warned[$purchase] ?? null)'), 'D-1375: the purchases of an order carry the price warning beside their unit price');
 $pruefe(str_contains($quelle('WordPress/Admin/SettingsPage.php'), 'taxmod_stock_price_warn_percent') && str_contains($quelle('WordPress/Admin/SettingsPage.php'), 'StockService::PRICE_WARN_PERCENT'), 'D-1375: the share is set and saved in the Lager settings');
 delete_option(StockService::PRICE_WARN_PERCENT);
 $pruefe((new StockService())->priceWarnPercent() === 20, 'D-1375: 20 % unless changed');
@@ -308,6 +310,8 @@ $html = (new InboundPage())->render();
 $html .= $details('shipped');
 $pruefe(str_contains($html, 'Unterwegs') && ! str_contains($html, '>Bestellt</strong>'), 'the tab «Versendet» shows only its orders');
 $pruefe(str_contains($html, '00340434AA') && str_contains($html, 'unterwegs') && str_contains($html, 'Köln'), 'it shows the number, DHL\'s stage and its last event');
+// D-1400: on its way, the order's purchases stand in the one table of the material choice, loaded with the page.
+$html .= (string) (new \ReflectionMethod(StockPage::class, 'receiptPositions'))->invoke(new StockPage(), $r['o2'], InboundPage::BACK, true);
 $pruefe(str_contains($html, 'Variante: Right Angle, 62P') && preg_match('#Artikelnummer: (<a [^>]+>)?1005003647067417#', $html) === 1, 'INF-116, his word «um zu entscheiden ob etwas angekommen ist ist das wenig info»: a purchase shows its description and article number');
 $pruefe($asked === 0, 'drawing the page never asks DHL');
 $pruefe(str_contains($html, 'href="https://shop.test/order?id=8199"') && str_contains($html, 'href="https://shop.test/item/1005003647067417.html"'), 'D-1249: the order and the article number link to the platform, from the template of the firm its «Plattform» names');
@@ -320,6 +324,20 @@ $pruefe(str_contains($einkauf, 'href="https://shop.test/order?id=8199"') && str_
 $pruefe(preg_match('/data-order="' . $r['o2'] . '" data-back="' . InboundPage::BACK . '" data-assign="1"/', $html) === 1, 'his choice «Material schon am Kauf wählen»: an order on its way offers the choice of material before it arrives');
 $assignForm = (new \ReflectionMethod(StockPage::class, 'receiptPositions'))->invoke(new StockPage(), $r['o2'], InboundPage::BACK, true);
 $pruefe(str_contains($assignForm, 'class="taxmod-stock-assign"') && str_contains($assignForm, 'value="zuordnen"') && ! str_contains($assignForm, 'value="Wareneingang buchen"') && str_contains($assignForm, 'thing[' . $r['kaufE'] . ']'), 'it only keeps the choice: nothing can be booked before the order arrives');
+// D-1400, his word 2026-11-16 «nicht möglich zu sagen dass einzelne teile angekommen sind»: what arrived is ticked, nothing is ticked for him.
+$pruefe(str_contains($assignForm, 'value="angekommen"') && ! preg_match('/name="purchases\[\]" value="\d+" checked/', $assignForm), 'D-1400: on its way the one table says which purchases arrived, none ticked beforehand');
+$receiptForm = (string) (new \ReflectionMethod(StockPage::class, 'receiptPositions'))->invoke(new StockPage(), $r['o4'], InboundPage::BACK, false, [(int) $r['kaufE']]);
+$pruefe(! (new StockService())->canCloseWithoutStock() || str_contains($receiptForm, 'value="sammelnichteinlagern"'), 'D-1400: «Angehakte nicht einlagern …» with one reason for all');
+// D-1403, his words 2026-11-16 «wir haben bulk funktionen und du machst zwei buttons dahin», «alles in eine zeile»: one bar.
+$receiptBar = substr($receiptForm, 0, (int) strpos($receiptForm, 'id="taxmod-stock-receipt-' . $r['o4'] . '"'));
+$pruefe(substr_count($receiptForm, 'class="tablenav top"') === 1 && substr_count($receiptForm, 'class="taxmod-toolbar"') === 1 && str_contains($receiptBar, 'class="taxmod-toolbar"')
+    && str_contains($receiptBar, 'value="wareneingang" form="taxmod-stock-receipt-' . $r['o4'] . '"') && (! (new StockService())->canCloseWithoutStock() || str_contains($receiptBar, 'value="ask:taxmod-stock-close-all-' . $r['o4'] . '"')), 'D-1403: the receipt has one bar: the bulk choice, saving and booking in one row before the form');
+$pruefe(str_contains($assignForm, 'value="ask:taxmod-stock-arrive-') && ! str_contains($assignForm, '>Angehakte angekommen</button>'), 'D-1403: «Angehakte angekommen …» is a choice of the bulk bar, not a button of its own');
+$_GET = ['page' => InboundPage::PAGE, 'tab' => 'arrived', 'order' => $r['o4']];
+$oneView = (new InboundPage())->render();
+$_GET = [];
+$pruefe(! str_contains($oneView, 'class="taxmod-toolbar"'), 'D-1403: an order shown with its one table has no second toolbar above it; the order\'s acts stand in the table\'s bar');
+$pruefe(substr_count($receiptForm, '" checked') <= 1, 'D-1400: the receipt opened after «Angehakte angekommen» ticks only those purchases');
 $pruefe(str_contains($assignForm, 'data-taxmod-fill="location"') && strpos($assignForm, 'taxmod-stock-receipt-bulk-') < strpos($assignForm, 'class="taxmod-stock-assign"'), 'his wish «bulk funktion platz für alle wählen»: the bar before the form sets the place of every ticked purchase');
 $pruefe(str_contains(InboundPage::orderUrl($r['o4'], 'ordered'), 'tab=arrived'), 'his word «sollte dann auf eingebucht oben springen … sollte generell so sein»: after an action the order opens at the stage it stands in now');
 $plugin = (string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Plugin.php');

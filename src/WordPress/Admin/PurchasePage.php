@@ -60,7 +60,7 @@ final class PurchasePage
 
     public function render(): string
     {
-        $html = '<div class="wrap">' . ListPage::heading(__('Einkauf', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . $this->notice();
+        $html = '<div class="wrap">' . ListPage::heading(__('Einkauf', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . Notice::take();
 
         try {
             $html .= $this->body();
@@ -114,7 +114,7 @@ final class PurchasePage
                 default     => throw StockError::nothingToBook(),
             };
             /* translators: %d: number of changes the modeller applied */
-            $this->remember('success', sprintf(__('Gespeichert: %d Änderungen in einem Schritt.', 'taxmod-stock'), count((array) ($result['applied'] ?? []))));
+            Notice::remember('success', sprintf(__('Gespeichert: %d Änderungen in einem Schritt.', 'taxmod-stock'), count((array) ($result['applied'] ?? []))));
             $back = match ($op) {
                 'reorder', 'again' => ['tab' => 'bedarf'],
                 'ordered' => ['tab' => 'bestellt'],
@@ -126,7 +126,7 @@ final class PurchasePage
                 default   => $back,
             };
         } catch (StockError $e) {
-            $this->remember('error', Messages::of($e));
+            Notice::remember('error', Messages::of($e));
 
             if ($op === 'reorder') {
                 $back = ['tab' => 'neu', 'things' => implode(',', array_keys($this->quantities()))];
@@ -694,21 +694,5 @@ final class PurchasePage
         return rtrim(rtrim(number_format($value, 3, ',', ''), '0'), ',');
     }
 
-    private function remember(string $type, string $text): void
-    {
-        set_transient(StockPage::NOTICE . get_current_user_id(), ['type' => $type, 'text' => $text], 60);
-    }
 
-    private function notice(): string
-    {
-        $notice = get_transient(StockPage::NOTICE . get_current_user_id());
-
-        if (! is_array($notice)) {
-            return '';
-        }
-
-        delete_transient(StockPage::NOTICE . get_current_user_id());
-
-        return '<div class="notice notice-' . esc_attr((string) $notice['type']) . ' is-dismissible"><p>' . esc_html((string) $notice['text']) . '</p></div>';
-    }
 }

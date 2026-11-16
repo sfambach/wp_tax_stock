@@ -5,6 +5,7 @@ namespace TaxmodStock\WordPress;
 use TaxmodStock\Core\Contacts;
 use TaxmodStock\Core\CutPlan;
 use TaxmodStock\Core\CutSources;
+use TaxmodStock\Core\StripCut;
 use TaxmodStock\Core\Bookings;
 use TaxmodStock\Core\BuildPlan;
 use TaxmodStock\Core\InboundArchive;
@@ -1013,6 +1014,32 @@ final class StockService
     }
 
     /**
+     * D-1387, Stefan 16.11. «es sollte 10uf elektrolyt aus den sets geben aber die zuweisung … findet die nicht»: the hits of
+     * the picker, materials with stock first. The search reads wide and cuts after sorting, so a material in stock is not
+     * crowded out by namesakes without stock; where the whole term finds nothing in stock, its last words are dropped one by
+     * one (down to the first) — a part's full name names details («±20 %», «RM 2,5 mm») a material from a set does not have.
+     *
+     * ⚠️ *INFERRED: dropping trailing words, and the wide read of 100; the matching itself stays the modeller's (D-1378).*
+     *
+     * @return list<array{id: int, word: string, node: string, quantity: string}>
+     */
+    public function stockHits(string $term, int $limit = 8): array
+    {
+        $words = array_values(array_filter(preg_split('/\s+/u', trim($term)) ?: [], static fn (string $w): bool => mb_strlen($w) >= 2));
+        $hits  = [];
+
+        do {
+            $hits    = $this->withStock($this->searchThings(implode(' ', $words), 100));
+            $stocked = array_values(array_filter($hits, static fn (array $hit): bool => (float) str_replace(',', '.', $hit['quantity']) > 0));
+            array_pop($words);
+        } while ($stocked === [] && $words !== []);
+
+        $rest = array_values(array_filter($hits, static fn (array $hit): bool => (float) str_replace(',', '.', $hit['quantity']) <= 0));
+
+        return array_slice([...$stocked, ...$rest], 0, $limit);
+    }
+
+    /**
      * D-1385: the material hits of the search with what is in stock of each — one ledger for all hits (CD-7).
      *
      * @param list<array{id: int|string, word: string, node: string}> $hits
@@ -1159,6 +1186,35 @@ final class StockService
         asort($out, SORT_NATURAL | SORT_FLAG_CASE);
 
         return $out;
+    }
+
+    /**
+     * Stefan 16.11. «keine einstellmöglichkeiten?»: where the lots of these purchases lie now, by place path — one pass over
+     * the lots (CD-7).
+     *
+     * @param list<int> $purchases
+     * @return array<int, list<string>> purchase → paths
+     */
+    public function placesOfPurchases(array $purchases): array
+    {
+        $s      = $this->structure();
+        $lots   = $this->table('lot');
+        $ledger = $this->ledger();
+        $paths  = $this->places();
+        $wanted = array_flip($purchases);
+        $out    = [];
+
+        foreach ($lots->ids() as $lot) {
+            $purchase = (int) $lots->first($lot, $s->field('lot_purchase'));
+
+            if (isset($wanted[$purchase])) {
+                foreach (array_keys($ledger->placesOf($lot)) as $place) {
+                    $out[$purchase][] = (string) ($paths[$place] ?? '#' . $place);
+                }
+            }
+        }
+
+        return array_map(static fn (array $p): array => array_values(array_unique($p)), $out);
     }
 
     /**
@@ -3714,9 +3770,13 @@ final class StockService
      * D-1088: reserved goods only for exactly their purpose — inside a reserved area its Bezug, for a lot a reservation
      * names that reservation's subject; any other purpose stays refused (D-1082).
      *
+     * D-1398: for a material counted in pins, `$pieces` pieces of `$piecePins` pins are cut, each whole from one strip of
+     * the lot at that place; the strips opened leave, what they leave comes back as lots of the same material. A plan that
+     * cannot serve every piece books nothing.
+     *
      * @return array<string, mixed>
      */
-    public function bookConsumption(int $thing, ?int $lot, string $quantity, Purpose $purpose, string $today, string $title, ?int $place = null, string $reason = '', int $art = 0): array
+    public function bookConsumption(int $thing, ?int $lot, string $quantity, Purpose $purpose, string $today, string $title, ?int $place = null, string $reason = '', int $art = 0, int $pieces = 0, int $piecePins = 0): array
     {
         // D-1297: where «Verbrauch» has kinds below it, one of its leaves is required.
         $leaves = $this->consumptionLeaves();
@@ -3742,9 +3802,109 @@ final class StockService
         $place    = $place !== null && $ledger->restAt($lot, $place) > 0.0 ? $place : null;
         $place  ??= $this->takenFrom($lot, $ledger, $reserved, $purpose);
         $reserved->checkConsumption($place ?? $ledger->homeOf($lot), $purpose);
+        $rests = [];
+
+        if ($pieces > 0) {
+            [$quantity, $rests] = $this->pinPieces($thing, $lot, $place ?? $ledger->homeOf($lot), $pieces, $piecePins, $ledger);
+        }
+
         $this->reservations()->checkConsumption($lot, $quantity, $place ?? $ledger->homeOf($lot), $purpose, $ledger, $reserved);
 
-        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->consumption($lot, $quantity, $purpose, $title, $place, $reason, $leaves === [] ? 0 : $art));
+        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->consumption($lot, $quantity, $purpose, $title, $place, $reason, $leaves === [] ? 0 : $art, $rests));
+    }
+
+    /**
+     * D-1398: the value per piece of these lots, read in two reads (the lots, then their money parts); a lot without a
+     * value is left out.
+     *
+     * @param list<int> $lots
+     * @return array<int, array{amount: float, unit: string|null}>
+     */
+    private function valuesPerPiece(array $lots): array
+    {
+        $s = $this->structure();
+
+        if ($lots === [] || ! $s->hasField('lot_value')) {
+            return [];
+        }
+
+        $table = $this->table('lot');
+        $parts = [];
+
+        foreach (array_unique($lots) as $lot) {
+            $part = (int) $table->first($lot, $s->field('lot_value'));
+
+            if ($part > 0) {
+                $parts[$lot] = $part;
+            }
+        }
+
+        $money = $parts === [] ? null : $this->model->records(array_values(array_unique($parts)));
+        $out   = [];
+
+        foreach ($parts as $lot => $part) {
+            $amount = $money?->first($part, $s->field('money_amount'));
+
+            if (is_numeric($amount)) {
+                $unit      = $money->first($part, $s->field('money_unit'));
+                $out[$lot] = ['amount' => (float) $amount, 'unit' => $unit === null || $unit === '' ? null : (string) $unit];
+            }
+        }
+
+        return $out;
+    }
+
+    /** D-1398: a value per piece times a factor, as Bookings takes it; none stays none. @param array{amount: float, unit: string|null}|null $each @return array{amount: string, unit: string|null}|null */
+    private static function scaled(?array $each, float $factor): ?array
+    {
+        return $each === null ? null : ['amount' => rtrim(rtrim(number_format($each['amount'] * $factor, 6, '.', ''), '0'), '.'), 'unit' => $each['unit']];
+    }
+
+    /**
+     * D-1398: the pins a goods-out of whole pieces takes from a lot at one place — whole strips opened — and the rests
+     * they leave, shortest strip first (the lot's own rest before its whole strips).
+     *
+     * @return array{0: string, 1: list<array{thing: int, quantity: int, name: string}>}
+     */
+    private function pinPieces(int $thing, int $lot, int $place, int $pieces, int $piecePins, Ledger $ledger): array
+    {
+        $pack = $this->packsOf([$thing])[$thing] ?? throw StockError::cutNotPossible($piecePins, 0);
+        $full = $pack->content;
+        $rows = ($this->stripFacts([$thing], $this->model->nodesOf([$thing]))['rows'][$thing] ?? 1);
+
+        if ($piecePins < 1 || $piecePins > $full || $piecePins % $rows !== 0 || $full % $rows !== 0) {
+            throw StockError::cutNotPossible($piecePins, $full);
+        }
+
+        $pins   = $ledger->restAt($lot, $place) ?: $ledger->restOf($lot);
+        $whole  = (int) floor($pins / $full + 1e-9);
+        $strips = array_fill(0, $whole, intdiv($full, $rows));
+        $left   = (int) round($pins - $whole * $full);
+
+        if ($left >= $rows) {
+            $strips['r'] = intdiv($left, $rows);
+        }
+
+        $plan = StripCut::plan($pieces, intdiv($piecePins, $rows), $strips, $pack->lossPerCut);
+
+        if ($plan->missing > 0) {
+            throw StockError::cutTooShort($lot, $pieces);
+        }
+
+        $label = $this->recordLabels([$thing])[$thing] ?? '#' . $thing;
+        $each  = $this->valuesPerPiece([$lot])[$lot] ?? null;
+        $taken = 0;
+        $rests = [];
+
+        foreach ($plan->uses as $use) {
+            $taken += $use['columns'] * $rows;
+
+            if ($use['rest'] > 0) {
+                $rests[] = ['thing' => $thing, 'quantity' => $use['rest'] * $rows, 'name' => sprintf('%s · Rest %d polig', $label, $use['rest'] * $rows), 'value' => self::scaled($each, 1.0)];
+            }
+        }
+
+        return [(string) $taken, $rests];
     }
 
     /**
@@ -3931,7 +4091,7 @@ final class StockService
     /**
      * D-1146: the picked lines go into the box, one Umbuchung naming the order; at each place the oldest free lot first.
      *
-     * @param list<array{thing: int, from: int, quantity: float}> $lines
+     * @param list<array{thing: int, from: int, quantity: float, pieces?: int, piece?: int}> $lines D-1398: `pieces` × `piece` pins cut whole from strips
      * @return int the Vorgang
      */
     public function bookPick(int $reference, int $box, array $lines, string $today, string $title): int
@@ -3950,8 +4110,21 @@ final class StockService
         $bound  = array_diff_key($this->boundLots(), $own);
         $rows   = [];
         $moved  = [];
+        $cuts   = [];
+        $packs  = $this->packsOf(array_values(array_unique(array_column(array_filter($lines, static fn (array $l): bool => ($l['pieces'] ?? 0) > 0), 'thing'))));
 
         foreach ($lines as $line) {
+            // D-1398: a strip counted in pins is picked as pieces, each cut whole from one strip lying at that place.
+            if (($line['pieces'] ?? 0) > 0 && ($line['piece'] ?? 0) > 0 && isset($packs[$line['thing']])) {
+                $cuts[] = $this->pickCut($line, $box, $packs[$line['thing']], $ledger, $bound, $own);
+
+                foreach ([['lot' => $cuts[array_key_last($cuts)]['lot'], 'take' => $cuts[array_key_last($cuts)]['take']], ...$cuts[array_key_last($cuts)]['more']] as $take) {
+                    $moved[$take['lot']] = ($moved[$take['lot']] ?? 0.0) + $take['take'];
+                }
+
+                continue;
+            }
+
             $left = $line['quantity'];
             $lots = $ledger->lotsOf($line['thing']);
             usort($lots, static fn (int $a, int $b): int => (int) isset($own[$b]) <=> (int) isset($own[$a]));
@@ -3972,7 +4145,12 @@ final class StockService
             }
         }
 
-        $deal   = $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $bound, $reference)));
+        $deal = $cuts === [] ? 0 : $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->cut($cuts, $reference, $title)));
+
+        if ($rows !== []) {
+            $deal = $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $bound, $reference)));
+        }
+
         $redeem = [];
 
         foreach ($this->reservationsOf([$reference])[$reference] ?? [] as $position) {
@@ -3989,6 +4167,103 @@ final class StockService
         }
 
         return $deal;
+    }
+
+    /**
+     * D-1398: for the picker — how many strips at each place cutting these pieces opens; a place they do not fit is left
+     * out. Empty for a material not counted in pins.
+     *
+     * @param list<int> $places
+     * @return array<int, int> place → strips opened
+     */
+    public function stripsToOpen(int $thing, array $places, int $pieces, int $piece): array
+    {
+        $pack = $this->packsOf([$thing])[$thing] ?? null;
+
+        if ($pack === null || $pieces < 1 || $piece < 1) {
+            return [];
+        }
+
+        $ledger = $this->ledger();
+        $bound  = $this->boundLots();
+        $out    = [];
+
+        foreach ($places as $place) {
+            try {
+                $cut         = $this->pickCut(['thing' => $thing, 'from' => $place, 'quantity' => 0.0, 'pieces' => $pieces, 'piece' => $piece], 0, $pack, $ledger, $bound, []);
+                $out[$place] = $cut['opened'];
+            } catch (StockError) {
+                continue;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * D-1398: one pick line in pieces — the strips of this material lying free at its place (each lot's whole strips, its
+     * pins beyond them as one rest strip), cut shortest first; the pieces' pins go into the box as one lot, what the strips
+     * leave comes back where they lay, the loss per cut is used up.
+     *
+     * @param array{thing: int, from: int, quantity: float, pieces?: int, piece?: int} $line
+     * @param array<int, true> $bound
+     * @param array<int, true> $own
+     * @return array{lot: int, place: int, take: int, thing: int, pieces: int, into: int, name: string, value: array{amount: string, unit: string|null}|null, more: list<array{lot: int, place: int, take: int}>, rests: list<array{thing: string, quantity: int, name: string, place: int, value: array{amount: string, unit: string|null}|null}>, opened: int}
+     */
+    private function pickCut(array $line, int $box, Pack $pack, Ledger $ledger, array $bound, array $own): array
+    {
+        $thing = $line['thing'];
+        $piece = (int) $line['piece'];
+        $full  = $pack->content;
+        $rows  = $this->stripFacts([$thing], $this->model->nodesOf([$thing]))['rows'][$thing] ?? 1;
+
+        if ($piece > $full || $piece % $rows !== 0 || $full % $rows !== 0) {
+            throw StockError::cutNotPossible($piece, $full);
+        }
+
+        $lots = $ledger->lotsOf($thing);
+        usort($lots, static fn (int $a, int $b): int => (int) isset($own[$b]) <=> (int) isset($own[$a]));
+        $strips = [];
+
+        foreach ($lots as $lot) {
+            $pins = isset($bound[$lot]) ? 0.0 : $ledger->restAt($lot, $line['from']);
+            $whole = (int) floor($pins / $full + 1e-9);
+
+            for ($n = 0; $n < $whole; $n++) {
+                $strips[$lot . ':' . $n] = intdiv($full, $rows);
+            }
+
+            $left = (int) round($pins - $whole * $full);
+
+            if ($left >= $rows) {
+                $strips[$lot . ':r'] = intdiv($left, $rows);
+            }
+        }
+
+        $plan = StripCut::plan((int) $line['pieces'], intdiv($piece, $rows), $strips, $pack->lossPerCut);
+
+        if ($plan->missing > 0 || $plan->uses === []) {
+            throw StockError::notEnoughToPick($thing, $line['from']);
+        }
+
+        $values = $this->valuesPerPiece(array_values(array_unique(array_map(static fn (array $u): int => (int) explode(':', (string) $u['strip'])[0], $plan->uses))));
+        $label  = $this->recordLabels([$thing])[$thing] ?? '#' . $thing;
+        $takes  = [];
+        $rests  = [];
+
+        foreach ($plan->uses as $use) {
+            $lot         = (int) explode(':', (string) $use['strip'])[0];
+            $takes[$lot] = ['lot' => $lot, 'place' => $line['from'], 'take' => ($takes[$lot]['take'] ?? 0) + $use['columns'] * $rows];
+
+            if ($use['rest'] > 0) {
+                $rests[] = ['thing' => (string) $thing, 'quantity' => $use['rest'] * $rows, 'name' => sprintf('%s · Rest %d polig', $label, $use['rest'] * $rows), 'place' => $line['from'], 'value' => self::scaled($values[$lot] ?? null, 1.0)];
+            }
+        }
+
+        $first = array_shift($takes);
+
+        return ['lot' => $first['lot'], 'place' => $first['place'], 'take' => $first['take'], 'thing' => $thing, 'pieces' => (int) $line['pieces'] * $piece, 'into' => $box,
+            'name' => sprintf('%s · %d × %d polig', $label, (int) $line['pieces'], $piece), 'value' => self::scaled($values[$first['lot']] ?? null, 1.0), 'more' => array_values($takes), 'rests' => $rests, 'opened' => count($plan->uses)];
     }
 
     /**
@@ -4308,7 +4583,7 @@ final class StockService
      *
      * @param list<int>       $ids
      * @param array<int, int> $nodes thing → node
-     * @return array{kinds: array<int, string|null>, poles: array<int, int>, things: Table, values: Table}|null
+     * @return array{kinds: array<int, string|null>, poles: array<int, int>, rows: array<int, int>, things: Table, values: Table}|null
      */
     private function stripFacts(array $ids, array $nodes): ?array
     {
@@ -4348,15 +4623,19 @@ final class StockService
         };
         $kinds = [];
         $poles = [];
+        $rows  = [];
 
         foreach ($ids as $thing) {
             $form          = $field('thing_form') > 0 ? $things->first($thing, $field('thing_form')) : null;
+            $rowPart       = $field('connector_rows') > 0 ? (int) $things->first($thing, $field('connector_rows')) : 0;
+            // D-1327: no rows given is one row.
+            $rows[$thing]  = $rowPart > 0 ? max(1, (int) round((float) $values->first($rowPart, $s->field('money_amount')))) : 1;
             $kinds[$thing] = CutSources::kindOf($nodes[$thing] ?? 0, $canonical($field('connector_rows'), $thing), $canonical($field('connector_pitch'), $thing), $things->first($thing, $field('connector_orientation')), $form);
             $part          = (int) $things->first($thing, $field('connector_poles'));
             $poles[$thing] = $part > 0 ? (int) round((float) $values->first($part, $s->field('money_amount'))) : 0;
         }
 
-        return ['kinds' => $kinds, 'poles' => $poles, 'things' => $things, 'values' => $values];
+        return ['kinds' => $kinds, 'poles' => $poles, 'rows' => $rows, 'things' => $things, 'values' => $values];
     }
 
     /**
@@ -4467,7 +4746,12 @@ final class StockService
             $record = $known->lagerOf($source);
             $pack   = Pack::of($s, $lager, $record);
             $loss   = $s->hasField('lager_cut_loss') && $record !== null ? max(0, (int) $lager->first($record, $s->field('lager_cut_loss'))) : 0;
-            $plan   = CutPlan::of($cut['pieces'], $facts['poles'][$cut['thing']], $facts['poles'][$source], $loss, $pack !== null);
+            if ($pack !== null) {
+                $rows[] = $this->pinCut($cut, $source, $into, $facts, $loss, $label, $ledger);
+                continue;
+            }
+
+            $plan   = CutPlan::of($cut['pieces'], $facts['poles'][$cut['thing']], $facts['poles'][$source], $loss);
             $places = array_filter($ledger->placesOf($cut['from']), static fn (float $q, int $place): bool => $place !== $into && $q > 0, ARRAY_FILTER_USE_BOTH);
             arsort($places);
             $place  = (int) array_key_first($places);
@@ -4477,6 +4761,9 @@ final class StockService
             }
 
             $rests = [];
+            // D-1398: the strip's value per pin goes with what is cut from it — pieces and rests alike.
+            $perStrip = $this->valuesPerPiece([$cut['from']])[$cut['from']] ?? null;
+            $perPin   = $perStrip === null ? null : ['amount' => $perStrip['amount'] / max(1, $facts['poles'][$source]), 'unit' => $perStrip['unit']];
 
             foreach ($plan->rests as $poles => $count) {
                 if (! isset($byKind[$kind][$poles])) {
@@ -4491,13 +4778,92 @@ final class StockService
                     $byKind[$kind][$poles] = '@' . $ref;
                 }
 
-                $rests[] = ['thing' => $byKind[$kind][$poles], 'quantity' => $count, 'name' => sprintf('%s · Rest %d polig', $label($source), $poles)];
+                $rests[] = ['thing' => $byKind[$kind][$poles], 'quantity' => $count, 'name' => sprintf('%s · Rest %d polig', $label($source), $poles), 'value' => self::scaled($perPin, (float) $poles)];
             }
 
-            $rows[] = ['lot' => $cut['from'], 'place' => $place, 'take' => $plan->strips, 'thing' => $cut['thing'], 'pieces' => $cut['pieces'], 'into' => $into, 'name' => $label($cut['thing']), 'rests' => $rests];
+            $rows[] = ['lot' => $cut['from'], 'place' => $place, 'take' => $plan->strips, 'thing' => $cut['thing'], 'pieces' => $cut['pieces'], 'into' => $into, 'name' => $label($cut['thing']), 'value' => self::scaled($perPin, (float) $facts['poles'][$cut['thing']]), 'rests' => $rests];
         }
 
         return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->cut($rows, $reference, $title, $prelude)));
+    }
+
+    /**
+     * D-1398: a strip counted in pins is cut piece by piece, each piece whole from one strip. The strips are this lot's
+     * whole strips plus, as one strip each, every lot of the same material holding less than a strip (a rest); the
+     * shortest that fits is cut first. What a strip leaves goes back as a lot of the same material where it lay.
+     *
+     * ⚠️ *INFERRED: a lot's pins beyond its whole strips are one strip (pins cut before D-1398 left one rest); the loss per
+     * cut counts in columns, so a two-row strip loses two pins.*
+     *
+     * @param array{from: int, thing: int, pieces: int}                                     $cut
+     * @param array{poles: array<int, int>, rows: array<int, int>}                         $facts
+     * @param \Closure(int): string                                                         $label
+     * @return array{lot: int, place: int, take: int, thing: int, pieces: int, into: int, name: string, more: list<array{lot: int, place: int, take: int}>, rests: list<array{thing: string, quantity: int, name: string, place: int}>}
+     */
+    private function pinCut(array $cut, int $source, int $into, array $facts, int $loss, \Closure $label, Ledger $ledger): array
+    {
+        $rows   = $facts['rows'][$source] ?? 1;
+        $full   = $facts['poles'][$source] ?? 0;
+        $piece  = $facts['poles'][$cut['thing']] ?? 0;
+
+        if ($full < 1 || $piece < 1 || $piece % $rows !== 0 || $full % $rows !== 0) {
+            throw StockError::cutNotPossible($piece, $full);
+        }
+
+        // Strip key «lot:place:n» → its columns; the pins of each strip are columns × rows.
+        $strips = [];
+        $lie    = static fn (int $lot): array => array_filter($ledger->placesOf($lot), static fn (float $q, int $place): bool => $place !== $into && $q > 1e-9, ARRAY_FILTER_USE_BOTH);
+
+        foreach ($lie($cut['from']) as $place => $pins) {
+            $whole = (int) floor($pins / $full + 1e-9);
+
+            for ($n = 0; $n < $whole; $n++) {
+                $strips[$cut['from'] . ':' . $place . ':' . $n] = intdiv($full, $rows);
+            }
+
+            $left = (int) round($pins - $whole * $full);
+
+            if ($left >= $rows) {
+                $strips[$cut['from'] . ':' . $place . ':r'] = intdiv($left, $rows);
+            }
+        }
+
+        foreach ($ledger->lotsOf($source) as $lot) {
+            if ($lot === $cut['from']) {
+                continue;
+            }
+
+            foreach ($lie($lot) as $place => $pins) {
+                if ($pins + 1e-9 < $full && (int) round($pins) >= $rows) {
+                    $strips[$lot . ':' . $place . ':r'] = intdiv((int) round($pins), $rows);
+                }
+            }
+        }
+
+        $plan = StripCut::plan($cut['pieces'], intdiv($piece, $rows), $strips, $loss);
+
+        if ($plan->missing > 0) {
+            throw StockError::cutTooShort($cut['from'], $cut['pieces']);
+        }
+
+        $takes  = [];
+        $rests  = [];
+        $values = $this->valuesPerPiece(array_values(array_unique(array_map(static fn (array $u): int => (int) explode(':', (string) $u['strip'])[0], $plan->uses))));
+
+        foreach ($plan->uses as $use) {
+            [$lot, $place] = array_map('intval', explode(':', (string) $use['strip']));
+            $key          = $lot . ':' . $place;
+            $takes[$key]  = ['lot' => $lot, 'place' => $place, 'take' => ($takes[$key]['take'] ?? 0) + $use['columns'] * $rows];
+
+            if ($use['rest'] > 0) {
+                $rests[] = ['thing' => (string) $source, 'quantity' => $use['rest'] * $rows, 'name' => sprintf('%s · Rest %d polig', $label($source), $use['rest'] * $rows), 'place' => $place, 'value' => self::scaled($values[$lot] ?? null, 1.0)];
+            }
+        }
+
+        $first = array_shift($takes);
+
+        return ['lot' => $first['lot'], 'place' => $first['place'], 'take' => $first['take'], 'thing' => $cut['thing'], 'pieces' => $cut['pieces'], 'into' => $into, 'name' => $label($cut['thing']),
+            'value' => self::scaled($values[$first['lot']] ?? null, (float) $piece), 'more' => array_values($takes), 'rests' => $rests];
     }
 
     /**
@@ -4665,6 +5031,80 @@ final class StockService
         arsort($places);
 
         return (int) array_key_first($places);
+    }
+
+    /**
+     * D-1396: the test steps of each lot's revision — the material's «bestückte Revision», its «Prüfschritte» in their
+     * order (setting «position», then as stored). Three reads for all lots (CD-7); a lot without revision or steps is left
+     * out, and so is everything while the structure names no steps.
+     *
+     * @param list<int> $lots
+     * @return array<int, list<array{instruction: string, firmware: string}>> lot → steps
+     */
+    public function testStepsOf(array $lots): array
+    {
+        $s = $this->structure();
+
+        foreach (['thing_revision', 'revision_tests', 'test_instruction'] as $key) {
+            if (! $s->hasField($key)) {
+                return [];
+            }
+        }
+
+        $ledger = $this->ledger();
+        $things = [];
+
+        foreach ($lots as $lot) {
+            $thing = $ledger->thingOf($lot);
+
+            if ($thing !== null) {
+                $things[$lot] = $thing;
+            }
+        }
+
+        $materials = $things === [] ? null : $this->model->records(array_values(array_unique($things)));
+        $revisions = [];
+
+        foreach (array_unique($things) as $thing) {
+            $revision = (int) $materials?->first($thing, $s->field('thing_revision'));
+
+            if ($revision > 0) {
+                $revisions[$thing] = $revision;
+            }
+        }
+
+        $heads = $revisions === [] ? null : $this->model->records(array_values(array_unique($revisions)));
+        $steps = [];
+
+        foreach (array_unique($revisions) as $revision) {
+            $steps[$revision] = array_values(array_map('intval', $heads?->all($revision, $s->field('revision_tests')) ?? []));
+        }
+
+        $all   = array_values(array_unique(array_merge([], ...array_values($steps))));
+        $parts = $all === [] ? null : $this->model->records($all);
+        $order = $s->hasField('test_order') ? $s->field('test_order') : 0;
+        $lists = [];
+
+        foreach ($steps as $revision => $ids) {
+            $rank = array_flip($ids);
+            usort($ids, static fn (int $a, int $b): int => [(int) ($order > 0 ? ($parts?->first($a, $order) ?? PHP_INT_MAX) : 0), $rank[$a]] <=> [(int) ($order > 0 ? ($parts?->first($b, $order) ?? PHP_INT_MAX) : 0), $rank[$b]]);
+            $lists[$revision] = array_values(array_filter(array_map(static fn (int $step): array => [
+                'instruction' => trim((string) $parts?->first($step, $s->field('test_instruction'))),
+                'firmware'    => $s->hasField('test_firmware') ? trim((string) $parts?->first($step, $s->field('test_firmware'))) : '',
+            ], $ids), static fn (array $step): bool => $step['instruction'] !== ''));
+        }
+
+        $out = [];
+
+        foreach ($things as $lot => $thing) {
+            $list = $lists[$revisions[$thing] ?? 0] ?? [];
+
+            if ($list !== []) {
+                $out[$lot] = $list;
+            }
+        }
+
+        return $out;
     }
 
     /**
@@ -4987,7 +5427,12 @@ final class StockService
     /** @return array<string, mixed> */
     public function markOrdered(int $draft, string $number): array
     {
-        return $this->model->write($this->purchasing()->markOrdered($draft, $number, $this->table('order')));
+        $orders   = $this->table('order');
+        $s        = $this->structure();
+        $merchant = $s->hasField('order_merchant') ? (string) $orders->first($draft, $s->field('order_merchant')) : '';
+
+        // D-1405 (INFERRED): a firm is a platform when it carries an order link template (D-1249) — the model marks nothing else.
+        return $this->model->write($this->purchasing()->markOrdered($draft, $number, $orders, $this->linkTemplates($merchant)['order'] !== ''));
     }
 
     /**

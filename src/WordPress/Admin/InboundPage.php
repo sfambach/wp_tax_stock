@@ -534,9 +534,9 @@ final class InboundPage
      * INF-116: what tells two purchases apart before they arrive — the description (variant, pack) and the article number,
      * in full under the name; the number links to the product at the platform where its firm has a template (D-1249).
      */
-    private function purchaseFacts(Table $table, int $order, int $purchase): string
+    public static function purchaseFacts(InboundService $inbound, Table $table, int $order, int $purchase): string
     {
-        $s     = $this->inbound->stock()->structure();
+        $s     = $inbound->stock()->structure();
         $facts = [];
 
         foreach (['description' => '', 'purchase_number' => __('Artikelnummer', 'taxmod-stock')] as $key => $name) {
@@ -546,7 +546,7 @@ final class InboundPage
                 continue;
             }
 
-            $link    = $key === 'purchase_number' ? $this->inbound->productLink($order, $value) : null;
+            $link    = $key === 'purchase_number' ? $inbound->productLink($order, $value) : null;
             $facts[] = ($name === '' ? '' : esc_html($name) . ': ')
                 . ($link === null ? esc_html($value) : '<a href="' . esc_url($link) . '" target="_blank" rel="noopener noreferrer">' . esc_html($value) . '</a>');
         }
@@ -576,7 +576,7 @@ final class InboundPage
      *
      * @param array{previous: int, previous_unit: float, unit: float, percent: float, previous_order: ?int}|null $warning
      */
-    private function priceWarning(?array $warning): string
+    public static function priceWarning(?array $warning): string
     {
         if ($warning === null) {
             return '';
@@ -597,18 +597,21 @@ final class InboundPage
     private function details(InboundOrder $order, InboundStage $stage, string $tab, bool $open): string
     {
         if ($stage === InboundStage::Arrived) {
-            return '<div class="taxmod-stock-positions" data-order="' . esc_attr((string) $order->id) . '" data-back="' . esc_attr(self::BACK) . '"></div>';
+            $pick = implode(',', array_filter(array_map('absint', explode(',', sanitize_text_field(wp_unslash((string) ($_GET['pick'] ?? '')))))));
+
+            return '<div class="taxmod-stock-positions" data-order="' . esc_attr((string) $order->id) . '" data-back="' . esc_attr(self::BACK) . '"' . ($pick === '' ? '' : ' data-pick="' . esc_attr($pick) . '"') . '></div>';
         }
 
         $labels    = $this->inbound->stock()->labels('purchase');
         $s         = $this->inbound->stock()->structure();
         $purchases = $this->inbound->stock()->table('order')->all($order->id, $s->field('order_lines'));
         $done      = in_array($stage, [InboundStage::Booked, InboundStage::Archived], true);
+        $merged    = $purchases !== [] && in_array($stage, [InboundStage::Ordered, InboundStage::Shipped], true);
         $rows      = '';
         $table     = $this->inbound->stock()->table('purchase');
         $parts     = [];
 
-        foreach ($purchases as $purchase) {
+        foreach ($merged ? [] : $purchases as $purchase) {
             foreach (['purchase_unit_price', 'purchase_total_price'] as $key) {
                 if ($s->hasField($key)) {
                     $parts[] = (int) $table->first((int) $purchase, $s->field($key));
@@ -630,7 +633,7 @@ final class InboundPage
         $booked  = $stock->receivedPurchases();
         // His wish 2026-11-09 (INF-116): «um zu entscheiden ob etwas angekommen ist ist das wenig info» — the picture (D-1204),
         // and what the purchase already says, read from the one table of this order's purchases (CD-7).
-        $ids      = array_map('intval', $purchases);
+        $ids      = $merged ? [] : array_map('intval', $purchases);
         $pictures = method_exists(ListPage::class, 'thumbnails') ? ListPage::thumbnails($stock->titleImages($ids)) : [];
         // D-1264, «Bild übernehmen»: offered where the purchase has a picture its material does not hold yet — one read for both.
         $models   = array_filter(array_combine($ids, array_map(static fn (int $p): int => (int) $table->first($p, $s->field('purchase_model')), $ids)) ?: []);
@@ -639,9 +642,9 @@ final class InboundPage
         // D-1291, his word 2026-11-09 «auch fehlt die einheit (€)»: the prices as the modeller words them, with their unit.
         $words = $stock->fieldWords($ids, ['purchase_unit_price', 'purchase_total_price']);
         // D-1375: a unit price far above the last purchase of the same material is marked, before anything is booked.
-        $warned = $done ? [] : $this->inbound->priceWarnings($ids);
+        $warned = $done || $merged ? [] : $this->inbound->priceWarnings($ids);
 
-        foreach ($purchases as $purchase) {
+        foreach ($merged ? [] : $purchases as $purchase) {
             $purchase = (int) $purchase;
             $reason   = $closing ? $stock->notStockedReason($purchase) : '';
             // D-1060: private purchases are marked here, before anything arrives; a marked one can always be taken back.
@@ -664,10 +667,10 @@ final class InboundPage
             $went  = $done ? $this->whereItWent($purchase) : null;
             // D-1310: a link to one purchase jumps to its row.
             $rows .= '<tr id="taxmod-stock-purchase-' . esc_attr((string) $purchase) . '"><th scope="row" class="check-column"></th><td style="white-space:normal">' . ($pictures[$purchase] ?? '') . ' ' . esc_html($labels[$purchase] ?? '#' . $purchase)
-                . ($done ? $this->purchaseNumber($order->id) : $this->purchaseFacts($table, $order->id, $purchase)) . '</td>'
+                . ($done ? $this->purchaseNumber($order->id) : self::purchaseFacts($this->inbound, $table, $order->id, $purchase)) . '</td>'
                 . ($went === null ? '' : '<td>' . $went['material'] . '</td><td>' . $went['place'] . '</td><td>' . $went['date'] . '</td>')
                 . '<td style="text-align:right">' . esc_html($count > 0.0 ? (string) (0 + $count) : '—') . '</td>'
-                . '<td style="text-align:right">' . esc_html($words['purchase_unit_price'][$purchase] ?? $shown($each)) . $this->priceWarning($warned[$purchase] ?? null) . '</td>'
+                . '<td style="text-align:right">' . esc_html($words['purchase_unit_price'][$purchase] ?? $shown($each)) . self::priceWarning($warned[$purchase] ?? null) . '</td>'
                 . '<td style="text-align:right">' . esc_html($words['purchase_total_price'][$purchase] ?? $shown($total)) . '</td>'
                 . '<td style="text-align:right;white-space:nowrap">' . $button . '</td></tr>';
         }
@@ -678,14 +681,10 @@ final class InboundPage
             $done ? [[__('Material', 'taxmod-stock'), '14em'], [__('Lagerort', 'taxmod-stock'), '12em'], [__('Eingebucht am', 'taxmod-stock'), '8em']] : [],
             [[__('Menge', 'taxmod-stock'), '5em'], [__('Preis je Stück', 'taxmod-stock'), '7em'], [__('Gesamt', 'taxmod-stock'), '7em']]
         );
-        $html = '<h4 style="margin-bottom:.3em">' . esc_html__('Käufe', 'taxmod-stock') . '</h4>' . ListPage::table($columns, $rows);
-
         // His choice 2026-11-09 (INF-116): «Material schon am Kauf wählen» — the receipt's own choosing, before anything arrives;
-        // it keeps the choice and books nothing.
-        if ($purchases !== [] && in_array($stage, [InboundStage::Ordered, InboundStage::Shipped], true)) {
-            $html .= '<h4 style="margin-bottom:.3em">' . esc_html__('Material zuordnen', 'taxmod-stock') . '</h4>'
-                . '<div class="taxmod-stock-positions" data-order="' . esc_attr((string) $order->id) . '" data-back="' . esc_attr(self::BACK) . '" data-assign="1"></div>';
-        }
+        // it keeps the choice and books nothing. His word 2026-11-16 «eine bitte nur mit beiden funktionen»: then it is the one table.
+        $html = '<h4 style="margin-bottom:.3em">' . esc_html__('Käufe', 'taxmod-stock') . '</h4>'
+            . ($merged ? '<div class="taxmod-stock-positions" data-order="' . esc_attr((string) $order->id) . '" data-back="' . esc_attr(self::BACK) . '" data-assign="1"></div>' : ListPage::table($columns, $rows));
 
         $html .= $this->events($order);
 

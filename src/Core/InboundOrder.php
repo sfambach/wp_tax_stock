@@ -11,7 +11,7 @@ namespace TaxmodStock\Core;
  * ```mermaid
  * flowchart LR
  *   S["status draft/cancelled"] -->|none| X["no tab"]
- *   R["status received"] --> B["Booked"]
+ *   R["status received · every purchase booked or closed"] --> B["Booked"]
  *   R -->|"received long ago"| AA["Archived"]
  *   H["ordered before the start day"] --> AA
  *   A["partial · received on · carrier delivered"] --> AR["Arrived"]
@@ -44,6 +44,7 @@ final class InboundOrder
         public readonly array $tracking,
         public readonly array $carrierStages = [],
         public readonly bool $closedWithoutStock = false,
+        public readonly bool $allIn = false,
     ) {
     }
 
@@ -55,7 +56,8 @@ final class InboundOrder
             $is('status_draft', $this->status), $is('status_cancelled', $this->status) => InboundStage::None,
             // D-1060: every purchase private or otherwise closed without stock — nothing to receive, straight to the archive.
             $this->closedWithoutStock                                                  => InboundStage::Archived,
-            $is('status_received', $this->status)                                      => $archive?->isDone($this->receivedOn ?? $this->orderedOn) ? InboundStage::Archived : InboundStage::Booked,
+            // Stefan 16.11. (Amazon 306-8618798-9457148): every purchase booked or closed is «Eingebucht», whatever the status says.
+            $is('status_received', $this->status), $this->allIn                        => $archive?->isDone($this->receivedOn ?? $this->orderedOn) ? InboundStage::Archived : InboundStage::Booked,
             (bool) $archive?->isHistory($this->orderedOn)                              => InboundStage::Archived,
             // D-1038: «zugestellt» and «versendet» as the stock process set them on the inbox's event.
             $is('status_partial', $this->status), $is('status_delivered', $this->status), $this->hasArrived() => InboundStage::Arrived,

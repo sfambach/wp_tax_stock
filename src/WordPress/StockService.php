@@ -1189,6 +1189,35 @@ final class StockService
     }
 
     /**
+     * Stefan 16.11. «keine einstellmöglichkeiten?»: where the lots of these purchases lie now, by place path — one pass over
+     * the lots (CD-7).
+     *
+     * @param list<int> $purchases
+     * @return array<int, list<string>> purchase → paths
+     */
+    public function placesOfPurchases(array $purchases): array
+    {
+        $s      = $this->structure();
+        $lots   = $this->table('lot');
+        $ledger = $this->ledger();
+        $paths  = $this->places();
+        $wanted = array_flip($purchases);
+        $out    = [];
+
+        foreach ($lots->ids() as $lot) {
+            $purchase = (int) $lots->first($lot, $s->field('lot_purchase'));
+
+            if (isset($wanted[$purchase])) {
+                foreach (array_keys($ledger->placesOf($lot)) as $place) {
+                    $out[$purchase][] = (string) ($paths[$place] ?? '#' . $place);
+                }
+            }
+        }
+
+        return array_map(static fn (array $p): array => array_values(array_unique($p)), $out);
+    }
+
+    /**
      * The goods receipt's proposal per purchase of the order, and why a purchase is locked.
      *
      * @return array<int, array{lock: string|null, model: int|null, proposal: ReceiptChoice|null}>

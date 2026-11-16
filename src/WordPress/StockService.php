@@ -1014,6 +1014,32 @@ final class StockService
     }
 
     /**
+     * D-1387, Stefan 16.11. «es sollte 10uf elektrolyt aus den sets geben aber die zuweisung … findet die nicht»: the hits of
+     * the picker, materials with stock first. The search reads wide and cuts after sorting, so a material in stock is not
+     * crowded out by namesakes without stock; where the whole term finds nothing in stock, its last words are dropped one by
+     * one (down to the first) — a part's full name names details («±20 %», «RM 2,5 mm») a material from a set does not have.
+     *
+     * ⚠️ *INFERRED: dropping trailing words, and the wide read of 100; the matching itself stays the modeller's (D-1378).*
+     *
+     * @return list<array{id: int, word: string, node: string, quantity: string}>
+     */
+    public function stockHits(string $term, int $limit = 8): array
+    {
+        $words = array_values(array_filter(preg_split('/\s+/u', trim($term)) ?: [], static fn (string $w): bool => mb_strlen($w) >= 2));
+        $hits  = [];
+
+        do {
+            $hits    = $this->withStock($this->searchThings(implode(' ', $words), 100));
+            $stocked = array_values(array_filter($hits, static fn (array $hit): bool => (float) str_replace(',', '.', $hit['quantity']) > 0));
+            array_pop($words);
+        } while ($stocked === [] && $words !== []);
+
+        $rest = array_values(array_filter($hits, static fn (array $hit): bool => (float) str_replace(',', '.', $hit['quantity']) <= 0));
+
+        return array_slice([...$stocked, ...$rest], 0, $limit);
+    }
+
+    /**
      * D-1385: the material hits of the search with what is in stock of each — one ledger for all hits (CD-7).
      *
      * @param list<array{id: int|string, word: string, node: string}> $hits

@@ -2598,7 +2598,8 @@ final class StockPage
         Acts::ajaxNonce(self::THING_SEARCH);
 
         try {
-            $hits = $this->stock->searchThings(sanitize_text_field(wp_unslash((string) ($_GET['term'] ?? ''))), empty($_GET['stock']) ? 30 : 8, ! empty($_GET['groups']));
+            $term = sanitize_text_field(wp_unslash((string) ($_GET['term'] ?? '')));
+            $hits = empty($_GET['stock']) ? $this->stock->searchThings($term, 30, ! empty($_GET['groups'])) : $this->stock->stockHits($term, 12);
 
             // D-1387: materials a module prefers (compatible replacements) stand first, as their own group.
             $preferred = array_values(array_filter(array_map('absint', explode(',', sanitize_text_field(wp_unslash((string) ($_GET['preferred'] ?? '')))))));
@@ -2606,7 +2607,7 @@ final class StockPage
             $hits      = [...$first, ...array_values(array_filter($hits, static fn (array $hit): bool => ! in_array($hit['id'], $preferred, true)))];
 
             wp_send_json_success(empty($_GET['stock']) ? $hits
-                : array_map(static fn (array $hit): array => $hit + ['url' => self::thingUrl($hit['id'], 'bestand')], $this->stock->withStock($hits)));
+                : array_map(static fn (array $hit): array => $hit + ['url' => self::thingUrl($hit['id'], 'bestand')], [...$this->stock->withStock(array_values(array_filter($hits, static fn (array $hit): bool => ! isset($hit['quantity'])))), ...array_values(array_filter($hits, static fn (array $hit): bool => isset($hit['quantity'])))]));
         } catch (StockError $e) {
             wp_send_json_error(['message' => Messages::of($e)]);
         }

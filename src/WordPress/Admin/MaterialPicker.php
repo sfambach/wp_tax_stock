@@ -153,6 +153,7 @@ final class MaterialPicker
             . '.taxmod-material-search-field .dashicons{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#8c8f94;pointer-events:none}'
             . '.taxmod-material-search input[type=search]{width:100%;box-sizing:border-box;padding:6px 12px 6px 38px;min-height:40px;font-size:15px;border-radius:20px}'
             . '.taxmod-material-search-hits{position:absolute;z-index:100;left:0;right:0;top:calc(100% + 4px);margin:0;max-height:22em;overflow-y:auto;background:#fff;border:1px solid #c3c4c7;border-radius:4px;box-shadow:0 4px 12px rgba(0,0,0,.15)}'
+            . '.taxmod-material-search.is-picker .taxmod-material-search-hits{position:static;max-height:18em;box-shadow:none}'
             . '.taxmod-material-search-hits li{margin:0;border-bottom:1px solid #f0f0f1}.taxmod-material-search-hits li:last-child{border-bottom:0}'
             . '.taxmod-material-search-hits li.is-group{padding:4px 10px;font-size:11px;font-weight:600;text-transform:uppercase;color:#646970;background:#f6f7f7}'
             . '.taxmod-material-search-hits a{display:grid;grid-template-columns:1fr auto;gap:0 8px;padding:6px 10px;color:#1d2327;text-decoration:none}'

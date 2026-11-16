@@ -466,8 +466,9 @@ final class BookingsTest extends TestCase
     public function a_goods_out_in_pieces_takes_whole_strips_and_brings_the_rest_back_as_a_lot(): void
     {
         $s       = Fixture::structure();
-        $changes = (new Bookings($s, '2026-11-16'))->consumption(501, '80', Purpose::production(), 'Verbrauch', 7, '', 0, [['thing' => 40, 'quantity' => 4, 'name' => 'Rest 4'], ['thing' => 40, 'quantity' => 16, 'name' => 'Rest 16']]);
+        $changes = (new Bookings($s, '2026-11-16'))->consumption(501, '80', Purpose::production(), 'Verbrauch', 7, '', 0, [['thing' => 40, 'quantity' => 4, 'name' => 'Rest 4', 'value' => ['amount' => '0.0125', 'unit' => null]], ['thing' => 40, 'quantity' => 16, 'name' => 'Rest 16']]);
         $lines   = [];
+        $values  = [];
 
         foreach ($changes as $c) {
             $v = $c['values'] ?? [];
@@ -477,7 +478,14 @@ final class BookingsTest extends TestCase
             }
         }
 
+        foreach ($changes as $c) {
+            if ($c['op'] === 'set_values' && isset($c['values'][(string) $s->field('lot_value')])) {
+                $values[] = $c['values'][(string) $s->field('lot_value')]['neu'][(string) $s->field('money_amount')];
+            }
+        }
+
         self::assertSame([['-80', '7'], ['4', '7'], ['16', '7']], $lines, 'D-1398: two strips out, rests 1×4 and 1×16 back at the place');
+        self::assertSame(['0.0125'], $values, 'a rest keeps the value per pin; none stays none');
     }
 
     #[Test]

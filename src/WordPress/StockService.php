@@ -3759,6 +3759,53 @@ final class StockService
     }
 
     /**
+     * D-1398: the value per piece of these lots, read in two reads (the lots, then their money parts); a lot without a
+     * value is left out.
+     *
+     * @param list<int> $lots
+     * @return array<int, array{amount: float, unit: string|null}>
+     */
+    private function valuesPerPiece(array $lots): array
+    {
+        $s = $this->structure();
+
+        if ($lots === [] || ! $s->hasField('lot_value')) {
+            return [];
+        }
+
+        $table = $this->table('lot');
+        $parts = [];
+
+        foreach (array_unique($lots) as $lot) {
+            $part = (int) $table->first($lot, $s->field('lot_value'));
+
+            if ($part > 0) {
+                $parts[$lot] = $part;
+            }
+        }
+
+        $money = $parts === [] ? null : $this->model->records(array_values(array_unique($parts)));
+        $out   = [];
+
+        foreach ($parts as $lot => $part) {
+            $amount = $money?->first($part, $s->field('money_amount'));
+
+            if (is_numeric($amount)) {
+                $unit      = $money->first($part, $s->field('money_unit'));
+                $out[$lot] = ['amount' => (float) $amount, 'unit' => $unit === null || $unit === '' ? null : (string) $unit];
+            }
+        }
+
+        return $out;
+    }
+
+    /** D-1398: a value per piece times a factor, as Bookings takes it; none stays none. @param array{amount: float, unit: string|null}|null $each @return array{amount: string, unit: string|null}|null */
+    private static function scaled(?array $each, float $factor): ?array
+    {
+        return $each === null ? null : ['amount' => rtrim(rtrim(number_format($each['amount'] * $factor, 6, '.', ''), '0'), '.'), 'unit' => $each['unit']];
+    }
+
+    /**
      * D-1398: the pins a goods-out of whole pieces takes from a lot at one place — whole strips opened — and the rests
      * they leave, shortest strip first (the lot's own rest before its whole strips).
      *
@@ -3790,6 +3837,7 @@ final class StockService
         }
 
         $label = $this->recordLabels([$thing])[$thing] ?? '#' . $thing;
+        $each  = $this->valuesPerPiece([$lot])[$lot] ?? null;
         $taken = 0;
         $rests = [];
 
@@ -3797,7 +3845,7 @@ final class StockService
             $taken += $use['columns'] * $rows;
 
             if ($use['rest'] > 0) {
-                $rests[] = ['thing' => $thing, 'quantity' => $use['rest'] * $rows, 'name' => sprintf('%s · Rest %d polig', $label, $use['rest'] * $rows)];
+                $rests[] = ['thing' => $thing, 'quantity' => $use['rest'] * $rows, 'name' => sprintf('%s · Rest %d polig', $label, $use['rest'] * $rows), 'value' => self::scaled($each, 1.0)];
             }
         }
 
@@ -4543,6 +4591,9 @@ final class StockService
             }
 
             $rests = [];
+            // D-1398: the strip's value per pin goes with what is cut from it — pieces and rests alike.
+            $perStrip = $this->valuesPerPiece([$cut['from']])[$cut['from']] ?? null;
+            $perPin   = $perStrip === null ? null : ['amount' => $perStrip['amount'] / max(1, $facts['poles'][$source]), 'unit' => $perStrip['unit']];
 
             foreach ($plan->rests as $poles => $count) {
                 if (! isset($byKind[$kind][$poles])) {
@@ -4557,10 +4608,10 @@ final class StockService
                     $byKind[$kind][$poles] = '@' . $ref;
                 }
 
-                $rests[] = ['thing' => $byKind[$kind][$poles], 'quantity' => $count, 'name' => sprintf('%s · Rest %d polig', $label($source), $poles)];
+                $rests[] = ['thing' => $byKind[$kind][$poles], 'quantity' => $count, 'name' => sprintf('%s · Rest %d polig', $label($source), $poles), 'value' => self::scaled($perPin, (float) $poles)];
             }
 
-            $rows[] = ['lot' => $cut['from'], 'place' => $place, 'take' => $plan->strips, 'thing' => $cut['thing'], 'pieces' => $cut['pieces'], 'into' => $into, 'name' => $label($cut['thing']), 'rests' => $rests];
+            $rows[] = ['lot' => $cut['from'], 'place' => $place, 'take' => $plan->strips, 'thing' => $cut['thing'], 'pieces' => $cut['pieces'], 'into' => $into, 'name' => $label($cut['thing']), 'value' => self::scaled($perPin, (float) $facts['poles'][$cut['thing']]), 'rests' => $rests];
         }
 
         return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->cut($rows, $reference, $title, $prelude)));
@@ -4625,8 +4676,9 @@ final class StockService
             throw StockError::cutTooShort($cut['from'], $cut['pieces']);
         }
 
-        $takes = [];
-        $rests = [];
+        $takes  = [];
+        $rests  = [];
+        $values = $this->valuesPerPiece(array_values(array_unique(array_map(static fn (array $u): int => (int) explode(':', (string) $u['strip'])[0], $plan->uses))));
 
         foreach ($plan->uses as $use) {
             [$lot, $place] = array_map('intval', explode(':', (string) $use['strip']));
@@ -4634,13 +4686,14 @@ final class StockService
             $takes[$key]  = ['lot' => $lot, 'place' => $place, 'take' => ($takes[$key]['take'] ?? 0) + $use['columns'] * $rows];
 
             if ($use['rest'] > 0) {
-                $rests[] = ['thing' => (string) $source, 'quantity' => $use['rest'] * $rows, 'name' => sprintf('%s · Rest %d polig', $label($source), $use['rest'] * $rows), 'place' => $place];
+                $rests[] = ['thing' => (string) $source, 'quantity' => $use['rest'] * $rows, 'name' => sprintf('%s · Rest %d polig', $label($source), $use['rest'] * $rows), 'place' => $place, 'value' => self::scaled($values[$lot] ?? null, 1.0)];
             }
         }
 
         $first = array_shift($takes);
 
-        return ['lot' => $first['lot'], 'place' => $first['place'], 'take' => $first['take'], 'thing' => $cut['thing'], 'pieces' => $cut['pieces'], 'into' => $into, 'name' => $label($cut['thing']), 'more' => array_values($takes), 'rests' => $rests];
+        return ['lot' => $first['lot'], 'place' => $first['place'], 'take' => $first['take'], 'thing' => $cut['thing'], 'pieces' => $cut['pieces'], 'into' => $into, 'name' => $label($cut['thing']),
+            'value' => self::scaled($values[$first['lot']] ?? null, (float) $piece), 'more' => array_values($takes), 'rests' => $rests];
     }
 
     /**

@@ -369,8 +369,9 @@ final class InboundPage
             . '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1em;flex-wrap:wrap">'
             . '<div><h2 style="margin:.2em 0">' . esc_html($label) . ($late ? ' <span style="color:#b32d2e;font-size:.8em">' . esc_html__('überfällig', 'taxmod-stock') . '</span>' : '') . '</h2>'
             . ($about === '' ? '' : '<p class="description" style="margin-top:0">' . esc_html($about) . '</p>') . '</div></div>'
-            // D-1308: the order's acts as the toolbar, top left under its name.
-            . ListPage::toolbar([$this->buttons($order, $stage, $counts['booked'], $tab)])
+            // D-1308: the order's acts as the toolbar, top left under its name — unless the purchases come as the one table,
+            // whose bar carries them (D-1403, his word 2026-11-16 «was ist aus der einen toolbar geworden»).
+            . (self::oneTable($stage, $counts['total']) ? '' : ListPage::toolbar([$this->buttons($order, $stage, $counts['booked'], $tab)]))
             . '<div style="display:flex;gap:1em;align-items:flex-start;flex-wrap:wrap;margin-bottom:1em">'
             . '<table class="widefat" style="max-width:40em"><tbody>'
             . $fact(__('Stufe', 'taxmod-stock'), esc_html(self::stageName($stage)))
@@ -384,6 +385,28 @@ final class InboundPage
             . (in_array($stage, [InboundStage::Booked, InboundStage::Archived], true) ? $this->materialPictures($order->id) : '') . '</div>'
             . $this->details($order, $stage, $tab, true)
             . (new StockPage($this->inbound->stock()))->script(true);
+    }
+
+    /** D-1403: the stages whose purchases stand in the one table of the Lager page, with the order's acts in its bar. */
+    private static function oneTable(InboundStage $stage, int $purchases): bool
+    {
+        return $stage === InboundStage::Arrived || ($purchases > 0 && in_array($stage, [InboundStage::Ordered, InboundStage::Shipped], true));
+    }
+
+    /** D-1403: the order's own acts for the bar of the one table, as its view would show them. */
+    public function orderActs(int $id): string
+    {
+        $stock = $this->inbound->stock();
+        $order = $this->inbound->orders()[$id] ?? null;
+
+        if ($order === null) {
+            return '';
+        }
+
+        $stage        = $order->stage($stock->structure(), $stock->inboundArchive(current_time('Y-m-d')));
+        $this->detail = true;
+
+        return $this->buttons($order, $stage, $this->inbound->purchaseCounts($id)['booked'], $stage->value);
     }
 
     private function tabName(string $tab): string

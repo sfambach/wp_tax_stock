@@ -2076,11 +2076,12 @@ final class StockPage
         $bar    = str_replace(
             ['name="action" id="' . self::BULK_FORM . '-action"', '</form>'],
             ['name="bulk" id="' . self::BULK_FORM . '-action"', '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"></form>'],
-            self::bulkBar(self::BULK_FORM, $count, '', $storno)
+            // D-1403, his word 2026-11-16 «was ist aus der einen toolbar geworden»: «Neue Reservierung» stands in the bulk bar's row.
+            self::bulkBar(self::BULK_FORM, $count, '<div class="alignleft actions">' . ListPage::toolbar([[$this->reserveFormDialog(0, 'reservierungen')]]) . '</div>', $storno)
         );
 
         return '<p>' . esc_html__('Eine Reservierung je Bezug: Projekt oder Verkauf. Ein für die Produktion reservierter Lagerort hat genau eine Reservierung, gerechnet aus dem, was dort liegt.', 'taxmod-stock') . '</p>'
-            . ListPage::toolbar([[$this->reserveFormDialog(0, 'reservierungen')]]) . $bar
+            . $bar
             . ListPage::table([[__('Reservierung', 'taxmod-stock'), ''], [__('Bezug', 'taxmod-stock'), '14em'], [__('Datum', 'taxmod-stock'), '7em'], [__('Frist', 'taxmod-stock'), '7em'], [__('Positionen', 'taxmod-stock'), '6em']],
                 $body === '' ? $this->noItems(5) : $body);
     }
@@ -2741,18 +2742,43 @@ final class StockPage
     }
 
     /**
-     * His wish 2026-11-09 «button platz für alle übernehmen oder bulk funktion platz für alle wählen»: the bulk bar of the receipt
-     * with «Lagerort für alle …», which writes the chosen place into every ticked purchase's row — saved when booking or keeping.
+     * D-1403: the one bar of a receipt — the bulk choice (place for all, the acts on ticked purchases, taking the receipt back),
+     * then saving, booking and the order's own acts, all in one row. The bar stands before the form; its buttons join the form
+     * through `form=`, its dialogs' fields too.
      */
-    private function placeForAll(int $order, int $count): string
+    private function receiptBar(int $order, int $count, string $formId, bool $assign, bool $canClose, bool $canUnbook, string $back): string
     {
-        if (! method_exists(ListPage::class, 'fillAction')) {
-            return '';
+        $place = 'taxmod-stock-place-all-' . $order;
+        $body  = self::actForm([['label' => __('Lagerort', 'taxmod-stock'), 'control' => $this->stock->placeChooser('fill_location'),
+            'hint' => __('Setzt den Lagerort bei allen angehakten Käufen; gespeichert wird er mit «Wareneingang buchen» oder «Zuordnung speichern».', 'taxmod-stock')]]);
+        $asks  = [$place => [__('Lagerort für alle …', 'taxmod-stock'), '<div class="alignleft actions">'
+            . ListPage::fillAction($place, __('Lagerort für alle angehakten', 'taxmod-stock'), $body, 'location', 'fill_location', __('Übernehmen', 'taxmod-stock')) . '</div>']];
+        $ask   = static fn (string $switch, string $label, string $title, string $text, string $booking, string $submit): array => [$label,
+            '<div class="alignleft actions">' . ListPage::dialogAction($switch, $label, $title, $text, 'booking', $booking, $submit, $formId) . '</div>', true];
+
+        if ($assign) {
+            // Stefan 16.11. «nicht möglich zu sagen dass einzelne teile angekommen sind».
+            $asks['taxmod-stock-arrive-' . $order] = $ask('taxmod-stock-arrive-' . $order, __('Angehakte angekommen …', 'taxmod-stock'), __('Angehakte Käufe angekommen', 'taxmod-stock'),
+                '<p>' . esc_html__('Die Zuordnung wird gespeichert, die Bestellung kommt an, und der Wareneingang öffnet mit genau diesen Käufen angehakt.', 'taxmod-stock') . '</p>', 'angekommen', __('Angekommen', 'taxmod-stock'));
         }
 
-        $switch = 'taxmod-stock-place-all-' . $order;
-        $body   = self::actForm([['label' => __('Lagerort', 'taxmod-stock'), 'control' => $this->stock->placeChooser('fill_location'),
-            'hint' => __('Setzt den Lagerort bei allen angehakten Käufen; gespeichert wird er mit «Wareneingang buchen» oder «Zuordnung speichern».', 'taxmod-stock')]]);
+        if ($canClose) {
+            $asks['taxmod-stock-close-all-' . $order] = $ask('taxmod-stock-close-all-' . $order, __('Angehakte nicht einlagern …', 'taxmod-stock'), __('Angehakte ohne Lager abschließen', 'taxmod-stock'),
+                self::actForm([['label' => __('Grund', 'taxmod-stock'), 'control' => '<input type="text" list="taxmod-stock-reasons" name="bulk_reason" form="' . esc_attr($formId) . '" style="width:100%">',
+                    'hint' => __('Gilt für alle angehakten Käufe.', 'taxmod-stock')]]), 'sammelnichteinlagern', __('Nicht einlagern', 'taxmod-stock'));
+        }
+
+        if ($canUnbook) {
+            // D-1009 per purchase (D-1400): a purchase whose lot was moved on or used stays and is named.
+            $asks['taxmod-stock-unbook-' . $order] = $ask('taxmod-stock-unbook-' . $order, __('Wareneingang rückgängig …', 'taxmod-stock'), __('Wareneingang rückgängig machen', 'taxmod-stock'),
+                '<p>' . esc_html__('Nimmt die gebuchten Käufe dieser Bestellung wieder aus dem Bestand; ein Kauf, dessen Posten schon umgebucht oder verbraucht ist, bleibt und wird genannt.', 'taxmod-stock') . '</p>', 'wareneingangzurueck', __('Rückgängig', 'taxmod-stock'));
+        }
+
+        $buttons = '<div class="alignleft actions">' . ListPage::toolbar([
+            [\Taxmod\Core\Renderer\ControlMarkup::button(\Taxmod\Core\Renderer\Control::saving('booking', 'zuordnen', __('Zuordnung speichern', 'taxmod-stock'), __('Zuordnung speichern', 'taxmod-stock'), true, $formId))],
+            [$assign ? '' : '<button type="submit" class="button button-primary" name="booking" value="wareneingang" form="' . esc_attr($formId) . '">' . esc_html__('Wareneingang buchen', 'taxmod-stock') . '</button>'],
+            [$back === InboundPage::BACK ? (new InboundPage(new \TaxmodStock\WordPress\InboundService($this->stock)))->orderActs($order) : ''],
+        ]) . '</div>';
 
         return ListPage::bulkBar(
             'taxmod-stock-receipt-bulk-' . $order,
@@ -2760,10 +2786,9 @@ final class StockPage
             [],
             /* translators: %d: number of purchases */
             sprintf(_n('%d Kauf', '%d Käufe', $count, 'taxmod-stock'), $count),
-            '',
+            $buttons,
             false,
-            [$switch => [__('Lagerort für alle …', 'taxmod-stock'), '<div class="alignleft actions">'
-                . ListPage::fillAction($switch, __('Lagerort für alle angehakten', 'taxmod-stock'), $body, 'location', 'fill_location', __('Übernehmen', 'taxmod-stock')) . '</div>']]
+            $asks
         );
     }
 
@@ -2866,29 +2891,19 @@ final class StockPage
         $open   = count(array_filter($plan, static fn (array $row): bool => $row['lock'] === null));
         $booked = count(array_filter($plan, static fn (array $row): bool => $row['lock'] === 'received'));
         // His wish 2026-11-09: «bulk funktion platz für alle wählen» — the bar stands before the form, a form holds no form.
-        $bulk  = $this->placeForAll($order, count($plan));
-        $html  = $bulk . ($assign ? str_replace('<form ', '<form class="taxmod-stock-assign" ', $this->formStart($first)) : $this->formStart($first))
+        // D-1403, his words 2026-11-16 «wir haben bulk funktionen und du machst zwei buttons dahin», «alles in eine zeile»: every
+        // act on ticked purchases is a choice of the bulk bar, and saving, booking and the order's own acts stand beside it.
+        $formId = 'taxmod-stock-receipt-' . $order;
+        $html   = $this->receiptBar($order, count($plan), $formId, $assign, $closing && $open > 0, ! $assign && $booked > 0, $back)
+            // The bar's buttons stand before the form, so a hidden «booking» after them would win: the form takes it from its submitter.
+            . str_replace(['<form ', '<input type="hidden" name="booking" value="' . esc_attr($first) . '">'], ['<form id="' . esc_attr($formId) . '"' . ($assign ? ' class="taxmod-stock-assign"' : '') . ' ', ''], $this->formStart($first))
             . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
             . ($back === '' ? '' : '<input type="hidden" name="back" value="' . esc_attr($back) . '">')
             // ⚠️ *Enter in a reason field must book, not close the first row: the browser presses the first submit button.*
             . '<button type="submit" name="booking" value="' . esc_attr($first) . '" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px"></button>'
-            // D-1308: «Zuordnung speichern» (his word 2026-10-28: «zwischenstände speichern … ohne we») first, then the booking.
-            . ListPage::toolbar([
-                [\Taxmod\Core\Renderer\ControlMarkup::button(\Taxmod\Core\Renderer\Control::saving('booking', 'zuordnen', __('Zuordnung speichern', 'taxmod-stock'), __('Zuordnung speichern', 'taxmod-stock')))],
-                // Stefan 16.11. «nicht möglich zu sagen dass einzelne teile angekommen sind»: what arrived is ticked.
-                [$assign ? '<button type="submit" class="button button-primary" name="booking" value="angekommen">' . esc_html__('Angehakte angekommen', 'taxmod-stock') . '</button>'
-                    : get_submit_button(__('Wareneingang buchen', 'taxmod-stock'), 'primary', 'submit', false)],
-                // Stefan 16.11. «sammelfunktion alle nicht einlagern, eine begründung, alle rückgängig» (D-1063 dialogs).
-                [($closing && $open > 0 ? $this->closeAllControls($order) : '') . ($assign || $booked === 0 ? '' : ' ' . $this->unbookControls($order))],
-            ])
             . ($closing ? '<datalist id="taxmod-stock-reasons">' . implode('', array_map(static fn (string $r): string => '<option value="' . esc_attr($r) . '">', self::notStockedReasons())) . '</datalist>' : '')
-            . ($assign ? '<p>' . esc_html__('Schon vor dem Eintreffen je Kauf das Material wählen oder als «Neues Material» in seiner Gruppe anlegen; die Felder kommen aus der Gruppe. Gespeichert wird nur die Zuordnung, eingebucht wird erst beim Wareneingang.', 'taxmod-stock') . '</p>' : '')
-            . ($assign ? '' : '<p>' . esc_html__('Je Kauf das Material: vorgeschlagen ist das «Modell» des Kaufs; «Zurücksetzen» (Pfeil) gibt die Suche frei; «Neues Material» (oder eine Gruppe in der Suche) legt ein neues Material in der Gruppe an. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seiner Gruppe; Gebrauchtware aus einem Zweig mit Test nach dem Wareneingang geht an den «Lagerort für Test», wenn einer eingestellt ist. Der Materialtext öffnet das Material wie der Knopf «Material». Die Menge ist die gekaufte Anzahl (bei Ware in Packungen: Packungen); geändert wird sie beim Buchen oder Speichern in den Kauf geschrieben.', 'taxmod-stock') . '</p>')
-            . ($bulk === '' ? '<div class="tablenav top"><div class="tablenav-pages one-page"><span class="displaying-num">' . esc_html(sprintf(
-                /* translators: %d: number of purchases */
-                _n('%d Kauf', '%d Käufe', count($plan), 'taxmod-stock'),
-                count($plan)
-            )) . '</span></div><br class="clear"></div>' : '');
+            . ($assign ? '<p>' . esc_html__('Schon vor dem Eintreffen je Kauf das Material wählen oder als «Neues Material» in seiner Gruppe anlegen; die Felder kommen aus der Gruppe. Gespeichert wird nur die Zuordnung, eingebucht wird erst beim Wareneingang. Was angekommen ist: anhaken, dann in der Auswahl «Angehakte angekommen …».', 'taxmod-stock') . '</p>' : '')
+            . ($assign ? '' : '<p>' . esc_html__('Je Kauf das Material: vorgeschlagen ist das «Modell» des Kaufs; «Zurücksetzen» (Pfeil) gibt die Suche frei; «Neues Material» (oder eine Gruppe in der Suche) legt ein neues Material in der Gruppe an. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seiner Gruppe; Gebrauchtware aus einem Zweig mit Test nach dem Wareneingang geht an den «Lagerort für Test», wenn einer eingestellt ist. Der Materialtext öffnet das Material wie der Knopf «Material». Die Menge ist die gekaufte Anzahl (bei Ware in Packungen: Packungen); geändert wird sie beim Buchen oder Speichern in den Kauf geschrieben.', 'taxmod-stock') . '</p>');
         $head  = '<tr><td class="manage-column column-cb check-column"><input type="checkbox" aria-label="' . esc_attr__('Alle wählen', 'taxmod-stock') . '"></td>'
             . '<th scope="col" class="manage-column" style="width:28%">' . esc_html__('Kauf', 'taxmod-stock') . '</th><th scope="col" class="manage-column" style="width:28%">' . esc_html__('Material', 'taxmod-stock')
             . '</th><th scope="col" class="manage-column" style="width:6em">' . esc_html__('Menge', 'taxmod-stock') . '</th><th scope="col" class="manage-column">' . esc_html__('Lagerort', 'taxmod-stock') . '</th>'
@@ -4971,23 +4986,6 @@ final class StockPage
         }
 
         return $text;
-    }
-
-    /** Stefan 16.11.: «Nicht einlagern» for every ticked purchase, with one reason. */
-    private function closeAllControls(int $order): string
-    {
-        $field = self::actForm([['label' => __('Grund', 'taxmod-stock'), 'control' => '<input type="text" list="taxmod-stock-reasons" name="bulk_reason" style="width:100%">',
-            'hint' => __('Gilt für alle angehakten Käufe.', 'taxmod-stock')]]);
-
-        return ListPage::dialogAction('taxmod-stock-close-all-' . $order, __('Angehakte nicht einlagern …', 'taxmod-stock'), __('Angehakte ohne Lager abschließen', 'taxmod-stock'), $field, 'booking', 'sammelnichteinlagern', __('Nicht einlagern', 'taxmod-stock'));
-    }
-
-    /** Stefan 16.11. «alle rückgängig»: the order's goods receipt taken back out of stock (D-1009). */
-    private function unbookControls(int $order): string
-    {
-        $body = '<p>' . esc_html__('Nimmt alle gebuchten Käufe dieser Bestellung wieder aus dem Bestand. Geht nur, solange von ihren Posten nichts verbraucht ist.', 'taxmod-stock') . '</p>';
-
-        return ListPage::dialogAction('taxmod-stock-unbook-' . $order, __('Wareneingang rückgängig …', 'taxmod-stock'), __('Wareneingang rückgängig machen', 'taxmod-stock'), $body, 'booking', 'wareneingangzurueck', __('Rückgängig', 'taxmod-stock'));
     }
 
     private function closeControls(int $purchase): string

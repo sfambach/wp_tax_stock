@@ -153,9 +153,9 @@ final class ContactsPage
         $count  = sprintf(/* translators: %d: number of contacts */ _n('%d Kontakt', '%d Kontakte', count($rows), 'taxmod-stock'), count($rows));
         $html   = '<h2>' . esc_html($node === $root ? __('Alle Kontakte', 'taxmod-stock') : $tree[$node]['name']) . '</h2>'
             . $this->tiles($tree, $node, $all)
-            . ($node === $root ? '' : ListPage::toolbar([[$this->newDialog($node, $tree[$node]['name'])]]))
             . ListPage::searchBox(self::SEARCH, $search, __('Name, Gruppe, Nummer …', 'taxmod-stock'), ['page' => self::PAGE, 'tab' => (string) $node])
-            . ListPage::bulkBar(self::BULK_FORM, self::ACTION, [], $count);
+            // D-1403, his word 2026-11-16 «was ist aus der einen toolbar geworden»: «Neu» stands in the bulk bar's row.
+            . ListPage::bulkBar(self::BULK_FORM, self::ACTION, [], $count, $node === $root ? '' : '<div class="alignleft actions">' . ListPage::toolbar([[$this->newDialog($node, $tree[$node]['name'])]]) . '</div>');
         $body   = '';
 
         foreach (ListView::page($rows, $paged, self::PER_PAGE) as $row) {

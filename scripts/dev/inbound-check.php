@@ -328,6 +328,15 @@ $pruefe(str_contains($assignForm, 'class="taxmod-stock-assign"') && str_contains
 $pruefe(str_contains($assignForm, 'value="angekommen"') && ! preg_match('/name="purchases\[\]" value="\d+" checked/', $assignForm), 'D-1400: on its way the one table says which purchases arrived, none ticked beforehand');
 $receiptForm = (string) (new \ReflectionMethod(StockPage::class, 'receiptPositions'))->invoke(new StockPage(), $r['o4'], InboundPage::BACK, false, [(int) $r['kaufE']]);
 $pruefe(! (new StockService())->canCloseWithoutStock() || str_contains($receiptForm, 'value="sammelnichteinlagern"'), 'D-1400: «Angehakte nicht einlagern …» with one reason for all');
+// D-1403, his words 2026-11-16 «wir haben bulk funktionen und du machst zwei buttons dahin», «alles in eine zeile»: one bar.
+$receiptBar = substr($receiptForm, 0, (int) strpos($receiptForm, 'id="taxmod-stock-receipt-' . $r['o4'] . '"'));
+$pruefe(substr_count($receiptForm, 'class="tablenav top"') === 1 && substr_count($receiptForm, 'class="taxmod-toolbar"') === 1 && str_contains($receiptBar, 'class="taxmod-toolbar"')
+    && str_contains($receiptBar, 'value="wareneingang" form="taxmod-stock-receipt-' . $r['o4'] . '"') && (! (new StockService())->canCloseWithoutStock() || str_contains($receiptBar, 'value="ask:taxmod-stock-close-all-' . $r['o4'] . '"')), 'D-1403: the receipt has one bar: the bulk choice, saving and booking in one row before the form');
+$pruefe(str_contains($assignForm, 'value="ask:taxmod-stock-arrive-') && ! str_contains($assignForm, '>Angehakte angekommen</button>'), 'D-1403: «Angehakte angekommen …» is a choice of the bulk bar, not a button of its own');
+$_GET = ['page' => InboundPage::PAGE, 'tab' => 'arrived', 'order' => $r['o4']];
+$oneView = (new InboundPage())->render();
+$_GET = [];
+$pruefe(! str_contains($oneView, 'class="taxmod-toolbar"'), 'D-1403: an order shown with its one table has no second toolbar above it; the order\'s acts stand in the table\'s bar');
 $pruefe(substr_count($receiptForm, '" checked') <= 1, 'D-1400: the receipt opened after «Angehakte angekommen» ticks only those purchases');
 $pruefe(str_contains($assignForm, 'data-taxmod-fill="location"') && strpos($assignForm, 'taxmod-stock-receipt-bulk-') < strpos($assignForm, 'class="taxmod-stock-assign"'), 'his wish «bulk funktion platz für alle wählen»: the bar before the form sets the place of every ticked purchase');
 $pruefe(str_contains(InboundPage::orderUrl($r['o4'], 'ordered'), 'tab=arrived'), 'his word «sollte dann auf eingebucht oben springen … sollte generell so sein»: after an action the order opens at the stage it stands in now');

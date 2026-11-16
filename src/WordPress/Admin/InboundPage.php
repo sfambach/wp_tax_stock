@@ -249,6 +249,7 @@ final class InboundPage
         $orderOf   = $this->inbound->orderOfPurchase();
         $orders    = $stock->labels('order');
         $places    = $stock->places();
+        $steps     = $stock->testStepsOf($lots);
         $rows      = '';
 
         foreach ($lots as $lot) {
@@ -261,7 +262,7 @@ final class InboundPage
                 esc_html(substr((string) $table->first($lot, $s->field('lot_date')), 0, 10)),
                 esc_html(($at = (int) $table->first($lot, $s->field('lot_location'))) > 0 ? ($places[$at] ?? $this->inbound->stock()->locationTree()->pathOf($at)) : ''),
                 esc_html(rtrim(rtrim(number_format($ledger->restOf($lot), 3, ',', '.'), '0'), ',')),
-            ], '', $this->testForm($lot), true);
+            ], '', $this->testForm($lot, $steps[$lot] ?? []), true);
         }
 
         $rows = $rows !== '' ? $rows : '<tr class="no-items"><td class="colspanchange" colspan="7">' . esc_html__('Nichts zu testen.', 'taxmod-stock') . '</td></tr>';
@@ -271,7 +272,8 @@ final class InboundPage
                 [__('Lagerort', 'taxmod-stock'), '10em'], [__('Menge', 'taxmod-stock'), '6em']], $rows);
     }
 
-    private function testForm(int $lot): string
+    /** @param list<array{instruction: string, firmware: string}> $steps D-1396: the revision's test steps, in order */
+    private function testForm(int $lot, array $steps = []): string
     {
         $choices = [
             TestResult::Ok->value          => __('OK', 'taxmod-stock'),
@@ -289,7 +291,16 @@ final class InboundPage
             $radios .= '<label style="margin-right:1.5em"><input type="radio" name="result" value="' . esc_attr($value) . '" required> ' . esc_html($label) . '</label>';
         }
 
+        // D-1396: the revision's test steps to tick off while testing; the ticks guide, the result is what is stored.
+        $list = '';
+
+        foreach ($steps as $n => $step) {
+            $list .= '<li><label><input type="checkbox" name="steps[]" value="' . esc_attr((string) ($n + 1)) . '"> ' . esc_html($step['instruction']) . '</label>'
+                . ($step['firmware'] === '' ? '' : ' <span class="description">' . esc_html(sprintf(/* translators: %s: firmware name and version */ __('Firmware: %s', 'taxmod-stock'), $step['firmware'])) . '</span>') . '</li>';
+        }
+
         return $html . StockPage::actForm([
+            ...($list === '' ? [] : [['label' => __('Prüfschritte', 'taxmod-stock'), 'control' => '<ol style="margin:0 0 0 1.5em">' . $list . '</ol>']]),
             ['label' => __('Ergebnis', 'taxmod-stock'), 'control' => $radios],
             ['label' => __('Begründung', 'taxmod-stock'), 'for' => 'taxmod-stock-test-reason-' . $lot, 'control' => '<textarea id="taxmod-stock-test-reason-' . esc_attr((string) $lot) . '" name="reason" rows="2" class="large-text"></textarea>',
                 'hint' => __('Bei «Teilweise OK» und «Wartung nötig» Pflicht, z. B. «Kondensatoren tauschen».', 'taxmod-stock')],

@@ -96,6 +96,8 @@ final class Structure
         'part_quantity',
         // D-1095: a place's own rank among its siblings — the setting «position» every record has (D-1250).
         'location_order',
+        // D-1396: a finished board's revision, the revision's test steps, a step's instruction and firmware, their order.
+        'thing_revision', 'revision_tests', 'test_instruction', 'test_firmware', 'test_order',
         // D-1184: a person's first name, put before the name in the contact list.
         'contact_first_name',
         // D-1249: a firm's link templates with {nr} — to an order by its number, to a product by its article number.

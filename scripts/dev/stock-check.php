@@ -879,6 +879,9 @@ $cutAnswer  = apply_filters('taxmod_stock_cut_sources', null, ['things' => [$bc 
 $cutRefused = apply_filters('taxmod_stock_book_cut', null, ['reference' => 1, 'into' => $r['lager'], 'cuts' => [['from' => 999999999, 'thing' => $bc, 'pieces' => 1]], 'date' => '2026-11-13']);
 $pruefe($cutAnswer === [] && $cutRefused instanceof WP_Error, 'D9: cut_sources answers none without connector fields, book_cut refuses a cut without lot (D-1328)');
 
+// D-1396: a lot whose material names no revision shows no test steps, and the read does not fail.
+$pruefe((new StockService())->testStepsOf([$lot, 999999999]) === [], 'D-1396: test steps only where the material names a revision with steps');
+
 // Performance (Fertigung 16.11.): the read filters share one service per request; a write filter starts it afresh.
 $readingOf = static fn () => (new ReflectionProperty(\TaxmodStock\WordPress\Plugin::class, 'reading'))->getValue();
 apply_filters('taxmod_stock_project_boxes', null, []);

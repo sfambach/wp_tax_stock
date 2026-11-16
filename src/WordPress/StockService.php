@@ -4864,6 +4864,80 @@ final class StockService
     }
 
     /**
+     * D-1396: the test steps of each lot's revision — the material's «bestückte Revision», its «Prüfschritte» in their
+     * order (setting «position», then as stored). Three reads for all lots (CD-7); a lot without revision or steps is left
+     * out, and so is everything while the structure names no steps.
+     *
+     * @param list<int> $lots
+     * @return array<int, list<array{instruction: string, firmware: string}>> lot → steps
+     */
+    public function testStepsOf(array $lots): array
+    {
+        $s = $this->structure();
+
+        foreach (['thing_revision', 'revision_tests', 'test_instruction'] as $key) {
+            if (! $s->hasField($key)) {
+                return [];
+            }
+        }
+
+        $ledger = $this->ledger();
+        $things = [];
+
+        foreach ($lots as $lot) {
+            $thing = $ledger->thingOf($lot);
+
+            if ($thing !== null) {
+                $things[$lot] = $thing;
+            }
+        }
+
+        $materials = $things === [] ? null : $this->model->records(array_values(array_unique($things)));
+        $revisions = [];
+
+        foreach (array_unique($things) as $thing) {
+            $revision = (int) $materials?->first($thing, $s->field('thing_revision'));
+
+            if ($revision > 0) {
+                $revisions[$thing] = $revision;
+            }
+        }
+
+        $heads = $revisions === [] ? null : $this->model->records(array_values(array_unique($revisions)));
+        $steps = [];
+
+        foreach (array_unique($revisions) as $revision) {
+            $steps[$revision] = array_values(array_map('intval', $heads?->all($revision, $s->field('revision_tests')) ?? []));
+        }
+
+        $all   = array_values(array_unique(array_merge([], ...array_values($steps))));
+        $parts = $all === [] ? null : $this->model->records($all);
+        $order = $s->hasField('test_order') ? $s->field('test_order') : 0;
+        $lists = [];
+
+        foreach ($steps as $revision => $ids) {
+            $rank = array_flip($ids);
+            usort($ids, static fn (int $a, int $b): int => [(int) ($order > 0 ? ($parts?->first($a, $order) ?? PHP_INT_MAX) : 0), $rank[$a]] <=> [(int) ($order > 0 ? ($parts?->first($b, $order) ?? PHP_INT_MAX) : 0), $rank[$b]]);
+            $lists[$revision] = array_values(array_filter(array_map(static fn (int $step): array => [
+                'instruction' => trim((string) $parts?->first($step, $s->field('test_instruction'))),
+                'firmware'    => $s->hasField('test_firmware') ? trim((string) $parts?->first($step, $s->field('test_firmware'))) : '',
+            ], $ids), static fn (array $step): bool => $step['instruction'] !== ''));
+        }
+
+        $out = [];
+
+        foreach ($things as $lot => $thing) {
+            $list = $lists[$revisions[$thing] ?? 0] ?? [];
+
+            if ($list !== []) {
+                $out[$lot] = $list;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * D-1342 (QK status): the lots that are blocked — waiting for their test. Derived, never stored: a lot is blocked while
      * its condition is «ungetestet», or empty while its material lies in a branch with «Test nach Wareneingang» (D-1002).
      * An entered test result frees it, «defekt» too.

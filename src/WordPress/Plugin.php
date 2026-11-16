@@ -1123,7 +1123,20 @@ final class Plugin
     {
         // A page hands back its HTML, or (D-1092) `side` and `main` when it shows a box under the navigation.
         $page = static fn (string $slug, callable $render): \Closure => static function () use ($slug, $render): void {
-            $out = $render();
+            // His report 2026-11-16 «platz auswahl zeigt graue seite»: an error no page caught ends as a message on the page,
+            // named with where it happened, never as an empty screen (D-1254).
+            try {
+                $out = $render();
+            } catch (\Throwable $e) {
+                error_log('taxmod-stock ' . $slug . ': ' . $e::class . ': ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+                $out = \Taxmod\WordPress\Admin\ListPage::page(__('Logistik', 'taxmod-stock'), [], [['html' => '<div class="notice notice-error"><p>' . esc_html(sprintf(
+                    /* translators: 1: error text, 2: file and line */
+                    __('Die Seite konnte nicht gezeichnet werden: %1$s (%2$s)', 'taxmod-stock'),
+                    $e->getMessage(),
+                    basename($e->getFile()) . ':' . $e->getLine()
+                )) . '</p></div>']], (string) TAXMOD_STOCK_VERSION);
+            }
+
             print is_array($out) ? LogisticsShell::wrap($slug, $out['main'], $out['side']) : LogisticsShell::wrap($slug, $out);
         };
 

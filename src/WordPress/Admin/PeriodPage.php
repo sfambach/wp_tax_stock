@@ -2,11 +2,13 @@
 
 namespace TaxmodStock\WordPress\Admin;
 
+use Taxmod\Core\Renderer\GridMarkup;
 use Taxmod\Core\Tile\Period;
 use Taxmod\Core\Tile\PeriodChart;
 use Taxmod\Core\Tile\PeriodSpan;
 use Taxmod\Core\Tile\Tile;
 use Taxmod\Core\Tile\TileTone;
+use Taxmod\WordPress\Admin\ListPage;
 use Taxmod\WordPress\Admin\Tiles;
 use TaxmodStock\Core\PeriodActivity;
 use TaxmodStock\Core\StockError;
@@ -130,22 +132,22 @@ final class PeriodPage
         }
         $plain = $s->hasValue('kind_consumption') ? $s->value('kind_consumption') : 0;
         $names[$plain] = $names === [] ? __('Verbrauch', 'taxmod-stock') : __('Verbrauch (ohne Art)', 'taxmod-stock');
-        $body  = '';
+        $rows  = [];
         foreach ($report->cells() as $kind => $byYear) {
-            $body .= '<tr><td>' . esc_html($names[$kind] ?? '#' . $kind) . '</td>';
+            $row = [esc_html($names[$kind] ?? '#' . $kind)];
             foreach ($years as $year) {
                 $cell  = $byYear[$year] ?? null;
-                $body .= '<td style="text-align:right">' . ($cell === null ? '' : esc_html(number_format_i18n($cell['value'], 2)
+                $row[] = ($cell === null ? '' : esc_html(number_format_i18n($cell['value'], 2)
                     /* translators: %d: lines whose lot has no value */
-                    . ($cell['unvalued'] > 0 ? ' · ' . sprintf(_n('%d ohne Wert', '%d ohne Wert', $cell['unvalued'], 'taxmod-stock'), $cell['unvalued']) : ''))) . '</td>';
+                    . ($cell['unvalued'] > 0 ? ' · ' . sprintf(_n('%d ohne Wert', '%d ohne Wert', $cell['unvalued'], 'taxmod-stock'), $cell['unvalued']) : '')));
             }
-            $body .= '</tr>';
+            $rows[] = $row;
         }
-        $head = '<th>' . esc_html__('Art', 'taxmod-stock') . '</th>' . implode('', array_map(static fn (string $year): string => '<th style="text-align:right">' . esc_html($year) . '</th>', $years));
+        $columns = [[__('Art', 'taxmod-stock')], ...array_map(static fn (string $year): array => [$year, GridMarkup::NUMBER], $years)];
 
         return '<h2 class="taxmod-tiles-heading">' . esc_html__('Verbrauch nach Art und Jahr', 'taxmod-stock') . '</h2>'
             . '<p class="description">' . esc_html__('Wert: ausgebuchte Menge mal Wert je Stück des Postens. Zeilen ohne Wert je Stück zählen nicht mit und stehen als «ohne Wert» daneben.', 'taxmod-stock') . '</p>'
-            . '<table class="widefat striped" style="max-width:60em"><thead><tr>' . $head . '</tr></thead><tbody>' . $body . '</tbody></table>';
+            . ListPage::grid($columns, $rows);
     }
 
     /** A count against the one before: grey when both are nothing, the trend as ▲ or ▼. */
@@ -214,18 +216,20 @@ final class PeriodPage
         $kinds  = $this->kinds();
         $arts   = array_map(static fn (array $node): string => $node['name'], $this->stock->consumptionKindTree());
         $things = $this->stock->things();
-        $rows   = '';
+        $rows   = [];
 
         foreach (array_slice($events, 0, self::LIST_LIMIT) as $e) {
             $names = array_map(
                 static fn (int $thing): string => '<a href="' . esc_url(StockPage::thingUrl($thing, 'bestand')) . '">' . esc_html($things->has($thing) ? $things->name($thing) : '#' . $thing) . '</a>',
                 array_keys($e['things'])
             );
-            $rows .= '<tr><td>' . esc_html(wp_date('j.n.Y', (int) strtotime($e['date'] . ' 00:00:00 UTC'), new \DateTimeZone('UTC'))) . '</td>'
-                . '<td>' . esc_html(($kinds[$e['kind']] ?? '–') . (isset($arts[$e['art'] ?? 0]) ? ' · ' . $arts[$e['art']] : '')) . '</td>'
-                . '<td>' . implode(', ', $names) . '</td>'
-                . '<td style="text-align:right">' . esc_html($e['in'] > 0 ? '+' . number_format_i18n($e['in'], fmod($e['in'], 1.0) === 0.0 ? 0 : 2) : '') . '</td>'
-                . '<td style="text-align:right">' . esc_html($e['out'] > 0 ? '−' . number_format_i18n($e['out'], fmod($e['out'], 1.0) === 0.0 ? 0 : 2) : '') . '</td></tr>';
+            $rows[] = [
+                esc_html(wp_date('j.n.Y', (int) strtotime($e['date'] . ' 00:00:00 UTC'), new \DateTimeZone('UTC'))),
+                esc_html(($kinds[$e['kind']] ?? '–') . (isset($arts[$e['art'] ?? 0]) ? ' · ' . $arts[$e['art']] : '')),
+                implode(', ', $names),
+                esc_html($e['in'] > 0 ? '+' . number_format_i18n($e['in'], fmod($e['in'], 1.0) === 0.0 ? 0 : 2) : ''),
+                esc_html($e['out'] > 0 ? '−' . number_format_i18n($e['out'], fmod($e['out'], 1.0) === 0.0 ? 0 : 2) : ''),
+            ];
         }
 
         $more = count($events) > self::LIST_LIMIT
@@ -233,9 +237,8 @@ final class PeriodPage
             ? '<p class="description">' . esc_html(sprintf(__('Die letzten %1$d von %2$d Vorgängen.', 'taxmod-stock'), self::LIST_LIMIT, count($events))) . '</p>'
             : '';
 
-        return '<table class="widefat striped"><thead><tr><th style="width:6em">' . esc_html__('Datum', 'taxmod-stock') . '</th><th style="width:9em">' . esc_html__('Art', 'taxmod-stock')
-            . '</th><th>' . esc_html__('Material', 'taxmod-stock') . '</th><th style="width:5em;text-align:right">' . esc_html__('Zugang', 'taxmod-stock')
-            . '</th><th style="width:5em;text-align:right">' . esc_html__('Abgang', 'taxmod-stock') . '</th></tr></thead><tbody>' . $rows . '</tbody></table>' . $more;
+        return ListPage::grid([[__('Datum', 'taxmod-stock')], [__('Art', 'taxmod-stock')], [__('Material', 'taxmod-stock')],
+            [__('Zugang', 'taxmod-stock'), GridMarkup::NUMBER], [__('Abgang', 'taxmod-stock'), GridMarkup::NUMBER]], $rows) . $more;
     }
 
     private function mostMoved(PeriodActivity $activity, Period $period): string
@@ -247,14 +250,13 @@ final class PeriodPage
         }
 
         $things = $this->stock->things();
-        $rows   = '';
+        $rows   = [];
 
         foreach ($moved as $thing => $quantity) {
-            $rows .= '<tr><td><a href="' . esc_url(StockPage::thingUrl($thing, 'bestand')) . '">' . esc_html($things->has($thing) ? $things->name($thing) : '#' . $thing) . '</a></td>'
-                . '<td style="text-align:right">' . esc_html(number_format_i18n($quantity, fmod($quantity, 1.0) === 0.0 ? 0 : 2)) . '</td></tr>';
+            $rows[] = ['<a href="' . esc_url(StockPage::thingUrl($thing, 'bestand')) . '">' . esc_html($things->has($thing) ? $things->name($thing) : '#' . $thing) . '</a>',
+                esc_html(number_format_i18n($quantity, fmod($quantity, 1.0) === 0.0 ? 0 : 2))];
         }
 
-        return '<table class="widefat striped"><thead><tr><th>' . esc_html__('Material', 'taxmod-stock') . '</th><th style="width:7em;text-align:right">'
-            . esc_html__('Bewegt', 'taxmod-stock') . '</th></tr></thead><tbody>' . $rows . '</tbody></table>';
+        return ListPage::grid([[__('Material', 'taxmod-stock')], [__('Bewegt', 'taxmod-stock'), GridMarkup::NUMBER]], $rows);
     }
 }

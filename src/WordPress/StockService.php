@@ -3715,9 +3715,13 @@ final class StockService
      * D-1088: reserved goods only for exactly their purpose — inside a reserved area its Bezug, for a lot a reservation
      * names that reservation's subject; any other purpose stays refused (D-1082).
      *
+     * D-1398: for a material counted in pins, `$pieces` pieces of `$piecePins` pins are cut, each whole from one strip of
+     * the lot at that place; the strips opened leave, what they leave comes back as lots of the same material. A plan that
+     * cannot serve every piece books nothing.
+     *
      * @return array<string, mixed>
      */
-    public function bookConsumption(int $thing, ?int $lot, string $quantity, Purpose $purpose, string $today, string $title, ?int $place = null, string $reason = '', int $art = 0): array
+    public function bookConsumption(int $thing, ?int $lot, string $quantity, Purpose $purpose, string $today, string $title, ?int $place = null, string $reason = '', int $art = 0, int $pieces = 0, int $piecePins = 0): array
     {
         // D-1297: where «Verbrauch» has kinds below it, one of its leaves is required.
         $leaves = $this->consumptionLeaves();
@@ -3743,9 +3747,61 @@ final class StockService
         $place    = $place !== null && $ledger->restAt($lot, $place) > 0.0 ? $place : null;
         $place  ??= $this->takenFrom($lot, $ledger, $reserved, $purpose);
         $reserved->checkConsumption($place ?? $ledger->homeOf($lot), $purpose);
+        $rests = [];
+
+        if ($pieces > 0) {
+            [$quantity, $rests] = $this->pinPieces($thing, $lot, $place ?? $ledger->homeOf($lot), $pieces, $piecePins, $ledger);
+        }
+
         $this->reservations()->checkConsumption($lot, $quantity, $place ?? $ledger->homeOf($lot), $purpose, $ledger, $reserved);
 
-        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->consumption($lot, $quantity, $purpose, $title, $place, $reason, $leaves === [] ? 0 : $art));
+        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->consumption($lot, $quantity, $purpose, $title, $place, $reason, $leaves === [] ? 0 : $art, $rests));
+    }
+
+    /**
+     * D-1398: the pins a goods-out of whole pieces takes from a lot at one place — whole strips opened — and the rests
+     * they leave, shortest strip first (the lot's own rest before its whole strips).
+     *
+     * @return array{0: string, 1: list<array{thing: int, quantity: int, name: string}>}
+     */
+    private function pinPieces(int $thing, int $lot, int $place, int $pieces, int $piecePins, Ledger $ledger): array
+    {
+        $pack = $this->packsOf([$thing])[$thing] ?? throw StockError::cutNotPossible($piecePins, 0);
+        $full = $pack->content;
+        $rows = ($this->stripFacts([$thing], $this->model->nodesOf([$thing]))['rows'][$thing] ?? 1);
+
+        if ($piecePins < 1 || $piecePins > $full || $piecePins % $rows !== 0 || $full % $rows !== 0) {
+            throw StockError::cutNotPossible($piecePins, $full);
+        }
+
+        $pins   = $ledger->restAt($lot, $place) ?: $ledger->restOf($lot);
+        $whole  = (int) floor($pins / $full + 1e-9);
+        $strips = array_fill(0, $whole, intdiv($full, $rows));
+        $left   = (int) round($pins - $whole * $full);
+
+        if ($left >= $rows) {
+            $strips['r'] = intdiv($left, $rows);
+        }
+
+        $plan = StripCut::plan($pieces, intdiv($piecePins, $rows), $strips, $pack->lossPerCut);
+
+        if ($plan->missing > 0) {
+            throw StockError::cutTooShort($lot, $pieces);
+        }
+
+        $label = $this->recordLabels([$thing])[$thing] ?? '#' . $thing;
+        $taken = 0;
+        $rests = [];
+
+        foreach ($plan->uses as $use) {
+            $taken += $use['columns'] * $rows;
+
+            if ($use['rest'] > 0) {
+                $rests[] = ['thing' => $thing, 'quantity' => $use['rest'] * $rows, 'name' => sprintf('%s · Rest %d polig', $label, $use['rest'] * $rows)];
+            }
+        }
+
+        return [(string) $taken, $rests];
     }
 
     /**

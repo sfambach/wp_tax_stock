@@ -322,15 +322,22 @@ final class Bookings
      * project — and its reason («Grund», e.g. «Reparatur») in its description. «Für Produktion» names no record; the
      * place it is taken from says enough.
      *
+     * @param list<array{thing: int, quantity: int, name: string}> $rests D-1398: rest strips, new lots at the place
      * @return list<array<string, mixed>>
      */
-    public function consumption(int $lot, string $quantity, Purpose $purpose, string $title, ?int $place = null, string $reason = '', int $art = 0): array
+    public function consumption(int $lot, string $quantity, Purpose $purpose, string $title, ?int $place = null, string $reason = '', int $art = 0, array $rests = []): array
     {
         $s      = $this->structure;
         $amount = Quantity::positive($quantity);
 
         $this->start();
         $this->line($title, (string) $lot, '-' . $amount, null, $place);
+
+        // D-1398: what the opened strips leave comes back where they lay, as lots of the same material.
+        foreach ($rests as $rest) {
+            $new = $this->lot($rest['name'], (string) $rest['thing'], null, null, '', $place);
+            $this->line($rest['name'], $new, self::signed($rest['quantity']), null, $place);
+        }
 
         $field = $s->hasField('transaction_reference') ? 'transaction_reference' : 'transaction_project';
         $extra = $purpose->subject > 0 && $s->hasField($field) ? [(string) $s->field($field) => (string) $purpose->subject] : [];

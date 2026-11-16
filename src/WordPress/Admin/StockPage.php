@@ -340,7 +340,9 @@ final class StockPage
                     $this->title(__('Verbrauch', 'taxmod-stock'), $today),
                     absint($_POST['place'] ?? 0) ?: null,
                     sanitize_text_field(wp_unslash((string) ($_POST['reason'] ?? ''))),
-                    $consumption['kind']
+                    $consumption['kind'],
+                    absint($_POST['pieces'] ?? 0),
+                    absint($_POST['piece_pins'] ?? 0)
                 ),
                 default        => throw StockError::nothingToBook(),
             };
@@ -4339,6 +4341,7 @@ final class StockPage
         }
         $controls = $this->stock->consumptionControls('taxmod-stock-consumption');
         $unit     = $thing > 0 ? ($this->stock->unitWords([$thing])[$thing] ?? '') : '';
+        $pack     = $thing > 0 ? ($this->stock->packsOf([$thing])[$thing] ?? null) : null;
 
         // D-1039: «Ausbuchen» on a row of the Bestand tab takes from that row's place.
         $at   = $presetPlace > 0 ? sprintf(/* translators: %s: the place, by its path */ __('Ausgebucht wird am Ort %s.', 'taxmod-stock'), $this->stock->places()[$presetPlace] ?? '#' . $presetPlace) : '';
@@ -4347,9 +4350,16 @@ final class StockPage
                 . $this->recordPicker('lot', $lot > 0 ? $lot : null, $word === '' ? '#' . $lot : $word, null, __('Material oder Posten suchen …', 'taxmod-stock'))
                 . ($presetPlace > 0 ? '<input type="hidden" name="place" value="' . esc_attr((string) $presetPlace) . '">' : ''), 'hint' => $at],
             // D-1298: the modeller's own number control; the unit is the material's, shown beside it by name.
-            ['label' => __('Menge', 'taxmod-stock'), 'control' => ($controls['quantity'] !== '' ? $controls['quantity']
-                : '<input type="text" inputmode="decimal" name="quantity" required style="width:6em">')
-                . ($unit === '' ? '' : ' <span class="taxmod-stock-unit">' . esc_html($unit) . '</span>')],
+            // D-1398: a material counted in pins goes out in whole pieces, each cut from one strip; no «Menge» then.
+            ...($pack !== null ? [
+                ['label' => __('Anzahl Stücke', 'taxmod-stock'), 'for' => 'taxmod-stock-pieces', 'control' => '<input type="number" id="taxmod-stock-pieces" name="pieces" min="1" step="1" required style="width:6em">'],
+                ['label' => __('Pins je Stück', 'taxmod-stock'), 'for' => 'taxmod-stock-piece-pins', 'control' => '<input type="number" id="taxmod-stock-piece-pins" name="piece_pins" min="1" max="' . esc_attr((string) $pack->content) . '" step="1" required value="' . esc_attr((string) $pack->content) . '" style="width:6em">',
+                    'hint' => __('Jedes Stück ganz aus einer Leiste; was übrig bleibt, kommt als eigener Posten zurück.', 'taxmod-stock')],
+            ] : [
+                ['label' => __('Menge', 'taxmod-stock'), 'control' => ($controls['quantity'] !== '' ? $controls['quantity']
+                    : '<input type="text" inputmode="decimal" name="quantity" required style="width:6em">')
+                    . ($unit === '' ? '' : ' <span class="taxmod-stock-unit">' . esc_html($unit) . '</span>')],
+            ]),
             $this->purposeRow($presetPlace),
         ];
         // D-1297, D-1298: the kind, from the modeller's chooser narrowed to the leaves under «Verbrauch»; required there.

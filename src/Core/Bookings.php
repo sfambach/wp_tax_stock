@@ -377,8 +377,10 @@ final class Bookings
      * D-1328 (D9): strips cut for a build order in one Vorgang «Verbrauch» whose Bezug is the order — the long strips
      * leave their place, the pieces come into the box as new lots, what is left of a strip stays at its place as a lot
      * of the shorter strip. `$prelude` creates rest materials first; their refs stand in `rests[].thing`.
+     * D-1398: a strip counted in pins may also take from rest lots (`more`), and its rests go back as lots of the same
+     * material where their strip lay (`rests[].place`).
      *
-     * @param list<array{lot: int, place: int, take: int, thing: int, pieces: int, into: int, name: string, rests: list<array{thing: string, quantity: int, name: string}>}> $rows
+     * @param list<array{lot: int, place: int, take: int, thing: int, pieces: int, into: int, name: string, more?: list<array{lot: int, place: int, take: int}>, rests: list<array{thing: string, quantity: int, name: string, place?: int}>}> $rows
      * @param list<array<string, mixed>> $prelude
      * @return list<array<string, mixed>>
      */
@@ -394,14 +396,19 @@ final class Bookings
         $this->changes = $prelude;
 
         foreach ($rows as $row) {
-            $this->line($title, (string) $row['lot'], self::signed(-$row['take']), null, $row['place']);
+            foreach ([['lot' => $row['lot'], 'place' => $row['place'], 'take' => $row['take']], ...($row['more'] ?? [])] as $take) {
+                if ($take['take'] > 0) {
+                    $this->line($title, (string) $take['lot'], self::signed(-$take['take']), null, $take['place']);
+                }
+            }
 
             $pieces = $this->lot($row['name'], (string) $row['thing'], null, null, '', $row['into']);
             $this->line($row['name'], $pieces, self::signed($row['pieces']), null, $row['into']);
 
             foreach ($row['rests'] as $rest) {
-                $lot = $this->lot($rest['name'], $rest['thing'], null, null, '', $row['place']);
-                $this->line($rest['name'], $lot, self::signed($rest['quantity']), null, $row['place']);
+                $at  = $rest['place'] ?? $row['place'];
+                $lot = $this->lot($rest['name'], $rest['thing'], null, null, '', $at);
+                $this->line($rest['name'], $lot, self::signed($rest['quantity']), null, $at);
             }
         }
 

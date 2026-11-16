@@ -84,7 +84,7 @@ final class InboundPage
 
     public function render(): string
     {
-        $html = '<div class="wrap">' . ListPage::heading(__('Wareneingang', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . $this->notice();
+        $html = '<div class="wrap">' . ListPage::heading(__('Wareneingang', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . Notice::take();
 
         try {
             $html .= $this->body();
@@ -135,9 +135,9 @@ final class InboundPage
                 ),
                 default   => throw StockError::nothingToBook(),
             };
-            $this->remember('success', $text);
+            Notice::remember('success', $text);
         } catch (StockError $e) {
-            $this->remember('error', Messages::of($e));
+            Notice::remember('error', Messages::of($e));
         }
 
         $tab = in_array($tab, self::tabSlugs(), true) ? $tab : '';
@@ -833,21 +833,5 @@ final class InboundPage
         };
     }
 
-    private function remember(string $type, string $text): void
-    {
-        set_transient(StockPage::NOTICE . get_current_user_id(), ['type' => $type, 'text' => $text], 60);
-    }
 
-    private function notice(): string
-    {
-        $notice = get_transient(StockPage::NOTICE . get_current_user_id());
-
-        if (! is_array($notice)) {
-            return '';
-        }
-
-        delete_transient(StockPage::NOTICE . get_current_user_id());
-
-        return '<div class="notice notice-' . esc_attr($notice['type'] === 'success' ? 'success' : 'error') . '"><p>' . esc_html((string) $notice['text']) . '</p></div>';
-    }
 }

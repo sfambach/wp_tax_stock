@@ -151,7 +151,7 @@ final class StockPage
         $tab  = sanitize_key((string) ($_GET['tab'] ?? self::TABS[0]));
         $tab  = in_array($tab, self::TABS, true) ? $tab : self::TABS[0];
         $list = $this->listRequest();
-        $html = '<div class="wrap">' . ListPage::heading(__('Lager', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . $this->notice();
+        $html = '<div class="wrap">' . ListPage::heading(__('Lager', 'taxmod-stock'), (string) TAXMOD_STOCK_VERSION) . Notice::take(self::NOTICE, true);
 
         try {
             $thing = absint($_GET['thing'] ?? 0);
@@ -357,7 +357,7 @@ final class StockPage
                 ),
                 default        => throw StockError::nothingToBook(),
             };
-            $this->remember('success', match ($kind) {
+            Notice::remember('success', match ($kind) {
                 'umhaengen'      => __('Umgehängt: der Ort liegt jetzt dort, mit allem, was in ihm liegt.', 'taxmod-stock'),
                 'orteverschieben' => __('Verschoben: die gewählten Orte liegen jetzt dort, mit allem, was in ihnen liegt.', 'taxmod-stock'),
                 'umbuchen'       => __('Umgebucht: ein Vorgang «Umbuchung» mit Abgang am alten und Zugang am neuen Ort.', 'taxmod-stock'),
@@ -407,7 +407,7 @@ final class StockPage
 
             if ($misfits !== []) {
                 $info = $this->stock->fitLevelOf(absint($kind === 'ort' ? ($_POST['new_parent'] ?? 0) : ($kind === 'umhaengen' ? (((array) ($_POST['parent'] ?? []))[$rowPurchase] ?? 0) : ($_POST['children_parent'] ?? 0)))) === FitLevel::Info;
-                $this->remember($info ? 'info' : 'warning', __('Erledigt, aber: die Außenabmessung passt nicht in die Innenabmessung des Ortes darüber (Passberechnung seiner Platzart).', 'taxmod-stock'));
+                Notice::remember($info ? 'info' : 'warning', __('Erledigt, aber: die Außenabmessung passt nicht in die Innenabmessung des Ortes darüber (Passberechnung seiner Platzart).', 'taxmod-stock'));
             }
 
             $open = $kind === 'zuordnen' ? (int) array_key_first(array_filter(array_map('absint', (array) ($_POST['newgroup'] ?? [])))) : 0;
@@ -432,7 +432,7 @@ final class StockPage
             };
         } catch (StockError $e) {
             $failed = true;
-            $this->remember('error', Messages::of($e));
+            Notice::remember('error', Messages::of($e));
             $back = match ($kind) {
                 'wareneingang', 'zuordnen', 'nichteinlagern', 'einlagern', 'sammelnichteinlagern', 'wareneingangzurueck', 'angekommen', 'bilduebernehmen' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
                 'platzart'          => ['platzarten', []],
@@ -1799,7 +1799,7 @@ final class StockPage
         $template  = $templates->get($chosen);
         $printers  = method_exists($templates, 'printerList') ? $templates->printerList() : [];
         $fail      = function (string $message) use ($url): never {
-            $this->remember('error', $message);
+            Notice::remember('error', $message);
             wp_safe_redirect($url);
             exit;
         };
@@ -1849,7 +1849,7 @@ final class StockPage
             }
 
             $total = count($filled) * $count;
-            $this->remember('success', sprintf(/* translators: %d: number of labels */ _n('%d Etikett wartet auf den Druckdienst.', '%d Etiketten warten auf den Druckdienst.', $total, 'taxmod-stock'), $total));
+            Notice::remember('success', sprintf(/* translators: %d: number of labels */ _n('%d Etikett wartet auf den Druckdienst.', '%d Etiketten warten auf den Druckdienst.', $total, 'taxmod-stock'), $total));
             wp_safe_redirect($url);
             exit;
         }
@@ -3476,7 +3476,7 @@ final class StockPage
         }
 
         if (($format === null && $labels !== []) || ($labels === [] && $filled === [])) {
-            $this->remember('error', $labels === [] && $filled === [] ? __('Kein Ort angehakt.', 'taxmod-stock') : __('Etiketten brauchen den Taxonomy Modeller mit Druck und ein bekanntes Format.', 'taxmod-stock'));
+            Notice::remember('error', $labels === [] && $filled === [] ? __('Kein Ort angehakt.', 'taxmod-stock') : __('Etiketten brauchen den Taxonomy Modeller mit Druck und ein bekanntes Format.', 'taxmod-stock'));
             wp_safe_redirect($url);
             exit;
         }
@@ -3493,7 +3493,7 @@ final class StockPage
             }
 
             $count = array_sum(array_column($labels, 1)) + array_sum(array_column($filled, 2));
-            $this->remember('success', sprintf(/* translators: %d: number of labels */ _n('%d Etikett wartet auf den Druckdienst.', '%d Etiketten warten auf den Druckdienst.', $count, 'taxmod-stock'), $count));
+            Notice::remember('success', sprintf(/* translators: %d: number of labels */ _n('%d Etikett wartet auf den Druckdienst.', '%d Etiketten warten auf den Druckdienst.', $count, 'taxmod-stock'), $count));
             wp_safe_redirect($url);
             exit;
         }
@@ -3502,7 +3502,7 @@ final class StockPage
         $kinds = array_unique(array_map(static fn (array $pair): string => $pair[1]->format->key . '|' . $pair[1]->layout->toJson(), $filled));
 
         if ($filled !== [] && ($labels !== [] || count($kinds) > 1)) {
-            $this->remember('error', __('Die angehakten Orte haben verschiedene Etikettenvorlagen; ein PDF hat nur eine Größe. Bitte getrennt drucken oder den Druckdienst nehmen.', 'taxmod-stock'));
+            Notice::remember('error', __('Die angehakten Orte haben verschiedene Etikettenvorlagen; ein PDF hat nur eine Größe. Bitte getrennt drucken oder den Druckdienst nehmen.', 'taxmod-stock'));
             wp_safe_redirect($url);
             exit;
         }
@@ -5151,24 +5151,5 @@ final class StockPage
         return sprintf(__('(%1$d × %2$s + %3$s)', 'taxmod-stock'), $packs, $pack->name === '' ? __('Packung', 'taxmod-stock') : $pack->name, $this->number($rest));
     }
 
-    private function remember(string $type, string $text): void
-    {
-        set_transient(self::NOTICE . get_current_user_id(), ['type' => $type, 'text' => $text], 60);
-    }
 
-    private function notice(): string
-    {
-        $notice = get_transient(self::NOTICE . get_current_user_id());
-
-        if (! is_array($notice)) {
-            // D-1025: what the modeller said after saving the material here.
-            $said = isset($_GET['taxmod_message']) ? sanitize_text_field(rawurldecode(wp_unslash((string) $_GET['taxmod_message']))) : '';
-
-            return $said === '' ? '' : '<div class="notice notice-' . ($said === 'ok' ? 'success' : 'info') . ' is-dismissible"><p>' . esc_html($said === 'ok' ? __('Gespeichert.', 'taxmod-stock') : $said) . '</p></div>';
-        }
-
-        delete_transient(self::NOTICE . get_current_user_id());
-
-        return '<div class="notice notice-' . esc_attr($notice['type'] === 'success' ? 'success' : 'error') . '"><p>' . esc_html((string) $notice['text']) . '</p></div>';
-    }
 }

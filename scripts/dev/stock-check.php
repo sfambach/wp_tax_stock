@@ -1668,6 +1668,10 @@ $pruefe($baum->childrenOf(1) === [4, 2, 3] && $baum->orderOf(2) === null && arra
 $pruefe(str_contains($quelle('WordPress/StockService.php'), 'public function rankPlace(') && str_contains($quelle('WordPress/Admin/StockPage.php'), "'rank_drop'")
     && str_contains($quelle('WordPress/Admin/StockPage.php'), "'reihenfolge'  => \$this->stock->rankPlace("), 'D-1095: «davor»/«danach» in the place tree reorders the level through rankPlace');
 
+// D-1127: the reservations list offers its row action «Stornieren» for every ticked reservation in the shared bulk bar.
+$pruefe(str_contains($quelle('WordPress/Admin/StockPage.php'), "'reservierungensammelstorno' => \$this->cancelReservations(")
+    && str_contains($quelle('WordPress/Admin/StockPage.php'), "'taxmod-stock-reservations-storno' => [__('Stornieren …'"), 'D-1127: «Stornieren …» over the ticked reservations, in the shared bulk bar');
+
 // D-1381, his words 2026-11-15 «ein bestand der unterbestände hat», card «Beides»: a sub-lot names its set lot; the set's
 // Bestand lists what each set lot holds against the set's wanted content, the sub-lot links back to its set.
 $setNeu = $apply([

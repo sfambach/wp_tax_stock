@@ -273,6 +273,11 @@ final class StockPage
                     $this->title(__('Reservierung', 'taxmod-stock'), $today)
                 ),
                 'reservierungstorno' => $this->stock->cancelReservation(absint($_POST['transaction'] ?? 0), absint($_POST['line'] ?? 0) ?: null, current_time('Y-m-d H:i:s'), wp_get_current_user()->display_name),
+                // D-1127: «Stornieren …» over the ticked reservations of the list; a reserved place («o…») is no Vorgang and is left.
+                'reservierungensammelstorno' => $this->cancelReservations(array_values(array_filter(array_map(
+                    static fn (mixed $row): int => str_starts_with((string) $row, 'r') ? absint(substr((string) $row, 1)) : 0,
+                    (array) ($_POST['selected'] ?? [])
+                )))),
                 'storno'       => $this->stock->cancelTransfer(absint($_POST['transaction'] ?? 0), current_time('Y-m-d H:i:s'), wp_get_current_user()->display_name),
                 'verbrauchstorno' => $this->stock->cancelConsumption(absint($_POST['transaction'] ?? 0), current_time('Y-m-d H:i:s'), wp_get_current_user()->display_name),
                 'inventurstorno' => $this->stock->cancelCount(absint($_POST['transaction'] ?? 0), absint($_POST['line'] ?? 0) ?: null, current_time('Y-m-d H:i:s'), wp_get_current_user()->display_name),
@@ -347,7 +352,7 @@ final class StockPage
                 'gruppeanlegen'  => __('Gruppe angelegt.', 'taxmod-stock'),
                 'sammelumbuchen' => __('Umgebucht: alle gewählten Materialien liegen jetzt am neuen Ort, als ein Vorgang «Umbuchung».', 'taxmod-stock'),
                 'postenumbuchen' => __('Umgebucht: die gewählten Posten liegen jetzt ganz am neuen Ort, als ein Vorgang «Umbuchung».', 'taxmod-stock'),
-                'storno', 'reservierungstorno', 'verbrauchstorno', 'inventurstorno' => __('Storniert: die Gegenbuchung hebt den Vorgang auf, beide bleiben im Protokoll.', 'taxmod-stock'),
+                'storno', 'reservierungstorno', 'reservierungensammelstorno', 'verbrauchstorno', 'inventurstorno' => __('Storniert: die Gegenbuchung hebt den Vorgang auf, beide bleiben im Protokoll.', 'taxmod-stock'),
                 'reservieren'    => __('Reserviert: der verfügbare Bestand sinkt, der Bestand bleibt.', 'taxmod-stock'),
                 'ort'            => __('Lagerort angelegt.', 'taxmod-stock'),
                 'platzart'       => __('Platzart angelegt; die weiteren Felder stehen jetzt zum Ausfüllen da.', 'taxmod-stock'),
@@ -393,6 +398,7 @@ final class StockPage
                 'lager'        => ['material', ['thing' => $thing, 'view' => 'lager']],
                 'quellen'      => ['material', ['thing' => $thing, 'view' => 'einkauf']],
                 'umbuchen', 'storno', 'verbrauchstorno', 'inventurstorno' => ['material', ['thing' => $thing, 'view' => 'bestand']],
+                'reservierungensammelstorno' => ['reservierungen', []],
                 'reservieren', 'reservierungstorno' => sanitize_key((string) ($_POST['back'] ?? '')) === 'bestand' && $thing > 0
                     ? ['material', ['thing' => $thing, 'view' => 'bestand']] : ['reservierungen', []],
                 'wareneingang', 'aufteilen', 'zuordnen', 'nichteinlagern', 'einlagern' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
@@ -423,6 +429,7 @@ final class StockPage
                 'verschieben'       => ['material', ['thing' => $thing, 'view' => 'daten']],
                 'verbrauch'         => ['verbrauch', ['thing' => $thing]],
                 'kopieren'          => ['material', ['thing' => $thing, 'view' => 'daten']],
+                'reservierungensammelstorno' => ['reservierungen', []],
                 'reservieren', 'reservierungstorno' => sanitize_key((string) ($_POST['back'] ?? '')) === 'bestand' && $thing > 0
                     ? ['material', ['thing' => $thing, 'view' => 'bestand']] : ['reservierungen', []],
                 default             => [$kind, []],
@@ -1937,6 +1944,27 @@ final class StockPage
     }
 
     /** D-1036: the Storno of a reservation, whole or one position, asked in the shared dialog. */
+    /**
+     * D-1127: each ticked reservation cancelled whole, one Gegenbuchung each — the same act as its row's «Stornieren».
+     *
+     * @param list<int> $deals
+     * @return array<string, mixed>
+     */
+    private function cancelReservations(array $deals): array
+    {
+        if ($deals === []) {
+            throw StockError::nothingToBook();
+        }
+
+        $result = [];
+
+        foreach ($deals as $deal) {
+            $result = $this->stock->cancelReservation($deal, null, current_time('Y-m-d H:i:s'), wp_get_current_user()->display_name);
+        }
+
+        return $result;
+    }
+
     private function reservationStornoDialog(int $deal, ?int $line, string $what): string
     {
         if (! method_exists(ListPage::class, 'dialogAction')) {
@@ -2019,8 +2047,20 @@ final class StockPage
             ));
         }
 
+        // D-1127: the row's «Stornieren» for every ticked reservation; a reserved place is freed only by moving its goods out.
+        $storno = method_exists(ListPage::class, 'dialogAction') ? ['taxmod-stock-reservations-storno' => [__('Stornieren …', 'taxmod-stock'), '<div class="alignleft actions">'
+            . ListPage::dialogAction('taxmod-stock-reservations-storno', __('Stornieren …', 'taxmod-stock'), __('Ausgewählte Reservierungen stornieren', 'taxmod-stock'),
+                '<p class="description" style="margin-top:0">' . esc_html__('Je angehakter Reservierung eine Gegenbuchung, die ihre Mengen wieder freigibt; reservierte Orte bleiben, wie sie sind.', 'taxmod-stock') . '</p>',
+                'booking', 'reservierungensammelstorno', __('Stornieren', 'taxmod-stock'), self::BULK_FORM) . '</div>']] : [];
+        $count  = sprintf(/* translators: %d: number of reservations */ _n('%d Reservierung', '%d Reservierungen', count($open), 'taxmod-stock'), count($open));
+        $bar    = str_replace(
+            ['name="action" id="' . self::BULK_FORM . '-action"', '</form>'],
+            ['name="bulk" id="' . self::BULK_FORM . '-action"', '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"></form>'],
+            self::bulkBar(self::BULK_FORM, $count, '', $storno)
+        );
+
         return '<p>' . esc_html__('Eine Reservierung je Bezug: Projekt oder Verkauf. Ein für die Produktion reservierter Lagerort hat genau eine Reservierung, gerechnet aus dem, was dort liegt.', 'taxmod-stock') . '</p>'
-            . ListPage::toolbar([[$this->reserveFormDialog(0, 'reservierungen')]])
+            . ListPage::toolbar([[$this->reserveFormDialog(0, 'reservierungen')]]) . $bar
             . ListPage::table([[__('Reservierung', 'taxmod-stock'), ''], [__('Bezug', 'taxmod-stock'), '14em'], [__('Datum', 'taxmod-stock'), '7em'], [__('Frist', 'taxmod-stock'), '7em'], [__('Positionen', 'taxmod-stock'), '6em']],
                 $body === '' ? $this->noItems(5) : $body);
     }

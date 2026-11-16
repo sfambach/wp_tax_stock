@@ -160,7 +160,34 @@ final class StockService
         $file    = dirname(__DIR__, 2) . '/structure-live.json';
         $bundled = is_readable($file) ? json_decode((string) file_get_contents($file), true) : null;
 
-        return $this->structure = Structure::fromArray(Structure::completed(is_array($raw) ? $raw : [], is_array($bundled) ? $bundled : []));
+        $completed = Structure::completed(is_array($raw) ? $raw : [], is_array($bundled) ? $bundled : []);
+        self::shareRoles($completed);
+
+        return $this->structure = Structure::fromArray($completed);
+    }
+
+    /** The option that remembers for which release this site's roles went into the modeller's role table. */
+    private const ROLES_SHARED = 'taxmod_stock_roles_shared';
+
+    /**
+     * D-1394: hand this site's structure to the modeller's one role table, once per release; the modeller keeps what it has
+     * and never overwrites. Step one of the move — the module still reads its own structure until it reads the roles.
+     *
+     * @param array<string, mixed> $structure
+     */
+    private static function shareRoles(array $structure): void
+    {
+        if (! method_exists(\Taxmod\WordPress\ModelDoor::class, 'adoptRoles') || get_option(self::ROLES_SHARED) === TAXMOD_STOCK_VERSION) {
+            return;
+        }
+
+        $conflicts = \Taxmod\WordPress\ModelDoor::adoptRoles($structure);
+
+        if ($conflicts !== []) {
+            error_log('Taxmod Stock: roles set differently in the modeller: ' . wp_json_encode($conflicts));
+        }
+
+        update_option(self::ROLES_SHARED, TAXMOD_STOCK_VERSION, true);
     }
 
     /**

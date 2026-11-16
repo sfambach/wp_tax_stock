@@ -884,6 +884,9 @@ $lmWord   = (new StockService())->recordLabels([$r['lm']])[$r['lm']] ?? '';
 $pickHits = $lmWord === '' ? [] : (new StockService())->stockHits($lmWord . ' zzdetail zzmehr', 12);
 $pruefe($lmWord !== '' && in_array($r['lm'], array_column($pickHits, 'id'), true), 'D-1387: the picker drops trailing words until a material in stock is found, stocked hits first');
 
+// D-1398: pieces in the picker only for a strip counted in pins; any other material opens no strips.
+$pruefe((new StockService())->stripsToOpen($r['lm'], [$r['lager']], 10, 6) === [], 'D-1398: a material not counted in pins opens no strips in the picker');
+
 // D-1396: a lot whose material names no revision shows no test steps, and the read does not fail.
 $pruefe((new StockService())->testStepsOf([$lot, 999999999]) === [], 'D-1396: test steps only where the material names a revision with steps');
 

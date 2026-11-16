@@ -1066,7 +1066,8 @@ final class Plugin
 
         foreach (is_array($args['lines'] ?? null) ? $args['lines'] : [] as $line) {
             if (is_array($line) && absint($line['thing'] ?? 0) > 0 && absint($line['from'] ?? 0) > 0 && is_numeric($line['qty'] ?? null) && (float) $line['qty'] > 0) {
-                $lines[] = ['thing' => absint($line['thing']), 'from' => absint($line['from']), 'quantity' => (float) $line['qty']];
+                // D-1398: «pieces» pieces of «piece» pins each, for a strip counted in pins.
+                $lines[] = ['thing' => absint($line['thing']), 'from' => absint($line['from']), 'quantity' => (float) $line['qty'], 'pieces' => absint($line['pieces'] ?? 0), 'piece' => absint($line['piece'] ?? 0)];
             }
         }
 

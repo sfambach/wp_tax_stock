@@ -879,6 +879,16 @@ $cutAnswer  = apply_filters('taxmod_stock_cut_sources', null, ['things' => [$bc 
 $cutRefused = apply_filters('taxmod_stock_book_cut', null, ['reference' => 1, 'into' => $r['lager'], 'cuts' => [['from' => 999999999, 'thing' => $bc, 'pieces' => 1]], 'date' => '2026-11-13']);
 $pruefe($cutAnswer === [] && $cutRefused instanceof WP_Error, 'D9: cut_sources answers none without connector fields, book_cut refuses a cut without lot (D-1328)');
 
+// Performance (Fertigung 16.11.): the read filters share one service per request; a write filter starts it afresh.
+$readingOf = static fn () => (new ReflectionProperty(\TaxmodStock\WordPress\Plugin::class, 'reading'))->getValue();
+apply_filters('taxmod_stock_project_boxes', null, []);
+$firstRead = $readingOf();
+apply_filters('taxmod_stock_loss_lots', null);
+apply_filters('taxmod_stock_cut_sources', null, ['things' => [$bc => 2], 'except' => 0]);
+$sharedRead = $firstRead !== null && $readingOf() === $firstRead;
+apply_filters('taxmod_stock_book_cut', null, ['reference' => 1, 'into' => $r['lager'], 'cuts' => [['from' => 999999999, 'thing' => $bc, 'pieces' => 1]], 'date' => '2026-11-13']);
+$pruefe($sharedRead && $readingOf() === null, 'read filters share one StockService per request; a write filter forgets it');
+
 // D-1038 (E1): the inbox's event sets the order status forward, once; a closed order keeps its status.
 $evOrder = (int) (wp_get_ability('taxmod/apply')->execute(['changes' => [['op' => 'create_record', 'ref' => 'evo', 'node' => (string) $r['ord'], 'values' => [(string) $r['o_stat'] => (string) $r['s_best']]]]])['refs']['evo'] ?? 0);
 do_action('taxmod_stock_event', $evOrder, 'shipped', '2026-11-12', 'mail', 'x1');

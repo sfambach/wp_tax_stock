@@ -205,12 +205,17 @@ final class ModelGateway
         return $this->ask(fn (): array => $this->door->subtree($root));
     }
 
+    /** How often this request wrote through the module: what was read before a write is stale after it. */
+    public static int $writes = 0;
+
     /**
      * @param list<array<string, mixed>> $changes
      * @return array<string, mixed> the modeller's answer, with the new ids under `refs`
      */
     public function write(array $changes): array
     {
+        self::$writes++;
+
         return $this->ask(fn (): array => $this->door->write($changes));
     }
 

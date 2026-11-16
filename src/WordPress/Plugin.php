@@ -228,10 +228,35 @@ final class Plugin
         };
     }
 
+    /** The service the read filters share within one request: a page of the manufacturing module asks several of them. */
+    private static ?StockService $reading = null;
+
+    /** The module's write count when {@see $reading} was made. */
+    private static int $readAt = -1;
+
+    /** One read of the stock per request for every read filter; any write of the module in between starts it afresh. */
+    private static function reading(): StockService
+    {
+        if (self::$reading === null || self::$readAt !== ModelGateway::$writes) {
+            self::$reading = new StockService();
+            self::$readAt  = ModelGateway::$writes;
+        }
+
+        return self::$reading;
+    }
+
+    /** A write filter's own service; what the read filters read before it is forgotten. */
+    private static function writing(): StockService
+    {
+        self::$reading = null;
+
+        return new StockService();
+    }
+
     /** @return array<string, string> */
     private static function lotLink(int $lot): array
     {
-        $stock = new StockService();
+        $stock = self::reading();
         $s     = $stock->structure();
         $thing = $s->hasField('lot_thing') ? (int) $stock->table('lot')->first($lot, $s->field('lot_thing')) : 0;
 
@@ -271,7 +296,7 @@ final class Plugin
         }
 
         try {
-            return (new StockService())->bookBuild(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Fertigung', 'taxmod-stock'))));
+            return self::writing()->bookBuild(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Fertigung', 'taxmod-stock'))));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
@@ -304,7 +329,7 @@ final class Plugin
         }
 
         try {
-            return (new StockService())->cutSources($wanted, absint($args['except'] ?? 0));
+            return self::reading()->cutSources($wanted, absint($args['except'] ?? 0));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
@@ -325,7 +350,7 @@ final class Plugin
         }
 
         try {
-            return (new StockService())->projectBoxSummary();
+            return self::reading()->projectBoxSummary();
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
@@ -371,7 +396,7 @@ final class Plugin
         }
 
         try {
-            return (new StockService())->reserveRows(absint($args['subject'] ?? 0), $deadline, $rows, $date, sanitize_text_field((string) ($args['title'] ?? __('Reservierung', 'taxmod-stock'))), $places);
+            return self::writing()->reserveRows(absint($args['subject'] ?? 0), $deadline, $rows, $date, sanitize_text_field((string) ($args['title'] ?? __('Reservierung', 'taxmod-stock'))), $places);
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
@@ -395,7 +420,7 @@ final class Plugin
         $subjects = array_values(array_unique(array_filter(array_map('absint', is_array($args['subjects'] ?? null) ? $args['subjects'] : []))));
 
         try {
-            return $subjects === [] ? [] : (new StockService())->reservationsOf($subjects);
+            return $subjects === [] ? [] : self::reading()->reservationsOf($subjects);
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
@@ -419,7 +444,7 @@ final class Plugin
         $lines = is_array($args['lines'] ?? null) ? array_values(array_filter(array_map('absint', $args['lines']))) : null;
 
         try {
-            return (new StockService())->releaseReservations(absint($args['subject'] ?? 0), $lines, current_time('Y-m-d H:i:s'), wp_get_current_user()->display_name);
+            return self::writing()->releaseReservations(absint($args['subject'] ?? 0), $lines, current_time('Y-m-d H:i:s'), wp_get_current_user()->display_name);
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
@@ -447,7 +472,7 @@ final class Plugin
         }
 
         try {
-            return (new StockService())->bookReturn(absint($args['box'] ?? 0), absint($args['reference'] ?? 0), $date, sanitize_text_field((string) ($args['title'] ?? __('Box leer räumen', 'taxmod-stock'))));
+            return self::writing()->bookReturn(absint($args['box'] ?? 0), absint($args['reference'] ?? 0), $date, sanitize_text_field((string) ($args['title'] ?? __('Box leer räumen', 'taxmod-stock'))));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
@@ -482,7 +507,7 @@ final class Plugin
         }
 
         try {
-            return (new StockService())->bookScrap(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, sanitize_text_field((string) ($args['reason'] ?? __('Ausschuss Fertigung', 'taxmod-stock'))), $date, sanitize_text_field((string) ($args['title'] ?? __('Ausschuss', 'taxmod-stock'))));
+            return self::writing()->bookScrap(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, sanitize_text_field((string) ($args['reason'] ?? __('Ausschuss Fertigung', 'taxmod-stock'))), $date, sanitize_text_field((string) ($args['title'] ?? __('Ausschuss', 'taxmod-stock'))));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
@@ -507,7 +532,7 @@ final class Plugin
         $lots = array_values(array_unique(array_filter(array_map('absint', is_array($args['lots'] ?? null) ? $args['lots'] : []))));
 
         try {
-            $stock = new StockService();
+            $stock = self::reading();
             $s     = $stock->structure();
 
             $keys  = array_values(array_filter(Structure::STAGES, $s->hasValue(...)));
@@ -536,7 +561,7 @@ final class Plugin
         $lots = array_values(array_unique(array_filter(array_map('absint', is_array($args['lots'] ?? null) ? $args['lots'] : []))));
 
         try {
-            return (new StockService())->setLotStage($lots, absint($args['stage'] ?? 0));
+            return self::writing()->setLotStage($lots, absint($args['stage'] ?? 0));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
@@ -553,7 +578,7 @@ final class Plugin
         $claims = is_array($claims) ? $claims : [];
 
         try {
-            $stock = new StockService();
+            $stock = self::reading();
             $s     = $stock->structure();
 
             if (! $s->hasNode('location') || $nodeId !== $s->node('location') || ! $s->hasField('location_place_type') || $stock->locationTree()->nestedBelow($recordId) === []) {
@@ -576,7 +601,7 @@ final class Plugin
         }
 
         try {
-            $stock = new StockService();
+            $stock = self::reading();
             $place = (int) ($stock->testSettings([])->place ?? 0);
 
             return $place > 0 && $stock->table('location')->has($place) ? $place : 0;
@@ -593,7 +618,7 @@ final class Plugin
         }
 
         try {
-            return (new StockService())->productionInbound();
+            return self::reading()->productionInbound();
         } catch (StockError) {
             return 0;
         }
@@ -632,7 +657,7 @@ final class Plugin
         }
 
         try {
-            return (new StockService())->bookCut(absint($args['reference'] ?? 0), absint($args['into'] ?? 0), $cuts, $date, sanitize_text_field((string) ($args['title'] ?? __('Ablängen', 'taxmod-stock'))));
+            return self::writing()->bookCut(absint($args['reference'] ?? 0), absint($args['into'] ?? 0), $cuts, $date, sanitize_text_field((string) ($args['title'] ?? __('Ablängen', 'taxmod-stock'))));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
@@ -645,7 +670,7 @@ final class Plugin
     public static function orderEvent(mixed $order, mixed $event): void
     {
         try {
-            (new StockService())->orderEvent(absint($order), sanitize_key((string) $event));
+            self::writing()->orderEvent(absint($order), sanitize_key((string) $event));
         } catch (StockError $refused) {
             // CD-10: not silenced — the import goes on, the refusal is logged for the order.
             error_log(sprintf('taxmod-stock: status of order %d after «%s» not set: %s', absint($order), sanitize_key((string) $event), $refused->getMessage()));
@@ -687,7 +712,7 @@ final class Plugin
         }
 
         try {
-            return (new StockService())->bookOutput(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Fertigung', 'taxmod-stock'))), ($args['tested'] ?? false) === true, sanitize_key((string) ($args['stage'] ?? '')));
+            return self::writing()->bookOutput(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Fertigung', 'taxmod-stock'))), ($args['tested'] ?? false) === true, sanitize_key((string) ($args['stage'] ?? '')));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
@@ -713,7 +738,7 @@ final class Plugin
         $args = is_array($args) ? $args : [];
 
         try {
-            return (new StockService())->createThing(sanitize_text_field((string) ($args['name'] ?? '')), absint($args['group'] ?? 0));
+            return self::writing()->createThing(sanitize_text_field((string) ($args['name'] ?? '')), absint($args['group'] ?? 0));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
@@ -762,7 +787,7 @@ final class Plugin
         $args = is_array($args) ? $args : [];
 
         try {
-            return (new StockService())->freeStockByPlace(array_values(array_filter(array_map('absint', is_array($args['things'] ?? null) ? $args['things'] : []))), absint($args['except'] ?? 0));
+            return self::reading()->freeStockByPlace(array_values(array_filter(array_map('absint', is_array($args['things'] ?? null) ? $args['things'] : []))), absint($args['except'] ?? 0));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
@@ -789,7 +814,7 @@ final class Plugin
         $root = absint($args['group'] ?? 0) ?: absint($args['node'] ?? 0);
 
         try {
-            return $root === 0 ? [] : (new StockService())->thingsInStock($root, absint($args['except'] ?? 0));
+            return $root === 0 ? [] : self::reading()->thingsInStock($root, absint($args['except'] ?? 0));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
@@ -820,7 +845,7 @@ final class Plugin
         }
 
         try {
-            return (new StockService())->lotChoices();
+            return self::reading()->lotChoices();
         } catch (StockError) {
             return [];
         }
@@ -852,7 +877,7 @@ final class Plugin
         }
 
         try {
-            return (new StockService())->bookLoss(
+            return self::writing()->bookLoss(
                 absint($args['lot'] ?? 0),
                 sanitize_text_field((string) ($args['quantity'] ?? '')),
                 absint($args['sale'] ?? 0),
@@ -898,7 +923,7 @@ final class Plugin
         }
 
         try {
-            return (new StockService())->bookSale(absint($args['sale'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Verkauf', 'taxmod-stock'))));
+            return self::writing()->bookSale(absint($args['sale'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Verkauf', 'taxmod-stock'))));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
@@ -925,7 +950,7 @@ final class Plugin
         }
 
         try {
-            return (new StockService())->cancelSale(absint($args['sale']), current_time('Y-m-d H:i:s'), sanitize_text_field((string) ($args['who'] ?? wp_get_current_user()->display_name)));
+            return self::writing()->cancelSale(absint($args['sale']), current_time('Y-m-d H:i:s'), sanitize_text_field((string) ($args['who'] ?? wp_get_current_user()->display_name)));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
@@ -958,7 +983,7 @@ final class Plugin
         }
 
         try {
-            return (new StockService())->bookBackfill(
+            return self::writing()->bookBackfill(
                 absint($args['material'] ?? 0),
                 sanitize_text_field((string) ($args['quantity'] ?? '')),
                 absint($args['reference'] ?? 0),
@@ -993,7 +1018,7 @@ final class Plugin
         $args = is_array($args) ? $args : [];
 
         try {
-            return (new StockService())->lotsWithRest(array_values(array_filter(array_map('absint', is_array($args['materials'] ?? null) ? $args['materials'] : []))));
+            return self::reading()->lotsWithRest(array_values(array_filter(array_map('absint', is_array($args['materials'] ?? null) ? $args['materials'] : []))));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
@@ -1019,7 +1044,7 @@ final class Plugin
         $args = is_array($args) ? $args : [];
 
         try {
-            return (new StockService())->cancelLoss(absint($args['deal'] ?? 0), current_time('Y-m-d H:i:s'), sanitize_text_field((string) ($args['who'] ?? wp_get_current_user()->display_name)));
+            return self::writing()->cancelLoss(absint($args['deal'] ?? 0), current_time('Y-m-d H:i:s'), sanitize_text_field((string) ($args['who'] ?? wp_get_current_user()->display_name)));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
@@ -1054,7 +1079,7 @@ final class Plugin
         }
 
         try {
-            return (new StockService())->bookPick(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Fertigung', 'taxmod-stock'))));
+            return self::writing()->bookPick(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Fertigung', 'taxmod-stock'))));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }

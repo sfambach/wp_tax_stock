@@ -35,6 +35,7 @@ final class InboundOrder
     /**
      * @param list<string>          $tracking the order's tracking numbers
      * @param array<string, string> $carrierStages tracking number → the carrier module's last stage, where one answered
+     * @param array<int, PurchaseStatus> $purchases D-1411: purchase → its status, from {@see PurchaseStatus::of()}
      */
     public function __construct(
         public readonly int $id,
@@ -45,6 +46,7 @@ final class InboundOrder
         public readonly array $carrierStages = [],
         public readonly bool $closedWithoutStock = false,
         public readonly bool $allIn = false,
+        public readonly array $purchases = [],
     ) {
     }
 
@@ -59,11 +61,55 @@ final class InboundOrder
             // Stefan 16.11. (Amazon 306-8618798-9457148): every purchase booked or closed is «Eingebucht», whatever the status says.
             $is('status_received', $this->status), $this->allIn                        => $archive?->isDone($this->receivedOn ?? $this->orderedOn) ? InboundStage::Archived : InboundStage::Booked,
             (bool) $archive?->isHistory($this->orderedOn)                              => InboundStage::Archived,
+            // D-1411: the furthest stage an open purchase stands in; the order rules below only where none is known.
+            $this->openStages() !== []                                                  => $this->openStages()[count($this->openStages()) - 1],
             // D-1038: «zugestellt» and «versendet» as the stock process set them on the inbox's event.
             $is('status_partial', $this->status), $is('status_delivered', $this->status), $this->hasArrived() => InboundStage::Arrived,
             $this->tracking !== [], $is('status_shipped', $this->status)               => InboundStage::Shipped,
             default                                                                     => InboundStage::Ordered,
         };
+    }
+
+    /**
+     * D-1411, his word 2026-11-16 «Ich glaube hier fehlt ein status auf positionsebene»: every tab one of its purchases stands
+     * in — an order partly arrived is under «Versendet» and «Angekommen», a done purchase puts it under «Eingebucht» too.
+     *
+     * @return list<InboundStage> in tab order
+     */
+    public function stages(Structure $s, ?InboundArchive $archive = null): array
+    {
+        $stage = $this->stage($s, $archive);
+
+        if ($this->openStages() === [] || ! in_array($stage, [InboundStage::Ordered, InboundStage::Shipped, InboundStage::Arrived], true)) {
+            return [$stage];
+        }
+
+        $all = array_map(static fn (PurchaseStatus $p): InboundStage => $p->stage(), $this->purchases);
+
+        return array_values(array_filter(InboundStage::tabs(), static fn (InboundStage $t): bool => in_array($t, $all, true)));
+    }
+
+    /**
+     * The purchases of this order that a tab shows; without statuses every one.
+     *
+     * @param list<int> $all the order's purchases
+     * @return list<int>
+     */
+    public function purchasesIn(InboundStage $tab, array $all): array
+    {
+        if ($this->purchases === [] || ! in_array($tab, InboundStage::tabs(), true)) {
+            return $all;
+        }
+
+        return array_values(array_filter($all, fn (int $p): bool => ($this->purchases[$p] ?? null)?->stage() === $tab));
+    }
+
+    /** @return list<InboundStage> the stages of the open purchases, in tab order */
+    private function openStages(): array
+    {
+        $open = array_map(static fn (PurchaseStatus $p): InboundStage => $p->stage(), array_filter($this->purchases, static fn (PurchaseStatus $p): bool => $p->isOpen()));
+
+        return array_values(array_filter(InboundStage::tabs(), static fn (InboundStage $t): bool => in_array($t, $open, true)));
     }
 
     /** Whether he said it is here, a delivery message said so, or a carrier delivered a parcel of it. */

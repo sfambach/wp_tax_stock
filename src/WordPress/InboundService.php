@@ -7,6 +7,7 @@ use TaxmodStock\Core\InboundOrder;
 use TaxmodStock\Core\NotStocked;
 use TaxmodStock\Core\PlatformLink;
 use TaxmodStock\Core\PriceCheck;
+use TaxmodStock\Core\PurchaseStatus;
 use TaxmodStock\Core\ReceiptReversal;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\TestQueue;
@@ -66,6 +67,7 @@ final class InboundService
         $out    = [];
         $booked = $this->stock->receivedPurchases();
         $closed = NotStocked::purchases($s, $this->stock->table('purchase'));
+        $arrivedOn = $this->arrivedOn();
 
         foreach ($table->ids() as $id) {
             $tracking = array_values(array_filter(array_map('trim', $table->all($id, $fields['tracking'])), static fn (string $n): bool => $n !== ''));
@@ -80,7 +82,7 @@ final class InboundService
             }
 
             $status   = $table->first($id, $s->field('order_status'));
-            $out[$id] = new InboundOrder(
+            $make     = static fn (array $purchases): InboundOrder => new InboundOrder(
                 $id,
                 $status === null || $status === '' ? null : (int) $status,
                 $table->first($id, $fields['ordered_at']),
@@ -88,11 +90,38 @@ final class InboundService
                 $tracking,
                 $stages,
                 NotStocked::wholeOrder($s, $table, $id, $booked, $closed),
-                NotStocked::allIn($s, $table, $id, $booked, $closed)
+                NotStocked::allIn($s, $table, $id, $booked, $closed),
+                $purchases
             );
+            $lines    = array_map('intval', $table->all($id, $s->field('order_lines')));
+            // D-1411: each purchase's own status, from the one rule in the core.
+            $out[$id] = $make(PurchaseStatus::of($s, $make([]), $lines, $arrivedOn, $booked, $closed));
         }
 
         return $this->orders = $out;
+    }
+
+    /** @return array<int, string> purchase → its own «Angekommen am» (D-1411); empty without the field */
+    private function arrivedOn(): array
+    {
+        $s = $this->stock->structure();
+
+        if (! $s->hasField('purchase_arrived_on')) {
+            return [];
+        }
+
+        $purchases = $this->stock->table('purchase');
+        $out       = [];
+
+        foreach ($purchases->ids() as $id) {
+            $on = trim((string) ($purchases->first($id, $s->field('purchase_arrived_on')) ?? ''));
+
+            if ($on !== '') {
+                $out[$id] = $on;
+            }
+        }
+
+        return $out;
     }
 
     /** The order's own text fields the list shows: platform, seller, number. */
@@ -200,11 +229,39 @@ final class InboundService
         return $changes === [] ? ['applied' => []] : $this->stock->write($changes);
     }
 
+    /**
+     * D-1411: «Angekommen …» for the ticked purchases of one order.
+     *
+     * @param list<int> $purchases
+     * @return array<string, mixed>
+     */
+    public function markPurchasesArrived(int $id, array $purchases, string $today): array
+    {
+        $changes = $this->changes()->purchasesArrived($this->pick([$id])[0], $purchases, $today);
+        $this->orders = null;
+
+        return $changes === [] ? ['applied' => []] : $this->stock->write($changes);
+    }
+
+    /**
+     * D-1411: «Nicht angekommen …» for the ticked purchases of one order.
+     *
+     * @param list<int> $purchases
+     * @return array<string, mixed>
+     */
+    public function markPurchasesNotArrived(int $id, array $purchases): array
+    {
+        $changes = $this->changes()->purchasesNotArrived($this->pick([$id])[0], $purchases, $this->arrivedOn());
+        $this->orders = null;
+
+        return $changes === [] ? ['applied' => []] : $this->stock->write($changes);
+    }
+
     /** @return array<string, mixed> */
     public function markNotArrived(int $id): array
     {
         $order   = $this->pick([$id])[0];
-        $changes = $this->changes()->notArrived($order, $this->purchaseCounts($id)['booked']);
+        $changes = $this->changes()->notArrived($order, $this->purchaseCounts($id)['booked'], $this->arrivedOn());
 
         return $changes === [] ? ['applied' => []] : $this->stock->write($changes);
     }
@@ -431,7 +488,9 @@ final class InboundService
     {
         $fields = $this->fields();
 
-        return new InboundChanges($fields['received_at'], $fields['tracking']);
+        $s      = $this->stock->structure();
+
+        return new InboundChanges($fields['received_at'], $fields['tracking'], $s->hasField('purchase_arrived_on') ? $s->field('purchase_arrived_on') : null);
     }
 
     /**

@@ -72,6 +72,8 @@ final class Structure
         'order_number', 'purchase_number', 'purchase_demand',
         // D-1058: why a purchase was closed without going into stock.
         'purchase_not_stocked',
+        // D-1411: the day one purchase arrived — its own status in the goods receipt.
+        'purchase_arrived_on',
         // D-1030: the place a place sits in, whether it is a box, and the project a box belongs to.
         'location_parent', 'location_movable', 'location_project',
         // D-1039: the place a Pos line moves at; without it a line sits where its lot came in («Lagerort» of the lot).

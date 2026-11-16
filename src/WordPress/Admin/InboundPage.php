@@ -72,12 +72,16 @@ final class InboundPage
         $stock   = $inbound->stock();
 
         try {
-            $now = ($inbound->orders()[$order] ?? null)?->stage($stock->structure(), $stock->inboundArchive(current_time('Y-m-d')));
+            $one = $inbound->orders()[$order] ?? null;
+            $now = $one?->stage($stock->structure(), $stock->inboundArchive(current_time('Y-m-d')));
+            $all = $one === null ? [] : array_map(static fn (InboundStage $st): string => $st->value, $one->stages($stock->structure(), $stock->inboundArchive(current_time('Y-m-d'))));
         } catch (StockError) {
             $now = null;
+            $all = [];
         }
 
-        $tab = $now !== null && in_array($now->value, self::tabSlugs(), true) ? $now->value : $tab;
+        // D-1411: an order partly here stands in several tabs; the one asked for stays while the order is still in it.
+        $tab = in_array($tab, $all, true) ? $tab : ($now !== null && in_array($now->value, self::tabSlugs(), true) ? $now->value : $tab);
 
         return self::url(['tab' => $tab, 'order' => $order]);
     }
@@ -158,17 +162,19 @@ final class InboundPage
         $labels  = $this->inbound->stock()->labels('order');
         $archive = $this->inbound->stock()->inboundArchive($today);
         $stages  = array_map(static fn (InboundOrder $o): InboundStage => $o->stage($s, $archive), $orders);
+        // D-1411: every tab an order stands in through one of its purchases.
+        $tabsOf  = array_map(static fn (InboundOrder $o): array => $o->stages($s, $archive), $orders);
         $tab     = sanitize_key((string) ($_GET['tab'] ?? InboundStage::Arrived->value));
         $tab     = in_array($tab, self::tabSlugs(), true) ? $tab : InboundStage::Arrived->value;
         $search  = sanitize_text_field(wp_unslash((string) ($_GET['s'] ?? '')));
         $filter  = sanitize_key((string) ($_GET['filter'] ?? ''));
         $open    = absint($_GET['order'] ?? 0);
-        $counts  = array_count_values(array_map(static fn (InboundStage $st): string => $st->value, $stages));
+        $counts  = array_count_values(array_merge([], ...array_values(array_map(static fn (array $sts): array => array_map(static fn (InboundStage $st): string => $st->value, $sts), $tabsOf))));
         $testing = $this->inbound->tests()->isConfigured();
         $toTest  = $testing ? $this->inbound->lotsToTest() : [];
 
         // His word 2026-11-09: «oben ist der blaue Pfeil ist immer noch bei bestellt» — an opened order stands at its own stage.
-        if ($open > 0 && isset($stages[$open]) && in_array($stages[$open]->value, self::tabSlugs(), true)) {
+        if ($open > 0 && isset($stages[$open]) && in_array($stages[$open]->value, self::tabSlugs(), true) && ! in_array(InboundStage::tryFrom($tab), $tabsOf[$open], true)) {
             $tab = $stages[$open]->value;
         }
 
@@ -180,14 +186,16 @@ final class InboundPage
 
         // His word 2026-11-05: «man klickt auf das item und bekommt eine teilview des listeneintrags mit den postionen».
         if ($open > 0 && isset($orders[$open])) {
+            $here = InboundStage::tryFrom($tab);
+
             return $bar
-                . $this->detailView($orders[$open], $stages[$open], $labels[$open] ?? '#' . $open, $today, $tab);
+                . $this->detailView($orders[$open], $here !== null && in_array($here, $tabsOf[$open], true) ? $here : $stages[$open], $labels[$open] ?? '#' . $open, $today, $tab);
         }
 
         $shown  = [];
 
         foreach ($orders as $id => $order) {
-            $inTab = $tab === self::ALL ? $stages[$id] !== InboundStage::Archived : $stages[$id]->value === $tab;
+            $inTab = $tab === self::ALL ? $stages[$id] !== InboundStage::Archived : in_array(InboundStage::tryFrom($tab), $tabsOf[$id], true);
 
             if (! $inTab) {
                 continue;
@@ -622,12 +630,13 @@ final class InboundPage
         if ($stage === InboundStage::Arrived) {
             $pick = implode(',', array_filter(array_map('absint', explode(',', sanitize_text_field(wp_unslash((string) ($_GET['pick'] ?? '')))))));
 
-            return '<div class="taxmod-stock-positions" data-order="' . esc_attr((string) $order->id) . '" data-back="' . esc_attr(self::BACK) . '"' . ($pick === '' ? '' : ' data-pick="' . esc_attr($pick) . '"') . '></div>';
+            return '<div class="taxmod-stock-positions" data-order="' . esc_attr((string) $order->id) . '" data-back="' . esc_attr(self::BACK) . '" data-stage="' . esc_attr($stage->value) . '"' . ($pick === '' ? '' : ' data-pick="' . esc_attr($pick) . '"') . '></div>';
         }
 
         $labels    = $this->inbound->stock()->labels('purchase');
         $s         = $this->inbound->stock()->structure();
-        $purchases = $this->inbound->stock()->table('order')->all($order->id, $s->field('order_lines'));
+        // D-1411: a tab shows the purchases that stand in it.
+        $purchases = $order->purchasesIn($stage, array_map('intval', $this->inbound->stock()->table('order')->all($order->id, $s->field('order_lines'))));
         $done      = in_array($stage, [InboundStage::Booked, InboundStage::Archived], true);
         $merged    = $purchases !== [] && in_array($stage, [InboundStage::Ordered, InboundStage::Shipped], true);
         $rows      = '';
@@ -707,7 +716,7 @@ final class InboundPage
         // His choice 2026-11-09 (INF-116): «Material schon am Kauf wählen» — the receipt's own choosing, before anything arrives;
         // it keeps the choice and books nothing. His word 2026-11-16 «eine bitte nur mit beiden funktionen»: then it is the one table.
         $html = '<h4 style="margin-bottom:.3em">' . esc_html__('Käufe', 'taxmod-stock') . '</h4>'
-            . ($merged ? '<div class="taxmod-stock-positions" data-order="' . esc_attr((string) $order->id) . '" data-back="' . esc_attr(self::BACK) . '" data-assign="1"></div>' : ListPage::table($columns, $rows));
+            . ($merged ? '<div class="taxmod-stock-positions" data-order="' . esc_attr((string) $order->id) . '" data-back="' . esc_attr(self::BACK) . '" data-assign="1" data-stage="' . esc_attr($stage->value) . '"></div>' : ListPage::table($columns, $rows));
 
         $html .= $this->events($order);
 

@@ -171,6 +171,13 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'create_record', 'ref' => 'kaufU', 'node' => '@pur'],
     ['op' => 'set_values', 'record' => '@kaufU', 'values' => ['@label' => 'Kabel', '@k_mod' => '@kabel']],
     ...$order('o9', 'Einlagern mit Test', ['@o_ein' => '2026-11-03', '@o_pos' => ['values' => ['@kaufT', '@kaufU']]]),
+    // D-1411: each purchase its own «Angekommen am»; an order on its way whose purchases come one by one.
+    $field('k_ank', '@pur', 'Angekommen am', $date, 'composition', '0..1'),
+    ['op' => 'create_record', 'ref' => 'kaufP1', 'node' => '@pur'],
+    ['op' => 'set_values', 'record' => '@kaufP1', 'values' => ['@label' => 'HDMI-Adapter', '@k_mod' => '@kabel']],
+    ['op' => 'create_record', 'ref' => 'kaufP2', 'node' => '@pur'],
+    ['op' => 'set_values', 'record' => '@kaufP2', 'values' => ['@label' => 'OLED-Anzeige', '@k_mod' => '@et4000']],
+    ...$order('o10', 'Teillieferung', ['@o_best' => '2026-11-13', '@o_sn' => ['values' => ['00340434DD']], '@o_pos' => ['values' => ['@kaufP1', '@kaufP2']]]),
 ]]);
 
 if (is_wp_error($aufbau)) {
@@ -204,7 +211,7 @@ update_option(StockService::OPTION, [
         'lot_tested_on' => $r['l_tdat'], 'lot_test_note' => $r['l_tbef'], 'lot_condition' => $r['l_zust'],
         'label' => $r['label'], 'images' => $r['bilder'], 'lot_thing' => $r['l_mat'], 'lot_purchase' => $r['l_kauf'], 'order_status' => $r['o_stat'], 'order_lines' => $r['o_pos'],
         'purchase_undetermined' => $r['k_offen'], 'purchase_model' => $r['k_mod'], 'money_amount' => 4234, 'money_unit' => 4236,
-        'description' => $r['k_desc'], 'purchase_number' => $r['k_nr'],
+        'description' => $r['k_desc'], 'purchase_number' => $r['k_nr'], 'purchase_arrived_on' => $r['k_ank'],
         'firm_name' => $r['f_name'], 'firm_order_link' => $r['f_ol'], 'firm_product_link' => $r['f_pl'],
     ],
     'values' => ['kind_receipt' => $r['a_we'], 'kind_consumption' => 1, 'kind_count' => 1, 'source_manual' => 1, 'location_default' => $r['ortRegal'],
@@ -365,6 +372,34 @@ $pruefe(str_contains($html, '1 unbestimmt'), 'it counts the purchases not yet de
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'ordered', 'filter' => 'overdue', 's' => 'retro'];
 $html = (new InboundPage())->render();
 $pruefe(str_contains($html, 'eBay · retro-shop · 12-345') && str_contains($html, 'überfällig'), 'search and the filter «Überfällig» find the late order with platform, seller and number');
+
+// D-1411, his word 2026-11-16 «Ich glaube hier fehlt ein status auf positionsebene»: a status per purchase.
+$tabsOf = static fn (): array => array_map(static fn (InboundStage $st): string => $st->value, (new InboundService())->orders()[$r['o10']]->stages($s));
+$pruefe($tabsOf() === ['shipped'], 'D-1411: an order on its way stands under «Versendet» with all its purchases');
+(new InboundService())->markPurchasesArrived($r['o10'], [(int) $r['kaufP1']], '2026-11-16');
+$kaeufe = (new StockService())->table('purchase');
+$pruefe($tabsOf() === ['shipped', 'arrived'] && substr((string) $kaeufe->first($r['kaufP1'], $r['k_ank']), 0, 10) === '2026-11-16' && in_array($kaeufe->first($r['kaufP2'], $r['k_ank']), [null, ''], true)
+    && substr((string) (new StockService())->table('order')->first($r['o10'], $r['o_ein']), 0, 10) === '2026-11-16', 'D-1411: one purchase arrived — it carries the day, the order stands under «Versendet» and «Angekommen»');
+$hier = (string) (new \ReflectionMethod(StockPage::class, 'receiptPositions'))->invoke(new StockPage(), $r['o10'], InboundPage::BACK, false, [], 'arrived');
+$weg  = (string) (new \ReflectionMethod(StockPage::class, 'receiptPositions'))->invoke(new StockPage(), $r['o10'], InboundPage::BACK, true, [], 'shipped');
+$pruefe(str_contains($hier, 'value="' . $r['kaufP1'] . '" checked') && ! str_contains($hier, 'HDMI') === false && ! str_contains($hier, 'OLED-Anzeige') && str_contains($weg, 'OLED-Anzeige') && ! str_contains($weg, 'HDMI-Adapter'),
+    'D-1411: «Angekommen» shows the arrived purchase ticked, «Versendet» the other one alone');
+$pruefe(str_contains($hier, 'value="ask:taxmod-stock-book-' . $r['o10'] . '"') && ! str_contains($hier, '>Wareneingang buchen</button>') && str_contains($hier, 'value="nichtangekommen"'),
+    'D-1411: «Wareneingang buchen …» and «Nicht angekommen …» are choices of the bulk bar for the ticked purchases');
+$pruefe(str_contains($hier, 'thing[' . $r['kaufP1'] . ']" value="' . $r['kabel'] . '" checked'), 'his report 2026-11-16: the material chosen on its way stands chosen at the receipt');
+foreach (['shipped', 'arrived'] as $reiter) {
+    $_GET = ['page' => InboundPage::PAGE, 'tab' => $reiter];
+    $pruefe(str_contains((new InboundPage())->render(), 'Teillieferung'), 'D-1411: the list «' . $reiter . '» holds the order partly here');
+}
+$_GET = ['page' => InboundPage::PAGE, 'tab' => 'shipped', 'order' => $r['o10']];
+$pruefe(str_contains((new InboundPage())->render(), 'data-stage="shipped"'), 'D-1411: opened under «Versendet», the order stays there');
+$_GET = [];
+$pruefe(str_contains(InboundPage::orderUrl($r['o10'], 'shipped'), 'tab=shipped') && str_contains(InboundPage::orderUrl($r['o10'], 'booked'), 'tab=arrived'), 'D-1411: after an act the order stays in the tab asked for while it is still there, else its furthest stage');
+$_POST = ['thing' => [$r['kaufP1'] => '', $r['kaufP2'] => ''], 'model' => [$r['kaufP1'] => '', $r['kaufP2'] => (string) $r['et4000']]];
+$pruefe((new \ReflectionMethod(StockPage::class, 'assignedThings'))->invoke(new StockPage()) === [(int) $r['kaufP2'] => 0], 'his report «materialien … sind nicht mehr gesetzt»: an empty row of an older form clears nothing, only a material taken away in the row');
+$_POST = [];
+(new InboundService())->markPurchasesNotArrived($r['o10'], [(int) $r['kaufP1']]);
+$pruefe($tabsOf() === ['shipped'] && in_array((new StockService())->table('purchase')->first($r['kaufP1'], $r['k_ank']), [null, ''], true), 'D-1411: «Nicht angekommen …» takes the day back, the order is on its way again');
 
 $inbound = new InboundService();
 $inbound->markArrived([$r['o1'], $r['o4']], '2026-10-28');

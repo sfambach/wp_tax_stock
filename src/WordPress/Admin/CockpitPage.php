@@ -179,7 +179,7 @@ final class CockpitPage
     {
         $s       = $this->inbound->stock()->structure();
         $archive = $this->inbound->stock()->inboundArchive(current_time('Y-m-d'));
-        $counts  = array_count_values(array_map(static fn (InboundOrder $o): string => $o->stage($s, $archive)->value, $this->inbound->orders()));
+        $counts  = array_count_values(array_merge([], ...array_values(array_map(static fn (InboundOrder $o): array => array_map(static fn (InboundStage $st): string => $st->value, $o->stages($s, $archive)), $this->inbound->orders()))));
 
         if ($this->inbound->tests()->isConfigured()) {
             $counts['test'] = count($this->inbound->lotsToTest());

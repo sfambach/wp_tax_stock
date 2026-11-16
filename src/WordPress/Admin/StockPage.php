@@ -86,7 +86,7 @@ final class StockPage
     private const MANUFACTURING = 'taxmod-fertigung';
     /** D-1377: the bookings that go back to where their form was opened. */
     /** The bookings of one order's receipt: they go back to that order (D-1001). */
-    private const RECEIPT_KINDS = ['wareneingang', 'aufteilen', 'zuordnen', 'nichteinlagern', 'einlagern', 'sammelnichteinlagern', 'wareneingangzurueck', 'angekommen', 'bilduebernehmen'];
+    private const RECEIPT_KINDS = ['wareneingang', 'aufteilen', 'zuordnen', 'nichteinlagern', 'einlagern', 'sammelnichteinlagern', 'wareneingangzurueck', 'angekommen', 'nichtangekommen', 'bilduebernehmen'];
     private const RETURNING = ['verbrauch', 'umbuchen', 'postenumbuchen', 'sammelumbuchen', 'inventur', 'wareneingang', 'einlagern'];
 
     private const TABS      = ['wareneingang', 'material', 'gruppenbestand', 'inventur', 'verbrauch', 'reservierungen', 'lagerorte', 'lagerstruktur', 'platzarten', 'etikettenvorlagen', 'drucker', 'fertigung'];
@@ -340,6 +340,8 @@ final class StockPage
                 // Stefan 16.11. «nicht möglich zu sagen dass einzelne teile angekommen sind»: the choice is kept, the order
                 // arrives («Eingegangen am» only when empty), and the receipt opens with the ticked purchases alone.
                 'angekommen'   => $this->arriveTicked(absint($_POST['order'] ?? 0), $arrivedPick, $today),
+                // D-1411: ticked purchases step back from «Angekommen»; the others stay.
+                'nichtangekommen' => (new \TaxmodStock\WordPress\InboundService($this->stock))->markPurchasesNotArrived(absint($_POST['order'] ?? 0), $arrivedPick ?: throw StockError::nothingToBook()),
                 'bilduebernehmen' => $this->stock->takePurchasePicture($rowPurchase),
                 'zuordnen'     => $this->stock->assignPurchases(absint($_POST['order'] ?? 0), $this->assignedThings(), $this->assignedPlaces(), $this->newThings(), $this->receiptQuantities()),
                 'verbrauch'    => $this->stock->bookConsumption(
@@ -391,7 +393,8 @@ final class StockPage
                 'sammelnichteinlagern' => sprintf(_n('%d Kauf ohne Lager abgeschlossen, der Grund steht am Kauf.', '%d Käufe ohne Lager abgeschlossen, der Grund steht an jedem Kauf.', count($result), 'taxmod-stock'), count($result)),
                 'wareneingangzurueck' => $this->unbookedText($undone),
                 /* translators: %d: number of purchases */
-                'angekommen' => sprintf(_n('Angekommen: %d Kauf ist zum Einbuchen angehakt.', 'Angekommen: %d Käufe sind zum Einbuchen angehakt.', count($arrivedPick), 'taxmod-stock'), count($arrivedPick)),
+                'angekommen' => sprintf(_n('Angekommen: %d Kauf steht jetzt unter «Angekommen».', 'Angekommen: %d Käufe stehen jetzt unter «Angekommen».', count($arrivedPick), 'taxmod-stock'), count($arrivedPick)),
+                'nichtangekommen' => sprintf(_n('%d Kauf ist wieder unterwegs.', '%d Käufe sind wieder unterwegs.', count($arrivedPick), 'taxmod-stock'), count($arrivedPick)),
                 'bilduebernehmen' => __('Bild übernommen: es steht jetzt auch am Material.', 'taxmod-stock'),
                 /* translators: %d: number of changes the modeller applied */
                 default     => sprintf(__('Gebucht: %d Änderungen in einem Schritt.', 'taxmod-stock'), count((array) ($result['applied'] ?? []))),
@@ -420,7 +423,7 @@ final class StockPage
                 'reservierungensammelstorno' => ['reservierungen', []],
                 'reservieren', 'reservierungstorno' => sanitize_key((string) ($_POST['back'] ?? '')) === 'bestand' && $thing > 0
                     ? ['material', ['thing' => $thing, 'view' => 'bestand']] : ['reservierungen', []],
-                'wareneingang', 'aufteilen', 'zuordnen', 'nichteinlagern', 'einlagern', 'sammelnichteinlagern', 'wareneingangzurueck', 'angekommen', 'bilduebernehmen' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
+                'wareneingang', 'aufteilen', 'zuordnen', 'nichteinlagern', 'einlagern', 'sammelnichteinlagern', 'wareneingangzurueck', 'angekommen', 'nichtangekommen', 'bilduebernehmen' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
                 'platzart'     => ['platzarten', array_filter(['typ' => (int) (((array) ($result['refs'] ?? []))['art'] ?? 0)])],
                 'artkopieren'  => ['platzarten', array_filter(['typ' => $copy])],
                 'gruppeanlegen' => ['gruppenbestand', array_filter(['group' => $copy])],
@@ -434,7 +437,7 @@ final class StockPage
             $failed = true;
             Notice::remember('error', Messages::of($e));
             $back = match ($kind) {
-                'wareneingang', 'zuordnen', 'nichteinlagern', 'einlagern', 'sammelnichteinlagern', 'wareneingangzurueck', 'angekommen', 'bilduebernehmen' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
+                'wareneingang', 'zuordnen', 'nichteinlagern', 'einlagern', 'sammelnichteinlagern', 'wareneingangzurueck', 'angekommen', 'nichtangekommen', 'bilduebernehmen' => ['wareneingang', ['order' => absint($_POST['order'] ?? 0)]],
                 'platzart'          => ['platzarten', []],
                 'artkopieren'       => ['platzarten', array_filter(['typ' => $rowPurchase])],
                 'gruppeanlegen'     => ['gruppenbestand', array_filter(['group' => absint($_POST['group'] ?? 0)])],
@@ -478,8 +481,8 @@ final class StockPage
         }
 
         if ($fromCockpit) {
-            $to = InboundPage::orderUrl(absint($_POST['order'] ?? 0), 'arrived');
-            $to = $kind === 'angekommen' && ! ($failed ?? false) && $arrivedPick !== [] ? add_query_arg('pick', implode(',', $arrivedPick), $to) : $to;
+            // D-1411: booked goes on to «Eingebucht», the rest stays under «Angekommen» while something is still there.
+            $to = InboundPage::orderUrl(absint($_POST['order'] ?? 0), $kind === 'wareneingang' && ! ($failed ?? false) ? 'booked' : 'arrived');
             wp_safe_redirect($open > 0 ? add_query_arg('material', $open, $to) : $to);
             exit;
         }
@@ -2711,7 +2714,7 @@ final class StockPage
         $pick   = array_values(array_filter(array_map('absint', explode(',', sanitize_text_field(wp_unslash((string) ($_GET['pick'] ?? '')))))));
 
         try {
-            wp_send_json_success(['html' => $this->receiptPositions($order, $back === InboundPage::BACK ? $back : '', $assign, $pick)]);
+            wp_send_json_success(['html' => $this->receiptPositions($order, $back === InboundPage::BACK ? $back : '', $assign, $pick, sanitize_key((string) ($_GET['stage'] ?? '')))]);
         } catch (StockError $e) {
             wp_send_json_error(['html' => '<div class="notice notice-error inline"><p>' . esc_html(Messages::of($e)) . '</p></div>']);
         }
@@ -2734,7 +2737,7 @@ final class StockPage
             $this->stock->assignPurchases($order, $this->assignedThings(), $this->assignedPlaces(), $this->newThings(), $this->receiptQuantities());
             wp_send_json_success([
                 'message' => __('Zuordnung gespeichert: Material und Lagerort bleiben stehen, noch nichts eingebucht.', 'taxmod-stock'),
-                'html'    => $this->receiptPositions($order, InboundPage::BACK, true),
+                'html'    => $this->receiptPositions($order, InboundPage::BACK, true, [], sanitize_key((string) ($_POST['stage'] ?? ''))),
             ]);
         } catch (StockError $e) {
             wp_send_json_error(['message' => Messages::of($e)]);
@@ -2751,15 +2754,27 @@ final class StockPage
         $place = 'taxmod-stock-place-all-' . $order;
         $body  = self::actForm([['label' => __('Lagerort', 'taxmod-stock'), 'control' => $this->stock->placeChooser('fill_location'),
             'hint' => __('Setzt den Lagerort bei allen angehakten Käufen; gespeichert wird er mit «Wareneingang buchen» oder «Zuordnung speichern».', 'taxmod-stock')]]);
-        $asks  = [$place => [__('Lagerort für alle …', 'taxmod-stock'), '<div class="alignleft actions">'
-            . ListPage::fillAction($place, __('Lagerort für alle angehakten', 'taxmod-stock'), $body, 'location', 'fill_location', __('Übernehmen', 'taxmod-stock')) . '</div>']];
+        $asks  = [];
         $ask   = static fn (string $switch, string $label, string $title, string $text, string $booking, string $submit): array => [$label,
             '<div class="alignleft actions">' . ListPage::dialogAction($switch, $label, $title, $text, 'booking', $booking, $submit, $formId) . '</div>', true];
+
+        if (! $assign) {
+            // D-1411, his word 2026-11-16 «aber keine bulk aktion für we von angeharkten positionen?»: booking is a choice of the bulk bar.
+            $asks['taxmod-stock-book-' . $order] = $ask('taxmod-stock-book-' . $order, __('Wareneingang buchen …', 'taxmod-stock'), __('Angehakte einbuchen', 'taxmod-stock'),
+                '<p>' . esc_html__('Die angehakten Käufe werden mit Material, Menge und Lagerort eingebucht.', 'taxmod-stock') . '</p>', 'wareneingang', __('Einbuchen', 'taxmod-stock'));
+        }
+
+        $asks[$place] = [__('Lagerort für alle …', 'taxmod-stock'), '<div class="alignleft actions">'
+            . ListPage::fillAction($place, __('Lagerort für alle angehakten', 'taxmod-stock'), $body, 'location', 'fill_location', __('Übernehmen', 'taxmod-stock')) . '</div>'];
 
         if ($assign) {
             // Stefan 16.11. «nicht möglich zu sagen dass einzelne teile angekommen sind».
             $asks['taxmod-stock-arrive-' . $order] = $ask('taxmod-stock-arrive-' . $order, __('Angekommen …', 'taxmod-stock'), __('Angehakte Käufe angekommen', 'taxmod-stock'),
-                '<p>' . esc_html__('Die Zuordnung wird gespeichert, die Bestellung kommt an, und der Wareneingang öffnet mit genau diesen Käufen angehakt.', 'taxmod-stock') . '</p>', 'angekommen', __('Angekommen', 'taxmod-stock'));
+                '<p>' . esc_html__('Die Zuordnung wird gespeichert, und genau die angehakten Käufe stehen danach unter «Angekommen»; die anderen bleiben, wo sie sind.', 'taxmod-stock') . '</p>', 'angekommen', __('Angekommen', 'taxmod-stock'));
+        } else {
+            // D-1411: a purchase ticked as arrived by mistake steps back; the others stay.
+            $asks['taxmod-stock-notarrived-' . $order] = $ask('taxmod-stock-notarrived-' . $order, __('Nicht angekommen …', 'taxmod-stock'), __('Angehakte sind noch nicht da', 'taxmod-stock'),
+                '<p>' . esc_html__('Die angehakten Käufe gehen zurück unter «Versendet» bzw. «Bestellt»; die anderen bleiben unter «Angekommen».', 'taxmod-stock') . '</p>', 'nichtangekommen', __('Nicht angekommen', 'taxmod-stock'));
         }
 
         if ($canClose) {
@@ -2776,7 +2791,6 @@ final class StockPage
 
         $buttons = '<div class="alignleft actions">' . ListPage::toolbar([
             [\Taxmod\Core\Renderer\ControlMarkup::button(\Taxmod\Core\Renderer\Control::saving('booking', 'zuordnen', __('Zuordnung speichern', 'taxmod-stock'), __('Zuordnung speichern', 'taxmod-stock'), true, $formId))],
-            [$assign ? '' : '<button type="submit" class="button button-primary" name="booking" value="wareneingang" form="' . esc_attr($formId) . '">' . esc_html__('Wareneingang buchen', 'taxmod-stock') . '</button>'],
             [$back === InboundPage::BACK ? (new InboundPage(new \TaxmodStock\WordPress\InboundService($this->stock)))->orderActs($order) : ''],
         ]) . '</div>';
 
@@ -2857,8 +2871,9 @@ final class StockPage
      * @param string $back where the booking returns to: '' the Lager page, {@see InboundPage::BACK} the cockpit (D-1001)
      * @param bool   $assign an order not yet arrived (INF-116): the choice is kept, nothing can be booked
      * @param list<int> $pick the purchases that arrived, ticked alone; empty ticks every purchase with a material
+     * @param string    $stage D-1411: the cockpit tab the form stands in — only its purchases; '' every purchase
      */
-    private function receiptPositions(int $order, string $back = '', bool $assign = false, array $pick = []): string
+    private function receiptPositions(int $order, string $back = '', bool $assign = false, array $pick = [], string $stage = ''): string
     {
         $orders = $this->stock->labels('order');
 
@@ -2867,6 +2882,9 @@ final class StockPage
         }
 
         $plan   = $this->stock->receiptPlan($order);
+        $tab    = \TaxmodStock\Core\InboundStage::tryFrom($stage);
+        $one    = $tab === null ? null : ((new \TaxmodStock\WordPress\InboundService($this->stock))->orders()[$order] ?? null);
+        $plan   = $one === null ? $plan : array_intersect_key($plan, array_flip($one->purchasesIn($tab, array_keys($plan))));
         $labels = $this->stock->labels('purchase');
         $about  = $this->purchaseAbout(array_keys($plan));
         $models = $this->stock->recordLabels(array_values(array_filter(array_column($plan, 'model'))));
@@ -2899,6 +2917,7 @@ final class StockPage
             . str_replace(['<form ', '<input type="hidden" name="booking" value="' . esc_attr($first) . '">'], ['<form id="' . esc_attr($formId) . '"' . ($assign ? ' class="taxmod-stock-assign"' : '') . ' ', ''], $this->formStart($first))
             . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
             . ($back === '' ? '' : '<input type="hidden" name="back" value="' . esc_attr($back) . '">')
+            . ($tab === null ? '' : '<input type="hidden" name="stage" value="' . esc_attr($tab->value) . '">')
             // ⚠️ *Enter in a reason field must book, not close the first row: the browser presses the first submit button.*
             . '<button type="submit" name="booking" value="' . esc_attr($first) . '" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px"></button>'
             . ($closing ? '<datalist id="taxmod-stock-reasons">' . implode('', array_map(static fn (string $r): string => '<option value="' . esc_attr($r) . '">', self::notStockedReasons())) . '</datalist>' : '')
@@ -4605,9 +4624,13 @@ final class StockPage
     {
         $out = [];
 
+        $drawn = (array) ($_POST['model'] ?? []);
+
         foreach ((array) ($_POST['thing'] ?? []) as $purchase => $thing) {
             // An empty choice is a material taken away; 0 tells the booking to clear the purchase's «Modell».
-            if (absint($purchase) > 0 && (absint($thing) > 0 || (string) $thing === '')) {
+            // His report 2026-11-16 «materialien … sind nicht mehr gesetzt»: only where the form was drawn with one — an empty
+            // row of an older form never clears a material chosen since.
+            if (absint($purchase) > 0 && (absint($thing) > 0 || ((string) $thing === '' && absint($drawn[$purchase] ?? 0) > 0))) {
                 $out[absint($purchase)] = absint($thing);
             }
         }
@@ -4816,7 +4839,7 @@ final class StockPage
             . 'root.querySelectorAll("tr").forEach(function(tr){if(!once(tr)){return;}var cb=tr.querySelector("input[name=\\"purchases[]\\"]");if(!cb||cb.disabled||tr.closest("form.taxmod-stock-assign")){return;}tr.querySelectorAll("select,input[type=text],input[type=search]").forEach(function(f){f.addEventListener("change",function(){cb.checked=true;});});});'
             . '}bind(document);'
             . 'function load(box){if(box.dataset.loaded){return;}box.dataset.loaded="1";var cell=box;cell.textContent="…";'
-            . 'fetch(pos+"&order="+encodeURIComponent(box.dataset.order)+(box.dataset.back?"&back="+encodeURIComponent(box.dataset.back):"")+(box.dataset.assign?"&assign=1":"")+(box.dataset.pick?"&pick="+encodeURIComponent(box.dataset.pick):""),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){cell.innerHTML=(j.data&&j.data.html)||"";bind(cell);var h=location.hash&&document.getElementById(location.hash.slice(1));if(h&&cell.contains(h)){h.scrollIntoView({block:"center"});}})'
+            . 'fetch(pos+"&order="+encodeURIComponent(box.dataset.order)+(box.dataset.back?"&back="+encodeURIComponent(box.dataset.back):"")+(box.dataset.assign?"&assign=1":"")+(box.dataset.pick?"&pick="+encodeURIComponent(box.dataset.pick):"")+(box.dataset.stage?"&stage="+encodeURIComponent(box.dataset.stage):""),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){cell.innerHTML=(j.data&&j.data.html)||"";bind(cell);var h=location.hash&&document.getElementById(location.hash.slice(1));if(h&&cell.contains(h)){h.scrollIntoView({block:"center"});}})'
             . '.catch(function(){delete box.dataset.loaded;cell.textContent=' . wp_json_encode(__('Positionen konnten nicht geladen werden.', 'taxmod-stock')) . ';});}'
             // An order's purchases load once its details row shows: opened by hand, by «Expand all», or open from the start.
             . 'var seen="IntersectionObserver" in window?new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){seen.unobserve(e.target);load(e.target);}});},{rootMargin:"200px"}):null;'
@@ -4971,7 +4994,8 @@ final class StockPage
 
         $this->stock->assignPurchases($order, $this->assignedThings(), $this->assignedPlaces(), $this->newThings(), $this->receiptQuantities());
 
-        return (new \TaxmodStock\WordPress\InboundService($this->stock))->markArrived([$order], $today);
+        // D-1411: only the ticked purchases arrive; the others stay where they are.
+        return (new \TaxmodStock\WordPress\InboundService($this->stock))->markPurchasesArrived($order, $ticked, $today);
     }
 
     /**

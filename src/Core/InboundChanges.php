@@ -11,7 +11,8 @@ namespace TaxmodStock\Core;
  */
 final class InboundChanges
 {
-    public function __construct(private readonly int $receivedField, private readonly int $trackingField)
+    /** @param int|null $arrivedField D-1411: the purchase's own «Angekommen am»; null where the model has none yet */
+    public function __construct(private readonly int $receivedField, private readonly int $trackingField, private readonly ?int $arrivedField = null)
     {
     }
 
@@ -26,8 +27,33 @@ final class InboundChanges
         $changes = [];
 
         foreach ($orders as $order) {
-            if (($order->receivedOn ?? '') === '') {
-                $changes[] = $this->set($order->id, $this->receivedField, substr($today, 0, 10));
+            $changes = [...$changes, ...$this->purchasesArrived($order, array_keys($order->purchases), $today)];
+        }
+
+        return $changes;
+    }
+
+    /**
+     * D-1411, «Angekommen …» for the ticked purchases: each open one not yet here gets today as its own «Angekommen am»;
+     * the order's «Eingegangen am» is its own fact (the delivery message) and is only set while empty.
+     *
+     * @param list<int> $purchases
+     * @return list<array<string, mixed>>
+     */
+    public function purchasesArrived(InboundOrder $order, array $purchases, string $today): array
+    {
+        $day     = substr($today, 0, 10);
+        $changes = ($order->receivedOn ?? '') === '' ? [$this->set($order->id, $this->receivedField, $day)] : [];
+
+        if ($this->arrivedField === null) {
+            return $changes;
+        }
+
+        foreach ($purchases as $purchase) {
+            $status = $order->purchases[$purchase] ?? null;
+
+            if ($status === PurchaseStatus::Ordered || $status === PurchaseStatus::Shipped) {
+                $changes[] = $this->set($purchase, $this->arrivedField, $day);
             }
         }
 
@@ -38,15 +64,66 @@ final class InboundChanges
      * «Zurück» from «Angekommen»: «Eingegangen am» is emptied. A booked purchase keeps the order where it is — its lot
      * says it is here.
      *
+     * @param array<int, string> $arrivedOn purchase → its own «Angekommen am» (D-1411)
      * @return list<array<string, mixed>>
      */
-    public function notArrived(InboundOrder $order, int $bookedPurchases): array
+    public function notArrived(InboundOrder $order, int $bookedPurchases, array $arrivedOn = []): array
     {
         if ($bookedPurchases > 0) {
             throw StockError::alreadyBooked();
         }
 
-        return ($order->receivedOn ?? '') === '' ? [] : [$this->set($order->id, $this->receivedField, '')];
+        $changes = ($order->receivedOn ?? '') === '' ? [] : [$this->set($order->id, $this->receivedField, '')];
+
+        // D-1411: the purchases' own dates step back with it.
+        foreach ($this->arrivedField === null ? [] : array_keys($order->purchases) as $purchase) {
+            if (trim((string) ($arrivedOn[$purchase] ?? '')) !== '') {
+                $changes[] = $this->set($purchase, $this->arrivedField, '');
+            }
+        }
+
+        return $changes;
+    }
+
+    /**
+     * D-1411, «Nicht angekommen …» for ticked purchases: their own «Angekommen am» is emptied. Where the order's date alone
+     * spoke for every purchase, the purchases that stay get it as their own, so only the ticked ones step back.
+     *
+     * @param list<int>          $purchases
+     * @param array<int, string> $arrivedOn purchase → its own «Angekommen am»
+     * @return list<array<string, mixed>>
+     */
+    public function purchasesNotArrived(InboundOrder $order, array $purchases, array $arrivedOn): array
+    {
+        if ($this->arrivedField === null) {
+            throw StockError::notConfigured('fields.purchase_arrived_on');
+        }
+
+        $arrived = array_keys(array_filter($order->purchases, static fn (PurchaseStatus $p): bool => $p === PurchaseStatus::Arrived));
+        $own     = array_filter($arrived, static fn (int $p): bool => trim((string) ($arrivedOn[$p] ?? '')) !== '') !== [];
+        $changes = [];
+
+        foreach ($arrived as $purchase) {
+            if (in_array($purchase, $purchases, true)) {
+                $changes[] = $this->set($purchase, $this->arrivedField, '');
+            } elseif (! $own) {
+                $changes[] = $this->set($purchase, $this->arrivedField, substr((string) $order->receivedOn, 0, 10));
+            }
+        }
+
+        // Every arrived purchase ticked while the order's date spoke for them: the order steps back as a whole.
+        if (! $own && array_diff($arrived, $purchases) === [] && ($order->receivedOn ?? '') !== '') {
+            return [$this->set($order->id, $this->receivedField, '')];
+        }
+
+        $kept = array_filter($arrived, static fn (int $p): bool => ! in_array($p, $purchases, true) && trim((string) ($arrivedOn[$p] ?? '')) !== '');
+
+        // No purchase keeps a day of its own: the order's date would speak for all of them again, so it goes too.
+        if ($own && $kept === [] && ($order->receivedOn ?? '') !== '') {
+            $changes[] = $this->set($order->id, $this->receivedField, '');
+        }
+
+        return $changes;
     }
 
     /**

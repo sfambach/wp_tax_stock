@@ -63,4 +63,15 @@ final class LocationTreeTest extends TestCase
         self::assertCount(2, $tree->labels() + []);
         self::assertIsString($tree->pathOf(1));
     }
+
+    #[Test]
+    public function everything_below_keeps_the_order_of_the_places_and_survives_a_loop(): void
+    {
+        $tree = new LocationTree([7 => 'X', 1 => 'A', 2 => 'B', 3 => 'C', 9 => 'Waise'], [7 => 1, 1 => 0, 2 => 3, 3 => 2, 9 => 42]);
+
+        self::assertSame([7, 1], $tree->withAllBelow(1));
+        self::assertSame([2, 3], $tree->withAllBelow(2));
+        self::assertSame([9], $tree->withAllBelow(9));
+        self::assertSame([], $tree->withAllBelow(42));
+    }
 }

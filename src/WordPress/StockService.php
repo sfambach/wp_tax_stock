@@ -131,6 +131,9 @@ final class StockService
 
     private ?ReservedPlaces $reservedPlaces = null;
 
+    /** @var array{0: Ledger, 1: Reservations}|null the reservations with the book they were read against */
+    private ?array $reservations = null;
+
     private ?PlaceTypes $placeTypes = null;
 
     private ?LabelTemplates $labelTemplates = null;
@@ -2910,7 +2913,14 @@ final class StockService
     /** D-1083: the reservations of subjects, read from the Vorgänge once per request. */
     public function reservations(): Reservations
     {
-        return Reservations::from($this->structureWithKinds(), $this->table('transaction'), $this->table('line'), $this->ledger());
+        // Review 2026-11-17 (E2): 11 callers built it anew; it rests on the book and tables, which do not change per service.
+        $ledger = $this->ledger();
+
+        if ($this->reservations === null || $this->reservations[0] !== $ledger) {
+            $this->reservations = [$ledger, Reservations::from($this->structureWithKinds(), $this->table('transaction'), $this->table('line'), $ledger)];
+        }
+
+        return $this->reservations[1];
     }
 
     /**

@@ -20,6 +20,26 @@ final class LocationTree
     /** @var array<int, list<int>>|null place → itself and everything inside it; see {@see self::below()} */
     private ?array $below = null;
 
+    /*
+     * Review 2026-11-17 (E1, E10): the tree does not change once built, yet the stock list asked labels() per row (2.6 ms each
+     * at 1000 places) and childrenOf()/parentOf() walked every place per call. Each answer is worked out once.
+     */
+
+    /** @var array<int, string>|null */
+    private ?array $labels = null;
+
+    /** @var list<array{0: int, 1: int}>|null */
+    private ?array $ordered = null;
+
+    /** @var array<int, int> */
+    private array $parentMemo = [];
+
+    /** @var array<int, list<int>>|null parent → the places that name it, unsorted */
+    private ?array $byParent = null;
+
+    /** @var array<int, list<int>> */
+    private array $childrenMemo = [];
+
     /**
      * @param array<int, string> $names    place id → its own name
      * @param array<int, int>    $parents  place id → the place it sits in, 0 at the top
@@ -48,8 +68,12 @@ final class LocationTree
     /** D-1267: the same tree, naming a deleted place in one place for every page that shows a place. */
     public function withUnknownName(\Closure $name): self
     {
-        $copy          = clone $this;
-        $copy->unknown = $name;
+        $copy               = clone $this;
+        $copy->unknown      = $name;
+        // The name of a missing place reaches paths and sibling order; what rests on names is worked out anew.
+        $copy->labels       = null;
+        $copy->ordered      = null;
+        $copy->childrenMemo = [];
 
         return $copy;
     }
@@ -114,9 +138,13 @@ final class LocationTree
     /** The place it sits in; 0 at the top, and also where a parent is unknown or would close a loop. */
     public function parentOf(int $id): int
     {
+        if (isset($this->parentMemo[$id])) {
+            return $this->parentMemo[$id];
+        }
+
         $parent = $this->parents[$id] ?? 0;
 
-        return isset($this->names[$parent]) && ! in_array($id, $this->ancestorsOf($parent), true) && $parent !== $id ? $parent : 0;
+        return $this->parentMemo[$id] = isset($this->names[$parent]) && ! in_array($id, $this->ancestorsOf($parent), true) && $parent !== $id ? $parent : 0;
     }
 
     /** @return list<int> from the top down to the place itself */
@@ -175,6 +203,10 @@ final class LocationTree
     /** @return array<int, string> every place by its path, with its project, in tree order — for choosers and lists */
     public function labels(): array
     {
+        if ($this->labels !== null) {
+            return $this->labels;
+        }
+
         $out = [];
 
         foreach ($this->ordered() as [$id]) {
@@ -182,12 +214,16 @@ final class LocationTree
             $out[$id] = $this->pathOf($id) . ($project === null ? '' : ' · ' . $project);
         }
 
-        return $out;
+        return $this->labels = $out;
     }
 
     /** @return list<array{0: int, 1: int}> place id and depth, parents before children, siblings by name */
     public function ordered(): array
     {
+        if ($this->ordered !== null) {
+            return $this->ordered;
+        }
+
         $children = [];
 
         foreach (array_keys($this->names) as $id) {
@@ -215,16 +251,28 @@ final class LocationTree
             }
         }
 
-        return $out;
+        return $this->ordered = $out;
     }
 
     /** @return list<int> the places right inside it, by name; 0 gives the top level */
     public function childrenOf(int $id): array
     {
-        $children = array_values(array_filter(array_keys($this->names), fn (int $place): bool => $place !== $id && $this->parentOf($place) === $id));
+        if (isset($this->childrenMemo[$id])) {
+            return $this->childrenMemo[$id];
+        }
+
+        if ($this->byParent === null) {
+            $this->byParent = [];
+
+            foreach (array_keys($this->names) as $place) {
+                $this->byParent[$this->parentOf($place)][] = $place;
+            }
+        }
+
+        $children = array_values(array_filter($this->byParent[$id] ?? [], static fn (int $place): bool => $place !== $id));
         usort($children, $this->siblingOrder(...));
 
-        return $children;
+        return $this->childrenMemo[$id] = $children;
     }
 
     /**

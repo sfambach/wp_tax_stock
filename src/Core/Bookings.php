@@ -433,9 +433,10 @@ final class Bookings
      * @param list<array{thing: int, quantity: float, name: string}> $new
      * @param list<array{lot: int, place: int, quantity: float}>     $back
      * @param string|null                                            $value price per piece in the reference currency (D-1425)
+     * @param Calculation|null                                       $calculation D-1425: its frozen inputs, kept at this Vorgang
      * @return list<array<string, mixed>>
      */
-    public function output(array $new, array $back, int $place, int $reference, string $title, bool $tested = false, int $stage = 0, ?string $value = null): array
+    public function output(array $new, array $back, int $place, int $reference, string $title, bool $tested = false, int $stage = 0, ?string $value = null, ?Calculation $calculation = null): array
     {
         $s = $this->structure;
 
@@ -471,7 +472,74 @@ final class Bookings
             $this->line($title, (string) $row['lot'], self::signed(-$row['quantity']), null, $row['place']);
         }
 
-        return $this->finish($title, 'kind_receipt', [(string) $s->field('transaction_reference') => (string) $reference]);
+        $extra = [(string) $s->field('transaction_reference') => (string) $reference];
+
+        // D-1425: one calculation per completion, at its receipt; the lots reach it through their lines.
+        if ($calculation !== null && $s->hasField('transaction_calculation')) {
+            $extra[(string) $s->field('transaction_calculation')] = ['kalkulation' => $this->calculationValues($calculation)];
+        }
+
+        return $this->finish($title, 'kind_receipt', $extra);
+    }
+
+    /**
+     * D-1425: the calculation's inputs as the values of its part — money in the reference currency, times in seconds, the
+     * price source only where a price was found.
+     *
+     * @return array<string, mixed>
+     */
+    private function calculationValues(Calculation $calculation): array
+    {
+        $s       = $this->structure;
+        $number  = static fn (float $n): string => rtrim(rtrim(number_format($n, 4, '.', ''), '0'), '.');
+        $seconds = fn (float $n): array => $this->moneyPart($number($n), $s->hasValue('unit_second') ? (string) $s->value('unit_second') : null);
+        $values  = [
+            (string) $s->field('calc_wage')          => $this->moneyPart($number($calculation->wage), null),
+            (string) $s->field('calc_setup_hours')   => $seconds($calculation->setupSeconds),
+            (string) $s->field('calc_setup_divisor') => $number($calculation->divisor),
+        ];
+
+        if ($calculation->workSeconds !== null) {
+            $values[(string) $s->field('calc_minutes')] = $seconds($calculation->workSeconds);
+        }
+
+        $sources = [
+            BuildPrices::LOT           => $s->hasValue('price_source_lot') ? (string) $s->value('price_source_lot') : '',
+            BuildPrices::LAST_PURCHASE => $s->hasValue('price_source_last_purchase') ? (string) $s->value('price_source_last_purchase') : '',
+        ];
+        $parts = [];
+
+        foreach ($calculation->parts as $i => $part) {
+            $row = [
+                (string) $s->field('calc_part_thing')    => (string) $part['thing'],
+                (string) $s->field('calc_part_quantity') => $number($part['quantity']),
+            ];
+
+            if ($part['lot'] > 0) {
+                $row[(string) $s->field('calc_part_lot')] = (string) $part['lot'];
+            }
+
+            if ($part['unit_price'] !== null) {
+                $row[(string) $s->field('calc_part_price')] = $this->moneyPart($number($part['unit_price']), null);
+            }
+
+            if (($sources[$part['source']] ?? '') !== '') {
+                $row[(string) $s->field('calc_part_source')] = $sources[$part['source']];
+            }
+
+            $parts['teil' . $i] = $row;
+        }
+
+        $scrap = [];
+
+        foreach ($calculation->scrap as $i => $piece) {
+            $scrap['ausschuss' . $i] = [
+                (string) $s->field('calc_scrap_thing')    => (string) $piece['thing'],
+                (string) $s->field('calc_scrap_quantity') => $number($piece['quantity']),
+            ];
+        }
+
+        return $values + ($parts === [] ? [] : [(string) $s->field('calc_parts') => $parts]) + ($scrap === [] ? [] : [(string) $s->field('calc_scrap') => $scrap]);
     }
 
     /**
@@ -962,7 +1030,7 @@ final class Bookings
     /**
      * The Vorgang itself, last: its «Positionen» name the lines created above — or, as a composition, hold them as parts.
      *
-     * @param array<string, string> $extra
+     * @param array<string, mixed> $extra
      * @return list<array<string, mixed>>
      */
     private function finish(string $title, string|int $kind, array $extra): array

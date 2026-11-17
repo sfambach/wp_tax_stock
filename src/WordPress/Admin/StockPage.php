@@ -1553,7 +1553,78 @@ final class StockPage
                 [__('Posten', 'taxmod-stock'), '6em'], [__('Material', 'taxmod-stock'), ''], [__('Ort', 'taxmod-stock'), ''], [__('Menge', 'taxmod-stock'), '6em'], [__('Wert je Stück', 'taxmod-stock'), '8em'],
                 [__('Kauf', 'taxmod-stock'), '7em'], [__('Buchungsdatum', 'taxmod-stock'), '8em'],
             ], $rows))
-            . $this->setSection($thing, $ledger->lotsOf($thing));
+            . $this->setSection($thing, $ledger->lotsOf($thing))
+            . $this->costSection($ledger->lotsOf($thing));
+    }
+
+    /**
+     * D-1425, his word 2026-11-17 «der presi soll transparent sein so das man das späte beim verkauf angeben kann»: per
+     * completion that brought these lots in, how the price per board came about — parts, set-up, work — frozen at the receipt.
+     *
+     * @param list<int> $lots this material's lots
+     */
+    private function costSection(array $lots): string
+    {
+        $byDeal = [];
+
+        foreach ($this->stock->costBreakdown($lots) as $lot => $breakdown) {
+            if ($breakdown !== null) {
+                $byDeal[$breakdown['deal']] ??= ['breakdown' => $breakdown, 'lots' => []];
+                $byDeal[$breakdown['deal']]['lots'][] = $lot;
+            }
+        }
+
+        if ($byDeal === []) {
+            return '';
+        }
+
+        $things  = [];
+
+        foreach ($byDeal as $deal) {
+            $things = [...$things, ...array_column($deal['breakdown']['parts'], 'thing'), ...array_column($deal['breakdown']['scrap'], 'thing')];
+        }
+
+        $names   = $this->stock->recordLabels(array_values(array_unique($things)));
+        $euro    = static fn (?float $amount): string => $amount === null ? '—' : esc_html(ListPage::number($amount, 4) . ' €');
+        $name    = static fn (int $thing): string => '<a href="' . esc_url(self::thingUrl($thing, 'bestand')) . '">' . esc_html(($names[$thing] ?? '') !== '' ? $names[$thing] : '#' . $thing) . '</a>';
+        $sources = ['lot' => __('Posten', 'taxmod-stock'), 'last_purchase' => __('letzter Kauf', 'taxmod-stock'), 'none' => __('ohne Preis', 'taxmod-stock')];
+        $html    = '';
+
+        foreach ($byDeal as $deal) {
+            $b    = $deal['breakdown'];
+            $rows = [];
+
+            foreach ($b['parts'] as $part) {
+                $rows[] = [
+                    $name($part['thing']),
+                    $part['lot'] > 0 ? '<a href="' . esc_url(self::lotUrl($part['thing'], $part['lot'])) . '">P-' . esc_html((string) $part['lot']) . '</a>' : '—',
+                    esc_html(ListPage::number($part['quantity'])),
+                    $euro($part['unit_price']),
+                    esc_html($sources[$part['source']] ?? $part['source']),
+                    $part['unit_price'] === null ? '—' : $euro($part['quantity'] * $part['unit_price']),
+                ];
+            }
+
+            $rows[] = ['<strong>' . esc_html__('Teile', 'taxmod-stock') . '</strong>', '', '', '', $b['complete'] ? '' : esc_html__('unvollständig', 'taxmod-stock'), $euro($b['parts_total'])];
+            /* translators: 1: hours, 2: wage, 3: divisor */
+            $rows[] = [esc_html__('Bereitstellung', 'taxmod-stock'), '', '', '', esc_html(sprintf(__('%1$s h × %2$s €/h ÷ %3$s', 'taxmod-stock'), ListPage::number($b['setup']['hours']), ListPage::number($b['setup']['wage'], 2), ListPage::number($b['setup']['divisor']))), $euro($b['setup']['amount'])];
+            /* translators: 1: minutes, 2: wage */
+            $rows[] = [esc_html__('Arbeit', 'taxmod-stock'), '', '', '', $b['work']['minutes'] === null ? esc_html__('keine Zeit eingegeben', 'taxmod-stock') : esc_html(sprintf(__('%1$s min × %2$s €/h', 'taxmod-stock'), ListPage::number($b['work']['minutes']), ListPage::number($b['work']['wage'], 2))), $euro($b['work']['amount'])];
+            $rows[] = ['<strong>' . esc_html__('Summe je Platine', 'taxmod-stock') . '</strong>', '', '', '', '', '<strong>' . $euro($b['total']) . '</strong>'];
+
+            $scrap = array_map(static fn (array $piece): string => esc_html(ListPage::number($piece['quantity'])) . ' × ' . $name($piece['thing']), $b['scrap']);
+            $lotsShown = implode(', ', array_map(static fn (int $lot): string => 'P-' . $lot, $deal['lots']));
+            /* translators: 1: the order's record, 2: date, 3: the lots */
+            $title = sprintf(__('Kalkulation Auftrag #%1$d vom %2$s (%3$s)', 'taxmod-stock'), $b['order'], $b['date'], $lotsShown);
+
+            $html .= '<section class="taxmod-record-section"><h3>' . esc_html($title) . '</h3>'
+                . ListPage::grid([[__('Material', 'taxmod-stock')], [__('Posten', 'taxmod-stock')], [__('Menge je Platine', 'taxmod-stock'), GridMarkup::NUMBER],
+                    [__('Stückpreis', 'taxmod-stock'), GridMarkup::NUMBER], [__('Quelle', 'taxmod-stock')], [__('Betrag', 'taxmod-stock'), GridMarkup::NUMBER]], $rows)
+                . ($scrap === [] ? '' : '<p class="description">' . esc_html__('Ausschuss, nicht eingerechnet:', 'taxmod-stock') . ' ' . implode(', ', $scrap) . '</p>')
+                . '</section>';
+        }
+
+        return $html;
     }
 
     /** D-1381: on a sub-lot, the set lot it came from, linked to that lot's row. */

@@ -46,7 +46,9 @@ final class Structure
         'manufacturer',
         // D-1257: the node every group of material lies under; a new material is made below it. Not «material»: that key
         // is the former name of «lager» (FORMER_KEYS), and an old pasted structure holding it would read as another site.
-        'material_root'];
+        'material_root',
+        // D-1425: the frozen price calculation of a completion, its parts and its scrap.
+        'calculation', 'calculation_part', 'calculation_scrap'];
 
     /** Fields the module uses when they are there and leaves out when they are not. */
     /** D-1303: the stages a lot from production runs through, in this order; «In Reparatur» and «Verschrottet» step aside. */
@@ -138,6 +140,9 @@ final class Structure
         'lot_stage',
         // D-1381: a bought set — the set material's wanted content (material and quantity per line), and the set lot a lot came from.
         'lager_set_content', 'set_content_thing', 'set_content_quantity', 'lot_from_set',
+        // D-1425: the calculation at the receipt of a completion.
+        'transaction_calculation', 'calc_wage', 'calc_setup_hours', 'calc_setup_divisor', 'calc_minutes', 'calc_parts', 'calc_scrap',
+        'calc_part_thing', 'calc_part_lot', 'calc_part_quantity', 'calc_part_price', 'calc_part_source', 'calc_scrap_thing', 'calc_scrap_quantity',
     ];
 
     private const VALUES = ['kind_receipt', 'kind_consumption', 'kind_count', 'source_manual', 'status_partial', 'status_received', 'location_default'];
@@ -164,6 +169,8 @@ final class Structure
         ...self::STAGES,
         // D-1169: a place type's fit calculation and how loudly a misfit is said.
         'fit_volume', 'fit_sides', 'fit_none', 'level_info', 'level_warning', 'level_error',
+        // D-1425: where a part's price came from, and the unit the calculation's times are kept in.
+        'price_source_lot', 'price_source_last_purchase', 'unit_second',
     ];
 
     /**

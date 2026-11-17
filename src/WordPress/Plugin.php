@@ -2,6 +2,7 @@
 
 namespace TaxmodStock\WordPress;
 
+use TaxmodStock\Core\Calculation;
 use TaxmodStock\Core\ReservationRow;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\TestResult;
@@ -709,12 +710,13 @@ final class Plugin
 
     /**
      * D-1425: `apply_filters('taxmod_stock_cost_breakdown', null, ['lots' => [id, …]])` → lot → breakdown|null, or with
-     * `['thing' => id]` the newest breakdown of that material|null. ⚠️ The breakdown's record at the lot waits for its model
-     * change (Stefan's card); until then every answer is null.
+     * `['thing' => id]` the newest breakdown of that material|null. A breakdown: parts [{thing, lot, quantity, unit_price|null,
+     * source}], parts_total, complete, setup {hours, wage, divisor, amount}, work {minutes|null, wage, amount}, scrap
+     * [{thing, quantity}], total — per board in euro — and order, date, deal (the receipt).
      *
      * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
      * @param mixed $args     `mixed`: checked here
-     * @return array<int, null>|null|\WP_Error
+     * @return array<int|string, mixed>|null|\WP_Error
      */
     public static function costBreakdown(mixed $previous, mixed $args): array|null|\WP_Error
     {
@@ -729,10 +731,10 @@ final class Plugin
         $args = is_array($args) ? $args : [];
 
         if (isset($args['thing'])) {
-            return null;
+            return self::reading()->latestCostBreakdown(absint($args['thing']));
         }
 
-        return array_fill_keys(array_values(array_filter(array_map('absint', is_array($args['lots'] ?? null) ? $args['lots'] : []))), null);
+        return self::reading()->costBreakdown(array_values(array_filter(array_map('absint', is_array($args['lots'] ?? null) ? $args['lots'] : []))));
     }
 
     /**
@@ -892,14 +894,18 @@ final class Plugin
             return new \WP_Error('taxmod_stock_not_a_date', Messages::of(StockError::notADate($date)));
         }
 
-        $total = is_array($args['cost'] ?? null) ? ($args['cost']['total'] ?? null) : null;
+        $cost  = is_array($args['cost'] ?? null) ? $args['cost'] : null;
+        $total = $cost['total'] ?? null;
 
         if ($total !== null && (! is_numeric($total) || (float) $total < 0.0)) {
             return new \WP_Error('taxmod_stock_not_a_price', __('Der Stückpreis der Kalkulation muss eine Zahl ab 0 sein.', 'taxmod-stock'));
         }
 
         try {
-            return self::writing()->bookOutput(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Fertigung', 'taxmod-stock'))), ($args['tested'] ?? false) === true, sanitize_key((string) ($args['stage'] ?? '')), $total === null ? null : (float) $total);
+            // D-1425: the inputs are kept with the receipt where the caller sent them (set-up given); the total alone is the lot's value.
+            $calculation = $cost !== null && is_array($cost['setup'] ?? null) ? Calculation::fromCost($cost) : null;
+
+            return self::writing()->bookOutput(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Fertigung', 'taxmod-stock'))), ($args['tested'] ?? false) === true, sanitize_key((string) ($args['stage'] ?? '')), $total === null ? null : (float) $total, $calculation);
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }

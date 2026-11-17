@@ -10,6 +10,8 @@ use TaxmodStock\Core\CutSources;
 use TaxmodStock\Core\StripCut;
 use TaxmodStock\Core\Bookings;
 use TaxmodStock\Core\BuildPlan;
+use TaxmodStock\Core\BuildPrices;
+use TaxmodStock\Core\Calculation;
 use TaxmodStock\Core\InboundArchive;
 use TaxmodStock\Core\InventoryRow;
 use TaxmodStock\Core\LagerChanges;
@@ -4065,11 +4067,11 @@ final class StockService
 
     /**
      * D-1143: the finished things of a build order go into stock at $place — thing → pieces, less than 0 takes them back
-     * from what this order brought in. Answers the Vorgang's id. D-1425: `$unitCost` (euro per piece) is each new lot's value.
+     * from what this order brought in. Answers the Vorgang's id. D-1425: `$unitCost` (euro per piece) is each new lot's value, `$calculation` is kept at the Vorgang.
      *
      * @param array<int, float> $lines
      */
-    public function bookOutput(int $reference, int $place, array $lines, string $today, string $title, bool $tested = false, string $stage = '', ?float $unitCost = null): int
+    public function bookOutput(int $reference, int $place, array $lines, string $today, string $title, bool $tested = false, string $stage = '', ?float $unitCost = null, ?Calculation $calculation = null): int
     {
         $s       = $this->structure();
         $stageId = 0;
@@ -4107,7 +4109,146 @@ final class StockService
                 ? array_fill(0, (int) $r['quantity'], ['quantity' => 1.0] + $r) : [$r], $new));
         }
 
-        return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->output($new, $plan['back'], $place, $reference, $title, $tested, $stageId, $unitCost === null ? null : rtrim(rtrim(number_format($unitCost, 4, '.', ''), '0'), '.'))));
+        return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->output($new, $plan['back'], $place, $reference, $title, $tested, $stageId, $unitCost === null ? null : rtrim(rtrim(number_format($unitCost, 4, '.', ''), '0'), '.'), $calculation)));
+    }
+
+    /**
+     * D-1425: the calculation each lot's receipt keeps, per board in euro, with the order and the date of that receipt;
+     * null for a lot whose receipt has none. One read of the Vorgänge, their calculations and the amounts (CD-7).
+     *
+     * @param list<int> $lots
+     * @return array<int, array<string, mixed>|null>
+     */
+    public function costBreakdown(array $lots): array
+    {
+        $found = $this->calculations();
+        $out   = [];
+
+        foreach ($lots as $lot) {
+            $out[$lot] = $found['byLot'][$lot] ?? null;
+        }
+
+        return $out;
+    }
+
+    /** D-1425: the newest calculation of a completion that brought `$thing` in — the time per board is preset from it. */
+    public function latestCostBreakdown(int $thing): ?array
+    {
+        $found  = $this->calculations();
+        $ledger = $this->ledger();
+        $best   = null;
+
+        foreach ($found['byLot'] as $lot => $breakdown) {
+            if ($ledger->thingOf($lot) === $thing && ($best === null || [$breakdown['date'], $breakdown['deal']] > [$best['date'], $best['deal']])) {
+                $best = $breakdown;
+            }
+        }
+
+        return $best;
+    }
+
+    /** @return array{byLot: array<int, array<string, mixed>>} */
+    private function calculations(): array
+    {
+        $s = $this->structure();
+
+        if (! $s->hasField('transaction_calculation') || ! $s->hasNode('calculation')) {
+            return ['byLot' => []];
+        }
+
+        $deals  = $this->table('transaction');
+        $lines  = $this->table('line');
+        $heads  = [];
+
+        foreach ($deals->ids() as $deal) {
+            $calc = (int) ($deals->first($deal, $s->field('transaction_calculation')) ?? 0);
+
+            if ($calc > 0) {
+                $heads[$deal] = $calc;
+            }
+        }
+
+        if ($heads === []) {
+            return ['byLot' => []];
+        }
+
+        $calcs   = $this->recordsOf('calculation', array_values($heads));
+        $partIds = [];
+        $scrapIds = [];
+
+        foreach ($heads as $calc) {
+            $partIds  = [...$partIds, ...array_map('intval', $calcs->all($calc, $s->field('calc_parts')))];
+            $scrapIds = [...$scrapIds, ...array_map('intval', $calcs->all($calc, $s->field('calc_scrap')))];
+        }
+
+        $parts = $this->recordsOf('calculation_part', $partIds);
+        $scrap = $this->recordsOf('calculation_scrap', $scrapIds);
+        $money = [];
+
+        foreach ($heads as $calc) {
+            foreach (['calc_wage', 'calc_setup_hours', 'calc_minutes'] as $key) {
+                $money[] = (int) ($calcs->first($calc, $s->field($key)) ?? 0);
+            }
+        }
+
+        foreach ($partIds as $part) {
+            $money[] = (int) ($parts->first($part, $s->field('calc_part_price')) ?? 0);
+        }
+
+        $amounts = $this->recordsOf('money', array_values(array_unique(array_filter($money))));
+        $amount  = static function (?int $part) use ($amounts, $s): ?float {
+            $value = $part === null || $part <= 0 ? null : $amounts->first($part, $s->field('money_amount'));
+
+            return is_numeric($value) ? (float) $value : null;
+        };
+        $source = [
+            $s->hasValue('price_source_lot') ? $s->value('price_source_lot') : -1                     => BuildPrices::LOT,
+            $s->hasValue('price_source_last_purchase') ? $s->value('price_source_last_purchase') : -2 => BuildPrices::LAST_PURCHASE,
+        ];
+        $byLot = [];
+
+        foreach ($heads as $deal => $calc) {
+            $rows = [];
+
+            foreach (array_map('intval', $calcs->all($calc, $s->field('calc_parts'))) as $part) {
+                $price  = $amount((int) ($parts->first($part, $s->field('calc_part_price')) ?? 0));
+                $rows[] = [
+                    'thing'      => (int) ($parts->first($part, $s->field('calc_part_thing')) ?? 0),
+                    'lot'        => (int) ($parts->first($part, $s->field('calc_part_lot')) ?? 0),
+                    'quantity'   => (float) ($parts->first($part, $s->field('calc_part_quantity')) ?? 0),
+                    'unit_price' => $price,
+                    'source'     => $price === null ? BuildPrices::NONE : ($source[(int) ($parts->first($part, $s->field('calc_part_source')) ?? 0)] ?? BuildPrices::NONE),
+                ];
+            }
+
+            $pieces = array_map(static fn (int $piece): array => [
+                'thing'    => (int) ($scrap->first($piece, $s->field('calc_scrap_thing')) ?? 0),
+                'quantity' => (float) ($scrap->first($piece, $s->field('calc_scrap_quantity')) ?? 0),
+            ], array_map('intval', $calcs->all($calc, $s->field('calc_scrap'))));
+            $work   = $amount((int) ($calcs->first($calc, $s->field('calc_minutes')) ?? 0));
+            $breakdown = (new Calculation(
+                $amount((int) ($calcs->first($calc, $s->field('calc_wage')) ?? 0)) ?? 0.0,
+                $amount((int) ($calcs->first($calc, $s->field('calc_setup_hours')) ?? 0)) ?? 0.0,
+                max((float) ($calcs->first($calc, $s->field('calc_setup_divisor')) ?? 1), 1e-9),
+                $work,
+                $rows,
+                $pieces,
+            ))->breakdown() + [
+                'order' => (int) ($deals->first($deal, $s->field('transaction_reference')) ?? 0),
+                'date'  => substr((string) ($deals->first($deal, $s->field('transaction_date')) ?? ''), 0, 10),
+                'deal'  => $deal,
+            ];
+
+            foreach ($deals->all($deal, $s->field('transaction_lines')) as $line) {
+                $lot = (int) ($lines->first((int) $line, $s->field('line_lot')) ?? 0);
+
+                if ($lot > 0) {
+                    $byLot[$lot] = $breakdown;
+                }
+            }
+        }
+
+        return ['byLot' => $byLot];
     }
 
     /**

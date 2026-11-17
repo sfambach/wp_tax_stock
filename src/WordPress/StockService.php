@@ -116,6 +116,9 @@ final class StockService
 
     private ?Structure $structure = null;
 
+    /** @var array<string, Structure> hash of the stored option ⇒ the structure, once per request */
+    private static array $structures = [];
+
     /** @var array<int, array{name: string, parent: int, class: string}>|null the tree under the things' root, read once */
     private ?array $tree = null;
 
@@ -125,6 +128,14 @@ final class StockService
     private ?array $linkTemplates = null;
 
     private ?LocationTree $locationTree = null;
+
+    /** @var array{0: string, 1: Ledger}|null the book with the tables it was built from; see {@see self::ledger()} */
+    private ?array $ledger = null;
+
+    private ?ReservedPlaces $reservedPlaces = null;
+
+    /** @var array{0: Ledger, 1: Reservations}|null the reservations with the book they were read against */
+    private ?array $reservations = null;
 
     private ?PlaceTypes $placeTypes = null;
 
@@ -158,14 +169,23 @@ final class StockService
             return $this->structure;
         }
 
-        $raw     = get_option(self::OPTION, []);
-        $file    = dirname(__DIR__, 2) . '/structure-live.json';
-        $bundled = is_readable($file) ? json_decode((string) file_get_contents($file), true) : null;
+        // And once per request for every service (review 2026-11-17, V3): a page builds several, each read and decoded the bundled
+        // file. Keyed by the stored option, so a setting saved in this request gives its own.
+        $raw = get_option(self::OPTION, []);
+        $raw = is_array($raw) ? $raw : [];
+        $key = md5(serialize($raw));
 
-        $completed = Structure::completed(is_array($raw) ? $raw : [], is_array($bundled) ? $bundled : []);
-        self::shareRoles($completed);
+        if (! isset(self::$structures[$key])) {
+            $file    = dirname(__DIR__, 2) . '/structure-live.json';
+            $bundled = is_readable($file) ? json_decode((string) file_get_contents($file), true) : null;
 
-        return $this->structure = Structure::fromArray($completed);
+            $completed = Structure::completed($raw, is_array($bundled) ? $bundled : []);
+            self::shareRoles($completed);
+
+            self::$structures[$key] = Structure::fromArray($completed);
+        }
+
+        return $this->structure = self::$structures[$key];
     }
 
     /** The option that remembers for which release this site's roles went into the modeller's role table. */
@@ -1157,9 +1177,24 @@ final class StockService
         return $s->hasNode('lager_use') ? $this->model->children($s->node('lager_use')) : [];
     }
 
+    /**
+     * The book, built once for the tables it is built from.
+     *
+     * Review 2026-11-17 (Befund 2): 65 callers built it anew, each over every lot and line. The tables are read once per service
+     * and never change, and neither does the book, so the same three tables give the same book.
+     */
     public function ledger(): Ledger
     {
-        return new Ledger($this->structure(), $this->table('lot'), $this->table('line'), $this->table('transaction'));
+        $lots         = $this->table('lot');
+        $lines        = $this->table('line');
+        $transactions = $this->table('transaction');
+        $key          = spl_object_id($lots) . '/' . spl_object_id($lines) . '/' . spl_object_id($transactions);
+
+        if ($this->ledger === null || $this->ledger[0] !== $key) {
+            $this->ledger = [$key, new Ledger($this->structure(), $lots, $lines, $transactions)];
+        }
+
+        return $this->ledger[1];
     }
 
     /**
@@ -2853,9 +2888,10 @@ final class StockService
     }
 
     /** D-1082: the places reserved for production, computed from the tree read once. */
+    /** Built once per service, like the place tree it rests on (review 2026-11-17, Befund 2: 24 callers). */
     public function reservedPlaces(): ReservedPlaces
     {
-        return ReservedPlaces::from($this->structure(), $this->table('location'), $this->locationTree());
+        return $this->reservedPlaces ??= ReservedPlaces::from($this->structure(), $this->table('location'), $this->locationTree());
     }
 
     /**
@@ -2889,7 +2925,14 @@ final class StockService
     /** D-1083: the reservations of subjects, read from the Vorgänge once per request. */
     public function reservations(): Reservations
     {
-        return Reservations::from($this->structureWithKinds(), $this->table('transaction'), $this->table('line'), $this->ledger());
+        // Review 2026-11-17 (E2): 11 callers built it anew; it rests on the book and tables, which do not change per service.
+        $ledger = $this->ledger();
+
+        if ($this->reservations === null || $this->reservations[0] !== $ledger) {
+            $this->reservations = [$ledger, Reservations::from($this->structureWithKinds(), $this->table('transaction'), $this->table('line'), $ledger)];
+        }
+
+        return $this->reservations[1];
     }
 
     /**

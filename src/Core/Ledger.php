@@ -32,6 +32,9 @@ final class Ledger
     /** @var array<int, string> lot id → receipt date */
     private array $dateOf = [];
 
+    /** @var array<int, list<int>>|null thing → its lots, oldest first; see {@see self::lotsByThing()} */
+    private ?array $lotsByThing = null;
+
     /** @var array<int, int> lot id → the place it came in, 0 when it names none */
     private array $homeOf = [];
 
@@ -167,11 +170,32 @@ final class Ledger
      */
     public function lotsOf(int $thing): array
     {
-        $lots = array_keys(array_filter($this->thingOf, static fn (int $t): bool => $t === $thing));
+        return $this->lotsByThing()[$thing] ?? [];
+    }
 
-        usort($lots, fn (int $a, int $b): int => [$this->dateOf[$a], $a] <=> [$this->dateOf[$b], $b]);
+    /**
+     * Every thing with its lots, oldest first — sorted once for the whole book.
+     *
+     * Review 2026-11-17 (Befund 1): the material list asked this per row and each call filtered every lot; 3400 materials
+     * and 3000 lots took 1357 ms. The book does not change after it is built, so one pass serves every row.
+     *
+     * @return array<int, list<int>>
+     */
+    private function lotsByThing(): array
+    {
+        if ($this->lotsByThing === null) {
+            $lots = array_keys($this->thingOf);
 
-        return $lots;
+            usort($lots, fn (int $a, int $b): int => [$this->dateOf[$a], $a] <=> [$this->dateOf[$b], $b]);
+
+            $this->lotsByThing = [];
+
+            foreach ($lots as $lot) {
+                $this->lotsByThing[$this->thingOf[$lot]][] = $lot;
+            }
+        }
+
+        return $this->lotsByThing;
     }
 
     /**

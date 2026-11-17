@@ -38,6 +38,23 @@ final class LedgerTest extends TestCase
         $this->ledger()->proposedLot(99);
     }
 
+    #[Test]
+    public function the_lots_of_a_thing_are_oldest_first_then_by_id_and_a_thing_without_lots_has_none(): void
+    {
+        $s      = Fixture::structure();
+        $ledger = new Ledger($s, new Table([
+            31 => [$s->field('lot_thing') => ['50'], $s->field('lot_date') => ['2026-10-15 00:00:00']],
+            22 => [$s->field('lot_thing') => ['50'], $s->field('lot_date') => ['2026-10-15 00:00:00']],
+            40 => [$s->field('lot_thing') => ['60'], $s->field('lot_date') => ['2026-09-01 00:00:00']],
+            41 => [$s->field('lot_thing') => ['50'], $s->field('lot_date') => ['2026-10-01 00:00:00']],
+        ]), new Table([]));
+
+        self::assertSame([41, 22, 31], $ledger->lotsOf(50));
+        self::assertSame([40], $ledger->lotsOf(60));
+        self::assertSame([], $ledger->lotsOf(99));
+        self::assertSame([41, 22, 31], $ledger->lotsOf(50), 'asked again, same answer');
+    }
+
     /** @param array<int, list<string>>|null $moves lot → quantities */
     private function ledger(?array $moves = null): Ledger
     {

@@ -93,6 +93,9 @@ final class Plugin
     public const TEST_RESULT = 'taxmod_stock_test_result';
     public const SCRAP_LOTS  = 'taxmod_stock_scrap_lots';
     public const TEST_LOTS   = 'taxmod_stock_test_lots';
+    /** D-1425: the prices of what a build takes, and the calculation a finished lot carries. */
+    public const BUILD_PRICES   = 'taxmod_stock_build_prices';
+    public const COST_BREAKDOWN = 'taxmod_stock_cost_breakdown';
 
     /** D-1303: the stages of lots from production, and the place finished boards come in. */
     public const LOT_STAGES        = 'taxmod_stock_lot_stages';
@@ -201,6 +204,8 @@ final class Plugin
         add_filter(self::TEST_RESULT, [self::class, 'testResult'], 10, 2);
         add_filter(self::SCRAP_LOTS, [self::class, 'scrapLots'], 10, 2);
         add_filter(self::TEST_LOTS, [self::class, 'testLots'], 10, 2);
+        add_filter(self::BUILD_PRICES, [self::class, 'buildPrices'], 10, 2);
+        add_filter(self::COST_BREAKDOWN, [self::class, 'costBreakdown'], 10, 2);
         add_filter(self::LOT_STAGES, [self::class, 'lotStages'], 10, 2);
         add_filter(self::SET_LOT_STAGE, [self::class, 'setLotStage'], 10, 2);
         add_filter(self::PRODUCTION_INBOUND, [self::class, 'productionInbound'], 10, 1);
@@ -669,6 +674,68 @@ final class Plugin
     }
 
     /**
+     * D-1425: `apply_filters('taxmod_stock_build_prices', null, ['reference' => order, 'place' => box, 'lines' => [thing => pieces]])`
+     * → ['parts' => thing → [['lot', 'quantity', 'unit_price' (euro per piece|null), 'source' => lot|last_purchase|none], …],
+     * 'scrap' => thing → pieces this order scrapped] or a WP_Error — read only, the plan `taxmod_stock_book_build` books.
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     `mixed`: checked here
+     */
+    public static function buildPrices(mixed $previous, mixed $args): array|\WP_Error
+    {
+        if (is_array($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args  = is_array($args) ? $args : [];
+        $lines = [];
+
+        foreach (is_array($args['lines'] ?? null) ? $args['lines'] : [] as $thing => $quantity) {
+            if (absint($thing) > 0 && is_numeric($quantity)) {
+                $lines[absint($thing)] = (float) $quantity;
+            }
+        }
+
+        try {
+            return (new InboundService(self::reading()))->buildPrices(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines);
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1425: `apply_filters('taxmod_stock_cost_breakdown', null, ['lots' => [id, …]])` → lot → breakdown|null, or with
+     * `['thing' => id]` the newest breakdown of that material|null. ⚠️ The breakdown's record at the lot waits for its model
+     * change (Stefan's card); until then every answer is null.
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     `mixed`: checked here
+     * @return array<int, null>|null|\WP_Error
+     */
+    public static function costBreakdown(mixed $previous, mixed $args): array|null|\WP_Error
+    {
+        if ($previous !== null) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args = is_array($args) ? $args : [];
+
+        if (isset($args['thing'])) {
+            return null;
+        }
+
+        return array_fill_keys(array_values(array_filter(array_map('absint', is_array($args['lots'] ?? null) ? $args['lots'] : []))), null);
+    }
+
+    /**
      * D-1419: `apply_filters('taxmod_stock_scrap_lots', null, ['lots' => [id, …], 'reference' => order, 'reason' => '…',
      * 'title' => …, 'date' => Y-m-d])` → the Vorgang «Defekt/Ausschuss»'s id or a WP_Error; the lots leave whole and their
      * test report says «defekt», one act.
@@ -794,7 +861,8 @@ final class Plugin
      * D-1143 for wp_tax_manufacturing: `apply_filters('taxmod_stock_book_output', null, $args)` brings the finished things of
      * a build order into stock. `$args`: reference (the order's record), place (where they go), lines (thing → pieces, less
      * than 0 cancels what this order brought in), title, date (Y-m-d), tested (true: tested in the manufacturing, D-1177),
-     * stage (D-1303: a key of the stages, e.g. «stage_from_production», set on the new lots in the same act).
+     * stage (D-1303: a key of the stages, e.g. «stage_from_production», set on the new lots in the same act), cost (D-1425:
+     * the calculation per piece; its «total» in euro becomes each new lot's value in the same act).
      * Answers the Vorgang's id or a WP_Error.
      *
      * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
@@ -824,8 +892,14 @@ final class Plugin
             return new \WP_Error('taxmod_stock_not_a_date', Messages::of(StockError::notADate($date)));
         }
 
+        $total = is_array($args['cost'] ?? null) ? ($args['cost']['total'] ?? null) : null;
+
+        if ($total !== null && (! is_numeric($total) || (float) $total < 0.0)) {
+            return new \WP_Error('taxmod_stock_not_a_price', __('Der Stückpreis der Kalkulation muss eine Zahl ab 0 sein.', 'taxmod-stock'));
+        }
+
         try {
-            return self::writing()->bookOutput(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Fertigung', 'taxmod-stock'))), ($args['tested'] ?? false) === true, sanitize_key((string) ($args['stage'] ?? '')));
+            return self::writing()->bookOutput(absint($args['reference'] ?? 0), absint($args['place'] ?? 0), $lines, $date, sanitize_text_field((string) ($args['title'] ?? __('Fertigung', 'taxmod-stock'))), ($args['tested'] ?? false) === true, sanitize_key((string) ($args['stage'] ?? '')), $total === null ? null : (float) $total);
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }

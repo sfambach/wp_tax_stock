@@ -2,6 +2,7 @@
 
 namespace TaxmodStock\WordPress;
 
+use TaxmodStock\Core\BuildPrices;
 use TaxmodStock\Core\InboundChanges;
 use TaxmodStock\Core\InboundOrder;
 use TaxmodStock\Core\NotStocked;
@@ -396,34 +397,122 @@ final class InboundService
             return [];
         }
 
-        $about = array_values(array_filter($purchases->ids(), static fn (int $id): bool => isset($wanted[(int) ($purchases->first($id, $s->field('purchase_model')) ?? 0)])));
-        $parts = array_combine($about, array_map(static fn (int $id): int => (int) ($purchases->first($id, $s->field('purchase_unit_price')) ?? 0), $about)) ?: [];
-        $money = $stock->recordsOf('money', array_values(array_unique(array_filter($parts))));
-        $orders = $stock->table('order');
         $orderOf = $this->orderOfPurchase();
-        // The frozen rate the modeller keeps at a foreign amount (D-966): 1 euro = rate units; a euro amount has none.
-        $rateField = (int) get_option('taxmod_unit_value_rate_field', 0);
-        $reference = $s->hasValue('currency_default') ? (string) $s->value('currency_default') : '';
+        $facts   = $this->purchaseFacts(array_keys($wanted), $orderOf);
+
+        return array_map(static fn (array $w): array => $w + ['previous_order' => $orderOf[$w['previous']] ?? null], PriceCheck::warnings($checked, $facts, (float) $stock->priceWarnPercent()));
+    }
+
+    /**
+     * D-1375, D-1425: every purchase of these materials with its order date and its price per piece in the reference
+     * currency (null where it has none or cannot be converted) — one read of the purchases, orders and amounts (CD-7).
+     *
+     * @param list<int>       $materials
+     * @param array<int, int> $orderOf purchase → order, {@see orderOfPurchase()}
+     * @return array<int, array{material: int, date: string, unit: float|null}>
+     */
+    public function purchaseFacts(array $materials, array $orderOf): array
+    {
+        $s         = $this->stock->structure();
+        $purchases = $this->stock->table('purchase');
+        $orders    = $this->stock->table('order');
+        $wanted    = array_flip($materials);
+        $about     = array_values(array_filter($purchases->ids(), static fn (int $id): bool => isset($wanted[(int) ($purchases->first($id, $s->field('purchase_model')) ?? 0)])));
+        $parts     = array_combine($about, array_map(static fn (int $id): int => (int) ($purchases->first($id, $s->field('purchase_unit_price')) ?? 0), $about)) ?: [];
+        $euro      = $this->inEuro(array_values($parts));
         $facts     = [];
 
         foreach ($about as $id) {
-            $part   = $parts[$id];
-            $amount = $part > 0 ? $money->first($part, $s->field('money_amount')) : null;
-            $unit   = $part > 0 ? (string) ($money->first($part, $s->field('money_unit')) ?? '') : '';
-            $rate   = $part > 0 && $rateField > 0 ? $money->first($part, $rateField) : null;
-            $value  = match (true) {
-                $amount === null || ! is_numeric($amount)          => null,
-                $unit === '' || $unit === $reference               => (float) $amount,
-                is_numeric($rate) && (float) $rate > 0.0           => (float) $amount / (float) $rate,
-                default                                            => null,
-            };
-            $order  = $orderOf[$id] ?? null;
-            $date   = $order === null || ! $s->hasField('order_date') ? '' : substr(trim((string) $orders->first($order, $s->field('order_date'))), 0, 10);
+            $order = $orderOf[$id] ?? null;
+            $date  = $order === null || ! $s->hasField('order_date') ? '' : substr(trim((string) $orders->first($order, $s->field('order_date'))), 0, 10);
 
-            $facts[$id] = ['material' => (int) $purchases->first($id, $s->field('purchase_model')), 'date' => $date, 'unit' => $value];
+            $facts[$id] = ['material' => (int) $purchases->first($id, $s->field('purchase_model')), 'date' => $date, 'unit' => $euro[$parts[$id]] ?? null];
         }
 
-        return array_map(static fn (array $w): array => $w + ['previous_order' => $orderOf[$w['previous']] ?? null], PriceCheck::warnings($checked, $facts, (float) $stock->priceWarnPercent()));
+        return $facts;
+    }
+
+    /**
+     * Money parts → their amount in the reference currency; a foreign amount through the frozen rate the modeller keeps at
+     * it (D-966: 1 euro = rate units). A part without amount, or foreign without rate, is left out.
+     *
+     * @param list<int> $parts
+     * @return array<int, float>
+     */
+    public function inEuro(array $parts): array
+    {
+        $s         = $this->stock->structure();
+        $parts     = array_values(array_unique(array_filter($parts)));
+        $money     = $this->stock->recordsOf('money', $parts);
+        $rateField = (int) get_option('taxmod_unit_value_rate_field', 0);
+        $reference = $s->hasValue('currency_default') ? (string) $s->value('currency_default') : '';
+        $out       = [];
+
+        foreach ($parts as $part) {
+            $amount = $money->first($part, $s->field('money_amount'));
+            $unit   = (string) ($money->first($part, $s->field('money_unit')) ?? '');
+            $rate   = $rateField > 0 ? $money->first($part, $rateField) : null;
+            $value  = match (true) {
+                $amount === null || ! is_numeric($amount) => null,
+                $unit === '' || $unit === $reference      => (float) $amount,
+                is_numeric($rate) && (float) $rate > 0.0  => (float) $amount / (float) $rate,
+                default                                   => null,
+            };
+
+            if ($value !== null) {
+                $out[$part] = $value;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * D-1425: what a build of `$lines` would take from `$place`, per material and lot with its price per piece, planned as
+     * {@see StockService::bookBuild()} books it — and what this order scrapped so far, shown but not priced (INF-132).
+     *
+     * @param array<int, float> $lines thing → pieces
+     * @return array{parts: array<int, list<array{lot: int, quantity: float, unit_price: float|null, source: string}>>, scrap: array<int, float>}
+     */
+    public function buildPrices(int $reference, int $place, array $lines): array
+    {
+        $stock  = $this->stock;
+        $s      = $stock->structure();
+        $taking = array_filter($lines, static fn (float $q): bool => $q > 0.0);
+        $rows   = $taking === [] ? [] : $stock->buildPlan($reference, $place, $taking);
+        $ledger = $stock->ledger();
+        $lots   = array_values(array_unique(array_column($rows, 'lot')));
+        $table  = $stock->table('lot');
+        $thingOf = [];
+
+        foreach ($lots as $lot) {
+            $thing = $ledger->thingOf($lot);
+
+            if ($thing !== null) {
+                $thingOf[$lot] = $thing;
+            }
+        }
+
+        // The consumed lot's own value per piece; else the price of the purchase it came from.
+        $valueOf    = $s->hasField('lot_value') ? array_filter(array_combine($lots, array_map(static fn (int $lot): int => (int) $table->first($lot, $s->field('lot_value')), $lots)) ?: []) : [];
+        $purchaseOf = array_filter(array_combine($lots, array_map(static fn (int $lot): int => (int) $table->first($lot, $s->field('lot_purchase')), $lots)) ?: []);
+        $euro       = $this->inEuro(array_values($valueOf));
+        $facts      = $thingOf === [] ? [] : $this->purchaseFacts(array_values(array_unique($thingOf)), $this->orderOfPurchase());
+        $lotPrice   = [];
+
+        foreach ($lots as $lot) {
+            $price = isset($valueOf[$lot]) ? ($euro[$valueOf[$lot]] ?? null) : null;
+            $price ??= isset($purchaseOf[$lot]) ? ($facts[$purchaseOf[$lot]]['unit'] ?? null) : null;
+
+            if ($price !== null) {
+                $lotPrice[$lot] = $price;
+            }
+        }
+
+        return [
+            'parts' => BuildPrices::of($rows, $thingOf, $lotPrice, BuildPrices::lastPurchase($facts)),
+            'scrap' => $stock->scrappedFor($reference),
+        ];
     }
 
     /** @return array<int, int> purchase → the order it is a line of */

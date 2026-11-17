@@ -3961,6 +3961,22 @@ final class StockService
      */
     public function bookBuild(int $reference, int $place, array $lines, string $today, string $title): int
     {
+        $rows = $this->buildPlan($reference, $place, $lines);
+        $s    = $this->structureWithKinds();
+
+        // D-1330: a build is booked as «Projekt» below «Verbrauch» once the structure names it.
+        return $this->dealOf($this->model->write((new Bookings($s, $today))->build($rows, $reference, $title, $s->hasValue('kind_build') ? $s->value('kind_build') : 0)));
+    }
+
+    /**
+     * D-1146: the lots a build takes from its box or gives back, exactly as {@see bookBuild()} books them — D-1425 prices
+     * the same plan before the booking.
+     *
+     * @param array<int, float> $lines thing → pieces
+     * @return list<array{lot: int, place: int, quantity: float}> signed: negative is taken
+     */
+    public function buildPlan(int $reference, int $place, array $lines): array
+    {
         if ($reference <= 0) {
             throw StockError::noSubject();
         }
@@ -3977,11 +3993,42 @@ final class StockService
             $reserved[$position['thing']][] = ['lot' => $position['lot'], 'quantity' => $position['quantity']];
         }
 
-        $rows   = BuildPlan::rows($this->ledger(), $place, $this->locationTree()->withAllBelow($place), $lines, $this->takenFor($reference), $reserved);
-        $s = $this->structureWithKinds();
+        return BuildPlan::rows($this->ledger(), $place, $this->locationTree()->withAllBelow($place), $lines, $this->takenFor($reference), $reserved);
+    }
 
-        // D-1330: a build is booked as «Projekt» below «Verbrauch» once the structure names it.
-        return $this->dealOf($this->model->write((new Bookings($s, $today))->build($rows, $reference, $title, $s->hasValue('kind_build') ? $s->value('kind_build') : 0)));
+    /**
+     * D-1425, INF-132: thing → pieces the Vorgänge «Defekt/Ausschuss» naming `$reference` took — shown, not priced.
+     *
+     * @return array<int, float>
+     */
+    public function scrappedFor(int $reference): array
+    {
+        $s = $this->structure();
+
+        if (! $s->hasField('transaction_reference') || ! $s->hasValue('kind_scrap')) {
+            return [];
+        }
+
+        $deals  = $this->table('transaction');
+        $lines  = $this->table('line');
+        $ledger = $this->ledger();
+        $out    = [];
+
+        foreach ($deals->ids() as $deal) {
+            if ((int) $deals->first($deal, $s->field('transaction_reference')) !== $reference || (int) $deals->first($deal, $s->field('transaction_kind')) !== $s->value('kind_scrap')) {
+                continue;
+            }
+
+            foreach ($deals->all($deal, $s->field('transaction_lines')) as $line) {
+                $thing = $ledger->thingOf((int) $lines->first((int) $line, $s->field('line_lot')));
+
+                if ($thing !== null) {
+                    $out[$thing] = ($out[$thing] ?? 0.0) - (float) ($lines->first((int) $line, $s->field('line_quantity')) ?? 0);
+                }
+            }
+        }
+
+        return array_filter($out, static fn (float $q): bool => $q > 0.0);
     }
 
     /**
@@ -4016,11 +4063,11 @@ final class StockService
 
     /**
      * D-1143: the finished things of a build order go into stock at $place — thing → pieces, less than 0 takes them back
-     * from what this order brought in. Answers the Vorgang's id.
+     * from what this order brought in. Answers the Vorgang's id. D-1425: `$unitCost` (euro per piece) is each new lot's value.
      *
      * @param array<int, float> $lines
      */
-    public function bookOutput(int $reference, int $place, array $lines, string $today, string $title, bool $tested = false, string $stage = ''): int
+    public function bookOutput(int $reference, int $place, array $lines, string $today, string $title, bool $tested = false, string $stage = '', ?float $unitCost = null): int
     {
         $s       = $this->structure();
         $stageId = 0;
@@ -4058,7 +4105,7 @@ final class StockService
                 ? array_fill(0, (int) $r['quantity'], ['quantity' => 1.0] + $r) : [$r], $new));
         }
 
-        return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->output($new, $plan['back'], $place, $reference, $title, $tested, $stageId)));
+        return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->output($new, $plan['back'], $place, $reference, $title, $tested, $stageId, $unitCost === null ? null : rtrim(rtrim(number_format($unitCost, 4, '.', ''), '0'), '.'))));
     }
 
     /**

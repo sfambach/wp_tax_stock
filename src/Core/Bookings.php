@@ -432,9 +432,10 @@ final class Bookings
      *
      * @param list<array{thing: int, quantity: float, name: string}> $new
      * @param list<array{lot: int, place: int, quantity: float}>     $back
+     * @param string|null                                            $value price per piece in the reference currency (D-1425)
      * @return list<array<string, mixed>>
      */
-    public function output(array $new, array $back, int $place, int $reference, string $title, bool $tested = false, int $stage = 0): array
+    public function output(array $new, array $back, int $place, int $reference, string $title, bool $tested = false, int $stage = 0, ?string $value = null): array
     {
         $s = $this->structure;
 
@@ -450,7 +451,8 @@ final class Bookings
         $untested  = $s->hasField('lot_condition') && $s->hasValue($condition);
 
         foreach ($new as $row) {
-            $lot = $this->lot($row['name'], (string) $row['thing'], null, null, '', $place);
+            // D-1425: the calculated price per piece of a finished board is its value.
+            $lot = $this->lot($row['name'], (string) $row['thing'], null, $value === null ? null : $this->moneyPart(Quantity::amount($value), null), '', $place);
 
             if ($untested) {
                 $this->changes[] = ['op' => 'set_values', 'record' => $lot, 'values' => [(string) $s->field('lot_condition') => (string) $s->value($condition)]

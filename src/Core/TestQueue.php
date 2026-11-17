@@ -45,7 +45,7 @@ final class TestQueue
      */
     public function waiting(Ledger $ledger, Table $lots, array $nodeOfLot, array $parents, TestSettings $settings): array
     {
-        if (! $this->isConfigured() || $settings->branches === []) {
+        if (! $this->isConfigured()) {
             return [];
         }
 
@@ -63,7 +63,8 @@ final class TestQueue
 
     /**
      * The one rule of D-1002, for a lot that is there and for one the goods receipt is about to make: the material lies in a
-     * tested branch, and the condition is empty or «ungetestet».
+     * tested branch, and the condition is empty or «ungetestet». D-1419: a lot marked «ungetestet» waits in any branch — the
+     * boards a build books in — so this list shows the lots {@see \TaxmodStock\WordPress\StockService::blockedLots()} blocks.
      *
      * @param string          $condition the condition's value id as stored, '' when none
      * @param array<int, int> $parents   node → parent, the tree of the groups
@@ -72,11 +73,15 @@ final class TestQueue
     {
         $s = $this->structure;
 
-        if ($node === null || ! $this->isConfigured() || ! $settings->covers($node, $parents)) {
+        if (! $this->isConfigured()) {
             return false;
         }
 
-        return $condition === '' || ($s->hasValue('condition_untested') && $condition === (string) $s->value('condition_untested'));
+        if ($condition !== '' && $s->hasValue('condition_untested') && $condition === (string) $s->value('condition_untested')) {
+            return true;
+        }
+
+        return $condition === '' && $node !== null && $settings->covers($node, $parents);
     }
 
     /**

@@ -431,7 +431,8 @@ $pruefe((new InboundService())->refreshTracking([$r['o1']]) === 1 && $asked === 
 (new InboundService())->removeTracking($r['o1'], 'ZQ123GLS');
 
 // D-1002 · the test after the goods receipt.
-$pruefe((new InboundService())->lotsToTest() === [], 'no tested group, nothing to test');
+// D-1419/D-1420: without a tested group only a lot marked «ungetestet» waits — the lots the block holds (D-1342).
+$pruefe((new InboundService())->lotsToTest() === [$r['lotA']], 'no tested group: only the lot marked «ungetestet» waits');
 // D-1259: «Nach Wareneingang testen» is a group property, set at the group, inherited below.
 (new StockService())->setGroupProperty($r['gk'], StockService::TEST_PROPERTY, true);
 $pruefe(((new StockService())->groupProperty(StockService::TEST_PROPERTY, [$r['gk']])[$r['gk']] ?? null) === true, 'D-1259: the group carries «Nach Wareneingang testen»');

@@ -1680,6 +1680,45 @@ try {
 $pruefe(is_int($qkVorgang) && count($qkLots) === 2 && $gesperrt && str_contains($html, 'taxmod-stock-blocked') && $frei && (new StockService())->blockedLots($qkLots) === [$qkLots[1]],
     'D-1342: two untested boards are two blocked lots with a red ⊘; a test result frees one, it moves');
 
+// D-1419: the production's step «Test» — the result of ticked lots through one filter, one act, undone by its number;
+// «Verschrotten …» books the lots out as «Defekt/Ausschuss» with their report «defekt»; the «In Test» list shows the same lots.
+$qk2 = $apply([
+    ['op' => 'create_node', 'ref' => 'zu_te', 'name' => '__teilweise OK', 'parent' => (string) $qk['zu'], 'class' => 'Constant'],
+    ['op' => 'create_node', 'ref' => 'zu_wa', 'name' => '__Wartung nötig', 'parent' => (string) $qk['zu'], 'class' => 'Constant'],
+    ['op' => 'create_node', 'ref' => 'zu_de', 'name' => '__defekt', 'parent' => (string) $qk['zu'], 'class' => 'Constant'],
+    $field('l_am', (string) $r['lot'], '__Getestet am', 1183, 'composition', '0..1'),
+    $field('l_bef', (string) $r['lot'], '__Testbefund', 1175, 'composition', '0..1'),
+])['refs'] ?? [];
+$opt = get_option('taxmod_stock_structure');
+if (is_array($opt) && isset($qk2['l_am'])) {
+    $opt['fields'] += ['lot_tested_on' => (int) $qk2['l_am'], 'lot_test_note' => (int) $qk2['l_bef']];
+    $opt['values'] += ['test_partial' => (int) $qk2['zu_te'], 'test_maintenance' => (int) $qk2['zu_wa'], 'test_defect' => (int) $qk2['zu_de']];
+    update_option('taxmod_stock_structure', $opt);
+}
+apply_filters(TaxmodStock\WordPress\Plugin::BOOK_OUTPUT, null, ['reference' => $auftrag, 'place' => $schrank, 'lines' => [$platine => 3], 'title' => 'D-1419 drei', 'date' => '2026-11-17']);
+$s       = new StockService();
+$neu3    = array_values(array_filter($s->ledger()->lotsOf($platine), static fn (int $l): bool => (string) $s->table('lot')->first($l, (int) $qk['l_zust']) === (string) $qk['zu_un'] && $s->ledger()->restAt($l, $schrank) > 0.0 && $l !== ($qkLots[1] ?? 0)));
+$imTest  = (new TaxmodStock\WordPress\InboundService($s))->lotsToTest();
+$act     = apply_filters(TaxmodStock\WordPress\Plugin::TEST_RESULT, null, ['lots' => array_slice($neu3, 0, 2), 'result' => 'passed', 'note' => '', 'date' => '2026-11-17']);
+$s       = new StockService();
+$nachOk  = $s->blockedLots($neu3);
+$zurueck = is_int($act) && $act > 0 ? $apply([['op' => 'undo_act', 'act' => $act]]) : null;
+$wieder  = (new StockService())->blockedLots($neu3);
+$falsch  = apply_filters(TaxmodStock\WordPress\Plugin::TEST_RESULT, null, ['lots' => [$neu3[0] ?? 0], 'result' => 'vielleicht', 'date' => '2026-11-17']);
+$pruefe(count($neu3) === 3 && array_diff($neu3, $imTest) === [] && is_int($act) && $act > 0 && $nachOk === [$neu3[2]]
+    && is_array($zurueck) && count($wieder) === 3 && $falsch instanceof WP_Error,
+    'D-1419: «Test bestanden» for two ticked boards frees them in one act, its undo blocks them again; the «In Test» list holds the same lots');
+$fail    = apply_filters(TaxmodStock\WordPress\Plugin::TEST_RESULT, null, ['lots' => [$neu3[0] ?? 0], 'result' => 'failed', 'note' => 'Kurzschluss', 'date' => '2026-11-17']);
+$s       = new StockService();
+$befund  = (string) $s->table('lot')->first($neu3[0] ?? 0, (int) $qk2['l_bef']);
+$zustand = (string) $s->table('lot')->first($neu3[0] ?? 0, (int) $qk['l_zust']);
+$schrott = apply_filters(TaxmodStock\WordPress\Plugin::SCRAP_LOTS, null, ['lots' => [$neu3[1] ?? 0], 'reference' => $auftrag, 'reason' => 'Ausschuss Fertigung: verbrannt', 'title' => 'Ausschuss', 'date' => '2026-11-17']);
+$s       = new StockService();
+$pruefe(is_int($fail) && $befund === 'Kurzschluss' && $zustand === (string) $qk2['zu_de'] && is_int($schrott)
+    && $s->ledger()->restOf($neu3[1] ?? 0) === 0.0 && (string) $s->table('lot')->first($neu3[1] ?? 0, (int) $qk['l_zust']) === (string) $qk2['zu_de']
+    && (string) $s->table('transaction')->first($schrott, $s->structure()->field('transaction_kind')) === (string) $s->structureWithKinds()->value('kind_scrap'),
+    'D-1419: «Test nicht bestanden» sets «defekt» with the note; «Verschrotten» books the untested board out as «Defekt/Ausschuss», its report «defekt», one act');
+
 $pruefe(apply_filters('taxmod_stock_test_place', null) === (int) ((new StockService())->testSettings([])->place ?? 0) || apply_filters('taxmod_stock_test_place', null) === 0, 'D-1342: taxmod_stock_test_place answers the place «Test», 0 without');
 
 // D-1357: the Lager's searches take the one rule from the modeller; the core gets it handed in, never a copy of its own.

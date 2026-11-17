@@ -4,6 +4,7 @@ namespace TaxmodStock\WordPress;
 
 use TaxmodStock\Core\ReservationRow;
 use TaxmodStock\Core\StockError;
+use TaxmodStock\Core\TestResult;
 use TaxmodStock\Core\Structure;
 use TaxmodStock\Core\TestSettings;
 use TaxmodStock\WordPress\Admin\Acts;
@@ -88,6 +89,9 @@ final class Plugin
 
     /** D-1302: scrap from a build, as «Defekt/Ausschuss». */
     public const BOOK_SCRAP = 'taxmod_stock_book_scrap';
+    /** D-1419: the test result of ticked lots, and scrapping them, for the production's step «Test». */
+    public const TEST_RESULT = 'taxmod_stock_test_result';
+    public const SCRAP_LOTS  = 'taxmod_stock_scrap_lots';
 
     /** D-1303: the stages of lots from production, and the place finished boards come in. */
     public const LOT_STAGES        = 'taxmod_stock_lot_stages';
@@ -193,6 +197,8 @@ final class Plugin
         add_filter(self::RELEASE, [self::class, 'release'], 10, 2);
         add_filter(self::BOOK_RETURN, [self::class, 'bookReturn'], 10, 2);
         add_filter(self::BOOK_SCRAP, [self::class, 'bookScrap'], 10, 2);
+        add_filter(self::TEST_RESULT, [self::class, 'testResult'], 10, 2);
+        add_filter(self::SCRAP_LOTS, [self::class, 'scrapLots'], 10, 2);
         add_filter(self::LOT_STAGES, [self::class, 'lotStages'], 10, 2);
         add_filter(self::SET_LOT_STAGE, [self::class, 'setLotStage'], 10, 2);
         add_filter(self::PRODUCTION_INBOUND, [self::class, 'productionInbound'], 10, 1);
@@ -591,6 +597,87 @@ final class Plugin
         }
 
         return $claims;
+    }
+
+    /**
+     * D-1419: `apply_filters('taxmod_stock_test_result', null, ['lots' => [id, …], 'result' => 'passed'|'failed', 'note' => '…',
+     * 'date' => Y-m-d])` → the change number (undo it with `undo_act`, D-1410) or a WP_Error. «passed» sets «funktioniert»,
+     * «failed» «defekt»; both free the lot (D-1342).
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     the result as the caller sends it; `mixed`: checked here
+     */
+    public static function testResult(mixed $previous, mixed $args): int|\WP_Error
+    {
+        if (is_int($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args   = is_array($args) ? $args : [];
+        $date   = sanitize_text_field((string) ($args['date'] ?? ''));
+        $result = match (sanitize_key((string) ($args['result'] ?? ''))) {
+            'passed' => TestResult::Ok,
+            'failed' => TestResult::Defect,
+            default  => null,
+        };
+
+        if ($result === null) {
+            return new \WP_Error('taxmod_stock_no_result', __('Das Testergebnis muss «passed» oder «failed» sein.', 'taxmod-stock'));
+        }
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+            return new \WP_Error('taxmod_stock_not_a_date', Messages::of(StockError::notADate($date)));
+        }
+
+        try {
+            $answer = self::writing()->recordTests(array_values(array_map('absint', is_array($args['lots'] ?? null) ? $args['lots'] : [])), $result, sanitize_textarea_field((string) ($args['note'] ?? '')), $date);
+
+            return (int) ($answer['act'] ?? 0);
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1419: `apply_filters('taxmod_stock_scrap_lots', null, ['lots' => [id, …], 'reference' => order, 'reason' => '…',
+     * 'title' => …, 'date' => Y-m-d])` → the Vorgang «Defekt/Ausschuss»'s id or a WP_Error; the lots leave whole and their
+     * test report says «defekt», one act.
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     the booking as the caller sends it; `mixed`: checked here
+     */
+    public static function scrapLots(mixed $previous, mixed $args): int|\WP_Error
+    {
+        if (is_int($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args = is_array($args) ? $args : [];
+        $date = sanitize_text_field((string) ($args['date'] ?? ''));
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+            return new \WP_Error('taxmod_stock_not_a_date', Messages::of(StockError::notADate($date)));
+        }
+
+        try {
+            return self::writing()->scrapLots(
+                array_values(array_map('absint', is_array($args['lots'] ?? null) ? $args['lots'] : [])),
+                absint($args['reference'] ?? 0),
+                sanitize_text_field((string) ($args['reason'] ?? __('Ausschuss Fertigung', 'taxmod-stock'))),
+                $date,
+                sanitize_text_field((string) ($args['title'] ?? __('Ausschuss', 'taxmod-stock')))
+            );
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
     }
 
     /** D-1342: `apply_filters('taxmod_stock_test_place', null)` → the place «Test» (D-1111 setting) untested boards come in at, 0 while none is set. */

@@ -44,7 +44,10 @@ final class TestQueueTest extends TestCase
         $waiting = (new TestQueue($s))->waiting(new Ledger($s, $lots, $lines), $lots, $nodes, $parents, TestSettings::fromArray(['branches' => [20]]));
 
         self::assertSame([1, 4], $waiting, '2 has a result, 3 is new, 5 is gone, 6 is in an untested group; 4 is «ungetestet»');
-        self::assertSame([], (new TestQueue($s))->waiting(new Ledger($s, $lots, $lines), $lots, $nodes, $parents, TestSettings::fromArray([])), 'no tested branch, no test');
+        // D-1419: a lot marked «ungetestet» waits whatever the branch — the queue shows what StockService::blockedLots blocks.
+        self::assertSame([4], (new TestQueue($s))->waiting(new Ledger($s, $lots, $lines), $lots, $nodes, $parents, TestSettings::fromArray([])), 'no tested branch: only the lot marked «ungetestet» waits');
+        $lots6 = new Table([6 => [$f('lot_thing') => ['506'], $f('lot_condition') => ['401']]]);
+        self::assertSame([6], (new TestQueue($s))->waiting(new Ledger($s, $lots6, $lines), $lots6, $nodes, $parents, TestSettings::fromArray(['branches' => [20]])), 'D-1419: «ungetestet» outside the tested branch waits too');
         self::assertSame([], (new TestQueue(Fixture::structure()))->waiting(new Ledger($s, $lots, $lines), $lots, $nodes, $parents, TestSettings::fromArray(['branches' => [20]])), 'without the fields in the structure there is no test');
     }
 

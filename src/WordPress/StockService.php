@@ -49,6 +49,7 @@ use TaxmodStock\Core\TransferRow;
 use TaxmodStock\Core\Structure;
 use TaxmodStock\Core\Table;
 use TaxmodStock\Core\TestQueue;
+use TaxmodStock\Core\TestResult;
 use TaxmodStock\Core\TestSettings;
 use TaxmodStock\Core\Things;
 use TaxmodStock\Core\ViewSettings;
@@ -5105,6 +5106,88 @@ final class StockService
         }
 
         return $out;
+    }
+
+    /**
+     * D-1419: the test result of several lots in one act — each lot's test report (D-1342: «Zustand», «Getestet am»,
+     * «Testbefund») set to «funktioniert» or «defekt», which frees it; one undo takes all back (D-1410).
+     *
+     * @param list<int> $lots
+     * @return array<string, mixed> the modeller's answer, with its change number as `act`
+     */
+    public function recordTests(array $lots, TestResult $result, string $note, string $today): array
+    {
+        $queue = new TestQueue($this->structure());
+
+        if (! $queue->isConfigured()) {
+            throw StockError::notConfigured('fields.lot_condition, lot_tested_on, lot_test_note');
+        }
+
+        return $this->model->write($this->testChanges($queue, $lots, $result, $note, $today));
+    }
+
+    /**
+     * D-1419 «Verschrotten …»: the lots leave whole, from every place they lie at, as one Vorgang «Defekt/Ausschuss»
+     * (kind_scrap, D-1302) with the order as Bezug and the reason as description; their test report says «defekt» with
+     * that reason in the same act — so an untested board is freed by its result, never by skipping the block (D-1342).
+     *
+     * @param list<int> $lots
+     * @return int the Vorgang
+     */
+    public function scrapLots(array $lots, int $reference, string $reason, string $today, string $title): int
+    {
+        $s     = $this->structureWithKinds();
+        $queue = new TestQueue($s);
+
+        if (! $s->hasValue('kind_scrap')) {
+            throw StockError::notConfigured('values.kind_scrap');
+        }
+
+        if ($reference <= 0) {
+            throw StockError::noSubject();
+        }
+
+        $changes = $queue->isConfigured() ? $this->testChanges($queue, $lots, TestResult::Defect, $reason, $today) : [];
+        $stock   = $this->ledger()->stockByPlace();
+        $rows    = [];
+
+        foreach ($lots as $lot) {
+            foreach ($stock[$lot] ?? [] as $place => $quantity) {
+                $rows[] = ['lot' => $lot, 'place' => (int) $place, 'quantity' => -$quantity];
+            }
+        }
+
+        if ($rows === []) {
+            throw StockError::nothingToBook();
+        }
+
+        return $this->dealOf($this->model->write([...$changes, ...(new Bookings($s, $today))->build($rows, $reference, $title, $s->value('kind_scrap'), $reason)]));
+    }
+
+    /**
+     * @param list<int> $lots
+     * @return list<array<string, mixed>>
+     */
+    private function testChanges(TestQueue $queue, array $lots, TestResult $result, string $note, string $today): array
+    {
+        $lots  = array_values(array_unique(array_filter(array_map('intval', $lots))));
+        $table = $this->table('lot');
+
+        if ($lots === []) {
+            throw StockError::nothingToBook();
+        }
+
+        $changes = [];
+
+        foreach ($lots as $lot) {
+            if (! $table->has($lot)) {
+                throw StockError::noLot($lot);
+            }
+
+            $changes = [...$changes, ...$queue->record($lot, $result, $note, $today)];
+        }
+
+        return $changes;
     }
 
     /**

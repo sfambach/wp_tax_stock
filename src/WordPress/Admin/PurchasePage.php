@@ -693,7 +693,7 @@ final class PurchasePage
 
     private function number(float $value): string
     {
-        return rtrim(rtrim(number_format($value, 3, ',', ''), '0'), ',');
+        return ListPage::number($value);
     }
 
 

@@ -2,6 +2,8 @@
 
 namespace TaxmodStock\WordPress;
 
+use Taxmod\Core\Renderer\DecimalText;
+use Taxmod\WordPress\Admin\ListPage;
 use TaxmodStock\Core\Contacts;
 use TaxmodStock\Core\CutPlan;
 use TaxmodStock\Core\CutSources;
@@ -838,7 +840,7 @@ final class StockService
                     implode('; ', $at),
                     substr((string) $lots->first($lot, $date), 0, 10),
                     /* translators: 1: the rest of a lot, 2: its unit */
-                    sprintf(__('Rest %1$s %2$s', 'taxmod-stock'), rtrim(rtrim(number_format($rest, 3, ',', ''), '0'), ','), $units[$thing]),
+                    sprintf(__('Rest %1$s %2$s', 'taxmod-stock'), ListPage::number($rest), $units[$thing]),
                 ], static fn (string $part): bool => $part !== '')), 'node' => ''];
             }
         }
@@ -1071,7 +1073,7 @@ final class StockService
         $ledger = $this->ledger();
 
         return array_map(static fn (array $hit): array => $hit + [
-            'quantity' => rtrim(rtrim(number_format($ledger->stockOf((int) $hit['id']), 3, ',', ''), '0'), ','),
+            'quantity' => ListPage::number($ledger->stockOf((int) $hit['id'])),
         ], array_values(array_filter($hits, static fn (array $hit): bool => is_int($hit['id']))));
     }
 
@@ -2547,7 +2549,7 @@ final class StockService
         foreach ($this->ledger()->stockByPlace() as $lot => $at) {
             foreach ($gone as $where) {
                 if (($at[$where] ?? 0.0) > 0.0) {
-                    $lots[] = new TransferRow($lot, $where, $parent, rtrim(rtrim(number_format($at[$where], 6, '.', ''), '0'), '.'));
+                    $lots[] = new TransferRow($lot, $where, $parent, DecimalText::stored($at[$where]));
                 }
             }
         }
@@ -2712,7 +2714,7 @@ final class StockService
         foreach ($ledger->stockByPlace() as $lot => $at) {
             foreach ($gone as $where) {
                 if (($at[$where] ?? 0.0) > 0.0) {
-                    $rows[] = new TransferRow($lot, $where, $to($where), rtrim(rtrim(number_format($at[$where], 6, '.', ''), '0'), '.'));
+                    $rows[] = new TransferRow($lot, $where, $to($where), DecimalText::stored($at[$where]));
                 }
             }
         }
@@ -3054,7 +3056,7 @@ final class StockService
 
                 if ($left > 0.000001 && $there > 0.000001) {
                     $part  = min($there, $left);
-                    $out[] = new ReservationRow($row->thing, rtrim(rtrim(number_format($part, 6, '.', ''), '0'), '.'), $lot, $row->position);
+                    $out[] = new ReservationRow($row->thing, DecimalText::stored($part), $lot, $row->position);
                     $left -= $part;
                 }
             }
@@ -3214,7 +3216,7 @@ final class StockService
             if ($was > 0 && $total !== null && $unit !== null) {
                 $factor  = $was / (int) $typed;
                 $scaled  = static fn (?string $part): ?string => $part === null || $money->first((int) $part, $s->field('money_amount')) === null
-                    ? null : rtrim(rtrim(number_format((float) $money->first((int) $part, $s->field('money_amount')) * $factor, 6, '.', ''), '0'), '.');
+                    ? null : DecimalText::stored((float) $money->first((int) $part, $s->field('money_amount')) * $factor);
                 $newUnit = $scaled($unit);
                 if ($newUnit !== null) {
                     // Key «0»: the money part the purchase already holds is filled, its unit stays.
@@ -3901,7 +3903,7 @@ final class StockService
     /** D-1398: a value per piece times a factor, as Bookings takes it; none stays none. @param array{amount: float, unit: string|null}|null $each @return array{amount: string, unit: string|null}|null */
     private static function scaled(?array $each, float $factor): ?array
     {
-        return $each === null ? null : ['amount' => rtrim(rtrim(number_format($each['amount'] * $factor, 6, '.', ''), '0'), '.'), 'unit' => $each['unit']];
+        return $each === null ? null : ['amount' => DecimalText::stored($each['amount'] * $factor), 'unit' => $each['unit']];
     }
 
     /**
@@ -4178,7 +4180,7 @@ final class StockService
 
                 if ($left > 0.000001 && $there > 0.000001) {
                     $part        = min($there, $left);
-                    $rows[]      = new TransferRow($lot, $line['from'], $box, rtrim(rtrim(number_format($part, 6, '.', ''), '0'), '.'));
+                    $rows[]      = new TransferRow($lot, $line['from'], $box, DecimalText::stored($part));
                     $moved[$lot] = ($moved[$lot] ?? 0.0) + $part;
                     $left       -= $part;
                 }
@@ -4368,7 +4370,7 @@ final class StockService
                 $origin = $from[$lot] ?? $ledger->homeOf($lot);
 
                 if ($origin > 0 && ! isset($inBox[$origin])) {
-                    $rows[] = new TransferRow($lot, $place, $origin, rtrim(rtrim(number_format($quantity, 6, '.', ''), '0'), '.'));
+                    $rows[] = new TransferRow($lot, $place, $origin, DecimalText::stored($quantity));
                 }
             }
         }
@@ -4582,7 +4584,7 @@ final class StockService
                 $rest = $ledger->restOf($lot);
 
                 if ($rest > 0.0) {
-                    $out[$lot] = $label . ' · ' . substr((string) $lots->first($lot, $date), 0, 10) . ' · ' . __('Rest', 'taxmod-stock') . ' ' . rtrim(rtrim(number_format($rest, 3, ',', ''), '0'), ',');
+                    $out[$lot] = $label . ' · ' . substr((string) $lots->first($lot, $date), 0, 10) . ' · ' . __('Rest', 'taxmod-stock') . ' ' . ListPage::number($rest);
                 }
             }
         }
@@ -5400,7 +5402,7 @@ final class StockService
 
             if ($left > 1e-9) {
                 $rest[$key] = ['lot' => $lot, 'thing' => 0, 'purchase' => 0, 'place' => $place, 'value' => null,
-                    'quantity' => '-' . rtrim(rtrim(number_format($left, 6, '.', ''), '0'), '.'), 'name' => (string) ($lots->first($lot, $s->field('label')) ?? '')];
+                    'quantity' => '-' . DecimalText::stored($left), 'name' => (string) ($lots->first($lot, $s->field('label')) ?? '')];
             }
         }
 
@@ -5439,7 +5441,7 @@ final class StockService
             $take = min($left, $ledger->restAt($lot, $from));
 
             if ($take > 0.0) {
-                $rows[] = new TransferRow($lot, $from, $location, rtrim(rtrim(number_format($take, 6, '.', ''), '0'), '.'));
+                $rows[] = new TransferRow($lot, $from, $location, DecimalText::stored($take));
                 $left  -= $take;
             }
         }
@@ -5478,7 +5480,7 @@ final class StockService
             $rest = $ledger->restAt($lot, $from);
 
             if ($rest > 0.0 && $from !== $location) {
-                $rows[] = new TransferRow($lot, $from, $location, rtrim(rtrim(number_format($rest, 6, '.', ''), '0'), '.'));
+                $rows[] = new TransferRow($lot, $from, $location, DecimalText::stored($rest));
             }
         }
 
@@ -5509,7 +5511,7 @@ final class StockService
             foreach ($ledger->lotsOf($thing) as $lot) {
                 foreach ($ledger->placesOf($lot) as $place => $quantity) {
                     if ($quantity > 0.0 && (int) $place !== $location) {
-                        $rows[] = new TransferRow($lot, (int) $place, $location, rtrim(rtrim(number_format($quantity, 3, '.', ''), '0'), '.'));
+                        $rows[] = new TransferRow($lot, (int) $place, $location, DecimalText::stored($quantity, 3));
                     }
                 }
             }

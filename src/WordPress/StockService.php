@@ -116,6 +116,9 @@ final class StockService
 
     private ?Structure $structure = null;
 
+    /** @var array<string, Structure> hash of the stored option ⇒ the structure, once per request */
+    private static array $structures = [];
+
     /** @var array<int, array{name: string, parent: int, class: string}>|null the tree under the things' root, read once */
     private ?array $tree = null;
 
@@ -166,14 +169,23 @@ final class StockService
             return $this->structure;
         }
 
-        $raw     = get_option(self::OPTION, []);
-        $file    = dirname(__DIR__, 2) . '/structure-live.json';
-        $bundled = is_readable($file) ? json_decode((string) file_get_contents($file), true) : null;
+        // And once per request for every service (review 2026-11-17, V3): a page builds several, each read and decoded the bundled
+        // file. Keyed by the stored option, so a setting saved in this request gives its own.
+        $raw = get_option(self::OPTION, []);
+        $raw = is_array($raw) ? $raw : [];
+        $key = md5(serialize($raw));
 
-        $completed = Structure::completed(is_array($raw) ? $raw : [], is_array($bundled) ? $bundled : []);
-        self::shareRoles($completed);
+        if (! isset(self::$structures[$key])) {
+            $file    = dirname(__DIR__, 2) . '/structure-live.json';
+            $bundled = is_readable($file) ? json_decode((string) file_get_contents($file), true) : null;
 
-        return $this->structure = Structure::fromArray($completed);
+            $completed = Structure::completed($raw, is_array($bundled) ? $bundled : []);
+            self::shareRoles($completed);
+
+            self::$structures[$key] = Structure::fromArray($completed);
+        }
+
+        return $this->structure = self::$structures[$key];
     }
 
     /** The option that remembers for which release this site's roles went into the modeller's role table. */

@@ -1718,6 +1718,11 @@ $pruefe(is_int($fail) && $befund === 'Kurzschluss' && $zustand === (string) $qk2
     && $s->ledger()->restOf($neu3[1] ?? 0) === 0.0 && (string) $s->table('lot')->first($neu3[1] ?? 0, (int) $qk['l_zust']) === (string) $qk2['zu_de']
     && (string) $s->table('transaction')->first($schrott, $s->structure()->field('transaction_kind')) === (string) $s->structureWithKinds()->value('kind_scrap'),
     'D-1419: «Test nicht bestanden» sets «defekt» with the note; «Verschrotten» books the untested board out as «Defekt/Ausschuss», its report «defekt», one act');
+$tl = apply_filters(TaxmodStock\WordPress\Plugin::TEST_LOTS, null, ['reference' => $auftrag]);
+$pruefe(is_array($tl) && ($tl[$neu3[0] ?? 0]['state'] ?? '') === 'failed' && ($tl[$neu3[0] ?? 0]['note'] ?? '') === 'Kurzschluss' && ($tl[$neu3[0] ?? 0]['tested_on'] ?? '') === '2026-11-17'
+    && ($tl[$neu3[1] ?? 0]['state'] ?? '') === 'scrapped' && ($tl[$neu3[1] ?? 0]['quantity'] ?? -1) === 0.0
+    && ($tl[$neu3[2] ?? 0]['state'] ?? '') === 'untested' && ($tl[$neu3[2] ?? 0]['place'] ?? 0) === $schrank && ($tl[$neu3[2] ?? 0]['thing'] ?? 0) === $platine,
+    'D-1419: taxmod_stock_test_lots names each board of the order with material, place, rest and its state from the test report');
 
 $pruefe(apply_filters('taxmod_stock_test_place', null) === (int) ((new StockService())->testSettings([])->place ?? 0) || apply_filters('taxmod_stock_test_place', null) === 0, 'D-1342: taxmod_stock_test_place answers the place «Test», 0 without');
 

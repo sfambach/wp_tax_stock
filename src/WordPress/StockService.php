@@ -4382,25 +4382,11 @@ final class StockService
             return [];
         }
 
-        $deals  = $this->table('transaction');
-        $lines  = $this->table('line');
         $ledger = $this->ledger();
-        $lots   = [];
+        $stock  = $ledger->stockByPlace();
+        $out    = [];
 
-        foreach ($deals->ids() as $deal) {
-            if ((int) $deals->first($deal, $s->field('transaction_reference')) !== $reference || (int) $deals->first($deal, $s->field('transaction_kind')) !== $s->value('kind_receipt')) {
-                continue;
-            }
-
-            foreach ($deals->all($deal, $s->field('transaction_lines')) as $line) {
-                $lots[(int) $lines->first((int) $line, $s->field('line_lot'))] = true;
-            }
-        }
-
-        $stock = $ledger->stockByPlace();
-        $out   = [];
-
-        foreach (array_keys($lots) as $lot) {
+        foreach ($this->receivedFor($reference) as $lot) {
             $thing = $ledger->thingOf($lot);
 
             foreach ($thing === null ? [] : ($stock[$lot] ?? []) as $place => $quantity) {
@@ -4408,6 +4394,79 @@ final class StockService
                     $out[$thing][$lot][$place] = $quantity;
                 }
             }
+        }
+
+        return $out;
+    }
+
+    /** @return list<int> the lots the receipts naming `$reference` brought in (D-1303, book_output), one read of the Vorgänge */
+    private function receivedFor(int $reference): array
+    {
+        $s = $this->structure();
+
+        if (! $s->hasField('transaction_reference')) {
+            return [];
+        }
+
+        $deals = $this->table('transaction');
+        $lines = $this->table('line');
+        $lots  = [];
+
+        foreach ($deals->ids() as $deal) {
+            if ((int) $deals->first($deal, $s->field('transaction_reference')) !== $reference || (int) $deals->first($deal, $s->field('transaction_kind')) !== $s->value('kind_receipt')) {
+                continue;
+            }
+
+            foreach ($deals->all($deal, $s->field('transaction_lines')) as $line) {
+                $lot = (int) $lines->first((int) $line, $s->field('line_lot'));
+
+                if ($lot > 0) {
+                    $lots[$lot] = true;
+                }
+            }
+        }
+
+        return array_keys($lots);
+    }
+
+    /**
+     * D-1419 for the production's step «Test»: the lots an order's receipts brought in, each with its material, the place
+     * it lies at (0 when gone), its rest, and its state read from the same test report the block reads (D-1342):
+     * blocked → untested; «funktioniert» → passed; «defekt» with nothing left → scrapped; another result → failed.
+     *
+     * @return array<int, array{thing: int, place: int, quantity: float, state: string, tested_on: string, note: string}>
+     */
+    public function testLots(int $reference): array
+    {
+        $s       = $this->structure();
+        $lots    = $this->receivedFor($reference);
+        $ledger  = $this->ledger();
+        $stock   = $ledger->stockByPlace();
+        $table   = $this->table('lot');
+        $blocked = array_flip($this->blockedLots($lots));
+        $read    = static fn (int $lot, string $key): string => $s->hasField($key) ? (string) ($table->first($lot, $s->field($key)) ?? '') : '';
+        $out     = [];
+
+        foreach ($lots as $lot) {
+            $condition = $read($lot, 'lot_condition');
+            $rest      = $ledger->restOf($lot);
+            $result    = TestResult::ofValue($s, $condition);
+            $at        = array_keys(array_filter($stock[$lot] ?? [], static fn (float $q): bool => $q > 0.0));
+
+            $out[$lot] = [
+                'thing'     => (int) ($ledger->thingOf($lot) ?? 0),
+                'place'     => (int) ($at[0] ?? 0),
+                'quantity'  => $rest,
+                'state'     => match (true) {
+                    isset($blocked[$lot])                                    => 'untested',
+                    $result === TestResult::Ok                               => 'passed',
+                    $result === TestResult::Defect && $rest <= 0.0           => 'scrapped',
+                    $result !== null                                         => 'failed',
+                    default                                                  => 'untested',
+                },
+                'tested_on' => substr($read($lot, 'lot_tested_on'), 0, 10),
+                'note'      => $read($lot, 'lot_test_note'),
+            ];
         }
 
         return $out;

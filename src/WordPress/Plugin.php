@@ -92,6 +92,7 @@ final class Plugin
     /** D-1419: the test result of ticked lots, and scrapping them, for the production's step «Test». */
     public const TEST_RESULT = 'taxmod_stock_test_result';
     public const SCRAP_LOTS  = 'taxmod_stock_scrap_lots';
+    public const TEST_LOTS   = 'taxmod_stock_test_lots';
 
     /** D-1303: the stages of lots from production, and the place finished boards come in. */
     public const LOT_STAGES        = 'taxmod_stock_lot_stages';
@@ -199,6 +200,7 @@ final class Plugin
         add_filter(self::BOOK_SCRAP, [self::class, 'bookScrap'], 10, 2);
         add_filter(self::TEST_RESULT, [self::class, 'testResult'], 10, 2);
         add_filter(self::SCRAP_LOTS, [self::class, 'scrapLots'], 10, 2);
+        add_filter(self::TEST_LOTS, [self::class, 'testLots'], 10, 2);
         add_filter(self::LOT_STAGES, [self::class, 'lotStages'], 10, 2);
         add_filter(self::SET_LOT_STAGE, [self::class, 'setLotStage'], 10, 2);
         add_filter(self::PRODUCTION_INBOUND, [self::class, 'productionInbound'], 10, 1);
@@ -637,6 +639,30 @@ final class Plugin
             $answer = self::writing()->recordTests(array_values(array_map('absint', is_array($args['lots'] ?? null) ? $args['lots'] : [])), $result, sanitize_textarea_field((string) ($args['note'] ?? '')), $date);
 
             return (int) ($answer['act'] ?? 0);
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1419: `apply_filters('taxmod_stock_test_lots', null, ['reference' => order])` → lot => ['thing', 'place', 'quantity',
+     * 'state' => untested|passed|failed|scrapped, 'tested_on', 'note'] for the lots the order's receipts brought in, or a WP_Error.
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     the question as the caller sends it; `mixed`: checked here
+     */
+    public static function testLots(mixed $previous, mixed $args): array|\WP_Error
+    {
+        if (is_array($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        try {
+            return self::reading()->testLots(absint((is_array($args) ? $args : [])['reference'] ?? 0));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }

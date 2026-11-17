@@ -510,8 +510,6 @@ final class StockPage
         $s      = $this->stock->structure();
         $things = $this->stock->things();
         $all    = $things->all();
-        $ledger = $this->stock->ledger();
-        $lager  = $this->stock->table('lager');
         $group  = absint($_GET['group'] ?? 0);
 
         if ($all === []) {
@@ -546,6 +544,10 @@ final class StockPage
         $waits     = $branch ? $group === 0 : ListPage::waitsForSearch($view, $group > 0 || $list->filter !== '');
 
         $packs = $waits ? [] : $this->stock->packsOf(array_keys($all));
+        // Ladezeit (17.11.2026): a list waiting for a search draws no row, so it reads no book — before, every opening of
+        // «Material» read every lot, line and transaction to show an empty list.
+        $ledger = $waits ? null : $this->stock->ledger();
+        $lager  = $waits ? null : $this->stock->table('lager');
 
         foreach ($waits ? [] : array_keys($all) as $id) {
             $node = $things->nodeOf($id);
@@ -558,6 +560,7 @@ final class StockPage
                 continue;
             }
 
+            assert($ledger !== null && $lager !== null);
             $record = $things->lagerOf($id);
             $min    = $record === null ? null : $lager->first($record, $s->field('lager_min'));
             $stock  = $ledger->stockOf($id);
@@ -620,9 +623,8 @@ final class StockPage
         set_transient(self::LAST_LIST . get_current_user_id(), $url(['paged' => absint($_GET['paged'] ?? 0) > 1 ? (string) absint($_GET['paged']) : '']), DAY_IN_SECONDS);
 
         $paged  = absint($_GET['paged'] ?? 1);
-        $places = $this->stock->places();
-
         $page   = ListView::page($shown, $paged, self::PER_PAGE);
+        $places = $page === [] ? [] : $this->stock->places();
         // Only the rows of this page, in one read (CD-7).
         $thumbs = $images ? ListPage::thumbnails($this->stock->titleImages(array_column($page, 'id'))) : [];
 
@@ -644,7 +646,7 @@ final class StockPage
 
             // His wish 2026-11-03: «vielleicht könnte man den button umbuchen schon hier anzeigen» — one lot at one place
             // moves straight from the row; with more, each lies in the details below with its own «Umbuchen».
-            $held  = $this->heldAt($id, $ledger);
+            $held  = $ledger === null ? [] : $this->heldAt($id, $ledger);
             $move  = count($held) === 1 ? $this->transferDialog($id, $held[0][0], $held[0][1], $held[0][2], $places, 0, true) . ' ' : '';
             // D-1147: the lots are drawn when the row opens, not with the list.
             // His wish 2026-11-06: «druck button pro positon» — the material label from the row; the modeller reads the

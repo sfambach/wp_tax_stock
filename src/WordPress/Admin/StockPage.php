@@ -13,6 +13,7 @@ use Taxmod\Core\Printing\LabelPrefix;
 use Taxmod\Core\Renderer\DialogMarkup;
 use Taxmod\Core\Tile\Tile;
 use Taxmod\Core\Tile\TileTone;
+use Taxmod\Core\Renderer\SelectMarkup;
 use Taxmod\Core\Renderer\GridMarkup;
 use Taxmod\WordPress\Admin\ListPage;
 use Taxmod\WordPress\Admin\Tiles;
@@ -521,7 +522,7 @@ final class StockPage
         $technical = $group > 0 && ! $branch ? $this->technicalColumns($group) : [];
         $data      = $technical !== [] ? $this->stock->tableOf($group) : null;
         // D-1204: a picture per row, unless the Configuration has pictures in lists off.
-        $images    = method_exists(ListPage::class, 'thumbnails') && ListPage::showsImages();
+        $images    = ListPage::showsImages();
         $columns   = [...($images ? [new ListColumn('image', __('Bild', 'taxmod-stock'), fixed: true, width: '56px')] : []),
             new ListColumn('nr', __('Nr.', 'taxmod-stock'), fixed: true, width: '6em'), new ListColumn('name', __('Material', 'taxmod-stock'), fixed: true),
             new ListColumn('group', __('Gruppe', 'taxmod-stock'))];
@@ -672,7 +673,7 @@ final class StockPage
         $pick   = add_query_arg(['page' => self::PAGE, 'tab' => 'gruppenbestand', 'group' => '{id}'], admin_url('admin.php'));
         $tree   = $this->stock->groupChooser('taxmod_stock_group', $group, '', $pick);
 
-        $this->side = $tree !== '' && method_exists(ListPage::class, 'sideTree')
+        $this->side = $tree !== ''
             ? ListPage::sideTree(self::GROUP_TREE, __('Materialgruppen', 'taxmod-stock'), $tree, '', 'taxmod-stock-places')
             : '<div class="taxmod-stock-places"><div class="taxmod-stock-places-head"><p class="taxmod-shell-title">'
                 . esc_html__('Materialgruppen', 'taxmod-stock') . '</p></div>'
@@ -699,33 +700,33 @@ final class StockPage
         $place  = $this->stock->ownGroupProperty($group, StockService::PLACE_PROPERTY);
         $above  = $places[$parent] ?? null;
         $names  = $this->stock->places();
-        $choice = static fn (string $value, string $text, bool $on): string => '<option value="' . esc_attr($value) . '"' . selected($on, true, false) . '>' . esc_html($text) . '</option>';
 
         // D-1266: the default labels — one of «Materialetiketten», chosen from a list, never an id typed in.
         $s         = $this->stock->structure();
         $templates = $this->stock->labelTemplates();
         $category  = $s->hasNode('label_materials') ? $s->node('label_materials') : 0;
-        $labelRow  = function (string $key, string $name, string $id) use ($group, $parent, $templates, $category, $choice): array {
+        $labelRow  = function (string $key, string $name, string $id) use ($group, $parent, $templates, $category): array {
             $own   = $this->stock->ownGroupProperty($group, $key);
             $above = $this->stock->groupProperty($key)[$parent] ?? null;
             $named = is_int($above) ? ($templates->get($above)['name'] ?? '') : '';
-            $html  = '<select id="' . esc_attr($id) . '" name="' . esc_attr($key) . '">'
-                . $choice('', $named === '' ? __('wie darüber', 'taxmod-stock') : sprintf(/* translators: %s: the label of the group above */ __('wie darüber (%s)', 'taxmod-stock'), $named), ! is_int($own));
+            $offer = [];
 
             foreach ($templates->all() as $label => $template) {
                 if (($template['node'] ?? 0) === $category) {
-                    $html .= $choice((string) $label, (string) $template['name'], $own === $label);
+                    $offer[$label] = (string) $template['name'];
                 }
             }
 
-            return ['label' => $name, 'for' => $id, 'control' => $html . '</select>',
+            $html = SelectMarkup::of($key, $offer, is_int($own) ? (string) $own : null, attributes: ['id' => $id],
+                nothingWord: $named === '' ? __('wie darüber', 'taxmod-stock') : sprintf(/* translators: %s: the label of the group above */ __('wie darüber (%s)', 'taxmod-stock'), $named));
+
+            return ['label' => $name, 'for' => $id, 'control' => $html,
                 'hint' => __('Wird im Druckdialog vorgewählt und gilt für alle Gruppen darunter; ändern bleibt im Dialog möglich.', 'taxmod-stock')];
         };
 
         $rows = [
-            ['label' => __('Nach Wareneingang testen', 'taxmod-stock'), 'for' => 'taxmod-stock-group-test', 'control' => '<select id="taxmod-stock-group-test" name="test">'
-                . $choice('', sprintf(/* translators: %s: Ja or Nein, from the group above */ __('wie darüber (%s)', 'taxmod-stock'), $label($tested[$parent] ?? null)), $test === null)
-                . $choice('1', __('Ja', 'taxmod-stock'), $test === true) . $choice('0', __('Nein', 'taxmod-stock'), $test === false) . '</select>',
+            ['label' => __('Nach Wareneingang testen', 'taxmod-stock'), 'for' => 'taxmod-stock-group-test', 'control' => SelectMarkup::of('test', ['1' => __('Ja', 'taxmod-stock'), '0' => __('Nein', 'taxmod-stock')], $test === null ? null : ($test ? '1' : '0'),
+                    attributes: ['id' => 'taxmod-stock-group-test'], nothingWord: sprintf(/* translators: %s: Ja or Nein, from the group above */ __('wie darüber (%s)', 'taxmod-stock'), $label($tested[$parent] ?? null))),
                 'hint' => __('Gebrauchte Ware dieser Gruppe und aller Gruppen darunter steht nach dem Wareneingang unter «Zu testen».', 'taxmod-stock')],
             ['label' => __('Standard-Lagerort', 'taxmod-stock'), 'control' => $this->stock->placeChooser('place', is_int($place) ? $place : 0),
                 'hint' => is_int($above) && isset($names[$above])
@@ -964,9 +965,7 @@ final class StockPage
      */
     private static function copiesInput(string $formId, string $emptyMeans, ?int $value = null): string
     {
-        $input = class_exists(\Taxmod\Core\Renderer\DialogNumber::class)
-            ? \Taxmod\Core\Renderer\DialogNumber::input('copies', $value, 1, 50, $formId)
-            : '<input type="number" name="copies" min="1" max="50" step="1" form="' . esc_attr($formId) . '"' . ($value === null ? '' : ' value="' . esc_attr((string) $value) . '"') . '>';
+        $input = \Taxmod\Core\Renderer\DialogNumber::input('copies', $value, 1, 50, $formId);
 
         return $input . ' <span class="description">' . esc_html($emptyMeans) . '</span>';
     }
@@ -1469,13 +1468,13 @@ final class StockPage
             . '<tr><th>' . esc_html__('Einzelstück', 'taxmod-stock') . '</th><td><input type="checkbox" name="single" value="1"' . checked($value('lager_single'), '1', false) . '></td></tr>';
 
         if ($s->hasField('lager_use') && $this->stock->uses() !== []) {
-            $html .= '<tr><th>' . esc_html__('Verwendung', 'taxmod-stock') . '</th><td><select name="use">' . $this->options($this->stock->uses(), '—', (int) $value('lager_use')) . '</select></td></tr>';
+            $html .= '<tr><th>' . esc_html__('Verwendung', 'taxmod-stock') . '</th><td>' . SelectMarkup::of('use', $this->stock->uses(), $value('lager_use'), nothingWord: '—') . '</td></tr>';
         }
 
         if ($s->hasField('lager_unit') && $s->hasField('lager_prefix')) {
             $units = $this->stock->baseUnits();
-            $html .= '<tr><th>' . esc_html__('Basiseinheit', 'taxmod-stock') . '</th><td><select name="prefix">' . $this->options($units['prefixes'], '—', (int) $value('lager_prefix')) . '</select> '
-                . '<select name="unit">' . $this->options($units['units'], '—', (int) $value('lager_unit')) . '</select>'
+            $html .= '<tr><th>' . esc_html__('Basiseinheit', 'taxmod-stock') . '</th><td>' . SelectMarkup::of('prefix', $units['prefixes'], $value('lager_prefix'), nothingWord: '—') . ' '
+                . SelectMarkup::of('unit', $units['units'], $value('lager_unit'), nothingWord: '—')
                 . '<p class="description">' . esc_html__('Worin das Lager zählt, z. B. milli + Liter für ml. Ohne Angabe: Stück.', 'taxmod-stock') . '</p></td></tr>';
         }
 
@@ -1631,10 +1630,6 @@ final class StockPage
      */
     private function transferDialog(int $thing, int $lot, int $from, float $quantity, array $places, int $returnPlace = 0, bool $toList = false, array $merged = []): string
     {
-        if (! method_exists(ListPage::class, 'dialogAction')) {
-            return '';
-        }
-
         $body = '<input type="hidden" name="thing" value="' . esc_attr((string) $thing) . '"><input type="hidden" name="lot" value="' . esc_attr((string) $lot) . '">'
             // D-1181: a line standing for several lots of the same data moves from them oldest first.
             . (count($merged) > 1 ? '<input type="hidden" name="lots" value="' . esc_attr(implode(',', array_map('intval', $merged))) . '">' : '')
@@ -1670,12 +1665,8 @@ final class StockPage
      */
     private function bulkGroupAsk(): array
     {
-        if (! method_exists(ListPage::class, 'dialogAction')) {
-            return [];
-        }
-
         $chooser = $this->stock->groupChooser('group', 0, self::BULK_FORM);
-        $body    = self::actForm([['label' => __('Gruppe', 'taxmod-stock'), 'control' => $chooser !== '' ? $chooser : '<select name="group" form="' . esc_attr(self::BULK_FORM) . '">' . $this->groupOptions() . '</select>',
+        $body    = self::actForm([['label' => __('Gruppe', 'taxmod-stock'), 'control' => $chooser,
                 'hint' => __('Felder, die die neue Gruppe zusätzlich hat, kommen leer dazu. Gingen bei einem Material Werte verloren, wird keines verschoben.', 'taxmod-stock')]])
             . '<input type="hidden" name="return_tab" value="' . esc_attr(self::BACK_TO_LIST) . '" form="' . esc_attr(self::BULK_FORM) . '">';
 
@@ -1691,7 +1682,7 @@ final class StockPage
     /** D8, D-1331: «+ Neue Untergruppe» of the group chosen in «Gruppenbestand»; nothing while the modeller cannot make one. */
     private function newGroupDialog(int $parent): string
     {
-        if (! method_exists(ListPage::class, 'dialogAction') || ! $this->stock->canCreateGroup()) {
+        if (! $this->stock->canCreateGroup()) {
             return '';
         }
 
@@ -1708,10 +1699,6 @@ final class StockPage
      */
     private function bulkTransferAsk(): array
     {
-        if (! method_exists(ListPage::class, 'dialogAction')) {
-            return [];
-        }
-
         $body = self::actForm([['label' => __('Nach', 'taxmod-stock'), 'control' => $this->stock->placeChooser('location', 0, self::BULK_FORM),
                 'hint' => __('Bucht alles von den angehakten Materialien, jeden Posten von jedem Ort, an den gewählten Ort um: ein Vorgang «Umbuchung», «Stornieren» bei den Vorgängen nimmt ihn zurück.', 'taxmod-stock')]])
             . '<input type="hidden" name="return_tab" value="' . esc_attr(self::BACK_TO_LIST) . '" form="' . esc_attr(self::BULK_FORM) . '">';
@@ -1729,7 +1716,7 @@ final class StockPage
     {
         $s = $this->stock->structure();
 
-        if (! $s->hasNode('label_materials') || ! class_exists(DialogMarkup::class) || ! method_exists(LabelButton::class, 'filled')) {
+        if (! $s->hasNode('label_materials')) {
             return [];
         }
 
@@ -1748,17 +1735,17 @@ final class StockPage
             return [];
         }
 
-        $printers = '<option value="">' . esc_html__('Wie beim Etikett hinterlegt', 'taxmod-stock') . '</option>';
+        $printers = [];
 
-        foreach (method_exists($templates, 'printerList') ? $templates->printerList() : [] as $id => $printer) {
-            $printers .= '<option value="' . esc_attr((string) $id) . '">' . esc_html((string) ($printer['name'] ?? '#' . $id)) . '</option>';
+        foreach ($templates->printerList() as $id => $printer) {
+            $printers[$id] = (string) ($printer['name'] ?? '#' . $id);
         }
 
         $service = PrintService::isSetUp();
         $form    = ' form="' . esc_attr($formId) . '"';
         $field   = static fn (string $title, string $control): string => '<label style="display:block;margin-bottom:.5em"><span style="display:block;font-weight:600">' . esc_html($title) . '</span>' . $control . '</label>';
         $body    = $field(__('Etikett', 'taxmod-stock'), '<select name="label_choice"' . $form . '>' . $labels . '</select>')
-            . ($service ? $field(__('Drucker', 'taxmod-stock'), '<select name="label_printer"' . $form . '>' . $printers . '</select>') : '')
+            . ($service ? $field(__('Drucker', 'taxmod-stock'), SelectMarkup::of('label_printer', $printers, formId: $formId, nothingWord: __('Wie beim Etikett hinterlegt', 'taxmod-stock'))) : '')
             . $field(__('Anzahl je Material', 'taxmod-stock'), self::copiesInput($formId, __('leer: wie beim Etikett', 'taxmod-stock')))
             . '<span class="description" style="display:block">' . esc_html($per !== '' ? $per : __('Ein Etikett je angehaktem Material, beschriftet mit seinen eigenen Feldern.', 'taxmod-stock'))
             . ($service ? '' : ' ' . esc_html__('Kein Druckdienst eingerichtet: die Etiketten öffnen sich als PDF.', 'taxmod-stock')) . '</span>';
@@ -1827,7 +1814,7 @@ final class StockPage
             $fail(__('Kein Material angehakt.', 'taxmod-stock'));
         }
 
-        if ($template === null || ! $s->hasNode('label_materials') || ($template['node'] ?? 0) !== $s->node('label_materials') || ! method_exists(LabelButton::class, 'filled')) {
+        if ($template === null || ! $s->hasNode('label_materials') || ($template['node'] ?? 0) !== $s->node('label_materials')) {
             $fail(__('Unbekanntes Material-Etikett.', 'taxmod-stock'));
         }
 
@@ -1942,39 +1929,33 @@ final class StockPage
      */
     private function reserveFormDialog(int $thing, string $back, int $subject = 0): string
     {
-        if (! method_exists(ListPage::class, 'dialogAction')) {
-            return '';
-        }
-
         $ledger  = $this->stock->ledger();
         $lots    = $this->stock->table('lot');
         $date    = $this->stock->structure()->field('lot_date');
-        $choices = '';
+        $choices = [];
 
         foreach ($this->stock->subjects() as $group => $records) {
-            $choices .= '<optgroup label="' . esc_attr($group) . '">' . $this->options($records, '', $subject) . '</optgroup>';
+            foreach ($records as $id => $word) {
+                $choices[$id] = $group . ' · ' . $word;
+            }
         }
 
-        $lotChoice = '';
+        $lotChoice = [];
 
-        if ($thing > 0) {
-            $lotChoice = '<option value="0">' . esc_html__('— kein bestimmter Posten —', 'taxmod-stock') . '</option>';
-
-            foreach ($ledger->lotsOf($thing) as $lot) {
-                if ($ledger->restOf($lot) > 0.0) {
-                    $lotChoice .= '<option value="' . esc_attr((string) $lot) . '">' . esc_html('#' . $lot . ' · ' . substr((string) $lots->first($lot, $date), 0, 10) . ' · ' . __('Rest', 'taxmod-stock') . ' ' . $this->number($ledger->restOf($lot))) . '</option>';
-                }
+        foreach ($thing > 0 ? $ledger->lotsOf($thing) : [] as $lot) {
+            if ($ledger->restOf($lot) > 0.0) {
+                $lotChoice[$lot] = '#' . $lot . ' · ' . substr((string) $lots->first($lot, $date), 0, 10) . ' · ' . __('Rest', 'taxmod-stock') . ' ' . $this->number($ledger->restOf($lot));
             }
         }
 
         $id   = 'taxmod-stock-reserve-' . $thing . '-' . $subject . '-' . $back;
         $body = '<input type="hidden" name="back" value="' . esc_attr($back) . '">'
             . ($subject > 0 ? '<input type="hidden" name="subject" value="' . esc_attr((string) $subject) . '">'
-                : '<label style="display:block">' . esc_html__('Bezug', 'taxmod-stock') . '<br><select name="subject" style="width:100%" required><option value="">—</option>' . $choices . '</select></label>')
+                : '<label style="display:block">' . esc_html__('Bezug', 'taxmod-stock') . '<br>' . SelectMarkup::of('subject', $choices, attributes: ['style' => 'width:100%', 'required' => 'required'], nothingWord: '—') . '</label>')
             . ($thing > 0 ? '<input type="hidden" name="thing" value="' . esc_attr((string) $thing) . '">'
                 : '<span style="display:block;margin-top:.5em">' . esc_html__('Material', 'taxmod-stock') . '<br>' . $this->thingField('thing', $id . '-thing', null) . '</span>')
             . '<label style="display:block;margin-top:.5em">' . esc_html__('Menge', 'taxmod-stock') . '<br><input type="text" inputmode="decimal" name="quantity" style="width:7em" required></label>'
-            . ($thing > 0 ? '<label style="display:block;margin-top:.5em">' . esc_html__('Bestandsposten', 'taxmod-stock') . '<br><select name="lot" style="width:100%">' . $lotChoice . '</select></label>'
+            . ($thing > 0 ? '<label style="display:block;margin-top:.5em">' . esc_html__('Bestandsposten', 'taxmod-stock') . '<br>' . SelectMarkup::of('lot', $lotChoice, attributes: ['style' => 'width:100%'], nothingWord: __('— kein bestimmter Posten —', 'taxmod-stock')) . '</label>'
                 : '<label style="display:block;margin-top:.5em">' . esc_html__('Bestandsposten (Nr., optional)', 'taxmod-stock') . '<br><input type="number" min="1" name="lot" style="width:8em"></label>')
             . ($this->stock->structure()->hasField('transaction_deadline') ? '<label style="display:block;margin-top:.5em">' . esc_html__('Frist (optional)', 'taxmod-stock') . '<br><input type="date" name="deadline"></label>' : '')
             . '<p class="description">' . esc_html__('Senkt den verfügbaren Bestand, nicht den Bestand. Hat der Bezug schon eine offene Reservierung, kommt die Position dorthin.', 'taxmod-stock') . '</p>';
@@ -2006,10 +1987,6 @@ final class StockPage
 
     private function reservationStornoDialog(int $deal, ?int $line, string $what): string
     {
-        if (! method_exists(ListPage::class, 'dialogAction')) {
-            return '';
-        }
-
         $body = '<input type="hidden" name="transaction" value="' . esc_attr((string) $deal) . '">'
             . ($line === null ? '' : '<input type="hidden" name="line" value="' . esc_attr((string) $line) . '">')
             . '<p style="margin:0">' . esc_html($what) . '</p><p class="description">' . esc_html__('Eine Gegenbuchung gibt die Menge wieder frei; beide bleiben stehen und werden in den Listen ausgeblendet.', 'taxmod-stock') . '</p>';
@@ -2087,10 +2064,10 @@ final class StockPage
         }
 
         // D-1127: the row's «Stornieren» for every ticked reservation; a reserved place is freed only by moving its goods out.
-        $storno = method_exists(ListPage::class, 'dialogAction') ? ['taxmod-stock-reservations-storno' => [__('Stornieren …', 'taxmod-stock'), '<div class="alignleft actions">'
+        $storno = ['taxmod-stock-reservations-storno' => [__('Stornieren …', 'taxmod-stock'), '<div class="alignleft actions">'
             . ListPage::dialogAction('taxmod-stock-reservations-storno', __('Stornieren …', 'taxmod-stock'), __('Ausgewählte Reservierungen stornieren', 'taxmod-stock'),
                 '<p class="description" style="margin-top:0">' . esc_html__('Je angehakter Reservierung eine Gegenbuchung, die ihre Mengen wieder freigibt; reservierte Orte bleiben, wie sie sind.', 'taxmod-stock') . '</p>',
-                'booking', 'reservierungensammelstorno', __('Stornieren', 'taxmod-stock'), self::BULK_FORM) . '</div>']] : [];
+                'booking', 'reservierungensammelstorno', __('Stornieren', 'taxmod-stock'), self::BULK_FORM) . '</div>']];
         $count  = sprintf(/* translators: %d: number of reservations */ _n('%d Reservierung', '%d Reservierungen', count($open), 'taxmod-stock'), count($open));
         $bar    = str_replace(
             ['name="action" id="' . self::BULK_FORM . '-action"', '</form>'],
@@ -2184,10 +2161,6 @@ final class StockPage
     /** D-1036: «Stornieren» of a Vorgang, asked in the shared dialog; the Storno names who and when. */
     private function stornoDialog(int $thing, int $deal, string $what, string $booking = 'storno', ?int $line = null): string
     {
-        if (! method_exists(ListPage::class, 'dialogAction')) {
-            return '';
-        }
-
         $body = '<input type="hidden" name="thing" value="' . esc_attr((string) $thing) . '"><input type="hidden" name="transaction" value="' . esc_attr((string) $deal) . '">'
             . ($line === null ? '' : '<input type="hidden" name="line" value="' . esc_attr((string) $line) . '">')
             . '<p style="margin:0">' . esc_html($what) . '</p><p class="description">' . esc_html__('Eine Gegenbuchung hebt den Vorgang auf; beide bleiben stehen und werden in den Listen ausgeblendet.', 'taxmod-stock') . '</p>';
@@ -2287,7 +2260,7 @@ final class StockPage
         $here = self::here();
         $url  = $here === '' ? $url : add_query_arg('return', rawurlencode($here), $url);
 
-        return self::icon('ICON_BOOK_OUT') === '' || ! method_exists(ListPage::class, 'iconLink')
+        return self::icon('ICON_BOOK_OUT') === ''
             ? '<a class="button" href="' . esc_url($url) . '">' . esc_html__('Ausbuchen', 'taxmod-stock') . '</a>'
             : ListPage::iconLink(self::icon('ICON_BOOK_OUT'), __('Ausbuchen', 'taxmod-stock'), $url);
     }
@@ -2320,7 +2293,6 @@ final class StockPage
     {
         $labels = $this->stock->labels('purchase');
         $about  = $this->purchaseAbout([$purchase]);
-        $groups = $this->groupOptions();
         $cancel = $back === InboundPage::BACK
             ? InboundPage::url(['order' => $order])
             : add_query_arg(['page' => self::PAGE, 'tab' => 'wareneingang', 'order' => $order], admin_url('admin.php'));
@@ -2342,7 +2314,7 @@ final class StockPage
 
         for ($i = 0; $i < self::ROWS; $i++) {
             $html .= '<tr><td>' . $this->thingField('rows[' . $i . '][thing]', 'taxmod-stock-split-' . $i, null) . '</td>'
-                . '<td>' . ($this->stock->groupChooser('rows[' . $i . '][group]', 0, '', '', true) ?: '<select name="rows[' . $i . '][group]">' . $groups . '</select>') . '</td>'
+                . '<td>' . $this->stock->groupChooser('rows[' . $i . '][group]', 0, '', '', true) . '</td>'
                 . '<td><input type="text" name="rows[' . $i . '][name]"></td>'
                 . '<td><input type="number" min="1" name="rows[' . $i . '][quantity]" style="width:5em"></td>'
                 . '<td><input type="text" inputmode="decimal" name="rows[' . $i . '][price]" style="width:6em"></td></tr>';
@@ -2388,7 +2360,6 @@ final class StockPage
      */
     private function inventoryForm(): string
     {
-        $groups = $this->groupOptions();
         $rows   = '';
 
         for ($i = 0; $i < self::ROWS; $i++) {
@@ -2397,7 +2368,7 @@ final class StockPage
                 . '<td><input type="text" inputmode="decimal" name="rows[' . $i . '][value]" style="width:6em"></td>'
                 . '<td><input type="text" inputmode="decimal" name="rows[' . $i . '][total]" style="width:6em"></td>'
                 . '<td><input type="text" name="rows[' . $i . '][note]" style="width:100%"></td>'
-                . '<td style="text-align:right">' . $this->inventoryNewThing($i, $groups) . '</td></tr>';
+                . '<td style="text-align:right">' . $this->inventoryNewThing($i) . '</td></tr>';
         }
 
         $intro  = '<p>' . esc_html__('Gezählter Bestand ohne Kauf. Jede Zeile wird ein Bestandsposten. Wert je Stück oder Gesamtwert; der Gesamtwert wird auf die Menge umgerechnet.', 'taxmod-stock') . '</p>';
@@ -2434,19 +2405,15 @@ final class StockPage
     }
 
     /** D-1072 in the count: group and name asked in the row's dialog; the material is made when the count is booked. */
-    private function inventoryNewThing(int $row, string $groups): string
+    private function inventoryNewThing(int $row): string
     {
         $chooser = $this->stock->groupChooser('rows[' . $row . '][group]', 0, '', '', true);
         $body    = self::actForm([
-            ['label' => __('Gruppe', 'taxmod-stock'), 'control' => $chooser !== '' ? $chooser : '<select name="rows[' . esc_attr((string) $row) . '][group]" style="width:100%">' . $groups . '</select>'],
+            ['label' => __('Gruppe', 'taxmod-stock'), 'control' => $chooser],
             ['label' => __('Bezeichnung', 'taxmod-stock'), 'control' => '<input type="text" name="rows[' . esc_attr((string) $row) . '][name]" style="width:100%">',
                 'hint' => __('Angelegt wird mit «Inventur buchen».', 'taxmod-stock')],
             ...(($maker = $this->manufacturerControl('countfields_' . $row, 'rows[' . $row . '][group]')) === '' ? [] : [['label' => __('Hersteller', 'taxmod-stock'), 'control' => $maker]]),
         ]);
-
-        if (! class_exists(\Taxmod\Core\Renderer\DialogMarkup::class)) {
-            return '<details style="display:inline-block"><summary class="button button-small">' . esc_html__('+ Neues Material', 'taxmod-stock') . '</summary>' . $body . '</details>';
-        }
 
         return \Taxmod\Core\Renderer\DialogMarkup::of(
             'taxmod-stock-count-new-' . $row,
@@ -2463,10 +2430,6 @@ final class StockPage
     /** D-1130: «Kopieren» — the material beside itself, asked in the shared dialog because it says what does not come along. */
     private function copyDialog(int $thing): string
     {
-        if (! method_exists(ListPage::class, 'dialogAction')) {
-            return '';
-        }
-
         $body = '<p>' . esc_html__('Die Kopie bekommt alle Daten und die Lagersicht dieses Materials und öffnet sich gleich zum Bearbeiten.', 'taxmod-stock') . '</p>'
             . '<p class="description">' . esc_html__('Nicht mitkopiert: Bestand, Reservierungen und die Bestellnummern der Bezugsquellen.', 'taxmod-stock') . '</p>';
 
@@ -2481,13 +2444,8 @@ final class StockPage
     /** D-1073: «Verschieben» — the material into another group of the tree, asked in the shared dialog. */
     private function moveDialog(int $thing, int $node): string
     {
-        if (! method_exists(ListPage::class, 'dialogAction')) {
-            return '';
-        }
-
         $chooser = $this->stock->groupChooser('group', $node);
-        $field   = ($chooser !== '' ? '<span style="display:block">' . esc_html__('Neue Gruppe', 'taxmod-stock') . '<br>' . $chooser . '</span>'
-            : '<label style="display:block">' . esc_html__('Neue Gruppe', 'taxmod-stock') . '<br><select name="group" style="width:100%">' . $this->groupOptions($node) . '</select></label>')
+        $field   = '<span style="display:block">' . esc_html__('Neue Gruppe', 'taxmod-stock') . '<br>' . $chooser . '</span>'
             . '<p class="description">' . esc_html__('Felder, die die neue Gruppe zusätzlich hat, kommen leer dazu. Gingen dabei Werte verloren, wird nicht verschoben.', 'taxmod-stock') . '</p>';
 
         return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'
@@ -2496,22 +2454,6 @@ final class StockPage
             . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
             . ListPage::dialogAction('taxmod-stock-move-' . $thing, __('Verschieben', 'taxmod-stock'), __('Material verschieben', 'taxmod-stock'), $field, 'booking', 'verschieben', __('Verschieben', 'taxmod-stock'))
             . '</form>';
-    }
-
-    /** The groups a new thing can go into, by their path in the tree; the empty choice first. */
-    private function groupOptions(int $selected = 0): string
-    {
-        $paths = [];
-
-        foreach ($this->stock->tree() as $node => $row) {
-            if ($row['class'] === 'Category') {
-                $paths[$node] = $this->stock->path($node);
-            }
-        }
-
-        asort($paths, SORT_NATURAL | SORT_FLAG_CASE);
-
-        return $this->options(array_filter($paths), '—', $selected);
     }
 
     /**
@@ -2909,7 +2851,7 @@ final class StockPage
         $preferred = $this->stock->standardPlaces(array_values(array_filter(array_column($plan, 'model'))));
         // His wish 2026-11-14: «wenn es ein Bild zu der Position gibt, dann würde ich das gerne sehen. Vielleicht ganz vorne» —
         // the purchase's picture in front of its name, all of them in one read (CD-7).
-        $thumbs = method_exists(ListPage::class, 'thumbnails') ? ListPage::thumbnails($this->stock->titleImages(array_keys($plan))) : [];
+        $thumbs = ListPage::thumbnails($this->stock->titleImages(array_keys($plan)));
         $closing = $this->stock->canCloseWithoutStock();
         // Stefan 16.11. «keine einstellmöglichkeiten?»: a booked purchase says where its lots lie.
         $lying   = $this->stock->placesOfPurchases(array_keys(array_filter($plan, static fn (array $row): bool => $row['lock'] === 'received')));
@@ -2946,7 +2888,6 @@ final class StockPage
             . '<th scope="col" class="manage-column" style="width:10em;text-align:right">' . esc_html__('Aktionen', 'taxmod-stock') . '</th></tr>';
         $html .= '<table class="wp-list-table widefat fixed striped table-view-list"><thead>' . $head . '</thead><tbody>' . ($plan === [] ? $this->noItems(5) : '');
         $actions = static fn (string $buttons): string => '<td style="text-align:right">' . $buttons . '</td>';
-        $groups  = null;
 
         foreach ($plan as $purchase => $row) {
             $lock     = $row['lock'];
@@ -2986,7 +2927,7 @@ final class StockPage
                 . '<td><input type="number" min="1" step="1" style="width:5em" name="quantity[' . esc_attr((string) $purchase) . ']" value="' . esc_attr($quantity) . '"></td>'
                 // The place the server proposed, so the page can tell it from one he chose in the row (D-1361).
                 . '<td class="taxmod-stock-receipt-place" data-drawn="' . esc_attr((string) ($where[$purchase] ?? 0)) . '">' . $this->stock->placeChooser('location[' . $purchase . ']', $where[$purchase] ?? 0, '', [], $model === null ? [] : ($preferred[$model] ?? [])) . '</td>'
-                . $actions(($model === null ? $this->newThingDialog($purchase, $groups ??= $this->groupOptions()) : $this->materialDialog($purchase, $model)) . ($closing ? $this->closeControls($purchase) : '')
+                . $actions(($model === null ? $this->newThingDialog($purchase) : $this->materialDialog($purchase, $model)) . ($closing ? $this->closeControls($purchase) : '')
                     . (isset($takable[$purchase]) ? ' <button type="submit" class="button button-small" name="booking" value="bilduebernehmen-' . esc_attr((string) $purchase) . '">' . esc_html__('Bild übernehmen', 'taxmod-stock') . '</button>' : '')) . '</tr>';
         }
 
@@ -3065,7 +3006,7 @@ final class StockPage
             . '<label>' . esc_html__('liegt in', 'taxmod-stock') . ' ' . $this->stock->placeChooser('new_parent') . ' <span class="description">' . esc_html__('leer: oberste Ebene', 'taxmod-stock') . '</span></label> '
             . '<label><input type="checkbox" name="movable" value="1"> ' . esc_html__('beweglich (Kiste, Karton)', 'taxmod-stock') . '</label> '
             . ($s->hasField('location_reserved') ? '<label><input type="checkbox" name="reserved" value="1"> ' . esc_html__('reserviert für Produktion', 'taxmod-stock') . '</label> ' : '')
-            . ($projects === [] ? '' : '<label>' . esc_html__('Projekt', 'taxmod-stock') . ' <select name="project">' . $this->options($projects, '—') . '</select></label> ')
+            . ($projects === [] ? '' : '<label>' . esc_html__('Projekt', 'taxmod-stock') . ' ' . SelectMarkup::of('project', $projects, nothingWord: '—') . '</label> ')
             . '<button type="submit" class="button button-primary" name="booking" value="ort">' . esc_html__('Anlegen', 'taxmod-stock') . '</button></p></form>';
     }
 
@@ -3097,10 +3038,7 @@ final class StockPage
         $newPlace = $edit ? '<label class="button button-small" for="taxmod-stock-new-place-0">' . esc_html__('+ Neuer Lagerort', 'taxmod-stock') . '</label>' : '';
         $top      = $edit ? '<div class="taxmod-stock-places-top" data-taxmod-drop-record="0">' . esc_html__('— oberste Ebene —', 'taxmod-stock') . '</div>' : '';
         // The architecture thread 2026-11-09: the side tree is the modeller's one building block (expand/collapse all, kept state).
-        $this->side = method_exists(ListPage::class, 'sideTree')
-            ? ListPage::sideTree(self::PLACE_TREE, __('Lagerorte', 'taxmod-stock'), $top . $left, $newPlace, 'taxmod-stock-places')
-            : '<div class="taxmod-stock-places"><div class="taxmod-stock-places-head"><p class="taxmod-shell-title">' . esc_html__('Lagerorte', 'taxmod-stock') . '</p>'
-                . $newPlace . '</div>' . $top . $left . '</div>' . $this->placeTreeScript();
+        $this->side = ListPage::sideTree(self::PLACE_TREE, __('Lagerorte', 'taxmod-stock'), $top . $left, $newPlace, 'taxmod-stock-places');
 
         return '<div class="taxmod-stock-split">' . $right . '</div>'
             // The opener of «Neuer Lagerort» stands in the tree's box; its dialog stays here, outside the sticky column.
@@ -3114,7 +3052,7 @@ final class StockPage
      */
     private function sideChosen(string $tree, int $chosen): int
     {
-        return method_exists(ListPage::class, 'treeChosen') ? ListPage::treeChosen($tree, $chosen) : $chosen;
+        return ListPage::treeChosen($tree, $chosen);
     }
 
     /**
@@ -3319,7 +3257,7 @@ final class StockPage
     {
         $children = $tree->childrenOf($place);
 
-        if ($children === [] || ! method_exists(ListPage::class, 'dialogAction')) {
+        if ($children === []) {
             return '';
         }
 
@@ -3398,10 +3336,6 @@ final class StockPage
      */
     private function childLabelDialog(array $children, LocationTree $tree): array
     {
-        if (! class_exists(LabelFormat::class) || ! class_exists(DialogMarkup::class)) {
-            return [];
-        }
-
         $s         = $this->stock->structure();
         $templates = $s->hasNode('label_template') ? $this->stock->labelTemplates() : null;
         $types     = $s->hasField('location_place_type') ? $this->stock->placeTypes() : null;
@@ -3485,14 +3419,13 @@ final class StockPage
         $picked = sanitize_key((string) ($_POST['format'] ?? ''));
         // D-1380: what is chosen in the dialog holds for every ticked place — a template or a shipped format.
         $use    = str_starts_with($picked, 'vorlage-') && $this->stock->labelTemplates()->has((int) substr($picked, 8)) ? (int) substr($picked, 8) : 0;
-        $format = class_exists(LabelFormat::class) ? (LabelFormat::shipped()[$picked] ?? null) : null;
+        $format = LabelFormat::shipped()[$picked] ?? null;
         $tree   = $this->stock->locationTree();
         $table  = $this->stock->table('location');
         $labels = [];
         $filled = [];
         $asked  = absint($_POST['copies'] ?? 0);
         // D-1153: a place whose type names a template prints from it; the chosen format holds for the rest.
-        $fills  = method_exists(LabelButton::class, 'filled');
         $this->contentsOf(array_values(array_filter($places, [$table, 'has'])));
 
         foreach ($places as $place) {
@@ -3500,7 +3433,7 @@ final class StockPage
                 [$prefix, $id, $title, $subtitle, $copies, $template] = $this->placeLabel($place, $tree, $use);
                 $label = LabelContent::of(LabelPrefix::from($prefix), $id, $title, $subtitle);
                 // D-1380, his report 2026-11-15 «trotz andre wahl 62x20»: a shipped format chosen in the dialog wins over the kind's template.
-                $own   = $fills && ($use > 0 || $format === null) ? LabelButton::filled($label, $template) : null;
+                $own   = $use > 0 || $format === null ? LabelButton::filled($label, $template) : null;
 
                 // D-1162: the copies travel together, as one job with that many pages.
                 $count = min(50, $asked > 0 ? $asked : $copies);
@@ -3583,7 +3516,7 @@ final class StockPage
         if ($chosen > 0 && $types->has($chosen)) {
             $back = add_query_arg('typ', $chosen, $list);
             // D-1316 (D7): the way back to the list is the toolbar's first group; D-1308: «Kopieren» joins it.
-            $return = method_exists(ListPage::class, 'back') ? [[ListPage::back($list, __('Alle Platzarten', 'taxmod-stock'))]] : [];
+            $return = [[ListPage::back($list, __('Alle Platzarten', 'taxmod-stock'))]];
             $copy   = [...$return, [$this->copyTypeDialog($chosen, $types->nameOf($chosen))]];
             $form   = (string) apply_filters('taxmod_record_editor', '', $chosen, $back, $copy);
 
@@ -3605,7 +3538,7 @@ final class StockPage
 
         $body   = '';
         // D6: the place types' pictures as on every list, read in one go (CD-7).
-        $images = method_exists(ListPage::class, 'thumbnails') && ListPage::showsImages();
+        $images = ListPage::showsImages();
         $thumbs = $images ? ListPage::thumbnails($this->stock->titleImages(array_keys($types->names()))) : [];
 
         // D1: a type's parts stand indented below it, as the tree they make.
@@ -3622,8 +3555,7 @@ final class StockPage
                 . '<td style="text-align:right;white-space:nowrap">' . $this->copyTypeDialog($type, $name) . ' <a class="button" href="' . esc_url(add_query_arg('typ', $type, $list)) . '">' . esc_html__('Bearbeiten', 'taxmod-stock') . '</a></td></tr>';
         }
 
-        $dialog = method_exists(ListPage::class, 'dialogAction')
-            ? $this->formStart('platzart') . ListPage::dialogAction(
+        $dialog = $this->formStart('platzart') . ListPage::dialogAction(
                 'taxmod-stock-new-place-type',
                 __('+ Neue Platzart', 'taxmod-stock'),
                 __('Neue Platzart', 'taxmod-stock'),
@@ -3631,8 +3563,7 @@ final class StockPage
                 'booking',
                 'platzart',
                 __('Anlegen', 'taxmod-stock')
-            ) . '</form>'
-            : '';
+            ) . '</form>';
 
         return $html . ListPage::toolbar([[$dialog]])
             . ListPage::table([...($images ? [[__('Bild', 'taxmod-stock'), '52px']] : []), [__('Platzart', 'taxmod-stock'), ''], [__('Beweglich', 'taxmod-stock'), '7em'], [__('Teile', 'taxmod-stock'), ''], [__('Plätze', 'taxmod-stock'), '5em']], $body === '' ? $this->noItems($images ? 6 : 5) : $body);
@@ -3856,10 +3787,6 @@ final class StockPage
     /** D-1130: «Kopieren» of a label template — its name proposed with «(Kopie)», in the shared dialog. */
     private function copyTemplateDialog(int $template, string $name): string
     {
-        if (! method_exists(ListPage::class, 'dialogAction')) {
-            return '';
-        }
-
         $body = '<label style="display:block">' . esc_html__('Name', 'taxmod-stock') . '<br><input type="text" name="name" value="'
             . esc_attr(sprintf(/* translators: %s: the name of the original template */ __('%s (Kopie)', 'taxmod-stock'), $name)) . '" style="width:100%" required></label>'
             . '<p class="description">' . esc_html__('Die Kopie trägt Format, Layout und Anzahl dieser Vorlage. Platzarten, die sie nutzen, bleiben bei der alten.', 'taxmod-stock') . '</p>';
@@ -3971,9 +3898,7 @@ final class StockPage
             . '<h2>' . esc_html($name) . '</h2>'
             . ($form === '' ? ListPage::toolbar([[self::editorMissing()], [$actions]]) : '')
             // D-1220: the facts beside the form on wide screens, above it on narrow ones — the shared block.
-            . (method_exists(ListPage::class, 'beside')
-                ? ListPage::beside($form, '<table class="widefat striped">' . $facts . '</table>')
-                : '<table class="widefat striped">' . $facts . '</table>' . $form);
+            . ListPage::beside($form, '<table class="widefat striped">' . $facts . '</table>');
     }
 
     /**
@@ -3983,7 +3908,7 @@ final class StockPage
      */
     private function changeRollDialog(int $printer, string $name, array $rolls): string
     {
-        if (! method_exists(ListPage::class, 'dialogAction') || $rolls === []) {
+        if ($rolls === []) {
             return '';
         }
         $current = (int) $this->stock->table('label_printer')->first($printer, $this->stock->structure()->field('printer_loaded_roll'));
@@ -4002,10 +3927,6 @@ final class StockPage
     /** D-1130: «Kopieren» of a kind of place — its name proposed with «(Kopie)», in the shared dialog. */
     private function copyTypeDialog(int $type, string $name): string
     {
-        if (! method_exists(ListPage::class, 'dialogAction')) {
-            return '';
-        }
-
         $body = '<label style="display:block">' . esc_html__('Name', 'taxmod-stock') . '<br><input type="text" name="name" value="'
             . esc_attr(sprintf(/* translators: %s: the name of the original kind of place */ __('%s (Kopie)', 'taxmod-stock'), $name)) . '" style="width:100%" required></label>'
             . '<p class="description">' . esc_html__('Die Kopie trägt alle Felder und Teile dieser Platzart. Plätze dieser Art bleiben bei der alten.', 'taxmod-stock') . '</p>';
@@ -4101,20 +4022,16 @@ final class StockPage
     /** D-1090: «Neuer Lagerort» (on top) or «Neuer Unterort» of a place, in the shared dialog. */
     private function newPlaceDialog(int $parent, string $tab): string
     {
-        if (! method_exists(ListPage::class, 'dialogAction')) {
-            return '';
-        }
-
         $s        = $this->stock->structure();
         $projects = $this->stock->projects();
         $types    = $this->stock->placeTypes()->names();
         $body     = '<input type="hidden" name="new_parent" value="' . esc_attr((string) $parent) . '">'
             . '<label style="display:block">' . esc_html__('Name', 'taxmod-stock') . '<br><input type="text" name="name" style="width:100%" required></label>'
             // D-1123: a kind decides whether the place moves and brings its parts along (Alex: nine drawers).
-            . ($types === [] ? '' : '<div style="margin-top:.5em">' . esc_html__('Platzart', 'taxmod-stock') . '<br>' . $this->recordChoice('place_type', 'location_type', $types) . '</div>')
+            . ($types === [] ? '' : '<div style="margin-top:.5em">' . esc_html__('Platzart', 'taxmod-stock') . '<br>' . $this->recordChoice('place_type', 'location_type') . '</div>')
             . '<label style="display:block;margin-top:.5em"><input type="checkbox" name="movable" value="1"> ' . esc_html($types === [] ? __('beweglich (Kiste, Karton)', 'taxmod-stock') : __('beweglich (Kiste, Karton) — ohne Platzart', 'taxmod-stock')) . '</label>'
             . ($s->hasField('location_reserved') ? '<label style="display:block"><input type="checkbox" name="reserved" value="1"> ' . esc_html__('reserviert für Produktion', 'taxmod-stock') . '</label>' : '')
-            . ($projects === [] ? '' : '<div style="margin-top:.5em">' . esc_html__('Projekt', 'taxmod-stock') . '<br>' . $this->recordChoice('project', 'project', $projects) . '</div>');
+            . ($projects === [] ? '' : '<div style="margin-top:.5em">' . esc_html__('Projekt', 'taxmod-stock') . '<br>' . $this->recordChoice('project', 'project') . '</div>');
 
         return $this->formStart('ort') . $this->returnFields($tab, $parent)
             . ListPage::dialogAction(
@@ -4235,7 +4152,7 @@ final class StockPage
         $now   = $this->stock->kindOf($place);
         $plan  = $this->stock->placeKindChange($place, $now);
 
-        if (! method_exists(ListPage::class, 'dialogAction') || $types->names() === []) {
+        if ($types->names() === []) {
             return '';
         }
 
@@ -4282,10 +4199,6 @@ final class StockPage
 
     private function copyPlaceDialog(int $place, LocationTree $tree, int $inside): string
     {
-        if (! method_exists(ListPage::class, 'dialogAction')) {
-            return '';
-        }
-
         $name = sprintf(/* translators: %s: the name of the original place */ __('%s (Kopie)', 'taxmod-stock'), (string) (array_reverse(explode(' › ', $tree->pathOf($place)))[0]));
         $body = '<label style="display:block">' . esc_html__('Name', 'taxmod-stock') . '<br><input type="text" name="name" value="' . esc_attr($name) . '" style="width:100%" required></label>'
             . ($inside > 0 ? '<label style="display:block;margin-top:.5em"><input type="checkbox" name="below" value="1"> '
@@ -4299,11 +4212,10 @@ final class StockPage
 
     /**
      * The modeller's record chooser for one value — the same everywhere (his rule 2026-11-03: «tree chooser bzw wenn es nicht
-     * hierarchich ist selct feld … beides mit suchfield genormt über das ganze projekt»); a plain select only without the modeller.
+     * hierarchich ist selct feld … beides mit suchfield genormt über das ganze projekt»); 
      *
-     * @param array<int, string> $fallback
      */
-    private function recordChoice(string $name, string $node, array $fallback): string
+    private function recordChoice(string $name, string $node): string
     {
         $s      = $this->stock->structure();
         $choice = (string) apply_filters('taxmod_record_chooser', '', [
@@ -4312,16 +4224,12 @@ final class StockPage
             'label_field' => $s->field('label'),
         ]);
 
-        return $choice !== '' ? $choice : '<select name="' . esc_attr($name) . '" style="width:100%">' . $this->options($fallback, '—') . '</select>';
+        return $choice;
     }
 
     /** D-1090: «Verschieben» — the new place chosen in the same tree, the place itself and what lies in it left out. */
     private function movePlaceDialog(int $place, LocationTree $tree): string
     {
-        if (! method_exists(ListPage::class, 'dialogAction')) {
-            return '';
-        }
-
         $s      = $this->stock->structure();
         $name   = 'parent[' . $place . ']';
         $parent = $tree->parentOf($place);
@@ -4336,8 +4244,7 @@ final class StockPage
         ]);
         $body = '<label style="display:block;margin-bottom:.5em"><input type="radio" name="' . esc_attr($name) . '" value="0"' . checked($parent, 0, false) . '> '
             . esc_html__('— oberste Ebene —', 'taxmod-stock') . '</label>'
-            . ($choice !== '' ? '<div style="max-height:50vh;overflow:auto">' . $choice . '</div>'
-                : '<select name="' . esc_attr($name) . '" style="width:100%">' . $this->options(array_diff_key($this->stock->places(), array_flip($tree->withAllBelow($place))), __('— oberste Ebene —', 'taxmod-stock'), $parent) . '</select>')
+            . '<div style="max-height:50vh;overflow:auto">' . $choice . '</div>'
             . '<p class="description">' . esc_html($tree->isMovable($place) && $this->stock->relocates()
                 ? __('Alles, was darin liegt, zieht mit; der Umzug wird als Vorgang «Umlagerung» festgehalten.', 'taxmod-stock')
                 : __('Alles, was darin liegt, zieht mit.', 'taxmod-stock')) . '</p>';
@@ -4353,10 +4260,6 @@ final class StockPage
      */
     private function dropDialogs(string $tab, int $place, LocationTree $tree): string
     {
-        if (! method_exists(ListPage::class, 'dialogAction')) {
-            return '';
-        }
-
         $paths   = [0 => __('— oberste Ebene —', 'taxmod-stock')];
         $movable = [];
 
@@ -4434,7 +4337,7 @@ final class StockPage
      */
     private function reserveDialog(int $place, bool $flagged, int $lots): string
     {
-        if (! method_exists(ListPage::class, 'dialogAction') || ! $this->stock->structure()->hasField('location_reserved')) {
+        if (! $this->stock->structure()->hasField('location_reserved')) {
             return '';
         }
 
@@ -4527,13 +4430,7 @@ final class StockPage
      */
     public static function actForm(array $rows, string $actions = ''): string
     {
-        if (method_exists(ListPage::class, 'form')) {
-            return ListPage::form($rows, $actions);
-        }
-
-        return implode('', array_map(static fn (array $row): string => '<p><label style="display:block">' . esc_html($row['label']) . '<br>' . $row['control'] . '</label>'
-            . (($row['hint'] ?? '') === '' ? '' : '<span class="description">' . esc_html($row['hint']) . '</span>') . '</p>', $rows))
-            . ($actions === '' ? '' : '<p class="submit">' . $actions . '</p>');
+        return ListPage::form($rows, $actions);
     }
 
     /**
@@ -4546,20 +4443,16 @@ final class StockPage
     {
         $preset   = $this->stock->purposeAt($place);
         $selected = $preset === null ? '' : ($preset->production ? 'produktion' : (string) $preset->subject);
-        $choices  = '<option value="">' . esc_html__('— kein Bezug —', 'taxmod-stock') . '</option>'
-            . '<option value="produktion"' . selected($selected, 'produktion', false) . '>' . esc_html__('für Produktion (ohne Projekt)', 'taxmod-stock') . '</option>';
+        $choices  = ['produktion' => __('für Produktion (ohne Projekt)', 'taxmod-stock')];
 
         foreach ($this->stock->purposes() as $group => $records) {
-            $choices .= '<optgroup label="' . esc_attr($group) . '">';
-
             foreach ($records as $id => $label) {
-                $choices .= '<option value="' . esc_attr((string) $id) . '"' . selected($selected, (string) $id, false) . '>' . esc_html($label) . '</option>';
+                $choices[$id] = $group . ' · ' . $label;
             }
-
-            $choices .= '</optgroup>';
         }
 
-        return ['label' => __('Bezug', 'taxmod-stock'), 'for' => 'taxmod-stock-consumption-purpose', 'control' => '<select id="taxmod-stock-consumption-purpose" name="purpose">' . $choices . '</select>',
+        return ['label' => __('Bezug', 'taxmod-stock'), 'for' => 'taxmod-stock-consumption-purpose',
+            'control' => SelectMarkup::of('purpose', $choices, $selected, attributes: ['id' => 'taxmod-stock-consumption-purpose'], nothingWord: __('— kein Bezug —', 'taxmod-stock')),
             'hint' => __('Reservierte Ware darf nur für genau ihren Bezug verbraucht werden; der Verbrauch mindert dann die offene Reservierung. Für jeden anderen Zweck erst aus dem reservierten Bereich umbuchen.', 'taxmod-stock')];
     }
 
@@ -4936,10 +4829,6 @@ final class StockPage
     {
         $look = ' style="cursor:pointer;color:#2271b1;text-decoration:underline"';
 
-        if (! class_exists(\Taxmod\Core\Renderer\DialogMarkup::class)) {
-            return '<a class="' . esc_attr(trim($class . ' taxmod-stock-material-link')) . '" href="' . esc_url(self::thingUrl($thing, 'daten')) . '" target="_blank">' . esc_html($text) . '</a>';
-        }
-
         return '<label class="' . esc_attr(trim($class . ' taxmod-stock-material-link')) . '" for="' . esc_attr('taxmod-stock-material-' . $purchase) . '"' . $look . '>' . esc_html($text) . '</label>';
     }
 
@@ -4980,17 +4869,13 @@ final class StockPage
      * D-1072, his word 2026-11-01: «wir brauc hen einen button für neues material erst suchen ist doof» — the group asked in a dialog,
      * the material created at once (D-1062, D-1071) and then filled through «Material».
      */
-    private function newThingDialog(int $purchase, string $groups): string
+    private function newThingDialog(int $purchase): string
     {
-        if (! method_exists(ListPage::class, 'dialogAction')) {
-            return '';
-        }
-
-        // D-1075: the modeller's node chooser — search and tree, the one view he set for choosing in the tree; a plain list without it.
+        // D-1075: the modeller's node chooser — search and tree, the one view he set for choosing in the tree.
         $chooser = $this->stock->groupChooser('newgroup[' . $purchase . ']', 0, '', '', true);
         $maker   = $this->manufacturerControl('newfields_' . $purchase, 'newgroup[' . $purchase . ']');
         $field   = self::actForm(array_merge([['label' => __('Gruppe', 'taxmod-stock'),
-            'control' => $chooser !== '' ? $chooser : '<select name="newgroup[' . esc_attr((string) $purchase) . ']" style="width:100%">' . $groups . '</select>',
+            'control' => $chooser,
             'hint' => __('Das Material heißt wie der Kauf; Lagerort und Bezugsquelle kommen aus der Bestellung.', 'taxmod-stock')]],
             // D-1255: the manufacturer goes into the new material, through the modeller's own control.
             $maker === '' ? [] : [['label' => __('Hersteller', 'taxmod-stock'), 'control' => $maker]]));
@@ -5040,13 +4925,8 @@ final class StockPage
         $field  = self::actForm([['label' => __('Grund', 'taxmod-stock'), 'control' => '<input type="text" list="taxmod-stock-reasons" name="reason[' . esc_attr($id) . ']" style="width:100%">']]);
         $action = 'nichteinlagern-' . $id;
 
-        // D-1063: the reason is asked in the one dialog every list uses; an older modeller keeps the field in the row.
-        if (method_exists(ListPage::class, 'dialogAction')) {
-            return ListPage::dialogAction('taxmod-stock-close-' . $id, __('Nicht einlagern', 'taxmod-stock'), __('Ohne Lager abschließen', 'taxmod-stock'), $field, 'booking', $action, __('Nicht einlagern', 'taxmod-stock'));
-        }
-
-        return '<input type="text" list="taxmod-stock-reasons" name="reason[' . esc_attr($id) . ']" placeholder="' . esc_attr__('Grund', 'taxmod-stock') . '" style="width:9em"> '
-            . '<button type="submit" class="button button-small" name="booking" value="' . esc_attr($action) . '">' . esc_html__('Nicht einlagern', 'taxmod-stock') . '</button>';
+        // D-1063: the reason is asked in the one dialog every list uses.
+        return ListPage::dialogAction('taxmod-stock-close-' . $id, __('Nicht einlagern', 'taxmod-stock'), __('Ohne Lager abschließen', 'taxmod-stock'), $field, 'booking', $action, __('Nicht einlagern', 'taxmod-stock'));
     }
 
     private function formStart(string $booking): string
@@ -5062,18 +4942,6 @@ final class StockPage
             . '<input type="hidden" name="booking" value="' . esc_attr($booking) . '">'
             . ($return === '' ? '' : '<input type="hidden" name="return" value="' . esc_attr($return) . '">')
             . wp_nonce_field(self::ACTION, '_wpnonce', true, false);
-    }
-
-    /** @param array<int, string> $labels */
-    private function options(array $labels, string $empty, int $selected = 0): string
-    {
-        $html = $empty === '' ? '' : '<option value="0">' . esc_html($empty) . '</option>';
-
-        foreach ($labels as $id => $label) {
-            $html .= '<option value="' . esc_attr((string) $id) . '"' . selected($id, $selected, false) . '>' . esc_html($label) . '</option>';
-        }
-
-        return $html;
     }
 
     private function listRequest(): StockList

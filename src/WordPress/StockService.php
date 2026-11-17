@@ -199,7 +199,7 @@ final class StockService
      */
     private static function shareRoles(array $structure): void
     {
-        if (! method_exists(\Taxmod\WordPress\ModelDoor::class, 'adoptRoles') || get_option(self::ROLES_SHARED) === TAXMOD_STOCK_VERSION) {
+        if (get_option(self::ROLES_SHARED) === TAXMOD_STOCK_VERSION) {
             return;
         }
 
@@ -966,7 +966,7 @@ final class StockService
             $node = $this->model->nodesOf([$number])[$number] ?? 0;
             if (isset($tree[$node])) {
                 $word   = $this->recordLabels([$number], [$number => $node])[$number] ?? '';
-                $byId[] = ['id' => $number, 'word' => $word === '' ? '#' . $number : $word, 'node' => $tree[$node]['name'] . ' · ' . (class_exists(\Taxmod\Core\Printing\LabelPrefix::class) ? \Taxmod\Core\Printing\LabelPrefix::from('M')->code($number) : 'M-' . $number)];
+                $byId[] = ['id' => $number, 'word' => $word === '' ? '#' . $number : $word, 'node' => $tree[$node]['name'] . ' · ' . \Taxmod\Core\Printing\LabelPrefix::from('M')->code($number)];
             }
         }
         $words = array_slice(array_values(array_filter(

@@ -482,11 +482,6 @@ final class InboundPage
             . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '"><input type="hidden" name="tab" value="' . esc_attr($tab) . '">' . $this->stay()
             . wp_nonce_field(self::ACTION, '_wpnonce', true, false);
 
-        if (! method_exists(ListPage::class, 'dialogAction')) {
-            return $form . '<input type="hidden" name="op" value="tracking"><input type="text" name="number" placeholder="' . esc_attr__('Sendungsnummer', 'taxmod-stock') . '" style="width:12em"> '
-                . get_submit_button(__('Hinzufügen', 'taxmod-stock'), 'secondary', '', false) . '</form> ';
-        }
-
         return $form . ListPage::dialogAction('taxmod-stock-track-' . $order, __('Sendungsnummer', 'taxmod-stock'), __('Sendungsnummer hinzufügen', 'taxmod-stock'), $field, 'op', 'tracking', __('Hinzufügen', 'taxmod-stock')) . '</form> ';
     }
 
@@ -667,7 +662,7 @@ final class InboundPage
         // His wish 2026-11-09 (INF-116): «um zu entscheiden ob etwas angekommen ist ist das wenig info» — the picture (D-1204),
         // and what the purchase already says, read from the one table of this order's purchases (CD-7).
         $ids      = $merged ? [] : array_map('intval', $purchases);
-        $pictures = method_exists(ListPage::class, 'thumbnails') ? ListPage::thumbnails($stock->titleImages($ids)) : [];
+        $pictures = ListPage::thumbnails($stock->titleImages($ids));
         // D-1264, «Bild übernehmen»: offered where the purchase has a picture its material does not hold yet — one read for both.
         $models   = array_filter(array_combine($ids, array_map(static fn (int $p): int => (int) $table->first($p, $s->field('purchase_model')), $ids)) ?: []);
         $held     = $stock->picturesOf([...$ids, ...array_values($models)]);
@@ -816,7 +811,7 @@ final class InboundPage
         $tabs[] = [InboundStage::Archived->value, self::stageName(InboundStage::Archived), $counts[InboundStage::Archived->value] ?? 0];
         $url    = static fn (string $slug): string => self::url(['tab' => $slug]);
 
-        return method_exists(ListPage::class, 'steps') ? ListPage::steps($tabs, $active, $url) : ListPage::tabs($tabs, $active, $url);
+        return ListPage::steps($tabs, $active, $url);
     }
 
     private static function stageName(InboundStage $stage): string

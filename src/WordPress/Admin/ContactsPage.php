@@ -209,7 +209,7 @@ final class ContactsPage
         $back   = self::url(['tab' => (string) $node, 'kontakt' => (string) $contact]);
         $list   = self::url(['tab' => (string) $node]);
         // D-1316: the way back to the list is the toolbar's first group; D-1308: «Anlegen zurücknehmen» joins it.
-        $return = method_exists(ListPage::class, 'back') ? [[ListPage::back($list, __('Zur Liste', 'taxmod-stock'))]] : [];
+        $return = [[ListPage::back($list, __('Zur Liste', 'taxmod-stock'))]];
         $undo   = [...$return, [$this->undoForm($contact, $node)]];
         $form   = (string) apply_filters('taxmod_record_editor', '', $contact, $back, $undo);
 

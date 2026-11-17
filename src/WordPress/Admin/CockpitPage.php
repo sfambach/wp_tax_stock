@@ -168,10 +168,6 @@ final class CockpitPage
      */
     private function stageCounts(): array
     {
-        if (! method_exists(Tiles::class, 'cachedCounts')) {
-            return $this->countStages();
-        }
-
         return Tiles::cachedCounts(Tiles::MODEL, 'stock.inbound.stages.' . current_time('Y-m-d'), fn (): array => $this->countStages());
     }
 

@@ -147,7 +147,7 @@ final class PurchasePage
     private function purchaseView(int $purchase): string
     {
         $word   = (string) ($this->stock->recordsOf('purchase', [$purchase])->first($purchase, $this->stock->structure()->field('label')) ?? '#' . $purchase);
-        $return = method_exists(ListPage::class, 'back') ? [[ListPage::back(self::url(), __('Zum Einkauf', 'taxmod-stock'))]] : [];
+        $return = [[ListPage::back(self::url(), __('Zum Einkauf', 'taxmod-stock'))]];
         $form   = (string) apply_filters('taxmod_record_editor', '', $purchase, self::url(['kauf' => (string) $purchase]), $return);
 
         return '<h2>' . esc_html(sprintf(/* translators: %s: the purchase's word */ __('Kauf – %s', 'taxmod-stock'), $word)) . '</h2>'
@@ -176,7 +176,7 @@ final class PurchasePage
             . '<label style="display:block;margin-top:.5em">' . esc_html__('Name des neuen Bedarfs', 'taxmod-stock') . '<br><input type="text" name="name" form="' . esc_attr($form) . '" style="width:100%"></label>'
             . '<p class="description">' . esc_html__('Die angehakten Positionen wandern mit ihren Werten; der Name gilt nur für «neuer Bedarf».', 'taxmod-stock') . '</p>';
         $move  = ListPage::dialogAction('taxmod-stock-demand-move-dialog', __('Verschieben nach …', 'taxmod-stock'), __('Positionen verschieben', 'taxmod-stock'), $body, 'op', 'move', __('Verschieben', 'taxmod-stock'), $form);
-        $back  = method_exists(ListPage::class, 'back') ? [ListPage::back(self::url(['tab' => 'bedarf']), __('Zum Bedarf', 'taxmod-stock'))] : [];
+        $back  = [ListPage::back(self::url(['tab' => 'bedarf']), __('Zum Bedarf', 'taxmod-stock'))];
         $lines = array_map('intval', $orders->all($demand, $s->field('order_lines')));
 
         // D-1320 ergänzt: a demand that passed on names the orders it went into and offers its copy.
@@ -467,7 +467,7 @@ final class PurchasePage
         $s     = $this->stock->structure();
         $label = (string) $orders->first($order, $s->field('label'));
         $names = ['bestellen' => __('Bestellen', 'taxmod-stock'), 'bestellt' => __('Bestellt', 'taxmod-stock'), 'verworfen' => __('Verworfen', 'taxmod-stock')];
-        $back  = method_exists(ListPage::class, 'back') ? [ListPage::back(self::url(['tab' => $tab]), sprintf(/* translators: %s: tab */ __('Zurück zu «%s»', 'taxmod-stock'), $names[$tab]))] : [];
+        $back  = [ListPage::back(self::url(['tab' => $tab]), sprintf(/* translators: %s: tab */ __('Zurück zu «%s»', 'taxmod-stock'), $names[$tab]))];
         $lines = array_map('intval', $orders->all($order, $s->field('order_lines')));
 
         return '<h2>' . esc_html($label === '' ? '#' . $order : $label) . ' <span class="description">#' . esc_html((string) $order) . '</span></h2>'

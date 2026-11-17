@@ -236,7 +236,7 @@ final class LabelAbilities
      */
     private function filled(array $label): ?FilledLabel
     {
-        if (! class_exists(FilledLabel::class) || trim((string) $label['layout']) === '' || (int) $label['width'] <= 0 || (int) $label['height'] <= 0 || trim((string) $label['key']) === '') {
+        if (trim((string) $label['layout']) === '' || (int) $label['width'] <= 0 || (int) $label['height'] <= 0 || trim((string) $label['key']) === '') {
             return null;
         }
         try {

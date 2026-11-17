@@ -76,11 +76,11 @@ final class SettingsPage
             . '<table class="form-table" role="presentation"><tbody>'
             . '<tr><th scope="row">' . esc_html__('Vollbild', 'taxmod-stock') . '</th><td><label><input type="checkbox" name="fullscreen" value="1"' . checked(LogisticsShell::isFullscreen(), true, false) . '> '
             . esc_html__('Logistik ohne WordPress-Leisten zeigen', 'taxmod-stock') . '</label></td></tr>'
-            . (method_exists(ListPage::class, 'resetColumns') ? '<tr><th scope="row">' . esc_html__('Spalten der Listen', 'taxmod-stock') . '</th><td><label><input type="checkbox" name="reset_columns" value="1"> '
-                . esc_html__('Eigene Spaltenwahl aller Listen zurücksetzen', 'taxmod-stock') . '</label></td></tr>' : '')
+            . '<tr><th scope="row">' . esc_html__('Spalten der Listen', 'taxmod-stock') . '</th><td><label><input type="checkbox" name="reset_columns" value="1"> '
+                . esc_html__('Eigene Spaltenwahl aller Listen zurücksetzen', 'taxmod-stock') . '</label></td></tr>'
             // His wish 2026-11-09: the trees on the left open as he left them; this forgets it.
-            . (method_exists(ListPage::class, 'resetTreeStates') ? '<tr><th scope="row">' . esc_html__('Bäume links', 'taxmod-stock') . '</th><td><label><input type="checkbox" name="reset_trees" value="1"> '
-                . esc_html__('Gemerkten Ast und offene Äste aller Bäume vergessen', 'taxmod-stock') . '</label></td></tr>' : '')
+            . '<tr><th scope="row">' . esc_html__('Bäume links', 'taxmod-stock') . '</th><td><label><input type="checkbox" name="reset_trees" value="1"> '
+                . esc_html__('Gemerkten Ast und offene Äste aller Bäume vergessen', 'taxmod-stock') . '</label></td></tr>'
             . '</tbody></table>' . '</form>']], (string) TAXMOD_STOCK_VERSION);
     }
 
@@ -102,11 +102,11 @@ final class SettingsPage
     {
         LogisticsShell::setFullscreen($fullscreen);
 
-        if ($resetTrees && method_exists(ListPage::class, 'resetTreeStates')) {
+        if ($resetTrees) {
             ListPage::resetTreeStates();
         }
 
-        if ($resetColumns && method_exists(ListPage::class, 'resetColumns')) {
+        if ($resetColumns) {
             ListPage::resetColumns();
         }
     }

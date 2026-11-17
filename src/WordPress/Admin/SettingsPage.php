@@ -157,15 +157,15 @@ final class SettingsPage
 
         $html = '<h2>' . esc_html__('Kein Material', 'taxmod-stock') . '</h2>'
             . '<p>' . esc_html__('Diese Zweige unter Model (mit allem darunter) enthalten kein Material, etwa das Quellenverzeichnis. Materialsuche, Baum und Materialgruppen lassen sie aus. Eine leere Zeile fügt einen Zweig hinzu, eine geleerte entfernt ihn.', 'taxmod-stock') . '</p>'
-            . '<input type="hidden" name="taxmod_stock_not_material_sent" value="1">'
-            . '<table class="widefat striped" style="max-width:40em"><thead><tr><th>' . esc_html__('Zweig (Knoten-Id)', 'taxmod-stock') . '</th><th>' . esc_html__('Name', 'taxmod-stock') . '</th></tr></thead><tbody>';
+            . '<input type="hidden" name="taxmod_stock_not_material_sent" value="1">';
+        $cells = [];
 
         foreach ([...$rows, null, null, null] as $i => $node) {
-            $html .= '<tr><td><input type="number" min="1" name="taxmod_stock_not_material[' . $i . ']" value="' . esc_attr((string) ($node ?? '')) . '" style="width:12em"></td>'
-                . '<td>' . esc_html($node === null ? '' : ($names[$node] ?? '')) . '</td></tr>';
+            $cells[] = ['<input type="number" min="1" name="taxmod_stock_not_material[' . $i . ']" value="' . esc_attr((string) ($node ?? '')) . '" style="width:12em">',
+                esc_html($node === null ? '' : ($names[$node] ?? ''))];
         }
 
-        return $html . '</tbody></table>';
+        return $html . ListPage::grid([[__('Zweig (Knoten-Id)', 'taxmod-stock')], [__('Name', 'taxmod-stock')]], $cells);
     }
 
     /** D-1002, D-1111: the goods receipt's test place and its archive; which groups are tested is a group property (D-1259). */

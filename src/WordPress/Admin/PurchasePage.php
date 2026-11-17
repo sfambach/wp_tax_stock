@@ -2,6 +2,7 @@
 
 namespace TaxmodStock\WordPress\Admin;
 
+use Taxmod\Core\Renderer\GridMarkup;
 use Taxmod\WordPress\Admin\ListPage;
 use TaxmodStock\Core\Purchasing;
 use TaxmodStock\Core\StockError;
@@ -376,22 +377,23 @@ final class PurchasePage
             . $this->hidden('reorder', 'neu')
             . '<h2 style="margin-top:0">' . esc_html__('Nachbestellen', 'taxmod-stock') . '</h2>'
             // D-1308: the acts in the toolbar above the form.
-            . ListPage::toolbar([[get_submit_button(__('Hinzufügen', 'taxmod-stock'), 'primary', '', false)], ['<a class="button" href="' . esc_url(self::url(['tab' => 'nachbestellen'])) . '">' . esc_html__('Abbrechen', 'taxmod-stock') . '</a>']])
-            . '<table class="widefat striped"><thead><tr><th>' . esc_html__('Material', 'taxmod-stock') . '</th><th>' . esc_html__('Verfügbar', 'taxmod-stock') . '</th><th>'
-            . esc_html__('Mindestbestand', 'taxmod-stock') . '</th><th>' . esc_html__('Unterwegs / gewünscht', 'taxmod-stock') . '</th><th>' . esc_html__('Menge', 'taxmod-stock') . '</th></tr></thead><tbody>';
+            . ListPage::toolbar([[get_submit_button(__('Hinzufügen', 'taxmod-stock'), 'primary', '', false)], ['<a class="button" href="' . esc_url(self::url(['tab' => 'nachbestellen'])) . '">' . esc_html__('Abbrechen', 'taxmod-stock') . '</a>']]);
+        $rows = [];
 
         foreach ($things as $thing) {
             $record  = $this->stock->things()->lagerOf($thing);
             $minimum = $record === null ? null : $lager->first($record, $s->field('lager_min'));
             $stock   = $ledger->stockOf($thing) - ($held[$thing] ?? 0.0);
             $come    = $open[$thing] ?? 0.0;
-            $html   .= '<tr><td>' . esc_html(($labels[$thing] ?? '') . ' (Nr. ' . $thing . ')') . '</td><td>' . esc_html($this->number($stock)) . '</td><td>'
-                . esc_html($minimum === null ? '—' : $minimum) . '</td><td>' . esc_html($this->number($come)) . '</td>'
-                . '<td><input type="number" min="1" step="1" style="width:7em" name="quantity[' . esc_attr((string) $thing) . ']" value="'
-                . esc_attr((string) Purchasing::proposedQuantity($minimum === null ? null : (float) $minimum, $stock, $come)) . '"></td></tr>';
+            $rows[]  = [esc_html(($labels[$thing] ?? '') . ' (Nr. ' . $thing . ')'), esc_html($this->number($stock)), esc_html($minimum === null ? '—' : $minimum), esc_html($this->number($come)),
+                '<input type="number" min="1" step="1" style="width:7em" name="quantity[' . esc_attr((string) $thing) . ']" value="'
+                . esc_attr((string) Purchasing::proposedQuantity($minimum === null ? null : (float) $minimum, $stock, $come)) . '">'];
         }
 
-        return $html . '</tbody></table><p><label>' . esc_html__('In Bedarf', 'taxmod-stock') . ' <select name="demand">' . $this->select($choices, (string) ($demands === [] ? '0' : end($demands))) . '</select></label> '
+        $html .= ListPage::grid([[__('Material', 'taxmod-stock')], [__('Verfügbar', 'taxmod-stock'), GridMarkup::NUMBER], [__('Mindestbestand', 'taxmod-stock'), GridMarkup::NUMBER],
+            [__('Unterwegs / gewünscht', 'taxmod-stock'), GridMarkup::NUMBER], [__('Menge', 'taxmod-stock')]], $rows);
+
+        return $html . '<p><label>' . esc_html__('In Bedarf', 'taxmod-stock') . ' <select name="demand">' . $this->select($choices, (string) ($demands === [] ? '0' : end($demands))) . '</select></label> '
             . '<label>' . esc_html__('Name des neuen Bedarfs', 'taxmod-stock') . ' <input type="text" class="regular-text" name="name" placeholder="' . esc_attr__('z. B. Projekt oder «Lager auffüllen»', 'taxmod-stock') . '"></label></p></form>';
     }
 
@@ -558,7 +560,7 @@ final class PurchasePage
             $html .= '<div class="notice notice-warning inline"><p>' . esc_html($merchant . ': ' . $error) . '</p></div>';
         }
 
-        $rows = '';
+        $rows = [];
 
         foreach ($offers as $offer) {
             if (! is_array($offer)) {
@@ -567,20 +569,19 @@ final class PurchasePage
 
             $text  = static fn (string $key): string => trim((string) ($offer[$key] ?? ''));
             $price = $text('price');
-            $rows .= '<tr><td>' . esc_html($text('merchant')) . '</td><td>' . ($text('url') === '' ? esc_html($text('number')) : '<a href="' . esc_url($text('url')) . '" target="_blank" rel="noopener">' . esc_html($text('number')) . '</a>') . '</td>'
-                . '<td>' . esc_html(trim($text('maker') . ' ' . $text('maker_number'))) . '</td><td>' . esc_html($text('description')) . '</td>'
-                . '<td>' . esc_html((string) (int) ($offer['stock'] ?? 0)) . '</td><td>' . esc_html($price === '' ? '—' : $price . ' ' . $text('currency')) . '</td>'
-                . '<td>' . esc_html((string) max(1, (int) ($offer['min'] ?? 1))) . ((int) ($offer['mult'] ?? 1) > 1 ? ' / ×' . esc_html((string) (int) $offer['mult']) : '') . '</td>'
-                . '<td style="text-align:right"><form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">' . $this->hidden('source', 'bedarf')
+            $rows[] = [esc_html($text('merchant')), $text('url') === '' ? esc_html($text('number')) : '<a href="' . esc_url($text('url')) . '" target="_blank" rel="noopener">' . esc_html($text('number')) . '</a>',
+                esc_html(trim($text('maker') . ' ' . $text('maker_number'))), esc_html($text('description')),
+                esc_html((string) (int) ($offer['stock'] ?? 0)), esc_html($price === '' ? '—' : $price . ' ' . $text('currency')),
+                esc_html((string) max(1, (int) ($offer['min'] ?? 1))) . ((int) ($offer['mult'] ?? 1) > 1 ? ' / ×' . esc_html((string) (int) $offer['mult']) : ''),
+                '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">' . $this->hidden('source', 'bedarf')
                 . '<input type="hidden" name="order" value="' . esc_attr((string) $demand) . '"><input type="hidden" name="purchase" value="' . esc_attr((string) $purchase) . '">'
                 . '<input type="hidden" name="merchant" value="' . esc_attr($text('merchant')) . '"><input type="hidden" name="number" value="' . esc_attr($text('number')) . '">'
-                . '<input type="hidden" name="price" value="' . esc_attr($price) . '">' . get_submit_button(sprintf(/* translators: %s: merchant */ __('Bestellen bei %s', 'taxmod-stock'), $text('merchant')), 'small primary', '', false) . '</form></td></tr>';
+                . '<input type="hidden" name="price" value="' . esc_attr($price) . '">' . get_submit_button(sprintf(/* translators: %s: merchant */ __('Bestellen bei %s', 'taxmod-stock'), $text('merchant')), 'small primary', '', false) . '</form>'];
         }
 
-        return $html . '<table class="widefat striped" style="margin-top:12px"><thead><tr><th>' . esc_html__('Händler', 'taxmod-stock') . '</th><th>' . esc_html__('Art.-Nr.', 'taxmod-stock') . '</th><th>'
-            . esc_html__('Hersteller', 'taxmod-stock') . '</th><th>' . esc_html__('Beschreibung', 'taxmod-stock') . '</th><th>' . esc_html__('Lager', 'taxmod-stock') . '</th><th>'
-            . esc_html__('Preis/Stück', 'taxmod-stock') . '</th><th>' . esc_html__('Mindestmenge', 'taxmod-stock') . '</th><th></th></tr></thead><tbody>'
-            . ($rows === '' ? '<tr><td colspan="8">' . esc_html__('Kein Angebot gefunden.', 'taxmod-stock') . '</td></tr>' : $rows) . '</tbody></table>';
+        return $html . ListPage::grid([[__('Händler', 'taxmod-stock')], [__('Art.-Nr.', 'taxmod-stock')], [__('Hersteller', 'taxmod-stock')], [__('Beschreibung', 'taxmod-stock')],
+            [__('Lager', 'taxmod-stock'), GridMarkup::NUMBER], [__('Preis/Stück', 'taxmod-stock'), GridMarkup::NUMBER], [__('Mindestmenge', 'taxmod-stock'), GridMarkup::NUMBER], ['']],
+            $rows, __('Kein Angebot gefunden.', 'taxmod-stock'));
     }
 
     /** A firm of the register (proposed: the material's first source) or a merchant typed in, its number and a price. */

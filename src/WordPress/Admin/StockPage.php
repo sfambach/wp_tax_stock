@@ -13,6 +13,7 @@ use Taxmod\Core\Printing\LabelPrefix;
 use Taxmod\Core\Renderer\DialogMarkup;
 use Taxmod\Core\Tile\Tile;
 use Taxmod\Core\Tile\TileTone;
+use Taxmod\Core\Renderer\GridMarkup;
 use Taxmod\WordPress\Admin\ListPage;
 use Taxmod\WordPress\Admin\Tiles;
 use Taxmod\WordPress\Printing\LabelButton;
@@ -1298,9 +1299,7 @@ final class StockPage
         $linked  = static fn (string $text, ?string $url): string => $text === '' ? '—' : ($url === null ? esc_html($text)
             : '<a href="' . esc_url($url) . '" target="_blank" rel="noopener noreferrer">' . esc_html($text) . '</a>');
 
-        $html = '<table class="widefat striped"><thead><tr><th>' . esc_html__('Kauf', 'taxmod-stock') . '</th><th>' . esc_html__('Bestellung', 'taxmod-stock') . '</th><th>' . esc_html__('Lieferant', 'taxmod-stock') . '</th><th>'
-            . esc_html__('Datum', 'taxmod-stock') . '</th><th>' . esc_html__('Menge', 'taxmod-stock') . '</th><th>' . esc_html__('Preis je Stück', 'taxmod-stock') . '</th><th>'
-            . esc_html__('Gesamtpreis', 'taxmod-stock') . '</th></tr></thead><tbody>';
+        $rows = [];
 
         foreach ($about as $id) {
             $order    = $orderOf[$id] ?? null;
@@ -1320,18 +1319,20 @@ final class StockPage
             $shop     = $order === null ? null : $inbound->orderLink($order);
             $word     = (string) $purchases->first($id, $s->field('label'));
             $priced[] = ['purchase' => $id, 'number' => $article, 'date' => substr($orderValue($order, 'order_date'), 0, 10), 'price' => $each === null ? null : (float) $each];
-            $html    .= '<tr><td>' . ($inside === null ? esc_html($word) : '<a href="' . esc_url($inside) . '" target="_blank" rel="noopener">' . esc_html($word) . '</a>')
-                . ($article === '' ? '' : '<br><span class="description">' . $linked($article, $order === null ? null : $inbound->productLink($order, $article)) . '</span>') . '</td>'
-                . '<td>' . ($inside === null ? '—' : '<a href="' . esc_url($inside) . '" target="_blank" rel="noopener">' . esc_html($number === '' ? '#' . $order : $number) . '</a>')
-                . ($shop === null ? '' : ' ' . str_replace('<a ', '<a target="_blank" rel="noopener noreferrer" ', ListPage::iconLink('external', __('Beim Händler öffnen', 'taxmod-stock'), $shop))) . '</td>'
-                . '<td>' . esc_html($merchant === '' ? '—' : $merchant) . '</td>'
-                . '<td>' . esc_html(($date = substr($orderValue($order, 'order_date'), 0, 10)) === '' ? '—' : $date) . '</td>'
-                . '<td>' . esc_html((string) ($purchases->first($id, $s->field('purchase_quantity')) ?? '—')) . '</td>'
-                . '<td>' . esc_html($amountOf($unit)) . '</td>'
-                . '<td>' . esc_html($sum) . '</td></tr>';
+            $rows[]   = [($inside === null ? esc_html($word) : '<a href="' . esc_url($inside) . '" target="_blank" rel="noopener">' . esc_html($word) . '</a>')
+                . ($article === '' ? '' : '<br><span class="description">' . $linked($article, $order === null ? null : $inbound->productLink($order, $article)) . '</span>'),
+                ($inside === null ? '—' : '<a href="' . esc_url($inside) . '" target="_blank" rel="noopener">' . esc_html($number === '' ? '#' . $order : $number) . '</a>')
+                . ($shop === null ? '' : ' ' . str_replace('<a ', '<a target="_blank" rel="noopener noreferrer" ', ListPage::iconLink('external', __('Beim Händler öffnen', 'taxmod-stock'), $shop))),
+                esc_html($merchant === '' ? '—' : $merchant),
+                esc_html(($date = substr($orderValue($order, 'order_date'), 0, 10)) === '' ? '—' : $date),
+                esc_html((string) ($purchases->first($id, $s->field('purchase_quantity')) ?? '—')),
+                esc_html($amountOf($unit)),
+                esc_html($sum)];
         }
 
-        return $this->sourcesSection($thing, $priced) . '<h3>' . esc_html__('Käufe', 'taxmod-stock') . '</h3>' . $html . '</tbody></table>';
+        return $this->sourcesSection($thing, $priced) . '<h3>' . esc_html__('Käufe', 'taxmod-stock') . '</h3>'
+            . ListPage::grid([[__('Kauf', 'taxmod-stock')], [__('Bestellung', 'taxmod-stock')], [__('Lieferant', 'taxmod-stock')], [__('Datum', 'taxmod-stock')],
+                [__('Menge', 'taxmod-stock'), GridMarkup::NUMBER], [__('Preis je Stück', 'taxmod-stock'), GridMarkup::NUMBER], [__('Gesamtpreis', 'taxmod-stock'), GridMarkup::NUMBER]], $rows);
     }
 
     /**

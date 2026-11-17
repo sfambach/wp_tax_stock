@@ -2,6 +2,7 @@
 
 namespace TaxmodStock\WordPress\Admin;
 
+use Taxmod\WordPress\Admin\ListPage;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\Structure;
 use TaxmodStock\WordPress\StockService;
@@ -56,16 +57,18 @@ final class SettingsTab
             $html .= '<div class="notice notice-warning inline"><p>' . esc_html__('Der Wareneingang braucht fields.purchase_model (das Feld «Modell» der Käufe). Bitte die Struktur aus structure-live.json neu einfügen.', 'taxmod-stock') . '</p></div>';
         }
 
-        $html .= '<table class="widefat striped" style="max-width:40em"><thead><tr><th>' . esc_html__('Schlüssel', 'taxmod-stock') . '</th><th>Id</th></tr></thead><tbody>';
+        $rows = [];
 
         foreach (is_array($raw) ? $raw : [] as $group => $ids) {
             foreach (is_array($ids) ? $ids : [] as $key => $id) {
-                $html .= '<tr><td><code>' . esc_html($group . '.' . $key) . '</code></td><td>' . esc_html((string) $id) . '</td></tr>';
+                $rows[] = ['<code>' . esc_html($group . '.' . $key) . '</code>', esc_html((string) $id)];
             }
         }
 
+        $html .= ListPage::grid([[__('Schlüssel', 'taxmod-stock')], ['Id']], $rows);
+
         // D-1085: the business settings live in Logistik › Einstellungen; this tab keeps only the technical structure.
-        return $html . '</tbody></table><p>' . esc_html__('Zweige ohne Material, Einlagerung nach Typ, Test nach dem Wareneingang und die Ansicht der Reiter stehen jetzt unter Logistik › Einstellungen › Grundeinstellungen.', 'taxmod-stock')
+        return $html . '<p>' . esc_html__('Zweige ohne Material, Einlagerung nach Typ, Test nach dem Wareneingang und die Ansicht der Reiter stehen jetzt unter Logistik › Einstellungen › Grundeinstellungen.', 'taxmod-stock')
             . ' <a href="' . esc_url(SettingsPage::url()) . '">' . esc_html__('Zu den Grundeinstellungen', 'taxmod-stock') . '</a></p>';
     }
 

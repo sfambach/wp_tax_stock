@@ -17,6 +17,9 @@ namespace TaxmodStock\Core;
  */
 final class LocationTree
 {
+    /** @var array<int, list<int>>|null place → itself and everything inside it; see {@see self::below()} */
+    private ?array $below = null;
+
     /**
      * @param array<int, string> $names    place id → its own name
      * @param array<int, int>    $parents  place id → the place it sits in, 0 at the top
@@ -259,10 +262,33 @@ final class LocationTree
         return array_map(fn (int $child): array => ['id' => $child, 'below' => $this->nestedBelow($child)], $fixed);
     }
 
-    /** @return list<int> the place and everything inside it */
+    /** @return list<int> the place and everything inside it, in the order of the places */
     public function withAllBelow(int $id): array
     {
-        return array_values(array_filter(array_keys($this->names), fn (int $place): bool => in_array($id, $this->lineOf($place), true)));
+        return $this->below()[$id] ?? [];
+    }
+
+    /**
+     * Every place with everything inside it, worked out once for the whole tree.
+     *
+     * His word 2026-11-17 «wir müssen den code weiter optimieren»: pages ask this for every place, and asking each time walked
+     * every place's line — 146 places, five such loops on a stock page.
+     *
+     * @return array<int, list<int>>
+     */
+    private function below(): array
+    {
+        if ($this->below === null) {
+            $this->below = [];
+
+            foreach (array_keys($this->names) as $place) {
+                foreach ($this->lineOf($place) as $above) {
+                    $this->below[$above][] = $place;
+                }
+            }
+        }
+
+        return $this->below;
     }
 
     /** @return list<int> the places it sits in, nearest first; stops at a loop */

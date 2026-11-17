@@ -1239,7 +1239,9 @@ final class Plugin
             // His report 2026-11-16 «platz auswahl zeigt graue seite»: an error no page caught ends as a message on the page,
             // named with where it happened, never as an empty screen (D-1254).
             try {
-                $out = $render();
+                // Review 2026-11-17 (E3): the modeller's read memory, as its node page has it (D-814) — the same statement asked twice
+                // while one page is drawn is answered once. Any write makes it forget, so nothing reads a stale state.
+                $out = \Taxmod\WordPress\Persistence\Query::remembering($render);
             } catch (\Throwable $e) {
                 error_log('taxmod-stock ' . $slug . ': ' . $e::class . ': ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
                 $out = \Taxmod\WordPress\Admin\ListPage::page(__('Logistik', 'taxmod-stock'), [], [['html' => '<div class="notice notice-error"><p>' . esc_html(sprintf(

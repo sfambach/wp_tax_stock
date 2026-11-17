@@ -126,6 +126,11 @@ final class StockService
 
     private ?LocationTree $locationTree = null;
 
+    /** @var array{0: string, 1: Ledger}|null the book with the tables it was built from; see {@see self::ledger()} */
+    private ?array $ledger = null;
+
+    private ?ReservedPlaces $reservedPlaces = null;
+
     private ?PlaceTypes $placeTypes = null;
 
     private ?LabelTemplates $labelTemplates = null;
@@ -1157,9 +1162,24 @@ final class StockService
         return $s->hasNode('lager_use') ? $this->model->children($s->node('lager_use')) : [];
     }
 
+    /**
+     * The book, built once for the tables it is built from.
+     *
+     * Review 2026-11-17 (Befund 2): 65 callers built it anew, each over every lot and line. The tables are read once per service
+     * and never change, and neither does the book, so the same three tables give the same book.
+     */
     public function ledger(): Ledger
     {
-        return new Ledger($this->structure(), $this->table('lot'), $this->table('line'), $this->table('transaction'));
+        $lots         = $this->table('lot');
+        $lines        = $this->table('line');
+        $transactions = $this->table('transaction');
+        $key          = spl_object_id($lots) . '/' . spl_object_id($lines) . '/' . spl_object_id($transactions);
+
+        if ($this->ledger === null || $this->ledger[0] !== $key) {
+            $this->ledger = [$key, new Ledger($this->structure(), $lots, $lines, $transactions)];
+        }
+
+        return $this->ledger[1];
     }
 
     /**
@@ -2853,9 +2873,10 @@ final class StockService
     }
 
     /** D-1082: the places reserved for production, computed from the tree read once. */
+    /** Built once per service, like the place tree it rests on (review 2026-11-17, Befund 2: 24 callers). */
     public function reservedPlaces(): ReservedPlaces
     {
-        return ReservedPlaces::from($this->structure(), $this->table('location'), $this->locationTree());
+        return $this->reservedPlaces ??= ReservedPlaces::from($this->structure(), $this->table('location'), $this->locationTree());
     }
 
     /**

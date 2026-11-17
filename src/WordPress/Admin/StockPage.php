@@ -2,6 +2,7 @@
 
 namespace TaxmodStock\WordPress\Admin;
 
+use Taxmod\Core\Renderer\DecimalText;
 use Taxmod\Core\Listing\ListColumn;
 use Taxmod\Core\Listing\ListView;
 use Taxmod\Core\Listing\Wildcard;
@@ -1635,7 +1636,7 @@ final class StockPage
             . (count($merged) > 1 ? '<input type="hidden" name="lots" value="' . esc_attr(implode(',', array_map('intval', $merged))) . '">' : '')
             . '<input type="hidden" name="from" value="' . esc_attr((string) $from) . '">'
             . self::actForm([
-                ['label' => __('Menge', 'taxmod-stock'), 'control' => '<input type="text" inputmode="decimal" name="quantity" style="width:7em" value="' . esc_attr(str_replace(',', '.', rtrim(rtrim(number_format($quantity, 3, '.', ''), '0'), '.'))) . '">',
+                ['label' => __('Menge', 'taxmod-stock'), 'control' => '<input type="text" inputmode="decimal" name="quantity" style="width:7em" value="' . esc_attr(DecimalText::stored($quantity, 3)) . '">',
                     'hint' => __('Weniger als alles teilt den Posten auf zwei Orte.', 'taxmod-stock')],
                 ['label' => __('Nach', 'taxmod-stock'), 'control' => $this->stock->placeChooser('location', 0, '', [$from]),
                     'hint' => __('Bucht die Menge vom bisherigen Ort ab und am neuen zu, als Vorgang «Umbuchung»; «Stornieren» bei den Vorgängen nimmt es zurück.', 'taxmod-stock')],
@@ -1645,7 +1646,7 @@ final class StockPage
                     . ListPage::confirm(sprintf(
                         /* translators: 1: quantity at the source now */
                         __('Am alten Ort liegen von diesem Posten jetzt %1$s. Was nach dem Umbuchen dort übrig bleibt (%1$s minus Menge), wird per Inventur auf 0 ausgebucht. Ein Undo nimmt Umbuchung und Inventur zusammen zurück. Fortfahren?', 'taxmod-stock'),
-                        rtrim(rtrim(number_format($quantity, 3, ',', ''), '0'), ',')
+                        ListPage::number($quantity)
                     )) . '>' . esc_html__('Umbuchen, Quelle danach leer', 'taxmod-stock') . '</button>',
                     'hint' => __('Für «hier ist nichts mehr»: ein Rest am alten Ort wird nach Rückfrage per Inventur ausgebucht.', 'taxmod-stock')],
             ]);
@@ -4315,7 +4316,7 @@ final class StockPage
     /** A quantity as the forms take it: a dot, no trailing zeros. */
     private function plain(float $quantity): string
     {
-        return rtrim(rtrim(number_format($quantity, 3, '.', ''), '0'), '.');
+        return DecimalText::stored($quantity, 3);
     }
 
     /** D-1082: «reserviert für Produktion» at the place that carries the flag, «reserviert» at what lies below it. */
@@ -5053,7 +5054,7 @@ final class StockPage
 
     private function number(float $value): string
     {
-        return rtrim(rtrim(number_format($value, 3, ',', '.'), '0'), ',');
+        return ListPage::number($value);
     }
 
     /** D-1178, his word «3 Leisten + 12 Pins»: the stock in whole packs and the rest. */

@@ -123,7 +123,7 @@ final class MaterialPicker
         wp_send_json_success(array_map(static fn (int $place, float $quantity): array => [
             'place'    => $place,
             'path'     => (string) ($places[$place] ?? '#' . $place),
-            'quantity' => rtrim(rtrim(number_format($quantity, 3, ',', ''), '0'), ','),
+            'quantity' => ListPage::number($quantity),
         ] + ($cut ? ['strips' => $strips[$place] ?? 0] : []), array_keys($free), array_values($free)));
     }
 

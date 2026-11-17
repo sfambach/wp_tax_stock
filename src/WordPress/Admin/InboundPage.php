@@ -270,7 +270,7 @@ final class InboundPage
                 esc_html($order > 0 ? ($orders[$order] ?? '#' . $order) : '—'),
                 esc_html(substr((string) $table->first($lot, $s->field('lot_date')), 0, 10)),
                 esc_html(($at = (int) $table->first($lot, $s->field('lot_location'))) > 0 ? ($places[$at] ?? $this->inbound->stock()->locationTree()->pathOf($at)) : ''),
-                esc_html(rtrim(rtrim(number_format($ledger->restOf($lot), 3, ',', '.'), '0'), ',')),
+                esc_html(ListPage::number($ledger->restOf($lot))),
             ], '', $this->testForm($lot, $steps[$lot] ?? []), true);
         }
 

@@ -122,12 +122,12 @@ final class Plugin
 
     public function bootWhenModellerIsThere(): void
     {
-        // *The one door into the model and the shared confirm dialog (D-1186) came with the modeller 0.1.175; the Ausbuchen form needs the narrowed choosers of 0.2.64 (D-1298), every form the toolbar of 0.2.67 (D-1308), the view dialog of 0.2.68 and its script of 0.2.69 (D-1309; the 0.2.69 release still says 0.2.68 in its header, so the gate asks 0.2.68); ListPage::grid of 0.2.120 (D-1409); ListPage::number of 0.2.130 (D-1423); an older one is named
+        // *The one door into the model and the shared confirm dialog (D-1186) came with the modeller 0.1.175; the Ausbuchen form needs the narrowed choosers of 0.2.64 (D-1298), every form the toolbar of 0.2.67 (D-1308), the view dialog of 0.2.68 and its script of 0.2.69 (D-1309; the 0.2.69 release still says 0.2.68 in its header, so the gate asks 0.2.68); ListPage::grid of 0.2.120 (D-1409); ListPage::number of 0.2.130 (D-1423); ModelDoor::remembering of 0.2.132 (D-1186, G5); an older one is named
         // rather than failing on a page.*
         // Asked by version, not by loading the classes: method_exists() compiled the 43 KB list page on every page view (D-1187).
-        if (! class_exists(\Taxmod\WordPress\Plugin::class, false) || version_compare(\Taxmod\WordPress\Plugin::VERSION, '0.2.130', '<')) {
+        if (! class_exists(\Taxmod\WordPress\Plugin::class, false) || version_compare(\Taxmod\WordPress\Plugin::VERSION, '0.2.132', '<')) {
             add_action('admin_notices', static function (): void {
-                echo '<div class="notice notice-error"><p>' . esc_html__('Taxmod Stock braucht den aktiven Taxonomy Modeller ab 0.2.130.', 'taxmod-stock') . '</p></div>';
+                echo '<div class="notice notice-error"><p>' . esc_html__('Taxmod Stock braucht den aktiven Taxonomy Modeller ab 0.2.132.', 'taxmod-stock') . '</p></div>';
             });
 
             return;
@@ -1320,8 +1320,9 @@ final class Plugin
             // named with where it happened, never as an empty screen (D-1254).
             try {
                 // Review 2026-11-17 (E3): the modeller's read memory, as its node page has it (D-814) — the same statement asked twice
-                // while one page is drawn is answered once. Any write makes it forget, so nothing reads a stale state.
-                $out = \Taxmod\WordPress\Persistence\Query::remembering($render);
+                // while one page is drawn is answered once. Any write makes it forget, so nothing reads a stale state. Through the
+                // door, not the persistence layer (D-1186, design guard G5).
+                $out = \Taxmod\WordPress\ModelDoor::remembering($render);
             } catch (\Throwable $e) {
                 error_log('taxmod-stock ' . $slug . ': ' . $e::class . ': ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
                 $out = \Taxmod\WordPress\Admin\ListPage::page(__('Logistik', 'taxmod-stock'), [], [['html' => '<div class="notice notice-error"><p>' . esc_html(sprintf(

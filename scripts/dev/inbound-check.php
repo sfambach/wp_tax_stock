@@ -483,6 +483,9 @@ $stock->planPlaces([$r['kaufT'] => 0]);
 
 update_option(StockService::TESTS, ['place' => 999999999]);
 $pruefe((new StockService())->receiptLocations($plan)[$r['kaufT']] === $r['ortRegal'], 'a test place that is no place proposes nothing');
+// Grenzlauf 2026-11-17 (modeller D-1427, PR-9): since D-1187 the setting is registered only where it is written or read — options.php
+// or REST. The REST server is started first, so the write below goes through its sanitizer as it would there.
+rest_get_server();
 update_option(StockService::TESTS, ['branches' => [(string) $r['gk']], 'place' => (string) $r['ortTest']]);
 $rest = rest_do_request(new WP_REST_Request('GET', '/wp/v2/settings'))->get_data();
 $pruefe(get_option(StockService::TESTS) === ['place' => $r['ortTest']] && ($rest[StockService::TESTS] ?? null) === ['place' => $r['ortTest']], 'the option is cleaned on write and readable over REST (/wp/v2/settings)');

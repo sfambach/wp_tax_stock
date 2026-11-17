@@ -32,6 +32,24 @@ use TaxmodStock\WordPress\StockService;
 
 wp_set_current_user(1);
 
+// Grenzlauf 2026-11-17 (modeller D-1427): on a database without the owner's structure the check builds the small one stock-check uses.
+global $wpdb;
+$lagerKnoten = (int) ((get_option(StockService::OPTION, [])['nodes']['lager'] ?? 0));
+
+if ($lagerKnoten === 0 || (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}taxmod_nodes WHERE id = %d", $lagerKnoten)) === 0) {
+    $kind = 'aggregation';
+    require __DIR__ . '/lib/struktur.php';
+
+    // D-1185: a contact branch with two nodes, so the group Kontakte has items.
+    $kontaktAst = $apply([
+        ['op' => 'create_node', 'ref' => 'contact', 'name' => '__Kontakte', 'parent' => 402],
+        ['op' => 'create_node', 'name' => '__Firmen', 'parent' => '@contact'],
+        ['op' => 'create_node', 'name' => '__Personen', 'parent' => '@contact'],
+    ]);
+    $struktur['nodes']['contact'] = (int) $kontaktAst['refs']['contact'];
+    update_option(StockService::OPTION, $struktur);
+}
+
 $fehler = 0;
 $pruefe = static function (bool $gut, string $was) use (&$fehler): void {
     printf("  %s %s\n", $gut ? 'ok  ' : 'FAIL', $was);
@@ -87,7 +105,8 @@ $pruefe($outside === [], 'no item leaves the logistics navigation' . ($outside =
 $settingsAll = array_values(array_filter($navigation->areas(), static fn (array $area): bool => $area['key'] === 'settings'))[0]['items'] ?? [];
 // D-1193: the contact group stands in Einstellungen too; the module checks below look at the rest.
 $settings    = array_values(array_filter($settingsAll, static fn (array $item): bool => ! str_starts_with((string) $item['key'], 'contact')));
-$pruefe(array_slice(array_column($settings, 'key'), 0, 4) === ['basics', 'structure', 'place-types', 'module-__navcheck-dhl'] && array_filter(array_slice(array_column($settings, 'key'), 4), static fn (string $key): bool => ! str_starts_with($key, 'module-') && $key !== 'label-templates') === [], 'Einstellungen: Grundeinstellungen, Lagerstruktur › Layout and Platzarten (D-1129), then the module (' . implode(', ', array_column($settings, 'key')) . ')');
+// Grenzlauf 2026-11-17 (modeller D-1427, PR-9): «Drucker» (D-1192) and «Benutzereinstellungen» (D-1232) stand there since; the list names them.
+$pruefe(array_slice(array_column($settings, 'key'), 0, 4) === ['basics', 'structure', 'place-types', 'module-__navcheck-dhl'] && array_filter(array_slice(array_column($settings, 'key'), 4), static fn (string $key): bool => ! str_starts_with($key, 'module-') && ! in_array($key, ['label-templates', 'printers', 'user'], true)) === [], 'Einstellungen: Grundeinstellungen, Lagerstruktur › Layout and Platzarten (D-1129), then the module (' . implode(', ', array_column($settings, 'key')) . ')');
 $pruefe(($settings[1]['path'] ?? []) === ['Lagerstruktur'] && ($settings[2]['path'] ?? []) === ['Lagerstruktur'] && ($settings[2]['tab'] ?? '') === 'platzarten', 'Layout and Platzarten stand in the group «Lagerstruktur»');
 $pruefe(($settings[0]['page'] ?? '') === SettingsPage::PAGE, 'Grundeinstellungen is a page of the stock interface, not the modeller\'s Configuration');
 $pruefe(($settings[3]['label'] ?? '') === 'DHL 2', 'the module keeps its menu label, without markup');

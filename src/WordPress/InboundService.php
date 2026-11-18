@@ -155,6 +155,23 @@ final class InboundService
         return PlatformLink::filled($this->templates($order)['order'], (string) ($table->first($order, $fields['order_number']) ?? ''));
     }
 
+    /**
+     * D-1448: where an order was placed and under which number, with the link to it at the platform (null without template) —
+     * read from the order table already in memory, no query per order.
+     *
+     * @return array{platform: string, number: string, link: ?string}
+     */
+    public function orderFacts(int $order): array
+    {
+        $table = $this->stock->table('order');
+
+        return [
+            'platform' => trim((string) ($table->first($order, $this->fields()['platform']) ?? '')),
+            'number'   => trim((string) ($table->first($order, $this->fields()['order_number']) ?? '')),
+            'link'     => $this->orderLink($order),
+        ];
+    }
+
     /** D-1249: the link to a purchase's product at the order's platform, from its article number; null without template or number. */
     public function productLink(int $order, string $articleNumber): ?string
     {

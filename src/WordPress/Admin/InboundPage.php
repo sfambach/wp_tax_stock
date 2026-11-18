@@ -382,11 +382,19 @@ final class InboundPage
     }
 
     /** D-1440: an order's line above its purchases on «Angekommen» — its name opens its own view with its acts. */
-    /** D-1448: the order in a purchase's row on «Angekommen» — its name and day of arrival, no link into an order view (escaped). */
+    /**
+     * D-1448, his word 2026-11-18 17:57 «bei Bestellungen würde reichen, wo bestellt und die Sendungsnummer … Absprungpunkt
+     * zur Amazon … maximal 2 Zeilen»: platform and number, the number linking to the order at the platform, then the tracking
+     * numbers. Without platform and number the order's label stands (escaped).
+     */
     private function orderCell(InboundOrder $order, string $label): string
     {
-        return esc_html($label) . (($order->receivedOn ?? '') === '' ? ''
-            : '<br><span class="description">' . esc_html(sprintf(/* translators: %s: date */ __('angekommen %s', 'taxmod-stock'), substr((string) $order->receivedOn, 0, 10))) . '</span>');
+        $facts  = $this->inbound->orderFacts($order->id);
+        $number = $facts['number'] === '' ? '' : ($facts['link'] === null ? esc_html($facts['number'])
+            : '<a href="' . esc_url($facts['link']) . '" target="_blank" rel="noopener">' . esc_html($facts['number']) . '</a>');
+        $first  = $facts['platform'] === '' && $number === '' ? esc_html($label) : implode(' · ', array_filter([esc_html($facts['platform']), $number]));
+
+        return $first . ($order->tracking === [] ? '' : '<br><span class="description">' . esc_html(implode(', ', $order->tracking)) . '</span>');
     }
 
     private function orderLine(InboundOrder $order, string $label, string $today, string $tab): string

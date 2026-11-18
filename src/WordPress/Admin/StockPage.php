@@ -2492,6 +2492,19 @@ final class StockPage
         return defined(ListPage::class . '::' . $constant) ? (string) constant(ListPage::class . '::' . $constant) : '';
     }
 
+    /** D-1451: a button of its own drawn as the modeller's icon with the word as tooltip, or the word where the icon is missing. */
+    private function iconOrWord(string $constant, string $word): string
+    {
+        $icon = self::icon($constant);
+
+        return $icon === '' ? esc_html($word) : ListPage::icon($icon, $word);
+    }
+
+    private function iconClass(string $constant): string
+    {
+        return self::icon($constant) === '' ? '' : ' taxmod-icon-button';
+    }
+
     /** @var array{quantity: string, kind: string}|null the consumption controls, drawn once for all «Ausbuchen» dialogs of a page */
     private ?array $bookOutControls = null;
 
@@ -3176,11 +3189,13 @@ final class StockPage
     /** With `$withOrder` (D-1448, «Angekommen» over all orders) the first column names each row's order. */
     private function receiptHead(bool $withOrder = false): string
     {
-        $wide = $withOrder ? '22%' : '28%';
+        // D-1448, his word 2026-11-18 17:57: «Material ist ja jetzt relativ breit … könnte ja auch ruhig umbrechen» — the purchase gets the room.
+        $buy  = $withOrder ? '30%' : '34%';
+        $wide = $withOrder ? '18%' : '22%';
 
         return '<tr><td class="manage-column column-cb check-column"><input type="checkbox" aria-label="' . esc_attr__('Alle wählen', 'taxmod-stock') . '"></td>'
-            . ($withOrder ? '<th scope="col" class="manage-column" style="width:16%">' . esc_html__('Bestellung', 'taxmod-stock') . '</th>' : '')
-            . '<th scope="col" class="manage-column" style="width:' . $wide . '">' . esc_html__('Kauf', 'taxmod-stock') . '</th><th scope="col" class="manage-column" style="width:' . $wide . '">' . esc_html__('Material', 'taxmod-stock')
+            . ($withOrder ? '<th scope="col" class="manage-column" style="width:14%">' . esc_html__('Bestellung', 'taxmod-stock') . '</th>' : '')
+            . '<th scope="col" class="manage-column" style="width:' . $buy . '">' . esc_html__('Kauf', 'taxmod-stock') . '</th><th scope="col" class="manage-column taxmod-stock-receipt-material" style="width:' . $wide . '">' . esc_html__('Material', 'taxmod-stock')
             . '</th><th scope="col" class="manage-column" style="width:6em">' . esc_html__('Menge', 'taxmod-stock') . '</th><th scope="col" class="manage-column">' . esc_html__('Lagerort', 'taxmod-stock') . '</th>'
             // His word 2026-11-01: «buttons immer nach rechts».
             . '<th scope="col" class="manage-column" style="width:10em;text-align:right">' . esc_html__('Aktionen', 'taxmod-stock') . '</th></tr>';
@@ -3237,7 +3252,8 @@ final class StockPage
         $models   = $look['models'];
         $quantity = (string) $look['bought']->first($purchase, $look['amount']);
         // His finding 2026-11-18 17:35 «machen wir jetzt button gößen bingo»: one size, one per line, right-aligned.
-        $actions  = static fn (string $buttons): string => '<td><span class="taxmod-stock-row-actions" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">' . $buttons . '</span></td>';
+        // D-1451, his word 17:57 «Icons … für Einlagern, Material, nicht einlagern … 3 Quadrate»: equal squares in one line, the word as tooltip.
+        $actions  = static fn (string $buttons): string => '<td><span class="taxmod-stock-row-actions" style="display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px">' . $buttons . '</span></td>';
         // The row's choosers name their form, so they can share their tree with the other rows ({@see StockService::sharedTrees()}).
         $formId   = self::receiptFormId($multi ? 0 : $order);
         $html     = '<tr id="taxmod-stock-purchase-' . esc_attr((string) $purchase) . '"' . ($multi ? ' data-order="' . esc_attr((string) $order) . '"' : '') . '><th scope="row" class="check-column"><input type="checkbox" name="purchases[]" value="' . esc_attr((string) $purchase) . '"'
@@ -3273,12 +3289,12 @@ final class StockPage
         $proposed = (int) ($look['where'][$purchase] ?? 0);
         // His finding 2026-11-18 17:19: «Einlagern» per row in the order's own view too, not only in the overview; never while assigning («Versendet»).
         $store    = $assign ? '' : ($look['arrival'] > 0 || $proposed > 0
-            ? '<button type="submit" class="button button-primary" name="booking" value="positioneinlagern-' . esc_attr((string) $purchase) . '">' . esc_html__('Einlagern', 'taxmod-stock') . '</button> '
-            : '<button type="button" class="button" disabled title="' . esc_attr__('Ohne Lagerort braucht «Einlagern» den «Lagerort Wareneingang» in den Einstellungen.', 'taxmod-stock') . '">' . esc_html__('Einlagern', 'taxmod-stock') . '</button> ');
+            ? '<button type="submit" class="button button-primary' . $this->iconClass('ICON_STORE') . '" name="booking" value="positioneinlagern-' . esc_attr((string) $purchase) . '">' . $this->iconOrWord('ICON_STORE', __('Einlagern', 'taxmod-stock')) . '</button> '
+            : '<button type="button" class="button' . $this->iconClass('ICON_STORE') . '" disabled title="' . esc_attr__('Ohne Lagerort braucht «Einlagern» den «Lagerort Wareneingang» in den Einstellungen.', 'taxmod-stock') . '">' . $this->iconOrWord('ICON_STORE', __('Einlagern', 'taxmod-stock')) . '</button> ');
 
         // The modeller's own record chooser on the purchase's «Modell» (his word 2026-10-28: «eigentlich haben wir doch den tax chooser»).
         return $html . '<td><input type="hidden" name="model[' . esc_attr((string) $purchase) . ']" value="' . esc_attr((string) ($model ?? '')) . '">'
-            . $this->recordPicker('thing[' . $purchase . ']', $model, $model === null ? '' : ($models[$model] ?? '#' . $model), $purchase) . '</td>'
+            . $this->recordPicker('thing[' . $purchase . ']', $model, $model === null ? '' : ($models[$model] ?? '#' . $model), $purchase, '', true) . '</td>'
             // His wish 2026-11-05: «Menge 1, geliefert wurden 40» — the quantity is corrected here, not in the purchase.
             . '<td><input type="number" min="1" step="1" style="width:5em" name="quantity[' . esc_attr((string) $purchase) . ']" value="' . esc_attr($quantity) . '"></td>'
             // The place the server proposed, so the page can tell it from one he chose in the row (D-1361).
@@ -4780,7 +4796,7 @@ final class StockPage
      *
      * @param int|null $purchase D-1111: the receipt row whose «Material» dialog the chosen word opens; null: a plain word
      */
-    private function recordPicker(string $name, ?int $value, string $word, ?int $purchase = null, string $placeholder = ''): string
+    private function recordPicker(string $name, ?int $value, string $word, ?int $purchase = null, string $placeholder = '', bool $wrap = false): string
     {
         $radio = static fn (string $choice, bool $on): string => '<label class="taxmod-record-choice"><input type="radio" name="' . esc_attr($name) . '" value="' . esc_attr($choice) . '"'
             . ($on ? ' checked' : '') . '></label>';
@@ -4788,7 +4804,7 @@ final class StockPage
         $clear = __('Zurücksetzen', 'taxmod-stock');
         $tree  = __('Im Baum wählen', 'taxmod-stock');
 
-        return '<span class="taxmod-record-pick taxmod-record-remote' . ($none ? '' : ' taxmod-record-taken') . '">'
+        return '<span class="taxmod-record-pick taxmod-record-remote' . ($none ? '' : ' taxmod-record-taken') . ($wrap ? ' taxmod-record-wrap' : '') . '">'
             . '<span class="taxmod-record-choices" hidden>' . $radio('', $none) . ($none ? '' : $radio((string) $value, true)) . '</span>'
             . '<input type="search" class="taxmod-record-quick" autocomplete="off" placeholder="' . esc_attr($placeholder === '' ? __('Material suchen …', 'taxmod-stock') : $placeholder) . '"' . ($none ? '' : ' hidden') . '>'
             . '<button type="button" class="button taxmod-icon-button taxmod-record-browse"' . ($none ? '' : ' hidden') . ' title="' . esc_attr($tree) . '">'
@@ -5008,9 +5024,9 @@ final class StockPage
     {
         // His answer 2026-11-01 (screenshot of the stock material page): the stock's own material view, not the modeller's.
         // D-1309: in the modeller's one view dialog (S14) — the frame loads when it opens, «Open fully» in a new tab.
-        // The modeller draws a text opener as a link; in the row's actions it stands as a button like the others (his finding 2026-11-18).
-        return str_replace('class="taxmod-dialog-open taxmod-view-dialog-open"', 'class="button taxmod-dialog-open taxmod-view-dialog-open"',
-            ListPage::viewDialog('taxmod-stock-material-' . $purchase, __('Material', 'taxmod-stock'), sprintf(__('Material bearbeiten: %s', 'taxmod-stock'), $name === '' ? '#' . $thing : $name), self::thingUrl($thing, 'daten')));
+        // D-1451: drawn as the icon square; on a modeller without the icon a button with the word (his finding 2026-11-18).
+        return ListPage::viewDialog('taxmod-stock-material-' . $purchase, __('Material', 'taxmod-stock'), sprintf(__('Material bearbeiten: %s', 'taxmod-stock'), $name === '' ? '#' . $thing : $name),
+            self::thingUrl($thing, 'daten'), self::icon('ICON_EDIT'), true);
     }
 
     /**
@@ -5028,7 +5044,7 @@ final class StockPage
             // D-1255: the manufacturer goes into the new material, through the modeller's own control.
             $maker === '' ? [] : [['label' => __('Hersteller', 'taxmod-stock'), 'control' => $maker]]));
 
-        return ListPage::dialogAction('taxmod-stock-new-' . $purchase, __('Neues Material', 'taxmod-stock'), __('Neues Material anlegen', 'taxmod-stock'), $field, 'booking', 'zuordnen', __('Anlegen', 'taxmod-stock')) . ' ';
+        return ListPage::dialogAction('taxmod-stock-new-' . $purchase, __('Neues Material', 'taxmod-stock'), __('Neues Material anlegen', 'taxmod-stock'), $field, 'booking', 'zuordnen', __('Anlegen', 'taxmod-stock'), '', self::icon('ICON_NEW')) . ' ';
     }
 
     /**
@@ -5074,7 +5090,7 @@ final class StockPage
         $action = 'nichteinlagern-' . $id;
 
         // D-1063: the reason is asked in the one dialog every list uses.
-        return ListPage::dialogAction('taxmod-stock-close-' . $id, __('Nicht einlagern', 'taxmod-stock'), __('Ohne Lager abschließen', 'taxmod-stock'), $field, 'booking', $action, __('Nicht einlagern', 'taxmod-stock'));
+        return ListPage::dialogAction('taxmod-stock-close-' . $id, __('Nicht einlagern', 'taxmod-stock'), __('Ohne Lager abschließen', 'taxmod-stock'), $field, 'booking', $action, __('Nicht einlagern', 'taxmod-stock'), '', self::icon('ICON_NOT_STORED'));
     }
 
     private function formStart(string $booking): string

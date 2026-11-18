@@ -391,7 +391,11 @@ $pruefe(str_contains($hier, 'value="' . $r['kaufP1'] . '" checked') && ! str_con
     'D-1411: «Angekommen» shows the arrived purchase ticked, «Versendet» the other one alone');
 $pruefe(str_contains($hier, 'value="ask:taxmod-stock-book-' . $r['o10'] . '"') && ! str_contains($hier, '>Wareneingang buchen</button>') && str_contains($hier, 'value="nichtangekommen"'),
     'D-1411: «Wareneingang buchen …» and «Nicht angekommen …» are choices of the bulk bar for the ticked purchases');
-$pruefe(str_contains($hier, '>Einlagern</button>') && ! str_contains($weg, '>Einlagern</button>'), 'his finding 2026-11-18 17:19: «Einlagern» per row in the order view under «Angekommen», none while assigning under «Versendet»');
+$einlagern = static fn (string $html): bool => preg_match('#(>Einlagern</button>|<span class="screen-reader-text">Einlagern</span></button>)#', $html) === 1;
+$pruefe($einlagern($hier) && ! $einlagern($weg), 'his finding 2026-11-18 17:19: «Einlagern» per row in the order view under «Angekommen», none while assigning under «Versendet»');
+// D-1451: the row acts of the receipt are icon squares with the word as tooltip, the material's name wraps (D-1448, 17:57).
+$pruefe(! defined(\Taxmod\WordPress\Admin\ListPage::class . '::ICON_STORE') || (str_contains($hier, 'taxmod-icon-button') && str_contains($hier, 'title="Einlagern"')), 'D-1451: «Einlagern» is the modeller\'s icon square, the word its tooltip');
+$pruefe(str_contains($hier, 'taxmod-record-wrap'), 'D-1448, his word 17:57 «Material … könnte ja auch ruhig umbrechen»: the receipt\'s material chooser wraps its name');
 $pruefe(str_contains($hier, 'thing[' . $r['kaufP1'] . ']" value="' . $r['kabel'] . '" checked'), 'his report 2026-11-16: the material chosen on its way stands chosen at the receipt');
 foreach (['shipped', 'arrived'] as $reiter) {
     $_GET = ['page' => InboundPage::PAGE, 'tab' => $reiter];

@@ -2989,9 +2989,9 @@ final class StockPage
             $asks['taxmod-stock-arrive-' . $order] = $ask('taxmod-stock-arrive-' . $order, __('Angekommen …', 'taxmod-stock'), __('Angehakte Käufe angekommen', 'taxmod-stock'),
                 '<p>' . esc_html__('Die Zuordnung wird gespeichert, und genau die angehakten Käufe stehen danach unter «Angekommen»; die anderen bleiben, wo sie sind.', 'taxmod-stock') . '</p>', 'angekommen', __('Angekommen', 'taxmod-stock'));
         } else {
-            // D-1411: a purchase ticked as arrived by mistake steps back; the others stay.
-            $asks['taxmod-stock-notarrived-' . $order] = $ask('taxmod-stock-notarrived-' . $order, __('Nicht angekommen …', 'taxmod-stock'), __('Angehakte sind noch nicht da', 'taxmod-stock'),
-                '<p>' . esc_html__('Die angehakten Käufe gehen zurück unter «Versendet» bzw. «Bestellt»; die anderen bleiben unter «Angekommen».', 'taxmod-stock') . '</p>', 'nichtangekommen', __('Nicht angekommen', 'taxmod-stock'));
+            // D-1411: a purchase ticked as arrived by mistake steps back; the others stay. His word 2026-11-18 17:13: the choice says where it goes.
+            $asks['taxmod-stock-notarrived-' . $order] = $ask('taxmod-stock-notarrived-' . $order, __('Auf «Versendet» zurückstellen …', 'taxmod-stock'), __('Angehakte Käufe auf «Versendet» zurückstellen', 'taxmod-stock'),
+                '<p>' . esc_html__('Die angehakten Käufe gehen zurück unter «Versendet» bzw. «Bestellt»; die anderen bleiben unter «Angekommen».', 'taxmod-stock') . '</p>', 'nichtangekommen', __('Zurückstellen', 'taxmod-stock'));
         }
 
         if ($canClose) {

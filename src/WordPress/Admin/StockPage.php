@@ -966,7 +966,7 @@ final class StockPage
      */
     private static function copiesInput(string $formId, string $emptyMeans, ?int $value = null): string
     {
-        $input = \Taxmod\Core\Renderer\DialogNumber::input('copies', $value, 1, 50, $formId);
+        $input = \Taxmod\WordPress\Draw\DialogNumber::input('copies', $value, 1, 50, $formId);
 
         return $input . ' <span class="description">' . esc_html($emptyMeans) . '</span>';
     }

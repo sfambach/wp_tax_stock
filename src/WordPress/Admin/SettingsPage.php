@@ -116,7 +116,6 @@ final class SettingsPage
     {
         $views  = (new StockService())->viewSettings();
         $titles = [
-            'wareneingang' => [__('Wareneingang', 'taxmod-stock'), __('Unter jeder Bestellung stehen ihre Käufe gleich offen da, ohne Klick. Sie laden, sobald sie ins Bild scrollen.', 'taxmod-stock')],
             'material'     => [__('Material', 'taxmod-stock'), __('Unter jedem Material stehen seine Bestandsposten (Datum, Rest, Preis, Lagerort) gleich offen da.', 'taxmod-stock')],
         ];
         $html   = '<h2>' . esc_html__('Ansicht der Reiter', 'taxmod-stock') . '</h2>'
@@ -188,6 +187,9 @@ final class SettingsPage
             // D-1111: an ordinary place the setting names, never a name in code.
             . '<p><label>' . esc_html__('Lagerort für Test', 'taxmod-stock') . ' ' . $stock->placeChooser('taxmod_stock_test_place', (int) $settings->place) . '</label> '
             . '<span class="description">' . esc_html__('Der Wareneingang schlägt diesen Ort für Gebrauchtware aus diesen Gruppen vor (nicht für Neuware); leer: der übliche Vorschlag.', 'taxmod-stock') . '</span></p>'
+            // D-1440: where «Einlagern» puts a purchase without a place.
+            . '<p><label>' . esc_html__('Lagerort Wareneingang', 'taxmod-stock') . ' ' . $stock->placeChooser('taxmod_stock_receipt_inbound', $stock->receiptInbound()) . '</label> '
+            . '<span class="description">' . esc_html__('Hierhin legt «Einlagern» einen Kauf ohne Lagerort; von dort geht er per Umbuchen an seinen Platz. Leer: «Einlagern» braucht einen Lagerort in der Zeile.', 'taxmod-stock') . '</span></p>'
             // D-1303: where finished boards come in, an ordinary place the setting names.
             . '<p><label>' . esc_html__('Lagerort Wareneingang Produktion', 'taxmod-stock') . ' ' . $stock->placeChooser('taxmod_stock_production_inbound', $stock->productionInbound()) . '</label> '
             . '<span class="description">' . esc_html__('Hier kommen fertige Platinen aus der Fertigung an.', 'taxmod-stock') . '</span></p>'
@@ -239,6 +241,15 @@ final class SettingsPage
             }
 
             update_option(StockService::PRODUCTION_INBOUND, $inbound, false);
+            $arrival = absint($post['taxmod_stock_receipt_inbound'] ?? 0);
+
+            try {
+                $arrival = isset((new StockService())->places()[$arrival]) ? $arrival : 0;
+            } catch (StockError) {
+                $arrival = 0;
+            }
+
+            update_option(StockService::RECEIPT_INBOUND, $arrival, false);
             $since = sanitize_text_field((string) ($post['taxmod_stock_inbound_since'] ?? ''));
 
             if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $since) === 1) {

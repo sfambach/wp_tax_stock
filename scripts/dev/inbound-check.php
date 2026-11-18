@@ -470,8 +470,8 @@ $pruefe(str_contains($settings->render(), 'value="' . $r['ortTest'] . '" selecte
 $stock = new StockService();
 $pruefe($stock->receiptLocations($plan) === [$r['kaufT'] => $r['ortTest'], $r['kaufU'] => $r['ortRegal']], 'the used purchase of the tested group is proposed for the test place, the other keeps its proposal');
 
-$_GET = ['page' => \TaxmodStock\WordPress\Admin\StockPage::PAGE, 'tab' => 'wareneingang', 'order' => $r['o9']];
-$html = (new \TaxmodStock\WordPress\Admin\StockPage())->render();
+// D-1440: the receipt is the one table of «Angekommen».
+$html = (new \TaxmodStock\WordPress\Admin\StockPage())->receiptTable([$r['o9'] => 'o9'], InboundPage::BACK, '');
 $pruefe(preg_match('/name="location\[' . $r['kaufT'] . '\]">(.*?)<\/select>/s', $html, $select) === 1
     && str_contains($select[1], 'value="' . $r['ortTest'] . '" selected') && str_contains($select[1], 'value="' . $r['ortRegal'] . '"'), 'the Einlagern row preselects the test place and still offers the others');
 $pruefe(str_contains($html, 'id="taxmod-stock-material-' . $r['kaufT'] . '"')

@@ -83,7 +83,7 @@ final class LogisticsShell
                 $item('awaited', __('Bestellt', 'taxmod-stock'), Pages::INBOUND, 'ordered'),
                 $item('on-the-way', __('Versendet', 'taxmod-stock'), Pages::INBOUND, 'shipped'),
                 $item('arrived', __('Angekommen', 'taxmod-stock'), Pages::INBOUND, 'arrived'),
-                $item('book', __('Einbuchen', 'taxmod-stock'), Pages::STOCK, 'wareneingang'),
+                // D-1440, his word 2026-11-18 11:36: «einbuchen … sollte das Teil des angekommenen Bildschirms sein» — no item of its own.
                 $item('booked', __('Eingebucht', 'taxmod-stock'), Pages::INBOUND, 'booked'),
                 $item('test', __('Zu testen', 'taxmod-stock'), Pages::INBOUND, 'test'),
                 $item('archive', __('Archiv', 'taxmod-stock'), Pages::INBOUND, 'archived'),

@@ -2341,6 +2341,12 @@ final class StockPage
         return defined(ListPage::class . '::' . $constant) ? (string) constant(ListPage::class . '::' . $constant) : '';
     }
 
+    /** @var array{quantity: string, kind: string}|null the consumption controls, drawn once for all «Ausbuchen» dialogs of a page */
+    private ?array $bookOutControls = null;
+
+    /** @var array<string, array<int, string>>|null the purposes, read once for all «Ausbuchen» forms of a page */
+    private ?array $purposes = null;
+
     /** @var array{name: array<int, string>, unit: array<int, string>, pack: array<int, bool>} what the row dialogs need per material */
     private array $rowFacts = ['name' => [], 'unit' => [], 'pack' => []];
 
@@ -2394,7 +2400,8 @@ final class StockPage
 
         $switch   = 'taxmod-stock-bookout-' . $lot . '-' . $place;
         $form     = $switch . '-form';
-        $controls = $this->stock->consumptionControls($form);
+        // CD-7: the modeller's controls are drawn once per page; they stand inside the row's form, so they need no form id.
+        $controls = $this->bookOutControls ??= $this->stock->consumptionControls();
         $unit     = $this->rowFacts['unit'][$thing];
         $rows     = [
             ['label' => __('Menge', 'taxmod-stock'), 'control' => ($controls['quantity'] !== '' ? $controls['quantity']
@@ -4626,19 +4633,19 @@ final class StockPage
      */
     private function purposeRow(int $place, string $idSuffix = ''): array
     {
-        $id       = 'taxmod-stock-consumption-purpose' . ($idSuffix === '' ? '' : '-' . $idSuffix);
+        $field    = 'taxmod-stock-consumption-purpose' . ($idSuffix === '' ? '' : '-' . $idSuffix);
         $preset   = $this->stock->purposeAt($place);
         $selected = $preset === null ? '' : ($preset->production ? 'produktion' : (string) $preset->subject);
         $choices  = ['produktion' => __('für Produktion (ohne Projekt)', 'taxmod-stock')];
 
-        foreach ($this->stock->purposes() as $group => $records) {
+        foreach ($this->purposes ??= $this->stock->purposes() as $group => $records) {
             foreach ($records as $id => $label) {
                 $choices[$id] = $group . ' · ' . $label;
             }
         }
 
-        return ['label' => __('Bezug', 'taxmod-stock'), 'for' => $id,
-            'control' => SelectMarkup::of('purpose', $choices, $selected, attributes: ['id' => $id], nothingWord: __('— kein Bezug —', 'taxmod-stock')),
+        return ['label' => __('Bezug', 'taxmod-stock'), 'for' => $field,
+            'control' => SelectMarkup::of('purpose', $choices, $selected, attributes: ['id' => $field], nothingWord: __('— kein Bezug —', 'taxmod-stock')),
             'hint' => __('Reservierte Ware darf nur für genau ihren Bezug verbraucht werden; der Verbrauch mindert dann die offene Reservierung. Für jeden anderen Zweck erst aus dem reservierten Bereich umbuchen.', 'taxmod-stock')];
     }
 

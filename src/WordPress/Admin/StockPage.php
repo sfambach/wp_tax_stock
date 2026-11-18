@@ -3186,7 +3186,6 @@ final class StockPage
 
         foreach (array_keys($heads) as $order) {
             foreach ($plans[$order] as $purchase => $row) {
-
                 $html .= $this->receiptRow($order, (int) $purchase, $row, $look, false, [], $back, true);
             }
         }

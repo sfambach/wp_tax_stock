@@ -2185,7 +2185,20 @@ final class StockPage
             . ($this->stock->structure()->hasField('transaction_deadline') ? '<label style="display:block;margin-top:.5em">' . esc_html__('Frist (optional)', 'taxmod-stock') . '<br><input type="date" name="deadline"></label>' : '')
             . '<p class="description">' . esc_html__('Senkt den verfügbaren Bestand, nicht den Bestand. Hat der Bezug schon eine offene Reservierung, kommt die Position dorthin.', 'taxmod-stock') . '</p>';
 
-        return $this->dialogForm(ListPage::dialogAction($id, $subject > 0 ? __('Position hinzufügen', 'taxmod-stock') : __('Reservieren', 'taxmod-stock'), __('Reservieren', 'taxmod-stock'), $body, 'booking', 'reservieren', __('Reservieren', 'taxmod-stock')));
+        return $this->dialogForm(ListPage::dialogAction($id, $subject > 0 ? __('Position hinzufügen', 'taxmod-stock') : __('Reservieren', 'taxmod-stock'), $this->reserveTitle($thing), $body, 'booking', 'reservieren', __('Reservieren', 'taxmod-stock')));
+    }
+
+    /** D-1436: the reservation dialog names its material when it has one, otherwise what it reserves. */
+    private function reserveTitle(int $thing): string
+    {
+        if ($thing <= 0) {
+            return __('Material reservieren', 'taxmod-stock');
+        }
+
+        $this->prefetchRowFacts([$thing]);
+        $name = $this->rowFacts['name'][$thing];
+
+        return sprintf(__('Reservieren: %s', 'taxmod-stock'), $name === '' ? '#' . $thing : $name);
     }
 
     /** D-1036: the Storno of a reservation, whole or one position, asked in the shared dialog. */
@@ -3240,7 +3253,7 @@ final class StockPage
             return $html . '<td>' . ($model === null ? esc_html('—') : $this->materialLink($purchase, $model, '#' . $model . ' · ' . ($models[$model] ?? ''))) . '</td>'
                 . '<td>' . esc_html($quantity) . '</td>'
                 . '<td>' . ($lock === 'not_stocked' ? esc_html($this->stock->notStockedReason($purchase)) : esc_html(implode(', ', $look['lying'][$purchase] ?? []))) . '</td>'
-                . $actions(($model === null ? '' : $this->materialDialog($purchase, $model)) . $split . ' ' . $again) . '</tr>';
+                . $actions(($model === null ? '' : $this->materialDialog($purchase, $model, (string) ($models[$model] ?? ''))) . $split . ' ' . $again) . '</tr>';
         }
 
         // D-1440, his word 2026-11-18 11:33: «Und hier müsst ihr dann einen Einlagern geben. Und wenn kein Lagerort angegeben ist,
@@ -3257,7 +3270,7 @@ final class StockPage
             . '<td><input type="number" min="1" step="1" style="width:5em" name="quantity[' . esc_attr((string) $purchase) . ']" value="' . esc_attr($quantity) . '"></td>'
             // The place the server proposed, so the page can tell it from one he chose in the row (D-1361).
             . '<td class="taxmod-stock-receipt-place" data-drawn="' . esc_attr((string) $proposed) . '">' . $this->stock->placeChooser('location[' . $purchase . ']', $proposed, '', [], $model === null ? [] : ($look['preferred'][$model] ?? [])) . '</td>'
-            . $actions($store . ($model === null ? $this->newThingDialog($purchase) : $this->materialDialog($purchase, $model)) . ($look['closing'] ? $this->closeControls($purchase) : '')
+            . $actions($store . ($model === null ? $this->newThingDialog($purchase) : $this->materialDialog($purchase, $model, (string) ($models[$model] ?? ''))) . ($look['closing'] ? $this->closeControls($purchase) : '')
                 . (isset($look['takable'][$purchase]) ? '<button type="submit" class="button" name="booking" value="bilduebernehmen-' . esc_attr((string) $purchase) . '">' . esc_html__('Bild übernehmen', 'taxmod-stock') . '</button>' : '')) . '</tr>';
     }
 
@@ -4304,10 +4317,10 @@ final class StockPage
 
         return '<style>.taxmod-stock-drop-dialogs .taxmod-dialog-open{display:none}.taxmod-stock-place-actions form{display:inline}</style><div class="taxmod-stock-drop-dialogs">'
             . $this->formStart('lagerstruktur') . $this->returnFields($tab, $place)
-            . ListPage::dialogAction('taxmod-stock-drop-place', __('Verschieben', 'taxmod-stock'), __('Verschieben', 'taxmod-stock'), $hangBody, 'booking', 'umhaengen-0', __('Verschieben', 'taxmod-stock'))
+            . ListPage::dialogAction('taxmod-stock-drop-place', __('Verschieben', 'taxmod-stock'), __('Lagerort verschieben', 'taxmod-stock'), $hangBody, 'booking', 'umhaengen-0', __('Verschieben', 'taxmod-stock'))
             . '</form>'
             . $this->formStart('umbuchen') . $this->returnFields($tab, $place)
-            . ListPage::dialogAction('taxmod-stock-drop-lot', __('Umbuchen', 'taxmod-stock'), __('Umbuchen', 'taxmod-stock'), $lotBody, 'booking', 'umbuchen', __('Umbuchen', 'taxmod-stock'))
+            . ListPage::dialogAction('taxmod-stock-drop-lot', __('Umbuchen', 'taxmod-stock'), __('Bestandsposten umbuchen', 'taxmod-stock'), $lotBody, 'booking', 'umbuchen', __('Umbuchen', 'taxmod-stock'))
             . '</form>'
             // D-1095: «davor»/«danach» reorders at once — it moves nothing and is undone by dragging back.
             . str_replace('<form ', '<form class="taxmod-stock-rank-form" ', $this->formStart('reihenfolge')) . $this->returnFields($tab, $place)
@@ -4969,13 +4982,13 @@ final class StockPage
      * filled where materials are filled (his word 2026-11-01: «im grunde müssten wir doch im dialog einfach nur die material
      * ansicht zeigen»). The frame loads when the dialog opens.
      */
-    private function materialDialog(int $purchase, int $thing): string
+    private function materialDialog(int $purchase, int $thing, string $name): string
     {
         // His answer 2026-11-01 (screenshot of the stock material page): the stock's own material view, not the modeller's.
         // D-1309: in the modeller's one view dialog (S14) — the frame loads when it opens, «Open fully» in a new tab.
         // The modeller draws a text opener as a link; in the row's actions it stands as a button like the others (his finding 2026-11-18).
         return str_replace('class="taxmod-dialog-open taxmod-view-dialog-open"', 'class="button taxmod-dialog-open taxmod-view-dialog-open"',
-            ListPage::viewDialog('taxmod-stock-material-' . $purchase, __('Material', 'taxmod-stock'), __('Material', 'taxmod-stock'), self::thingUrl($thing, 'daten')));
+            ListPage::viewDialog('taxmod-stock-material-' . $purchase, __('Material', 'taxmod-stock'), sprintf(__('Material bearbeiten: %s', 'taxmod-stock'), $name === '' ? '#' . $thing : $name), self::thingUrl($thing, 'daten')));
     }
 
     /**

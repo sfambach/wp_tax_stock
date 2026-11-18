@@ -1585,6 +1585,9 @@ $pruefe(apply_filters('taxmod_stock_test_place', null) === (int) ((new StockServ
 
 // D-1357: the Lager's searches take the one rule from the modeller; the core gets it handed in, never a copy of its own.
 $quelle = static fn (string $datei): string => (string) file_get_contents(dirname(__DIR__, 2) . '/src/' . $datei);
+// D-1444, his choice 2026-11-18 12:26 «Button wie überall»: no place chooser of the Lager stands open as a tree; each has its button.
+$pruefe(! preg_match('/inline:\s*true/', $quelle('WordPress/Admin/StockPage.php') . $quelle('WordPress/Admin/InboundPage.php')), 'D-1444: every place chooser of the Lager is the field with its tree button, none inline');
+
 // Changed with D-1440: the old order list of «Einbuchen» and its search are gone; the material list keeps its own.
 $pruefe(substr_count($quelle('WordPress/Admin/StockPage.php'), 'Wildcard::matches(...)') >= 1 && str_contains($quelle('WordPress/Admin/ContactsPage.php'), 'Wildcard::matches(...)')
     && ! str_contains($quelle('Core/StockList.php'), 'mb_stripos') && ! str_contains($quelle('Core/Contacts.php'), 'str_contains'), 'D-1357: stock and contact search use «*» through Wildcard, the core holds no rule of its own');

@@ -123,8 +123,12 @@ final class LogisticsShell
                 // das so bauen das es n ebenen zulässt» — an item's `path` puts it any depth below its area (D-1121).
                 // D-1296, his report 2026-11-18 «etiketten gibts jetzt zweimal als menüpunkt», «drucker auch»: labels, printers and
                 // rolls are the labels module's pages; the stock keeps only its material labels by Bauform (D-1284).
-                ['path' => [__('Druck', 'taxmod-stock')]] + $item('form-labels', __('Etiketten je Bauform', 'taxmod-stock'), Pages::STOCK, 'etikettenvorlagen'),
-                ...array_map(static fn (array $item): array => ['path' => [__('Druck', 'taxmod-stock'), ...$item['path']]] + $item, self::modules('print')),
+                // His wish 2026-11-18: «Allgemein … Etiketten, Etiketten je Bauform. Dann Drucker, Druckermedium und am Schluss Aufträge» —
+                // the modules say their place by `position`, the stock's own page stands at 30.
+                ...self::byPosition([
+                    ['path' => [__('Druck', 'taxmod-stock')], 'position' => 30] + $item('form-labels', __('Etiketten je Bauform', 'taxmod-stock'), Pages::STOCK, 'etikettenvorlagen'),
+                    ...array_map(static fn (array $item): array => ['path' => [__('Druck', 'taxmod-stock'), ...$item['path']]] + $item, self::modules('print')),
+                ]),
                 // D-1232, his question 2026-11-08: «was ist eigentlich mit dem Benutzereinstellungen los? Die sind noch nicht sichtbar».
                 $item('user', __('Benutzereinstellungen', 'taxmod-stock'), Pages::SETTINGS, SettingsPage::USER_TAB),
             ]],
@@ -164,6 +168,17 @@ final class LogisticsShell
     }
 
     /**
+     * @param list<array<string, mixed>> $items
+     * @return list<array<string, mixed>>
+     */
+    private static function byPosition(array $items): array
+    {
+        usort($items, static fn (array $a, array $b): int => ((int) ($a['position'] ?? 100)) <=> ((int) ($b['position'] ?? 100)));
+
+        return $items;
+    }
+
+    /**
      * The connection modules' pages of one area, each opened inside the frame (D-1085).
      *
      * @return list<array{key: string, label: string, page: string, tab: string, module: string}>
@@ -174,7 +189,7 @@ final class LogisticsShell
 
         foreach (ModulePage::all() as $module) {
             if ($module['area'] === $area) {
-                $items[] = ['key' => 'module-' . sanitize_key($module['slug']), 'label' => $module['label'], 'page' => Pages::MODULE, 'tab' => '', 'module' => $module['slug'], 'path' => $module['path']]
+                $items[] = ['key' => 'module-' . sanitize_key($module['slug']), 'label' => $module['label'], 'page' => Pages::MODULE, 'tab' => '', 'module' => $module['slug'], 'path' => $module['path'], 'position' => $module['position']]
                     + ($module['opens_area'] ? ['opens_area' => true] : []);
             }
         }

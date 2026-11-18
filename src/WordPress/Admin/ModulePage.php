@@ -35,6 +35,7 @@ final class ModulePage
     /**
      * Filter: `list<array{slug: string, label: string, area?: 'settings'|'outbound'|'print', path?: list<string>, capability?: string, render?: callable(): string}>`.
      * `path` puts the page under groups in the navigation, any depth (D-1121); area «print» stands under Einstellungen › Druck.
+     * `position` (optional, smaller first, default 100) orders the pages of area «print» (Stefan 2026-11-18, «Sortierungswunsch des Menüs»).
      * An entry with the slug of a menu entry replaces what was read from the menu.
      */
     public const FILTER = 'taxmod_logistics_pages';
@@ -48,7 +49,7 @@ final class ModulePage
     /** Kept from the D-1053 navigation: the eBay shipping page stands under «Warenausgang», the other modules under «Einstellungen». */
     private const OUTBOUND = ['taxebay-shipping'];
 
-    /** @var array<string, array{slug: string, label: string, area: string, capability: string, render: ?callable, menu: bool, path: list<string>, opens_area: bool}>|null */
+    /** @var array<string, array{slug: string, label: string, area: string, capability: string, render: ?callable, menu: bool, path: list<string>, opens_area: bool, position: int}>|null */
     private static ?array $captured = null;
 
     /** admin_menu, after every module has hung its page under the Taxmod menu: the list is kept before admin_head empties the menu. */
@@ -57,7 +58,7 @@ final class ModulePage
         self::$captured = self::read();
     }
 
-    /** @return array<string, array{slug: string, label: string, area: string, capability: string, render: ?callable, menu: bool, path: list<string>, opens_area: bool}> */
+    /** @return array<string, array{slug: string, label: string, area: string, capability: string, render: ?callable, menu: bool, path: list<string>, opens_area: bool, position: int}> */
     public static function all(): array
     {
         return self::$captured ?? self::read();
@@ -127,7 +128,7 @@ final class ModulePage
         return (string) get_plugin_page_hookname($slug, Plugin::PARENT);
     }
 
-    /** @return array<string, array{slug: string, label: string, area: string, capability: string, render: ?callable, menu: bool, path: list<string>, opens_area: bool}> */
+    /** @return array<string, array{slug: string, label: string, area: string, capability: string, render: ?callable, menu: bool, path: list<string>, opens_area: bool, position: int}> */
     private static function read(): array
     {
         global $submenu;
@@ -150,6 +151,7 @@ final class ModulePage
                 'menu'       => true,
                 'path'       => [],
                 'opens_area' => false,
+                'position'   => 100,
             ];
         }
 
@@ -172,6 +174,7 @@ final class ModulePage
                 'path'       => array_values(array_filter(array_map(static fn ($p): string => sanitize_text_field((string) $p), array_filter((array) ($page['path'] ?? []), 'is_scalar')), static fn (string $p): bool => $p !== '')),
                 // His report 2026-11-14 «warum so und nicht so»: the page its area's head opens instead of the tile overview.
                 'opens_area' => ($page['opens_area'] ?? false) === true,
+                'position'   => is_int($page['position'] ?? null) ? $page['position'] : 100,
             ];
         }
 

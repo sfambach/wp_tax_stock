@@ -2500,11 +2500,6 @@ final class StockPage
         return $icon === '' ? esc_html($word) : ListPage::icon($icon, $word);
     }
 
-    private function iconClass(string $constant): string
-    {
-        return self::icon($constant) === '' ? '' : ' taxmod-icon-button';
-    }
-
     /** @var array{quantity: string, kind: string}|null the consumption controls, drawn once for all «Ausbuchen» dialogs of a page */
     private ?array $bookOutControls = null;
 
@@ -3262,7 +3257,8 @@ final class StockPage
         $quantity = (string) $look['bought']->first($purchase, $look['amount']);
         // His finding 2026-11-18 17:35 «machen wir jetzt button gößen bingo»: one size, one per line, right-aligned.
         // D-1451, his word 17:57 «Icons … für Einlagern, Material, nicht einlagern … 3 Quadrate»: equal squares in one line, the word as tooltip.
-        $actions  = static fn (string $buttons): string => '<td><span class="taxmod-stock-row-actions" style="display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px">' . $buttons . '</span></td>';
+        // His finding 18:24 «wieder unterschiedliche Größen»: framed squares of one size, the modeller's row-act container (D-1451).
+        $actions  = static fn (string $buttons): string => '<td><span class="taxmod-stock-row-actions taxmod-row-actions" style="display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px">' . $buttons . '</span></td>';
         // The row's choosers name their form, so they can share their tree with the other rows ({@see StockService::sharedTrees()}).
         $formId   = self::receiptFormId($multi ? 0 : $order);
         $html     = '<tr id="taxmod-stock-purchase-' . esc_attr((string) $purchase) . '"' . ($multi ? ' data-order="' . esc_attr((string) $order) . '"' : '') . '><th scope="row" class="check-column"><input type="checkbox" name="purchases[]" value="' . esc_attr((string) $purchase) . '"'
@@ -3305,8 +3301,8 @@ final class StockPage
         $proposed = (int) ($look['where'][$purchase] ?? 0);
         // His finding 2026-11-18 17:19: «Einlagern» per row in the order's own view too, not only in the overview; never while assigning («Versendet»).
         $store    = $assign ? '' : ($look['arrival'] > 0 || $proposed > 0
-            ? '<button type="submit" class="button button-primary' . $this->iconClass('ICON_STORE') . '" name="booking" value="positioneinlagern-' . esc_attr((string) $purchase) . '">' . $this->iconOrWord('ICON_STORE', __('Einlagern', 'taxmod-stock')) . '</button> '
-            : '<button type="button" class="button' . $this->iconClass('ICON_STORE') . '" disabled title="' . esc_attr__('Ohne Lagerort braucht «Einlagern» den «Lagerort Wareneingang» in den Einstellungen.', 'taxmod-stock') . '">' . $this->iconOrWord('ICON_STORE', __('Einlagern', 'taxmod-stock')) . '</button> ');
+            ? '<button type="submit" class="button button-primary" title="' . esc_attr__('Einlagern', 'taxmod-stock') . '" name="booking" value="positioneinlagern-' . esc_attr((string) $purchase) . '">' . $this->iconOrWord('ICON_STORE', __('Einlagern', 'taxmod-stock')) . '</button> '
+            : '<button type="button" class="button" disabled title="' . esc_attr__('Ohne Lagerort braucht «Einlagern» den «Lagerort Wareneingang» in den Einstellungen.', 'taxmod-stock') . '">' . $this->iconOrWord('ICON_STORE', __('Einlagern', 'taxmod-stock')) . '</button> ');
 
         // The modeller's own record chooser on the purchase's «Modell» (his word 2026-10-28: «eigentlich haben wir doch den tax chooser»).
         return $html . '<td><input type="hidden" name="model[' . esc_attr((string) $purchase) . ']" value="' . esc_attr((string) ($model ?? '')) . '">'

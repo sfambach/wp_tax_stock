@@ -401,7 +401,7 @@ $pruefe(str_contains($hier, 'value="ask:taxmod-stock-book-' . $r['o10'] . '"') &
 $einlagern = static fn (string $html): bool => preg_match('#(>Einlagern</button>|<span class="screen-reader-text">Einlagern</span></button>)#', $html) === 1;
 $pruefe($einlagern($hier) && ! $einlagern($weg), 'his finding 2026-11-18 17:19: «Einlagern» per row in the order view under «Angekommen», none while assigning under «Versendet»');
 // D-1451: the row acts of the receipt are icon squares with the word as tooltip, the material's name wraps (D-1448, 17:57).
-$pruefe(! defined(\Taxmod\WordPress\Admin\ListPage::class . '::ICON_STORE') || (str_contains($hier, 'taxmod-icon-button') && str_contains($hier, 'title="Einlagern"')), 'D-1451: «Einlagern» is the modeller\'s icon square, the word its tooltip');
+$pruefe(! defined(\Taxmod\WordPress\Admin\ListPage::class . '::ICON_STORE') || (str_contains($hier, 'taxmod-row-actions') && preg_match('#<button type="submit" class="button button-primary" title="Einlagern"#', $hier) === 1), 'D-1451, his finding 18:24/18:25: «Einlagern» is a framed square like its neighbours, the tooltip on the button itself');
 $pruefe(str_contains($hier, 'taxmod-record-wrap'), 'D-1448, his word 17:57 «Material … könnte ja auch ruhig umbrechen»: the receipt\'s material chooser wraps its name');
 $pruefe(str_contains($hier, 'thing[' . $r['kaufP1'] . ']" value="' . $r['kabel'] . '" checked'), 'his report 2026-11-16: the material chosen on its way stands chosen at the receipt');
 foreach (['shipped', 'arrived'] as $reiter) {

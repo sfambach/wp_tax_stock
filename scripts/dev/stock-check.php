@@ -53,6 +53,7 @@ use TaxmodStock\Core\PeriodActivity;
 use TaxmodStock\Core\Purpose;
 use TaxmodStock\Core\SplitRow;
 use TaxmodStock\Core\StockError;
+use Taxmod\Core\Renderer\DecimalText;
 use Taxmod\WordPress\Admin\ListPage;
 use TaxmodStock\WordPress\Admin\LogisticsShell;
 use TaxmodStock\WordPress\Admin\StockPage;
@@ -266,6 +267,23 @@ $html = (new StockPage())->render();
 $pruefe(str_contains($html, '<input type="checkbox" name="source_empty" value="1">') && ! str_contains($html, 'name="source_empty" value="1" checked') && str_contains($html, 'Quelle danach leer: was am alten Ort übrig bleibt (jetzt'), 'D-1414 as changed 2026-11-18: «Quelle danach leer» is a checkbox, off by default, naming the quantity');
 // D-1436: «Ausbuchen» of a row is a dialog with verb and subject in its title, no longer a link to the page.
 $pruefe(str_contains($html, 'taxmod-stock-bookout-') && str_contains($html, 'value="verbrauch"') && str_contains($html, 'Ausbuchen: ') && str_contains($html, 'Umbuchen: '), 'D-1436: «Ausbuchen» and «Umbuchen» are dialogs whose titles name verb and subject');
+
+// D-1438 · «Platz leer?» (his word 2026-11-18 08:18): «leer» is the moved material at that place, all its lots there; «Noch dort»
+// books that much back in at the old place as «Inventur», with the Umbuchung in one act, and one undo takes both back.
+$amPlatz = (new StockService())->restOfThingAt($lot, $r['platz']);
+$noch    = $amPlatz > 0.0 ? (new StockService())->moveLot($lot, $r['platz'], $von, DecimalText::stored($amPlatz), '2026-11-18', 'Umbuchung, noch dort', false, '2') : [];
+$nach    = (new StockService())->ledger();
+$zurueck = isset($noch['act']) ? $apply([['op' => 'undo_act', 'act' => $noch['act']]]) : [];
+$pruefe($amPlatz > 0.0 && $nach->restAt($lot, $r['platz']) === 2.0 && ! is_wp_error($zurueck) && (new StockService())->restOfThingAt($lot, $r['platz']) === $amPlatz,
+    'D-1438: «Noch dort» books the quantity back in at the old place in the same act as the Umbuchung; one undo takes both back');
+set_transient('taxmod_stock_empty_question_' . get_current_user_id(), ['thing' => $r['t1'], 'lot' => $lot, 'lots' => '', 'from' => $r['platz'], 'location' => $von,
+    'quantity' => '1', 'return_tab' => '', 'return_ort' => 0], HOUR_IN_SECONDS);
+$_GET  = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => $r['t1'], 'view' => 'bestand'];
+$frage = (new StockPage())->render();
+$pruefe(str_contains($frage, 'Platz leer? ') && str_contains($frage, 'name="source_checked" value="1"') && str_contains($frage, 'name="source_answer" value="leer"')
+    && str_contains($frage, 'name="source_answer" value="noch"') && str_contains($frage, 'taxmod-stock-source-empty-' . $lot . '-' . $r['platz'] . '" checked')
+    && ! str_contains((new StockPage())->render(), 'Platz leer? '),
+    'D-1438: an Umbuchung held back by «Platz leer?» comes back as an open dialog with both answers, once');
 
 // The page renders its tabs from the same data.
 foreach (['material' => '>' . $r['lm'] . '</a></td>', 'inventur' => 'Material suchen', 'wareneingang' => 'Bestellung 1', 'verbrauch' => 'Bestandsposten'] as $tab => $erwartet) {

@@ -5625,7 +5625,7 @@ final class StockService
      *
      * @return array<string, mixed>
      */
-    public function moveLot(int $lot, int $from, int $location, string $quantity, string $today, string $title, bool $emptySource = false): array
+    public function moveLot(int $lot, int $from, int $location, string $quantity, string $today, string $title, bool $emptySource = false, string $found = ''): array
     {
         $this->guardUnblocked([$lot]);
 
@@ -5637,24 +5637,56 @@ final class StockService
             throw StockError::notALocation($location);
         }
 
-        return $this->writeTransfer([new TransferRow($lot, $from, $location, $quantity)], $today, $title, $this->ledger(), $emptySource);
+        return $this->writeTransfer([new TransferRow($lot, $from, $location, $quantity)], $today, $title, $this->ledger(), $emptySource, $found);
+    }
+
+    /** D-1438: what the system holds of the lot's material at the place — all its lots there together. */
+    public function restOfThingAt(int $lot, int $place): float
+    {
+        $ledger = $this->ledger();
+        $rest   = 0.0;
+
+        foreach ($ledger->lotsOf((int) $ledger->thingOf($lot)) ?: [$lot] as $one) {
+            $rest += $ledger->restAt($one, $place);
+        }
+
+        return $rest;
     }
 
     /**
      * D-1414: an «Umbuchung», and with «Quelle danach leer» what is left of its lots at the source booked out as a Vorgang
      * «Inventur» (kind_count, D-1382) — both in one write, so one undo takes both back.
      *
-     * @param list<TransferRow>          $rows
-     * @param list<array{0: int, 1: int}> $source the lots and places emptied besides those of the rows
+     * D-1438: «leer» is always the moved material at that place — every lot of it there, not only the moved one. $found
+     * is the answer «Noch dort» to the question «Platz leer?»: that much is booked back in at the source as «Inventur».
+     *
+     * @param list<TransferRow> $rows
      * @return array<string, mixed>
      */
-    private function writeTransfer(array $rows, string $today, string $title, Ledger $ledger, bool $emptySource, array $source = []): array
+    private function writeTransfer(array $rows, string $today, string $title, Ledger $ledger, bool $emptySource, string $found = ''): array
     {
         $bookings = new Bookings($this->structureWithKinds(), $today);
         $changes  = $bookings->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $this->boundLots());
 
+        $foundQuantity = $emptySource ? 0.0 : (float) str_replace(',', '.', $found);
+
+        if ($foundQuantity > 1e-9) {
+            $first   = $rows[0];
+            $changes = [...$changes, ...$bookings->correction([['lot' => $first->lot, 'thing' => 0, 'purchase' => 0, 'place' => $first->from, 'value' => null,
+                'quantity' => DecimalText::stored($foundQuantity), 'name' => (string) ($this->table('lot')->first($first->lot, $this->structure()->field('label')) ?? '')]],
+                'Inventur: Platz nach Umbuchen nicht leer', 'Noch dort nach Umbuchen')];
+        }
+
         if (! $emptySource) {
             return $this->model->write($changes);
+        }
+
+        $source = [];
+
+        foreach ($rows as $row) {
+            foreach ($ledger->lotsOf((int) $ledger->thingOf($row->lot)) ?: [$row->lot] as $lot) {
+                $source[] = [$lot, $row->from];
+            }
         }
 
         $lots   = $this->table('lot');
@@ -5695,7 +5727,7 @@ final class StockService
      * @param list<int> $lots
      * @return array<string, mixed>
      */
-    public function moveLots(array $lots, int $from, int $location, string $quantity, string $today, string $title, bool $emptySource = false): array
+    public function moveLots(array $lots, int $from, int $location, string $quantity, string $today, string $title, bool $emptySource = false, string $found = ''): array
     {
         $this->guardUnblocked($lots);
 
@@ -5725,8 +5757,8 @@ final class StockService
             throw StockError::nothingToBook();
         }
 
-        // D-1414: with «Quelle danach leer» every lot of the line counts, also one nothing was taken from.
-        return $this->writeTransfer($rows, $today, $title, $ledger, $emptySource, array_map(static fn (int $lot): array => [$lot, $from], $lots));
+        // D-1438: with «Quelle danach leer» every lot of the material at the place counts, also one nothing was taken from.
+        return $this->writeTransfer($rows, $today, $title, $ledger, $emptySource, $found);
     }
 
     /**

@@ -78,6 +78,8 @@ final class StockPage
     /** The notice after a booking; the goods receipt cockpit shows it too, when the booking came from there. */
     public const NOTICE     = 'taxmod_stock_notice';
     private const LAST_LIST = 'taxmod_stock_last_list_';
+    /** D-1438: the Umbuchung held back by the question «Platz leer?», per user, until the page draws it. */
+    private const EMPTY_QUESTION = 'taxmod_stock_empty_question_';
 
     /** D-1147: the source name under which the material list's rows draw their lots when opened. */
     public const DETAILS_MATERIAL = 'stock-material';
@@ -155,6 +157,7 @@ final class StockPage
         $tab  = in_array($tab, self::TABS, true) ? $tab : self::TABS[0];
         $list = $this->listRequest();
         $html = Notice::take(self::NOTICE, true);
+        $html .= $this->sourceEmptyQuestion();
 
         try {
             $thing = absint($_GET['thing'] ?? 0);
@@ -208,6 +211,15 @@ final class StockPage
         $back  = ['material', []];
         // D-1001: a receipt booked from the goods receipt cockpit goes back there.
         $fromCockpit = in_array($kind, self::RECEIPT_KINDS, true) && sanitize_key((string) ($_POST['back'] ?? '')) === InboundPage::BACK;
+
+        // D-1438, his word 2026-11-18 08:18: «Wenn der Platz laut System leer ist, aber beim Absenden die Tickbox nicht getickt
+        // ist, dann soll nochmal ein Dialog erscheinen mit einer Frage» — this submit books nothing, the question answers it.
+        if ($kind === 'umbuchen' && ! $emptySource && ($_POST['source_checked'] ?? '') !== '1') {
+            $this->askIfSourceEmpty();
+        }
+
+        // D-1438: «Noch dort» of that question — booked back in at the old place with the Umbuchung, in one write.
+        $found = $kind === 'umbuchen' && ($_POST['source_answer'] ?? '') === 'noch' && is_array($_POST['menge'] ?? null) ? $this->stock->consumptionTyped($_POST['menge'], [])['quantity'] : '';
 
         // His wish 2026-11-04: «liste mit kindern und massen funktion bsp alle etiketten drucken» — a PDF or the print service.
         if ($kind === 'etiketten-service' || $kind === 'etiketten-pdf') {
@@ -265,7 +277,8 @@ final class StockPage
                     sanitize_text_field(wp_unslash((string) ($_POST['quantity'] ?? ''))),
                     $today,
                     $this->title(__('Umbuchung', 'taxmod-stock'), $today),
-                    $emptySource
+                    $emptySource,
+                    $found
                 ) : $this->stock->moveLot(
                     absint($_POST['lot'] ?? 0),
                     absint($_POST['from'] ?? 0),
@@ -273,7 +286,8 @@ final class StockPage
                     sanitize_text_field(wp_unslash((string) ($_POST['quantity'] ?? ''))),
                     $today,
                     $this->title(__('Umbuchung', 'taxmod-stock'), $today),
-                    $emptySource
+                    $emptySource,
+                    $found
                 ),
                 'reservieren'  => $this->stock->reserve(
                     absint($_POST['subject'] ?? 0),
@@ -372,7 +386,9 @@ final class StockPage
                 'orteverschieben' => __('Verschoben: die gewählten Orte liegen jetzt dort, mit allem, was in ihnen liegt.', 'taxmod-stock'),
                 'umbuchen'       => $emptySource
                     ? __('Umgebucht; der Rest am alten Ort ist per Inventur auf 0 ausgebucht. Ein Undo nimmt beides zurück.', 'taxmod-stock')
-                    : __('Umgebucht: ein Vorgang «Umbuchung» mit Abgang am alten und Zugang am neuen Ort.', 'taxmod-stock'),
+                    : ((float) str_replace(',', '.', $found) > 0.0
+                        ? __('Umgebucht; was am alten Platz noch liegt, ist dort per Inventur eingebucht. Ein Undo nimmt beides zurück.', 'taxmod-stock')
+                            : __('Umgebucht: ein Vorgang «Umbuchung» mit Abgang am alten und Zugang am neuen Ort.', 'taxmod-stock')),
                 'sammelverschieben' => __('Verschoben: die gewählten Materialien stehen jetzt in der neuen Gruppe.', 'taxmod-stock'),
                 'gruppeanlegen'  => __('Gruppe angelegt.', 'taxmod-stock'),
                 'sammelumbuchen' => __('Umgebucht: alle gewählten Materialien liegen jetzt am neuen Ort, als ein Vorgang «Umbuchung».', 'taxmod-stock'),
@@ -1708,6 +1724,101 @@ final class StockPage
         }
 
         return $html;
+    }
+
+    /**
+     * D-1438: an «Umbuchen» without the tick that leaves its material's place empty in the system is held back — the posted
+     * fields wait per user and the page comes back with the question open. Nothing is booked by this submit.
+     */
+    private function askIfSourceEmpty(): void
+    {
+        $lots     = isset($_POST['lots']) ? array_values(array_filter(array_map('absint', explode(',', sanitize_text_field(wp_unslash((string) $_POST['lots'])))))) : [];
+        $lot      = $lots[0] ?? absint($_POST['lot'] ?? 0);
+        $from     = absint($_POST['from'] ?? 0);
+        $quantity = sanitize_text_field(wp_unslash((string) ($_POST['quantity'] ?? '')));
+        $amount   = (float) str_replace(',', '.', $quantity);
+
+        if ($lot <= 0 || $from <= 0 || $amount <= 0.0 || $amount < $this->stock->restOfThingAt($lot, $from) - 1e-9) {
+            return;
+        }
+
+        set_transient(self::EMPTY_QUESTION . get_current_user_id(), [
+            'thing'      => absint($_POST['thing'] ?? 0),
+            'lot'        => $lot,
+            'lots'       => count($lots) > 1 ? implode(',', $lots) : '',
+            'from'       => $from,
+            'location'   => absint($_POST['location'] ?? 0),
+            'quantity'   => $quantity,
+            'return_tab' => sanitize_key((string) ($_POST['return_tab'] ?? '')),
+            'return_ort' => absint($_POST['return_ort'] ?? 0),
+        ], HOUR_IN_SECONDS);
+
+        wp_safe_redirect(wp_get_referer() ?: add_query_arg(['page' => self::PAGE], admin_url('admin.php')));
+        exit;
+    }
+
+    /**
+     * D-1438: the question «Platz leer?» for the held-back Umbuchung, open as the page arrives — «Platz ist leer» moves
+     * only, «Noch dort» moves and books that much back in at the old place, as «Inventur», in the same act.
+     */
+    private function sourceEmptyQuestion(): string
+    {
+        $key  = self::EMPTY_QUESTION . get_current_user_id();
+        $held = get_transient($key);
+
+        if (! is_array($held)) {
+            return '';
+        }
+
+        delete_transient($key);
+
+        $thing  = (int) $held['thing'];
+        $lot    = (int) $held['lot'];
+        $from   = (int) $held['from'];
+        $this->prefetchRowFacts([$thing]);
+        $name   = $this->rowFacts['name'][$thing] ?? '';
+        $place  = $this->stock->places()[$from] ?? '#' . $from;
+        $hidden = '';
+
+        foreach (['thing', 'lot', 'lots', 'from', 'location', 'quantity', 'return_tab', 'return_ort'] as $field) {
+            if ((string) $held[$field] !== '' && (string) $held[$field] !== '0') {
+                $hidden .= '<input type="hidden" name="' . esc_attr($field) . '" value="' . esc_attr((string) $held[$field]) . '">';
+            }
+        }
+
+        $switch = 'taxmod-stock-source-empty-' . $lot . '-' . $from;
+        $body   = '<p>' . esc_html(sprintf(
+            /* translators: 1: material, 2: place */
+            __('Nach dem Umbuchen liegt laut System nichts mehr von %1$s an %2$s. Ist dort noch Bestand?', 'taxmod-stock'),
+            $name === '' ? '#' . $thing : $name,
+            $place
+        )) . '</p>'
+            . $hidden . '<input type="hidden" name="source_checked" value="1">'
+            . self::actForm([['label' => __('Noch dort', 'taxmod-stock'), 'control' => $this->stock->consumptionControls()['quantity'],
+                'hint' => __('Was am alten Platz noch liegt: wird mit der Umbuchung als Inventur dort eingebucht. Leer lassen, wenn der Platz leer ist.', 'taxmod-stock')]]);
+        $foot   = '<input type="hidden" name="booking" value="umbuchen">'
+            . '<button type="submit" class="button button-primary" name="source_answer" value="leer">' . esc_html__('Platz ist leer', 'taxmod-stock') . '</button>'
+            . '<button type="submit" class="button" name="source_answer" value="noch">' . esc_html__('Noch dort einbuchen', 'taxmod-stock') . '</button>';
+
+        return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">'
+            . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">' . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
+            . DialogMarkup::of(
+                $switch,
+                '',
+                esc_html(sprintf(
+                    /* translators: 1: material, 2: place */
+                    __('Platz leer? %1$s an %2$s', 'taxmod-stock'),
+                    $name === '' ? '#' . $thing : $name,
+                    $place
+                )),
+                $body,
+                $foot,
+                'screen-reader-text',
+                '',
+                __('Abbrechen', 'taxmod-stock'),
+                true
+            )
+            . '</form>';
     }
 
     /**

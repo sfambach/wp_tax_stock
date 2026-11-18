@@ -3214,7 +3214,8 @@ final class StockPage
         $model    = $row['model'];
         $models   = $look['models'];
         $quantity = (string) $look['bought']->first($purchase, $look['amount']);
-        $actions  = static fn (string $buttons): string => '<td style="text-align:right">' . $buttons . '</td>';
+        // His finding 2026-11-18 17:35 «machen wir jetzt button gößen bingo»: one size, one per line, right-aligned.
+        $actions  = static fn (string $buttons): string => '<td><span class="taxmod-stock-row-actions" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">' . $buttons . '</span></td>';
         $html     = '<tr id="taxmod-stock-purchase-' . esc_attr((string) $purchase) . '"' . ($multi ? ' data-order="' . esc_attr((string) $order) . '"' : '') . '><th scope="row" class="check-column"><input type="checkbox" name="purchases[]" value="' . esc_attr((string) $purchase) . '"'
             . ($lock === null && $model !== null && ! $assign && ! $multi && ($pick === [] || in_array($purchase, $pick, true)) ? ' checked' : '') . ($lock === null ? '' : ' disabled') . '>'
             . ($multi ? '<input type="hidden" name="order_of[' . esc_attr((string) $purchase) . ']" value="' . esc_attr((string) $order) . '">' : '') . '</th>'
@@ -3226,11 +3227,11 @@ final class StockPage
         if ($lock !== null) {
             // Concept R3: a lot purchase is told apart first; its parts are then received like any purchase.
             $split = $lock === 'purchase_undetermined'
-                ? '<a class="button button-small" href="' . esc_url(add_query_arg(array_filter(['page' => self::PAGE, 'tab' => 'wareneingang', 'order' => $order, 'split' => $purchase, 'back' => $back]), admin_url('admin.php'))) . '">' . esc_html__('Aufteilen', 'taxmod-stock') . '</a>'
+                ? '<a class="button" href="' . esc_url(add_query_arg(array_filter(['page' => self::PAGE, 'tab' => 'wareneingang', 'order' => $order, 'split' => $purchase, 'back' => $back]), admin_url('admin.php'))) . '">' . esc_html__('Aufteilen', 'taxmod-stock') . '</a>'
                 : '';
             // D-1058: a purchase closed without stock shows its reason and can be taken back.
             $again = match (true) {
-                $lock === 'not_stocked' => '<button type="submit" class="button button-small" name="booking" value="einlagern-' . esc_attr((string) $purchase) . '">' . esc_html__('Zurücknehmen', 'taxmod-stock') . '</button>',
+                $lock === 'not_stocked' => '<button type="submit" class="button" name="booking" value="einlagern-' . esc_attr((string) $purchase) . '">' . esc_html__('Zurücknehmen', 'taxmod-stock') . '</button>',
                 // A lot purchase that never goes into stock needs no splitting first.
                 $lock === 'purchase_undetermined' && $look['closing'] => $this->closeControls($purchase),
                 default => '',
@@ -3246,8 +3247,8 @@ final class StockPage
         // dann wird es in den Wareneingang gelegt.» Without that place set and none proposed, the button says what is missing.
         $proposed = (int) ($look['where'][$purchase] ?? 0);
         $store    = ! $multi ? '' : ($look['arrival'] > 0 || $proposed > 0
-            ? '<button type="submit" class="button button-small button-primary" name="booking" value="positioneinlagern-' . esc_attr((string) $purchase) . '">' . esc_html__('Einlagern', 'taxmod-stock') . '</button> '
-            : '<button type="button" class="button button-small" disabled title="' . esc_attr__('Ohne Lagerort braucht «Einlagern» den «Lagerort Wareneingang» in den Einstellungen.', 'taxmod-stock') . '">' . esc_html__('Einlagern', 'taxmod-stock') . '</button> ');
+            ? '<button type="submit" class="button button-primary" name="booking" value="positioneinlagern-' . esc_attr((string) $purchase) . '">' . esc_html__('Einlagern', 'taxmod-stock') . '</button> '
+            : '<button type="button" class="button" disabled title="' . esc_attr__('Ohne Lagerort braucht «Einlagern» den «Lagerort Wareneingang» in den Einstellungen.', 'taxmod-stock') . '">' . esc_html__('Einlagern', 'taxmod-stock') . '</button> ');
 
         // The modeller's own record chooser on the purchase's «Modell» (his word 2026-10-28: «eigentlich haben wir doch den tax chooser»).
         return $html . '<td><input type="hidden" name="model[' . esc_attr((string) $purchase) . ']" value="' . esc_attr((string) ($model ?? '')) . '">'
@@ -3257,7 +3258,7 @@ final class StockPage
             // The place the server proposed, so the page can tell it from one he chose in the row (D-1361).
             . '<td class="taxmod-stock-receipt-place" data-drawn="' . esc_attr((string) $proposed) . '">' . $this->stock->placeChooser('location[' . $purchase . ']', $proposed, '', [], $model === null ? [] : ($look['preferred'][$model] ?? [])) . '</td>'
             . $actions($store . ($model === null ? $this->newThingDialog($purchase) : $this->materialDialog($purchase, $model)) . ($look['closing'] ? $this->closeControls($purchase) : '')
-                . (isset($look['takable'][$purchase]) ? ' <button type="submit" class="button button-small" name="booking" value="bilduebernehmen-' . esc_attr((string) $purchase) . '">' . esc_html__('Bild übernehmen', 'taxmod-stock') . '</button>' : '')) . '</tr>';
+                . (isset($look['takable'][$purchase]) ? '<button type="submit" class="button" name="booking" value="bilduebernehmen-' . esc_attr((string) $purchase) . '">' . esc_html__('Bild übernehmen', 'taxmod-stock') . '</button>' : '')) . '</tr>';
     }
 
     /**
@@ -4972,7 +4973,9 @@ final class StockPage
     {
         // His answer 2026-11-01 (screenshot of the stock material page): the stock's own material view, not the modeller's.
         // D-1309: in the modeller's one view dialog (S14) — the frame loads when it opens, «Open fully» in a new tab.
-        return ListPage::viewDialog('taxmod-stock-material-' . $purchase, __('Material', 'taxmod-stock'), __('Material', 'taxmod-stock'), self::thingUrl($thing, 'daten')) . ' ';
+        // The modeller draws a text opener as a link; in the row's actions it stands as a button like the others (his finding 2026-11-18).
+        return str_replace('class="taxmod-dialog-open taxmod-view-dialog-open"', 'class="button taxmod-dialog-open taxmod-view-dialog-open"',
+            ListPage::viewDialog('taxmod-stock-material-' . $purchase, __('Material', 'taxmod-stock'), __('Material', 'taxmod-stock'), self::thingUrl($thing, 'daten')));
     }
 
     /**

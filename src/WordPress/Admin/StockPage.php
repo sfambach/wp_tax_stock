@@ -1851,7 +1851,7 @@ final class StockPage
             . self::actForm([
                 ['label' => __('Menge', 'taxmod-stock'), 'control' => '<input type="text" inputmode="decimal" name="quantity" style="width:7em" value="' . esc_attr(DecimalText::stored($quantity, 3)) . '">',
                     'hint' => __('Weniger als alles teilt den Posten auf zwei Orte.', 'taxmod-stock')],
-                ['label' => __('Nach', 'taxmod-stock'), 'control' => $this->stock->placeChooser('location', 0, '', [$from], inline: true),
+                ['label' => __('Nach', 'taxmod-stock'), 'control' => $this->stock->placeChooser('location', 0, '', [$from]),
                     'hint' => __('Bucht die Menge vom bisherigen Ort ab und am neuen zu, als Vorgang «Umbuchung»; «Stornieren» bei den Vorgängen nimmt es zurück.', 'taxmod-stock')],
                 // D-1414, changed by his word 2026-11-18 08:08 «eher … so eine Checkbox … Wenn der Benutzer sagt, ach, jetzt ist der
                 // Platz leer, dann kann er das ticken. Ansonsten wird nichts Inventur gebucht»: off by default; the tick is the consent.

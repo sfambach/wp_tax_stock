@@ -2198,7 +2198,7 @@ final class StockService
                 'form'         => $form,
                 // D-1360: the material's Standard-Lagerorte on top as «Bevorzugt» (modeller 0.2.95; an older one ignores it).
                 'preferred'    => $preferred,
-                // D-1436: in a dialog the tree stands inline, not as a second dialog.
+                // D-1436: the tree inline when a caller asks; the transfer dialog no longer does (D-1444).
                 'inline'       => $inline,
             ], static fn (mixed $v): bool => $v !== '' && $v !== 0 && $v !== []));
 

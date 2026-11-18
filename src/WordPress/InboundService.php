@@ -40,6 +40,9 @@ final class InboundService
     /** @var array<int, InboundOrder>|null read once per request */
     private ?array $orders = null;
 
+    /** @var array<string, int>|null role → field of the order, {@see self::fields()} */
+    private ?array $fields = null;
+
     /** @var array<int, list<int>>|null purchase → its lots, read once per request */
     private ?array $lotsOfPurchase = null;
 
@@ -589,6 +592,11 @@ final class InboundService
      */
     private function fields(): array
     {
+        // Once per request: the modeller reads its import targets from the database on every call, and each order asks.
+        if ($this->fields !== null) {
+            return $this->fields;
+        }
+
         $targets = \Taxmod\WordPress\Import\Targets::class;
         $raw     = class_exists($targets) && method_exists($targets, 'raw') ? (array) ($targets::raw()['order_fields'] ?? []) : [];
         $out     = [];
@@ -597,6 +605,6 @@ final class InboundService
             $out[$role] = (int) ($raw[$role] ?? 0) ?: throw StockError::noImportTargets($role);
         }
 
-        return $out;
+        return $this->fields = $out;
     }
 }

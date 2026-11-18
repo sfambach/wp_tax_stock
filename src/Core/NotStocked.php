@@ -128,7 +128,18 @@ final class NotStocked
     {
         $lines = array_map('intval', $orders->all($order, $s->field('order_lines')));
 
-        return $lines !== [] && array_diff($lines, array_keys($booked), array_keys($closed)) === [] && array_intersect($lines, array_keys($booked)) !== [];
+        // Asked per line, not against the key lists: those were built anew for every order of the model, and the cockpit asks for each one.
+        $in = 0;
+
+        foreach ($lines as $line) {
+            if (isset($booked[$line])) {
+                ++$in;
+            } elseif (! isset($closed[$line])) {
+                return false;
+            }
+        }
+
+        return $in > 0;
     }
 
     /** An order whose every purchase was closed without stock and none booked: private, straight to the archive. */
@@ -136,6 +147,12 @@ final class NotStocked
     {
         $lines = array_map('intval', $orders->all($order, $s->field('order_lines')));
 
-        return $lines !== [] && array_diff($lines, array_keys($closed)) === [] && array_intersect($lines, array_keys($booked)) === [];
+        foreach ($lines as $line) {
+            if (isset($booked[$line]) || ! isset($closed[$line])) {
+                return false;
+            }
+        }
+
+        return $lines !== [];
     }
 }

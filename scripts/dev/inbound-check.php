@@ -351,7 +351,7 @@ $plugin = (string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Plugi
 $pruefe(str_contains($plugin, "'admin_post_' . StockPage::ASSIGN"), 'the choice is saved without a reload, under its own action');
 $stockPage = (string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Admin/StockPage.php');
 $pruefe(substr_count($stockPage, '$this->manufacturerControl(') === 2 && substr_count($stockPage, '$this->stock->manufacturerTyped(') === 2 && str_contains((string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Plugin.php'), "'admin_post_' . StockPage::MAKER"), 'D-1255, D-1256: both «Neues Material» dialogs ask the manufacturer of the chosen group with the modeller\'s control and pass it into the new material');
-$pruefe(substr_count($stockPage, "[group]', 0, '', '', true)") === 2 && str_contains($stockPage, "groupChooser('newgroup[' . \$purchase . ']', 0, '', '', true)"), 'D-1257: every «Neues Material» chooses its group under «Material»');
+$pruefe(substr_count($stockPage, "[group]', 0, '', '', true)") === 2 && str_contains($stockPage, "groupChooser('newgroup[' . \$purchase . ']', 0, \$formId, '', true, true)"), 'D-1257: every «Neues Material» chooses its group under «Material»');
 // D-1254: no act ends on an empty page.
 preg_match_all("/add_action\('admin_post_' \. [A-Za-z]+::[A-Z_]+, (.*)\);/", $plugin, $handlers);
 $pruefe($handlers[1] !== [] && array_filter($handlers[1], static fn (string $h): bool => ! str_starts_with($h, 'static fn () => Acts::run(') && ! str_starts_with($h, 'static fn () => Acts::json(')) === [], 'D-1254: every handler runs through Acts, a failure becomes a message on the page it came from');
@@ -472,7 +472,14 @@ $pruefe($stock->receiptLocations($plan) === [$r['kaufT'] => $r['ortTest'], $r['k
 
 // D-1440: the receipt is the one table of «Angekommen».
 $html = (new \TaxmodStock\WordPress\Admin\StockPage())->receiptTable([$r['o9'] => 'o9'], InboundPage::BACK, '');
-$pruefe(preg_match('/name="location\[' . $r['kaufT'] . '\]">(.*?)<\/select>/s', $html, $select) === 1
+// 2026-11-18, measured on «Angekommen» (7 MB and 880 statements for 30 purchases): a row's choosers ask for the shared tree, and
+// both receipt tables hand the trees out once, after their form.
+$pruefe(substr_count($stockPage, "</tbody></table></form>' . \$this->stock->sharedTrees()") === 2
+    && str_contains($stockPage, "\$model === null ? [] : (\$look['preferred'][\$model] ?? []), false, true)")
+    && str_contains((string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/StockService.php'), "apply_filters('taxmod_shared_templates', '')"),
+    'the receipt draws the tree of places and of groups once per table, not once per purchase');
+// 2026-11-18: the row's chooser names the receipt form, so the rows can share one tree of places ({@see StockService::sharedTrees()}).
+$pruefe(preg_match('/name="location\[' . $r['kaufT'] . '\]" form="taxmod-stock-receipt-all">(.*?)<\/select>/s', $html, $select) === 1
     && str_contains($select[1], 'value="' . $r['ortTest'] . '" selected') && str_contains($select[1], 'value="' . $r['ortRegal'] . '"'), 'the Einlagern row preselects the test place and still offers the others');
 $pruefe(str_contains($html, 'id="taxmod-stock-material-' . $r['kaufT'] . '"')
     && str_contains($html, 'taxmod-stock-material-link" for="taxmod-stock-material-' . $r['kaufT'] . '"') && str_contains($html, '>ET4000</label>'), 'the material text opens the same dialog as the row\'s «Material» button');

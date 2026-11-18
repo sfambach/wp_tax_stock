@@ -385,6 +385,9 @@ final class InboundPage
             ($order->orderedOn ?? '') === '' ? '' : esc_html(sprintf(/* translators: %s: date */ __('bestellt %s', 'taxmod-stock'), substr((string) $order->orderedOn, 0, 10))),
             ($order->receivedOn ?? '') === '' ? '' : esc_html(sprintf(/* translators: %s: date */ __('angekommen %s', 'taxmod-stock'), substr((string) $order->receivedOn, 0, 10))),
             $this->trackingCell($order),
+            // R1: what is still to be told apart, and what is already in stock.
+            ($counts = $this->inbound->purchaseCounts($order->id))['undetermined'] > 0 ? esc_html(sprintf(/* translators: %d: purchases not yet determined */ __('%d unbestimmt', 'taxmod-stock'), $counts['undetermined'])) : '',
+            $counts['booked'] > 0 ? esc_html(sprintf(/* translators: %d: purchases in stock */ __('%d gebucht', 'taxmod-stock'), $counts['booked'])) : '',
         ]);
 
         return '<strong><a href="' . esc_url(self::url(['tab' => $tab, 'order' => $order->id])) . '">' . esc_html($label) . '</a></strong>'

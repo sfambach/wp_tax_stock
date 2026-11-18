@@ -150,7 +150,7 @@ $pruefe(str_contains($html, '<span class="description">3 Stück</span>'), 'each 
 (new StockService())->setGroupProperty($r['teile'], StockService::PLACE_PROPERTY, $r['platz']);
 $orte = (new StockService())->receiptLocations($plan);
 $pruefe(($orte[$r['kaufC']] ?? 0) === $r['platz'], 'the receipt proposes the place mapped to the branch the Modell lies in');
-$html = (new StockPage())->render();
+$html = $einbuchen($r['best2']);
 // D-1186, A4 (his word 2026-11-06 «sollte tree chooser mit suche sein»): the place is chosen in the modeller's tree with search.
 $pruefe(str_contains($html, 'name="location[' . $r['kaufC'] . ']" value="' . $r['platz'] . '" checked') && str_contains($html, 'taxmod-tree-filter'), 'the receipt form shows the proposed place in the tree chooser with search, changeable');
 $pruefe(str_contains($html, 'class="taxmod-stock-receipt-place" data-drawn="' . $r['platz'] . '"'), 'D-1361: the row\'s place cell says what the server proposed, so closing the material dialog can swap only it');
@@ -416,23 +416,18 @@ $pruefe(substr_count($html, 'taxmod-stock-order-head') === 2 && substr_count($ht
     && substr_count($html, 'Je Kauf das Material:') === 1 && ! str_contains($html, 'taxmod-list-details') && str_contains($html, 'name="order_of[' . $r['kaufC'] . ']" value="' . $r['best2'] . '"'),
     'D-1440: the purchases of several orders stand in one table under their order\'s line, with one bar, one form and the explanation once');
 $pruefe(str_contains($html, 'Angehakte einlagern …') && str_contains($html, 'Lagerort für alle …') && str_contains($html, 'value="zuordnen"'), 'D-1440: the one bar has «Angehakte einlagern …», «Lagerort für alle …» and saving');
-// An order with a purchase still open, wherever the fixture stands by now.
-$offen = [0, 0];
-
-foreach (array_keys((new StockService())->labels('order')) as $o) {
-    foreach ((new StockService())->receiptPlan($o) as $kauf => $zeile) {
-        if ($zeile['lock'] === null && $offen === [0, 0]) {
-            $offen = [$o, (int) $kauf];
-        }
-    }
-}
-
+// An open row drawn on its own: by now the fixture's purchases are booked, so the row is given as open (lock none, no material).
+$zeile = new ReflectionMethod(StockPage::class, 'receiptRow');
+$suche = new ReflectionMethod(StockPage::class, 'receiptLookups');
+$offen = [$r['kaufC'] => ['model' => null, 'lock' => null, 'proposal' => null]];
 delete_option(StockService::RECEIPT_INBOUND);
-$ohne = $offen[0] > 0 ? (new StockPage())->receiptTable([$offen[0] => 'offen'], InboundPage::BACK, '') : '';
+$seite = new StockPage();
+$ohne  = (string) $zeile->invoke($seite, $r['best2'], $r['kaufC'], $offen[$r['kaufC']], ['where' => []] + $suche->invoke($seite, $offen, false), false, [], InboundPage::BACK, true);
 update_option(StockService::RECEIPT_INBOUND, $r['platz'], false);
-$mit  = $offen[0] > 0 ? (new StockPage())->receiptTable([$offen[0] => 'offen'], InboundPage::BACK, '') : '';
-$pruefe($offen[0] > 0 && str_contains($mit, 'value="positioneinlagern-' . $offen[1] . '"')
-    && (str_contains($ohne, 'value="positioneinlagern-' . $offen[1] . '"') || str_contains($ohne, '«Lagerort Wareneingang» in den Einstellungen')),
+$seite = new StockPage();
+$mit   = (string) $zeile->invoke($seite, $r['best2'], $r['kaufC'], $offen[$r['kaufC']], ['where' => []] + $suche->invoke($seite, $offen, false), false, [], InboundPage::BACK, true);
+$pruefe(str_contains($mit, 'value="positioneinlagern-' . $r['kaufC'] . '"') && ! str_contains($ohne, 'value="positioneinlagern-' . $r['kaufC'] . '"')
+    && str_contains($ohne, '«Lagerort Wareneingang» in den Einstellungen') && str_contains($mit, 'name="order_of[' . $r['kaufC'] . ']"'),
     'D-1440: each open row has «Einlagern»; without a place and without «Lagerort Wareneingang» it is greyed and says why');
 delete_option(StockService::RECEIPT_INBOUND);
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'material'];
@@ -1590,7 +1585,8 @@ $pruefe(apply_filters('taxmod_stock_test_place', null) === (int) ((new StockServ
 
 // D-1357: the Lager's searches take the one rule from the modeller; the core gets it handed in, never a copy of its own.
 $quelle = static fn (string $datei): string => (string) file_get_contents(dirname(__DIR__, 2) . '/src/' . $datei);
-$pruefe(substr_count($quelle('WordPress/Admin/StockPage.php'), 'Wildcard::matches(...)') >= 2 && str_contains($quelle('WordPress/Admin/ContactsPage.php'), 'Wildcard::matches(...)')
+// Changed with D-1440: the old order list of «Einbuchen» and its search are gone; the material list keeps its own.
+$pruefe(substr_count($quelle('WordPress/Admin/StockPage.php'), 'Wildcard::matches(...)') >= 1 && str_contains($quelle('WordPress/Admin/ContactsPage.php'), 'Wildcard::matches(...)')
     && ! str_contains($quelle('Core/StockList.php'), 'mb_stripos') && ! str_contains($quelle('Core/Contacts.php'), 'str_contains'), 'D-1357: stock and contact search use «*» through Wildcard, the core holds no rule of its own');
 
 // D-1368 (ergänzt D-1337), his report 2026-11-14 «das r1 wird nicht erzeugt … und er setzt es auf b6»: the next number follows

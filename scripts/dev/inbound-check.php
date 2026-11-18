@@ -338,7 +338,8 @@ $receiptForm = (string) (new \ReflectionMethod(StockPage::class, 'receiptPositio
 $pruefe(! (new StockService())->canCloseWithoutStock() || str_contains($receiptForm, 'value="sammelnichteinlagern"'), 'D-1400: «Angehakte nicht einlagern …» with one reason for all');
 // D-1403, his words 2026-11-16 «wir haben bulk funktionen und du machst zwei buttons dahin», «alles in eine zeile»: one bar.
 $receiptBar = substr($receiptForm, 0, (int) strpos($receiptForm, 'id="taxmod-stock-receipt-' . $r['o4'] . '"'));
-$pruefe(substr_count($receiptForm, 'class="tablenav top"') === 1 && substr_count($receiptForm, 'class="taxmod-toolbar"') === 1 && str_contains($receiptBar, 'class="taxmod-toolbar"')
+// D-1462: the bar is «tablenav top taxmod-list-bar» since the modeller 0.2.146, so the class is counted by its start.
+$pruefe(substr_count($receiptForm, 'class="tablenav top') === 1 && substr_count($receiptForm, 'class="taxmod-toolbar"') === 1 && str_contains($receiptBar, 'class="taxmod-toolbar"')
     && str_contains($receiptBar, 'value="wareneingang" form="taxmod-stock-receipt-' . $r['o4'] . '"') && (! (new StockService())->canCloseWithoutStock() || str_contains($receiptBar, 'value="ask:taxmod-stock-close-all-' . $r['o4'] . '"')), 'D-1403: the receipt has one bar: the bulk choice, saving and booking in one row before the form');
 $pruefe(str_contains($assignForm, 'value="ask:taxmod-stock-arrive-') && ! str_contains($assignForm, '>Angehakte angekommen</button>'), 'D-1403: «Angehakte angekommen …» is a choice of the bulk bar, not a button of its own');
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'arrived', 'order' => $r['o4']];

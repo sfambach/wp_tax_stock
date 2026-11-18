@@ -551,6 +551,75 @@ try {
     $pruefe($e->reason === 'lot_already_used', 'a lot with another line keeps its receipt');
 }
 
+// ⚠️ **Ceilings for «Angekommen» ([D-1447](../../../wp-taxonomy-modeler/docs/NewConcept/90-decision-log.md), a ratchet as in D-1424).**
+// *Measured 2026-11-18: every purchase row drew a whole place tree and a whole group tree and asked the database anew —
+// 7 MB and 880 statements for 33 rows. What a further purchase row may cost is held here: ten more rows, then ten more,
+// and the difference per row. Above a ceiling is red; below, the ceiling may follow. **A ceiling rises only with a decision.***
+// *Measured with the trees shared: 3 statements and 4562 bytes a row (24337 bytes with a tree per row). The bytes have some room
+// because record ids of another length move them; the three statements a row are what is left to take out (`CD-7`).*
+const RECEIPT_CEILINGS = ['statements per further purchase row' => 3, 'bytes per further purchase row' => 5000];
+
+$baum = [['op' => 'add_field', 'ref' => 'lo_parent', 'node' => $r['lo'], 'name' => 'Übergeordneter Ort', 'target' => $r['lo'], 'kind' => 'aggregation', 'multiplicity' => '0..1']];
+
+for ($i = 0; $i < 40; $i++) {
+    $baum[] = ['op' => 'create_record', 'ref' => 'pl' . $i, 'node' => $r['lo']];
+    $baum[] = ['op' => 'set_values', 'record' => '@pl' . $i, 'values' => [$r['label'] => '__Platz ' . $i] + ($i < 4 ? [] : ['@lo_parent' => '@pl' . intdiv($i, 4)])];
+}
+
+for ($i = 0; $i < 60; $i++) {
+    $baum[] = ['op' => 'create_node', 'ref' => 'g' . $i, 'name' => '__Gruppe ' . $i, 'parent' => $i < 4 ? 402 : '@g' . intdiv($i, 4)];
+}
+
+$gebaut = wp_get_ability('taxmod/apply')->execute(['changes' => $baum]);
+$pruefe(is_array($gebaut), 'ceilings: a tree of forty places and sixty groups' . (is_wp_error($gebaut) ? ' — ' . $gebaut->get_error_message() : ''));
+
+// Drawing does not depend on the kind of «Positionen»; measured once, in the aggregation run.
+if (is_array($gebaut) && $kind === 'aggregation') {
+    $opt = get_option(StockService::OPTION);
+    $opt['fields']['location_parent'] = $gebaut['refs']['lo_parent'];
+    update_option(StockService::OPTION, $opt);
+    update_option('taxmod_import_targets', ['order_fields' => ['ordered_at' => $r['o_best'], 'received_at' => $r['o_ein'], 'tracking' => $r['o_sn'],
+        'platform' => $r['o_plat'], 'merchant' => $r['o_hand'], 'order_number' => $r['o_nr']]]);
+
+    // Ten purchases without a material — the dearest row: it draws the place chooser and the group chooser of «Neues Material».
+    $zehnMehr = static function (string $ref) use ($r): void {
+        $mehr = [];
+
+        for ($p = 0; $p < 10; $p++) {
+            $mehr[] = ['op' => 'create_record', 'ref' => $ref . $p, 'node' => $r['pur']];
+            $mehr[] = ['op' => 'set_values', 'record' => '@' . $ref . $p, 'values' => [$r['label'] => '__Kauf ' . $ref . $p]];
+        }
+
+        $mehr[] = ['op' => 'create_record', 'ref' => $ref, 'node' => $r['ord']];
+        $mehr[] = ['op' => 'set_values', 'record' => '@' . $ref, 'values' => [$r['label'] => '__Angekommen ' . $ref, $r['o_best'] => '2026-11-10', $r['o_ein'] => '2026-11-17',
+            $r['o_pos'] => ['values' => array_map(static fn (int $p): string => '@' . $ref . $p, range(0, 9))]]];
+        wp_get_ability('taxmod/apply')->execute(['changes' => $mehr]);
+    };
+    $messen = static function (): array {
+        global $wpdb;
+        $_GET   = ['page' => InboundPage::PAGE, 'tab' => 'arrived'];
+        $vorher = $wpdb->num_queries;
+        $html   = (new InboundPage())->render();
+
+        return [$wpdb->num_queries - $vorher, strlen($html), substr_count($html, 'taxmod-stock-purchase-')];
+    };
+
+    $zehnMehr('ca');
+    $messen();
+    $eins = $messen();
+    $zehnMehr('cb');
+    $zwei = $messen();
+    $pruefe($zwei[2] > $eins[2], 'ceilings: the second measure draws more purchase rows than the first');
+    $jetzt = ['statements per further purchase row' => (int) ceil(($zwei[0] - $eins[0]) / 10), 'bytes per further purchase row' => (int) ceil(($zwei[1] - $eins[1]) / 10)];
+
+    foreach (RECEIPT_CEILINGS as $was => $decke) {
+        printf("       %-40s %6d  (ceiling %d)%s\n", $was, $jetzt[$was], $decke, $jetzt[$was] > $decke ? '  ← ROSE' : ($jetzt[$was] < $decke ? '  ← fell, the ceiling may follow' : ''));
+        $pruefe($jetzt[$was] <= $decke, 'ceilings: ' . $was . ' at or under the ceiling');
+    }
+
+    printf("       «Angekommen» with %d purchase rows: %d statements, %d KB\n", $zwei[2], $zwei[0], intdiv($zwei[1], 1024));
+}
+
 update_option('taxmod_import_targets', ['order_fields' => ['received_at' => 0]]);
 
 try {

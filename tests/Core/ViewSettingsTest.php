@@ -26,7 +26,22 @@ final class ViewSettingsTest extends TestCase
         $views = ViewSettings::fromArray(['wareneingang' => ['expand' => false], 'material' => ['expand' => true], 'unknown' => ['expand' => true]]);
 
         self::assertTrue($views->expanded('material'));
-        self::assertSame(['material' => ['expand' => true]], $views->toArray());
+        self::assertSame(['material' => ['expand' => true, 'open_single' => false]], $views->toArray());
         self::assertSame($views->toArray(), ViewSettings::fromArray($views->toArray())->toArray());
+    }
+
+    #[Test]
+    public function a_single_hit_stays_in_the_list_unless_chosen_and_the_person_wins(): void
+    {
+        $site = ViewSettings::fromArray([]);
+        $on   = ViewSettings::fromArray(['material' => ['open_single' => true]]);
+
+        // D-1468: off unless set; the person's own choice wins over the site's, either way.
+        self::assertFalse($site->opensSingleHit('material'));
+        self::assertTrue($on->opensSingleHit('material'));
+        self::assertTrue($site->opensSingleHit('material', true));
+        self::assertFalse($on->opensSingleHit('material', false));
+        self::assertTrue($on->opensSingleHit('material', null));
+        self::assertSame($on->toArray(), ViewSettings::fromArray($on->toArray())->toArray());
     }
 }

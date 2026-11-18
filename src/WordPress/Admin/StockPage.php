@@ -627,17 +627,23 @@ final class StockPage
         // The preset filter (with stock, below minimum) stays the page's own; search, column filters and order are the list's.
         $shown   = $view->apply((new StockList('', $list->filter))->apply($rows));
 
-        // D-1329 (his wish 2026-11-13): a search with exactly one hit opens that material — from the list and from the
-        // search box on top of a material.
-        if (! $branch && trim($list->search) !== '' && count($shown) === 1) {
+        $visible = $view->visible();
+        $open    = $this->stock->viewSettings()->expanded('material');
+        $url     = fn (array $change): string => $this->listUrl($tab, $list, $change + [ListPage::SHOW_ALL => ListPage::showsAll() ? '1' : '', 'f' => $view->filters(), 'orderby' => $view->orderBy === 'name' ? '' : $view->orderBy, 'order' => $view->descending ? 'desc' : '']);
+
+        // «← Zur Liste» in the material view comes back to exactly this list (design 7.3) — kept before a single hit opens, so
+        // «back» shows this list with its one row, not the one before.
+        set_transient(self::LAST_LIST . get_current_user_id(), $url(['paged' => absint($_GET['paged'] ?? 0) > 1 ? (string) absint($_GET['paged']) : '']), DAY_IN_SECONDS);
+
+        // D-1329, changed by D-1468: a search with exactly one hit opens that material only where it is chosen — in the
+        // Grundeinstellungen, or by the person, whose choice wins. Otherwise the list stays with its one row.
+        if (! $branch && trim($list->search) !== '' && count($shown) === 1
+            && $this->stock->viewSettings()->opensSingleHit('material', SettingsPage::ownSingleHit())) {
             $one = (int) reset($shown)['id'];
 
             return (new self($this->stock->scopedTo($one)))->thingView($one);
         }
 
-        $visible = $view->visible();
-        $open    = $this->stock->viewSettings()->expanded('material');
-        $url     = fn (array $change): string => $this->listUrl($tab, $list, $change + [ListPage::SHOW_ALL => ListPage::showsAll() ? '1' : '', 'f' => $view->filters(), 'orderby' => $view->orderBy === 'name' ? '' : $view->orderBy, 'order' => $view->descending ? 'desc' : '']);
         $html    = ($branch ? $this->groupTotals($rows) : '') . $this->tools($tab, $list, [
             ['filter', $this->materialFilters(), $list->filter, __('Filter', 'taxmod-stock')],
             ...($branch ? [] : [['group', ['' => __('Alle Gruppen', 'taxmod-stock')] + $groups, $group > 0 ? (string) $group : '', __('Gruppe', 'taxmod-stock')]]),
@@ -654,9 +660,6 @@ final class StockPage
         $body    = $waits ? ($branch ? '<tr class="no-items"><td class="colspanchange" colspan="' . esc_attr((string) (count($visible) + 2)) . '">'
             . esc_html__('Links eine Materialgruppe wählen: angezeigt wird alles darin und in den Gruppen darunter.', 'taxmod-stock') . '</td></tr>'
             : ListPage::searchPrompt(count($visible), $url([ListPage::SHOW_ALL => '1']), count($all))) : ($shown === [] ? $this->noItems(count($visible)) : '');
-
-        // «← Zur Liste» in the material view comes back to exactly this list (design 7.3).
-        set_transient(self::LAST_LIST . get_current_user_id(), $url(['paged' => absint($_GET['paged'] ?? 0) > 1 ? (string) absint($_GET['paged']) : '']), DAY_IN_SECONDS);
 
         $paged  = absint($_GET['paged'] ?? 1);
         $page   = ListView::page($shown, $paged, self::PER_PAGE);
@@ -1213,7 +1216,8 @@ final class StockPage
         ];
 
         // D-1329 (his wish 2026-11-13): the list's search on top, to go on to the next material without going back.
-        $search = ListPage::toolbar([[ListPage::searchBox('taxmod-stock-thing-search', '', __('Nächstes Material suchen …', 'taxmod-stock'), ['page' => self::PAGE, 'tab' => 'material'], __('Suchen', 'taxmod-stock'))]]);
+        // D-1373: «← Zur Liste» on top, first in the toolbar.
+        $search = ListPage::toolbar([[ListPage::back($back, __('Zur Liste', 'taxmod-stock'))], [ListPage::searchBox('taxmod-stock-thing-search', '', __('Nächstes Material suchen …', 'taxmod-stock'), ['page' => self::PAGE, 'tab' => 'material'], __('Suchen', 'taxmod-stock'))]]);
         $html   = $search . '<div class="taxmod-stock-head" style="display:flex;gap:16px;align-items:flex-start;background:#fff;border:1px solid #c3c4c7;padding:16px;margin:8px 0 0">'
             . ($media > 0 ? (string) wp_get_attachment_image($media, [96, 96], false, ['style' => 'width:96px;height:96px;object-fit:cover;border-radius:4px']) : '<div style="width:96px;height:96px;background:#f0f0f1;border-radius:4px"></div>')
             . '<div><p style="margin:0;color:#50575e">' . esc_html(sprintf(/* translators: %d: record id of the thing */ __('Nr. %d', 'taxmod-stock'), $thing)) . ' · ' . $this->pathLinks($node) . '</p>'
@@ -1236,10 +1240,7 @@ final class StockPage
             'bestand' => $this->stockView($thing),
             'verkauf' => '<p>' . esc_html__('Die Verkaufs-Sicht (VK-Preis, Angebote) kommt später.', 'taxmod-stock') . '</p>',
             default   => $this->dataView($thing, $node),
-        } . '</div>'
-            // The foot stays at the bottom of the window: back to the list with its search and filters (design 7.3).
-            . '<div class="taxmod-stock-foot" style="position:sticky;bottom:0;z-index:5;display:flex;gap:16px;align-items:center;background:#fff;border:1px solid #c3c4c7;border-top:2px solid #2271b1;padding:8px 16px;margin-top:12px">'
-            . '<a href="' . esc_url($back) . '">← ' . esc_html__('Zur Liste', 'taxmod-stock') . '</a></div>';
+        } . '</div>';
     }
 
     /** The path of the head, each group a link to its group stock — his word: «damit ich auf display drücken kann sollte dann im gruppen bestand anzeigen». */

@@ -2010,26 +2010,6 @@ final class StockService
         $this->labelTemplates = null;
     }
 
-    /** @return array<int, string> D-1192: every roll by its name — what «Rolle wechseln» offers */
-    public function rolls(): array
-    {
-        return $this->structure()->hasNode('label_roll') ? $this->labels('label_roll') : [];
-    }
-
-    /**
-     * D-1192, his word 2026-11-06: «rolle wechseln funktion fragt ab welche neue rolle eingelegt wurde» — the printer now holds
-     * that roll; one write, undone by changing back.
-     */
-    public function changeRoll(int $printer, int $roll): void
-    {
-        $s = $this->structure();
-        if (! $s->hasNode('label_printer') || ! $s->hasField('printer_loaded_roll') || ! $this->table('label_printer')->has($printer) || ! isset($this->rolls()[$roll])) {
-            throw StockError::nothingToBook();
-        }
-
-        $this->model->write([['op' => 'set_values', 'record' => (string) $printer, 'values' => [(string) $s->field('printer_loaded_roll') => (string) $roll]]]);
-    }
-
     /**
      * D-1178: the packs of the things handled in packs; the others are left out.
      *
@@ -2177,22 +2157,6 @@ final class StockService
     public function copyPlaceType(int $type, string $name): int
     {
         $answer = $this->model->write((new LocationChanges($this->structure()))->copyType($type, $name, $this->placeTypes()));
-
-        return (int) ($answer['refs']['kopie'] ?? 0);
-    }
-
-    /**
-     * D-1130: «Kopieren» of a label template — layout and copies come along, the format stays the one it points at.
-     *
-     * @return int the copy
-     */
-    public function copyLabelTemplate(int $template, string $name): int
-    {
-        if (! $this->structure()->hasNode('label_template') || ! $this->table('label_template')->has($template)) {
-            throw StockError::nothingToBook();
-        }
-
-        $answer = $this->model->write((new NamedCopy($this->structure()))->of($template, $name));
 
         return (int) ($answer['refs']['kopie'] ?? 0);
     }

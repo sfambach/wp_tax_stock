@@ -121,10 +121,9 @@ final class LogisticsShell
                 ...self::modules('settings'),
                 // His words 2026-11-03: «pack mal das menü drucken unter einstellungen», «warum hat das nur zwei ebenen», «kannst du
                 // das so bauen das es n ebenen zulässt» — an item's `path` puts it any depth below its area (D-1121).
-                // D-1153: label templates are records; their list sits with the print pages.
-                ['path' => [__('Druck', 'taxmod-stock')]] + $item('label-templates', __('Etiketten', 'taxmod-stock'), Pages::STOCK, 'etikettenvorlagen'),
-                // D-1192: the printers, the roll each holds, «Rolle wechseln».
-                ['path' => [__('Druck', 'taxmod-stock')]] + $item('printers', __('Drucker', 'taxmod-stock'), Pages::STOCK, 'drucker'),
+                // D-1296, his report 2026-11-18 «etiketten gibts jetzt zweimal als menüpunkt», «drucker auch»: labels, printers and
+                // rolls are the labels module's pages; the stock keeps only its material labels by Bauform (D-1284).
+                ['path' => [__('Druck', 'taxmod-stock')]] + $item('form-labels', __('Etiketten je Bauform', 'taxmod-stock'), Pages::STOCK, 'etikettenvorlagen'),
                 ...array_map(static fn (array $item): array => ['path' => [__('Druck', 'taxmod-stock'), ...$item['path']]] + $item, self::modules('print')),
                 // D-1232, his question 2026-11-08: «was ist eigentlich mit dem Benutzereinstellungen los? Die sind noch nicht sichtbar».
                 $item('user', __('Benutzereinstellungen', 'taxmod-stock'), Pages::SETTINGS, SettingsPage::USER_TAB),

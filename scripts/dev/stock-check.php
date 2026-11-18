@@ -57,7 +57,6 @@ use Taxmod\Core\Renderer\DecimalText;
 use Taxmod\WordPress\Admin\ListPage;
 use TaxmodStock\WordPress\Admin\LogisticsShell;
 use TaxmodStock\WordPress\Admin\StockPage;
-use TaxmodStock\WordPress\LabelAbilities;
 use TaxmodStock\WordPress\StockService;
 
 wp_set_current_user(1);
@@ -341,37 +340,23 @@ $pruefe(! class_exists(Taxmod\Core\Renderer\DialogMarkup::class) || (str_contain
 // His word 2026-11-08: «kein Standard-Int-Feld. Sondern wieder was Eigenes.» — the label count is the model's integer field.
 $pruefe(! class_exists(Taxmod\WordPress\Draw\DialogNumber::class) || (str_contains($html, '<input type="number" name="copies" form="') && ! str_contains($html, 'name="copies" min="1" max="50" step="1" placeholder=')), 'the label count in «Etiketten drucken …» is the model\'s integer field');
 
-if (method_exists(Taxmod\WordPress\Printing\LabelButton::class, 'filled')) {
+// D-1439 (moved from the modeller's LabelButton, PR-9): the stock hands its list to the labels module's one render path.
+if (class_exists(TaxmodLabel\WordPress\LabelButton::class)) {
     $vorlagen = (new StockService())->labelTemplates();
-    $dialog   = $vorlagen->dialog($r['etk40'], ['record' => $r['lm']]);
-    $gefuellt = Taxmod\WordPress\Printing\LabelButton::filled(Taxmod\Core\Printing\LabelContent::of(Taxmod\Core\Printing\LabelPrefix::from('M'), $r['lm'], 'LM2930T-5.0', ''), array_diff_key($dialog, ['choices' => 1, 'chosen' => 1, 'printers' => 1]));
+    $dialog   = array_diff_key($vorlagen->dialog($r['etk40'], ['record' => $r['lm']]), ['choices' => 1, 'chosen' => 1, 'printers' => 1]);
+    $gefuellt = TaxmodLabel\WordPress\LabelButton::filled(new TaxmodLabel\Core\LabelContent('M-' . $r['lm'], 'LM2930T-5.0'), $dialog);
     $pruefe($gefuellt !== null && ($gefuellt->values['Bezeichnung'] ?? '') === 'LM2930T-5.0' && $gefuellt->format->widthMm === 40.0, 'D-1202: a ticked material\'s label reads its own «Bezeichnung», on the 40×30 label');
+    $pdf = apply_filters('taxmod_label_render', null, [['code' => 'M-' . $r['lm'], 'title' => 'LM2930T-5.0', 'copies' => 2, 'template' => $dialog]], 'pdf');
+    $pruefe(is_array($pdf) && str_starts_with((string) ($pdf['pdf'] ?? ''), '%PDF') && ($pdf['labels'] ?? 0) === 2, 'D-1439: the material labels go through taxmod_label_render, one PDF for the list');
+} else {
+    echo "stock: labels module not active, D-1202/D-1439 not checked\n";
 }
 
 // D-1238: «print-label» reaches the place label through the filter, not only material and lot.
 $platzEtikett = apply_filters('taxmod_label_for', null, 'O', $r['platz'], $r['etk40'], 0);
 $pruefe(is_array($platzEtikett) && isset($platzEtikett['template']), 'D-1238: a place label (O-) comes back through taxmod_label_for');
 
-// D-1239: the labels as abilities — read with layout, a new one checked (dry_run, pdf), written, changed and removed again.
-if (function_exists('wp_get_ability') && wp_get_ability(LabelAbilities::READ) !== null) {
-    $gelesen = wp_get_ability(LabelAbilities::READ)->execute(['ids' => [$r['etk40']]]);
-    $pruefe(is_array($gelesen) && ($gelesen['labels'][0]['width'] ?? 0) === 40 && str_contains((string) ($gelesen['labels'][0]['layout'] ?? ''), 'Bezeichnung') && in_array($r['etk_mat'], array_column($gelesen['categories'], 'node'), true), 'D-1239: labels reads a label with its size, its layout and the categories');
-    $vorher  = count(wp_get_ability(LabelAbilities::READ)->execute([])['labels']);
-    $layout  = [['type' => 'text', 'field' => 'title', 'x' => 1, 'y' => 1, 'w' => 38, 'h' => 10, 'example' => 'Probe']];
-    $neu     = ['category' => $r['etk_mat'], 'name' => '40×12 Probe', 'key' => 'p40x12', 'width' => 40, 'height' => 12, 'layout' => $layout];
-    $probe   = wp_get_ability(LabelAbilities::SAVE)->execute($neu + ['dry_run' => true, 'pdf' => true]);
-    $pruefe(is_array($probe) && $probe['written'] === false && str_starts_with((string) base64_decode((string) ($probe['pdf'] ?? ''), true), '%PDF') && count(wp_get_ability(LabelAbilities::READ)->execute([])['labels']) === $vorher, 'D-1239: label-save dry_run answers the PDF and writes nothing');
-    $pruefe(wp_get_ability(LabelAbilities::SAVE)->execute(['width' => 20] + $neu) instanceof \WP_Error, 'D-1239: a layout reaching past its label is refused before anything is written');
-    $angelegt = wp_get_ability(LabelAbilities::SAVE)->execute($neu);
-    $id       = is_array($angelegt) ? (int) $angelegt['id'] : 0;
-    $pruefe($id > 0 && ($angelegt['label']['name'] ?? '') === '40×12 Probe' && ($angelegt['label']['complete'] ?? false) === true && ($angelegt['label']['node'] ?? 0) === $r['etk_mat'], 'D-1239: label-save creates the label in its category, complete');
-    $geaendert = wp_get_ability(LabelAbilities::SAVE)->execute(['id' => $id, 'name' => '40×12 Probe 2']);
-    $pruefe(is_array($geaendert) && ($geaendert['label']['name'] ?? '') === '40×12 Probe 2' && ($geaendert['before']['name'] ?? '') === '40×12 Probe' && ($geaendert['label']['width'] ?? 0) === 40, 'D-1239: a change writes only the field given and answers the label before it');
-    $weg = wp_get_ability(LabelAbilities::REMOVE)->execute(['id' => $id]);
-    $pruefe(is_array($weg) && $weg['removed'] === true && str_contains((string) ($weg['label']['layout'] ?? ''), 'Probe') && wp_get_ability(LabelAbilities::READ)->execute(['ids' => [$id]])['labels'] === [], 'D-1239: label-remove removes it and answers it as it was');
-} else {
-    echo "stock: no Abilities API here, D-1239 not checked\n";
-}
+// D-1239: the label abilities moved to the labels module (taxmod-label/labels, label-save, label-remove; D-1296) — their check went with them.
 
 if (method_exists(ListPage::class, 'thumbnails')) {
     $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'group' => (string) $r['teile']];
@@ -607,9 +592,9 @@ $pruefe(! str_contains($html, 'name="parent[' . $kiste . ']" value="' . $kiste .
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'lagerstruktur', 'ort' => $schrank];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'id="taxmod-stock-children"') && str_contains($html, 'value="' . $fach1 . '" form="taxmod-stock-children"') && str_contains($html, 'value="' . $fach2 . '" form="taxmod-stock-children"') && ! str_contains($html, 'value="' . $kiste . '" form="taxmod-stock-children"'), 'Lagerstruktur: the Unterorte right inside the place stand in a list with checkboxes');
-$pruefe(str_contains($html, 'taxmod-stock-children-move') && str_contains($html, 'value="orteverschieben"') && (! class_exists(Taxmod\Core\Printing\LabelFormat::class) || str_contains($html, 'value="etiketten-pdf"')), 'Lagerstruktur: «Verschieben nach …» and «Etiketten drucken …» for the ticked Unterorte');
+$pruefe(str_contains($html, 'taxmod-stock-children-move') && str_contains($html, 'value="orteverschieben"') && (! has_filter('taxmod_label_formats') || str_contains($html, 'value="etiketten-pdf"')), 'Lagerstruktur: «Verschieben nach …» and «Etiketten drucken …» for the ticked Unterorte');
 // D-1380, his report 2026-11-15 «62x20 wird nicht angeboten … anstatt im text leer 2 oder 1 zu zeigen das sagt nix aus».
-$pruefe(! class_exists(Taxmod\Core\Printing\LabelFormat::class) || (preg_match('/<option value="vorlage-\d+"[^>]*>Material 40×30 · 40 × 30 mm<\/option>.*<option value="holder62"/s', $html) === 1 && ! str_contains($html, 'leer: 2 bei beweglichen, sonst 1')
+$pruefe(! has_filter('taxmod_label_formats') || (preg_match('/<option value="vorlage-\d+"[^>]*>Material 40×30 · 40 × 30 mm<\/option>.*<option value="holder62"/s', $html) === 1 && ! str_contains($html, 'leer: 2 bei beweglichen, sonst 1')
     && (str_contains($html, 'leer: je Ort die Anzahl seiner Platzart') || str_contains($html, 'wie bei der Platzart hinterlegt'))), 'D-1380: the Unterorte\'s «Etiketten drucken …» offers the label templates before the shipped formats, and the count says what the kinds hold');
 $parts = (new StockPage())->parts();
 $pruefe(str_contains($parts['side'], 'taxmod-record-tree') && str_contains($parts['side'], 'data-taxmod-drop-record="0"') && str_contains($parts['side'], 'for="taxmod-stock-new-place-0"') && ! str_contains($parts['main'], 'data-taxmod-pick=') && str_contains($parts['main'], 'id="taxmod-stock-new-place-0"'), 'D-1092: the tree goes under the navigation, the right side is only the place; «Neuer Lagerort» opens its dialog from there');
@@ -1080,8 +1065,8 @@ $pruefe($quelle === [$r['etk40'], 'form', (int) $bf['f0603']], 'D-1284: a label 
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'etikettenvorlagen'];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'value="' . StockPage::FORM_LABELS . '"') && str_contains($html, '__0603') && preg_match('/name="' . StockService::LOT_LABEL_PROPERTY . '\[' . $bf['smd'] . '\]".{0,400}?value="' . $r['etk40'] . '" selected/s', $html) === 1,
-    'D-1284: the Etiketten page lists the Bauformen with their own labels to choose');
-$pruefe(str_contains((string) file_get_contents(WP_PLUGIN_DIR . '/wp-taxonomy-modeler/src/WordPress/Printing/LabelButton.php'), "\$template['origin']"), 'D-1284: the modeller\'s label dialog says where the preselection comes from');
+    'D-1284: «Etiketten je Bauform» lists the Bauformen with their own labels to choose');
+// D-1296: the label dialog left the modeller; that it names the preselection's origin is now the labels module's (PR-9, moved).
 (new StockService())->setGroupProperty((int) $bf['smd'], StockService::LOT_LABEL_PROPERTY, null);
 (new StockService())->setGroupProperty($r['teile'], StockService::LOT_LABEL_PROPERTY, null);
 

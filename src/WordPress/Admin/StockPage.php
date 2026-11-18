@@ -1037,6 +1037,28 @@ final class StockPage
         return $this->lotLabel($thing, $lot, (string) ($this->stock->recordLabels([$thing])[$thing] ?? ''), $this->charges([$lot])[$lot] ?? '');
     }
 
+    /**
+     * D-1461, his wish 2026-11-18 18:41 «bei eingebucht … ein Bestandsetikett»: the label buttons of many lots, names and batch
+     * numbers read once for all (CD-7). Lots without material are left out.
+     *
+     * @param list<int> $lots
+     * @return array<int, string> lot → button
+     */
+    public function lotLabelButtons(array $lots): array
+    {
+        $ledger  = $this->stock->ledger();
+        $thingOf = array_filter(array_combine($lots, array_map(static fn (int $lot): int => (int) ($ledger->thingOf($lot) ?? 0), $lots)) ?: []);
+        $names   = $this->stock->recordLabels(array_values(array_unique($thingOf)));
+        $charges = $this->charges(array_keys($thingOf));
+        $out     = [];
+
+        foreach ($thingOf as $lot => $thing) {
+            $out[$lot] = $this->lotLabel($thing, $lot, (string) ($names[$thing] ?? ''), $charges[$lot] ?? '');
+        }
+
+        return $out;
+    }
+
     private function lotLabel(int $thing, int $lot, string $label, string $charge): string
     {
         $s         = $this->stock->structure();
@@ -3134,6 +3156,12 @@ final class StockPage
         foreach (array_keys($heads) as $order) {
             $plan           = $this->stock->receiptPlan($order);
             $plans[$order]  = isset($orders[$order]) ? array_intersect_key($plan, array_flip($orders[$order]->purchasesIn($tab, array_keys($plan)))) : $plan;
+
+            // D-1461, his word 2026-11-18 19:00 «bei eingebucht möchte ich diese Position eigentlich nicht mehr sehen»: what was decided
+            // on «Angekommen» (privat, nicht eingelagert) is done and stays off «Eingebucht».
+            if ($tab === \TaxmodStock\Core\InboundStage::Booked) {
+                $plans[$order] = array_filter($plans[$order], static fn (array $row): bool => $row['lock'] === 'received');
+            }
         }
 
         $all    = array_replace([], ...array_values($plans));
@@ -3277,7 +3305,8 @@ final class StockPage
                 : '';
             // D-1058: a purchase closed without stock shows its reason and can be taken back.
             $again = match (true) {
-                $lock === 'not_stocked' => '<button type="submit" class="button" name="booking" value="einlagern-' . esc_attr((string) $purchase) . '">' . esc_html__('Zurücknehmen', 'taxmod-stock') . '</button>',
+                // His word 2026-11-18 18:41 «der Button zurücknehmen und dafür lässt sich bestimmt ein Icon finden» (D-1451 squares).
+                $lock === 'not_stocked' => '<button type="submit" class="button" title="' . esc_attr__('Zurücknehmen', 'taxmod-stock') . '" name="booking" value="einlagern-' . esc_attr((string) $purchase) . '">' . $this->iconOrWord('ICON_UNDO', __('Zurücknehmen', 'taxmod-stock')) . '</button>',
                 // A lot purchase that never goes into stock needs no splitting first.
                 $lock === 'purchase_undetermined' && $look['closing'] => $this->closeControls($purchase),
                 default => '',

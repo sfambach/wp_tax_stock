@@ -380,6 +380,17 @@ $_GET = [];
 file_put_contents('/tmp/claude-0/booked.html', $html);
 $pruefe(str_contains($html, 'id="taxmod-stock-receipt-all"') && ! str_contains($html, 'taxmod-stock-order-head') && str_contains($html, '>Bestellung</th>')
     && ! str_contains($html, 'Angehakte einlagern …') && ! str_contains($html, 'Lagerort für alle …'), 'D-1452: «Eingebucht» is the same list of purchases as «Angekommen», its bar without the acts of booking');
+// D-1461, his wishes 2026-11-18 18:41/19:00: «Eingebucht» shows only what was booked, each lot with its label button.
+$marke = static fn (string $html, string $code, int $lot): string => '<span class="taxmod-check-label" data-lot="' . $lot . '"></span>';
+add_filter('taxmod_label_button', $marke, 10, 3);
+$_GET = ['page' => InboundPage::PAGE, 'tab' => 'booked'];
+$html = (new InboundPage())->render();
+$_GET = ['page' => InboundPage::PAGE, 'tab' => 'test'];
+$test = (new InboundPage())->render();
+$_GET = [];
+remove_filter('taxmod_label_button', $marke, 10);
+$pruefe(str_contains($html, 'class="taxmod-check-label"') && ! str_contains($html, '(nicht eingelagert)') && ! str_contains($html, 'value="einlagern-'), 'D-1461: «Eingebucht» holds the lot label button and none of the purchases decided without stock');
+$pruefe(! str_contains($test, 'taxmod-row-actions') || str_contains($test, 'class="taxmod-check-label"'), 'D-1461: «Zu testen» holds the lot label button');
 
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'ordered', 'filter' => 'overdue', 's' => 'retro'];
 $html = (new InboundPage())->render();

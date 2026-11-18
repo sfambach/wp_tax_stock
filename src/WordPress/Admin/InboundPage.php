@@ -286,6 +286,8 @@ final class InboundPage
         $inbound   = $this->inbound->orders();
         $places    = $stock->places();
         $steps     = $stock->testStepsOf($lots);
+        // D-1461, his wish 2026-11-18 18:41: the lot's label from «Zu testen» too, read once for all lots.
+        $labels    = (new StockPage($stock))->lotLabelButtons(array_map('intval', $lots));
         $rows      = '';
 
         foreach ($lots as $lot) {
@@ -299,7 +301,7 @@ final class InboundPage
                 esc_html(substr((string) $table->first($lot, $s->field('lot_date')), 0, 10)),
                 esc_html(($at = (int) $table->first($lot, $s->field('lot_location'))) > 0 ? ($places[$at] ?? $this->inbound->stock()->locationTree()->pathOf($at)) : ''),
                 esc_html(ListPage::number($ledger->restOf($lot))),
-            ], '', $this->testForm($lot, $steps[$lot] ?? []), true);
+            ], '', $this->testForm($lot, $steps[$lot] ?? []) . (($labels[$lot] ?? '') === '' ? '' : ' <span class="taxmod-row-actions">' . $labels[$lot] . '</span>'), true);
         }
 
         $rows = $rows !== '' ? $rows : '<tr class="no-items"><td class="colspanchange" colspan="7">' . esc_html__('Nichts zu testen.', 'taxmod-stock') . '</td></tr>';
@@ -588,9 +590,21 @@ final class InboundPage
 
         $pictures = array_filter(ListPage::thumbnails($stock->titleImages(array_keys(array_replace([], ...array_values($thingOf))))));
         $names    = $stock->things();
+        // D-1461, his wish 2026-11-18 18:41: «bei eingebucht … ein Bestandsetikett» — each lot's label button, read once for all.
+        $lotsOf   = [];
 
-        return function (int $purchase) use ($thingOf, $pictures, $names): array {
+        foreach ($orders as $order) {
+            foreach (array_map('intval', $stock->table('order')->all($order, $s->field('order_lines'))) as $purchase) {
+                $lotsOf[$purchase] = array_map('intval', $this->inbound->lotsOf($purchase));
+            }
+        }
+
+        $labels = (new StockPage($stock))->lotLabelButtons(array_values(array_unique(array_merge([], ...array_values($lotsOf)))));
+
+        return function (int $purchase) use ($thingOf, $pictures, $names, $lotsOf, $labels): array {
             $cells = $this->whereItWent($purchase);
+            $print = implode(' ', array_filter(array_map(static fn (int $lot): string => $labels[$lot] ?? '', $lotsOf[$purchase] ?? [])));
+            $cells['date'] .= $print === '' ? '' : ' <span class="taxmod-row-actions">' . $print . '</span>';
             $shown = '';
 
             foreach (array_keys($thingOf[$purchase] ?? []) as $thing) {

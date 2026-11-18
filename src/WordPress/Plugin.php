@@ -96,6 +96,8 @@ final class Plugin
     public const TEST_LOTS   = 'taxmod_stock_test_lots';
     /** D-1433: whole lots to a place, with their test result in the same act. */
     public const MOVE_LOTS   = 'taxmod_stock_move_lots';
+    /** D-1433 (E): the label button of one lot, the stock page's own (D-1296). */
+    public const LOT_LABEL_BUTTON = 'taxmod_stock_lot_label_button';
     /** D-1425: the prices of what a build takes, and the calculation a finished lot carries. */
     public const BUILD_PRICES   = 'taxmod_stock_build_prices';
     public const COST_BREAKDOWN = 'taxmod_stock_cost_breakdown';
@@ -208,6 +210,7 @@ final class Plugin
         add_filter(self::SCRAP_LOTS, [self::class, 'scrapLots'], 10, 2);
         add_filter(self::TEST_LOTS, [self::class, 'testLots'], 10, 2);
         add_filter(self::MOVE_LOTS, [self::class, 'moveLots'], 10, 2);
+        add_filter(self::LOT_LABEL_BUTTON, [self::class, 'lotLabelButton'], 10, 2);
         add_filter(self::BUILD_PRICES, [self::class, 'buildPrices'], 10, 2);
         add_filter(self::COST_BREAKDOWN, [self::class, 'costBreakdown'], 10, 2);
         add_filter(self::LOT_STAGES, [self::class, 'lotStages'], 10, 2);
@@ -647,6 +650,30 @@ final class Plugin
             return (int) ($answer['act'] ?? 0);
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1433 (E): `apply_filters('taxmod_stock_lot_label_button', '', ['lot' => id])` → the HTML of the lot's label button
+     * (template preselected by group or form, its batch), printed only on a click; '' for no such lot or no right.
+     *
+     * @param mixed $previous a button another callback drew already; `mixed`: whatever it handed on
+     * @param mixed $args     `mixed`: checked here
+     */
+    public static function lotLabelButton(mixed $previous, mixed $args): string
+    {
+        if (is_string($previous) && $previous !== '') {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return '';
+        }
+
+        try {
+            return (new StockPage())->lotLabelButton(absint((is_array($args) ? $args : [])['lot'] ?? 0));
+        } catch (StockError) {
+            return '';
         }
     }
 

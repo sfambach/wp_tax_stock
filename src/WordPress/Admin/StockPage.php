@@ -990,6 +990,21 @@ final class StockPage
             : sprintf(/* translators: %s: the material group */ __('Vorgewählt nach Gruppe: %s', 'taxmod-stock'), $name)];
     }
 
+    /**
+     * D-1433 (E), D-1296: the label button of one lot, as the stock page draws it — for the production's positions, so labels
+     * have one way only. '' for no such lot.
+     */
+    public function lotLabelButton(int $lot): string
+    {
+        $thing = (int) ($this->stock->ledger()->thingOf($lot) ?? 0);
+
+        if ($thing <= 0) {
+            return '';
+        }
+
+        return $this->lotLabel($thing, $lot, (string) ($this->stock->recordLabels([$thing])[$thing] ?? ''), $this->charges([$lot])[$lot] ?? '');
+    }
+
     private function lotLabel(int $thing, int $lot, string $label, string $charge): string
     {
         $s         = $this->stock->structure();

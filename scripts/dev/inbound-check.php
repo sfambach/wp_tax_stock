@@ -495,6 +495,13 @@ $pruefe(substr_count($stockPage, "</tbody></table></form>' . \$this->stock->shar
     && str_contains($stockPage, "\$model === null ? [] : (\$look['preferred'][\$model] ?? []), false, true)")
     && str_contains((string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/StockService.php'), "apply_filters('taxmod_shared_templates', '')"),
     'the receipt draws the tree of places and of groups once per table, not once per purchase');
+
+// ⚠️ *Measured 2026-11-18 on «Eingebucht» (1000 orders with their receipts): every order row asked which purchases are booked,
+// and each answer walked every lot — 38 % of the page. The answer is held for the table it was read from.*
+$einmal = new StockService();
+$lose   = (string) file_get_contents(__DIR__ . '/../../src/WordPress/StockService.php');
+$pruefe($einmal->receivedPurchases() === $einmal->receivedPurchases() && substr_count($lose, 'Ledger::receivedPurchases(') === 1 && str_contains($lose, '$this->received[0] !== $lots'),
+    'the booked purchases are worked out once per table of lots, not once per order row');
 // 2026-11-18: the row's chooser names the receipt form, so the rows can share one tree of places ({@see StockService::sharedTrees()}).
 $pruefe(preg_match('/name="location\[' . $r['kaufT'] . '\]" form="taxmod-stock-receipt-all">(.*?)<\/select>/s', $html, $select) === 1
     && str_contains($select[1], 'value="' . $r['ortTest'] . '" selected') && str_contains($select[1], 'value="' . $r['ortRegal'] . '"'), 'the Einlagern row preselects the test place and still offers the others');

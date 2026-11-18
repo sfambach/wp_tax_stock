@@ -139,6 +139,9 @@ final class StockService
     /** @var array{0: string, 1: Ledger}|null the book with the tables it was built from; see {@see self::ledger()} */
     private ?array $ledger = null;
 
+    /** @var array{0: Table, 1: array<int, true>}|null the lots table and the purchases its lots name ({@see self::receivedPurchases()}) */
+    private ?array $received = null;
+
     private ?ReservedPlaces $reservedPlaces = null;
 
     /** @var array{0: Ledger, 1: Reservations}|null the reservations with the book they were read against */
@@ -1272,13 +1275,21 @@ final class StockService
     {
         $s = $this->structure();
 
-        return (new ReceiptPlan($s))->of($order, $this->table('order'), $this->table('purchase'), Ledger::receivedPurchases($s, $this->table('lot')), NotStocked::purchases($s, $this->table('purchase')));
+        return (new ReceiptPlan($s))->of($order, $this->table('order'), $this->table('purchase'), $this->receivedPurchases(), NotStocked::purchases($s, $this->table('purchase')));
     }
 
     /** @return array<int, true> purchases some lot already names (D-956) */
     public function receivedPurchases(): array
     {
-        return Ledger::receivedPurchases($this->structure(), $this->table('lot'));
+        $lots = $this->table('lot');
+
+        // Measured 2026-11-18 on «Eingebucht»: asked once per order row, and each time every lot was walked — 38 % of the page.
+        // Held for the table it was read from; a write brings a new table and with it a new answer.
+        if ($this->received === null || $this->received[0] !== $lots) {
+            $this->received = [$lots, Ledger::receivedPurchases($this->structure(), $lots)];
+        }
+
+        return $this->received[1];
     }
 
     /**
@@ -1872,7 +1883,7 @@ final class StockService
             $purchases,
             $money,
             // D-1058: a purchase closed without stock counts as done for the order's status.
-            Ledger::receivedPurchases($s, $this->table('lot')) + NotStocked::purchases($s, $this->table('purchase')),
+            $this->receivedPurchases() + NotStocked::purchases($s, $this->table('purchase')),
             $title,
             $this->packsOf(array_values(array_filter(array_map(fn (int $purchase, ReceiptChoice $c): ?int => $c->keep ? (int) $this->table('purchase')->first($purchase, $s->field('purchase_model')) : $c->thing, array_keys($choices), $choices))))
         )];
@@ -1898,7 +1909,7 @@ final class StockService
             throw StockError::notConfigured('fields.purchase_not_stocked');
         }
 
-        return $this->model->write((new NotStocked($s))->close($order, $purchase, $reason, $this->table('order'), $this->table('purchase'), Ledger::receivedPurchases($s, $this->table('lot'))));
+        return $this->model->write((new NotStocked($s))->close($order, $purchase, $reason, $this->table('order'), $this->table('purchase'), $this->receivedPurchases()));
     }
 
     /** @return array<string, mixed> the modeller's answer */
@@ -1906,7 +1917,7 @@ final class StockService
     {
         $s = $this->structure();
 
-        return $this->model->write((new NotStocked($s))->reopen($order, $purchase, $this->table('order'), $this->table('purchase'), Ledger::receivedPurchases($s, $this->table('lot'))));
+        return $this->model->write((new NotStocked($s))->reopen($order, $purchase, $this->table('order'), $this->table('purchase'), $this->receivedPurchases()));
     }
 
     /** D-1030: the storage places as a tree, read once per request. */

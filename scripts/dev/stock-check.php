@@ -262,7 +262,10 @@ $pruefe($vorher > 1.0 && $nach->restAt($lot, $von) === 0.0 && $nach->restAt($lot
     'D-1414: «Quelle danach leer» books the rest at the source out by inventory in the same act; one undo takes both back');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => $r['t1'], 'view' => 'bestand'];
 $html = (new StockPage())->render();
-$pruefe(str_contains($html, 'value="umbuchenleer"') && str_contains($html, 'data-taxmod-confirm="Am alten Ort liegen'), 'D-1414: the «Umbuchen» dialog offers «Quelle danach leer» behind a confirm that names the quantity');
+// Changed with D-1414's successor (his word 2026-11-18 08:08 «eher … so eine Checkbox»): a checkbox, off by default, naming the quantity.
+$pruefe(str_contains($html, '<input type="checkbox" name="source_empty" value="1">') && ! str_contains($html, 'name="source_empty" value="1" checked') && str_contains($html, 'Quelle danach leer: was am alten Ort übrig bleibt (jetzt'), 'D-1414 as changed 2026-11-18: «Quelle danach leer» is a checkbox, off by default, naming the quantity');
+// D-1436: «Ausbuchen» of a row is a dialog with verb and subject in its title, no longer a link to the page.
+$pruefe(str_contains($html, 'taxmod-stock-bookout-') && str_contains($html, 'value="verbrauch"') && str_contains($html, 'Ausbuchen: ') && str_contains($html, 'Umbuchen: '), 'D-1436: «Ausbuchen» and «Umbuchen» are dialogs whose titles name verb and subject');
 
 // The page renders its tabs from the same data.
 foreach (['material' => '>' . $r['lm'] . '</a></td>', 'inventur' => 'Material suchen', 'wareneingang' => 'Bestellung 1', 'verbrauch' => 'Bestandsposten'] as $tab => $erwartet) {
@@ -312,7 +315,8 @@ $pruefe(str_contains($html, 'tab=gruppenbestand&#038;group=' . $r['teile'] . '"'
 
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'material'];
 $html = (new StockPage())->render();
-$pruefe(str_contains($html, '<option value="">--</option>') && str_contains($html, 'data-taxmod-ask="taxmod-stock-bulk-transfer"') && str_contains($html, 'taxmod-bulk-asks'), 'D-1202: «Umbuchen nach …» stands in the one bulk choice, its dialog opens from there');
+// D-1433 G (modeller 0.2.134): the empty choice now carries WordPress' words, so the check asks for the empty option, not its text.
+$pruefe(str_contains($html, '<option value="">') && str_contains($html, 'data-taxmod-ask="taxmod-stock-bulk-transfer"') && str_contains($html, 'taxmod-bulk-asks'), 'D-1202: «Umbuchen nach …» stands in the one bulk choice, its dialog opens from there');
 
 $pruefe(! class_exists(Taxmod\Core\Renderer\DialogMarkup::class) || (str_contains($html, 'data-taxmod-ask="taxmod-stock-material-labels"') && str_contains($html, 'value="materialetiketten-pdf"') && str_contains($html, '>Material 40×30</option>')), 'D-1202: «Etiketten drucken …» for the ticked materials stands in the one bulk choice, with the material labels');
 

@@ -2203,7 +2203,7 @@ final class StockService
      *
      * @param list<int> $exclude places left out with everything under them
      */
-    public function placeChooser(string $name, int $chosen = 0, string $form = '', array $exclude = [], array $preferred = []): string
+    public function placeChooser(string $name, int $chosen = 0, string $form = '', array $exclude = [], array $preferred = [], bool $inline = false): string
     {
         try {
             $s = $this->structure();
@@ -2223,6 +2223,8 @@ final class StockService
                 'form'         => $form,
                 // D-1360: the material's Standard-Lagerorte on top as «Bevorzugt» (modeller 0.2.95; an older one ignores it).
                 'preferred'    => $preferred,
+                // D-1436: in a dialog the tree stands inline, not as a second dialog.
+                'inline'       => $inline,
             ], static fn (mixed $v): bool => $v !== '' && $v !== 0 && $v !== []));
 
             if ($choice !== '') {

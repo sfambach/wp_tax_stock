@@ -198,9 +198,8 @@ final class StockPage
         // D-1058: the row buttons carry their purchase in the value, «nichteinlagern-<id>» and «einlagern-<id>».
         $rowPurchase = preg_match('/^(nichteinlagern|einlagern|bilduebernehmen|umhaengen|reservieren|freigeben|ortkopieren|ortloeschen|artkopieren|vorlagekopieren|rollewechseln|unterplaetze|artwechsel|kurzzeichen)-(\d+)$/', $kind, $m) === 1 ? (int) $m[2] : 0;
         $kind        = $rowPurchase > 0 ? $m[1] : $kind;
-        // D-1414: «Umbuchen, Quelle leer» is «Umbuchen» that also books the rest left at the source out by inventory.
-        $emptySource = $kind === 'umbuchenleer';
-        $kind        = $emptySource ? 'umbuchen' : $kind;
+        // D-1414 as changed on 2026-11-18: «Umbuchen» with «Quelle danach leer» ticked also books the rest left there out.
+        $emptySource = $kind === 'umbuchen' && ($_POST['source_empty'] ?? '') === '1';
         $today = current_time('Y-m-d');
         $arrivedPick = array_values(array_filter(array_map('absint', (array) ($_POST['purchases'] ?? []))));
         $undone      = ['done' => [], 'skipped' => []];
@@ -629,6 +628,7 @@ final class StockPage
         $places = $page === [] ? [] : $this->stock->places();
         // Only the rows of this page, in one read (CD-7).
         $thumbs = $images ? ListPage::thumbnails($this->stock->titleImages(array_column($page, 'id'))) : [];
+        $this->prefetchRowFacts(array_column($page, 'id'));
 
         foreach ($page as $row) {
             $id    = $row['id'];
@@ -1543,7 +1543,7 @@ final class StockPage
                             : PurchasePage::url(['kauf' => (string) (int) $purchase])) . '" target="_blank" rel="noopener">#' . esc_html((string) $purchase) . '</a>') : '') . '</td>'
                     . '<td>' . ($first ? esc_html(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10)) : '') . '</td>'
                     . '<td style="text-align:right;white-space:nowrap">' . ($quantity > 0.0 ? $this->transferDialog($thing, $lot, $place, $quantity, $places) : '')
-                    . ' ' . $this->bookOutButton(add_query_arg(['page' => self::PAGE, 'tab' => 'verbrauch', 'thing' => $thing, 'lot' => $lot, 'place' => $place], admin_url('admin.php')))
+                    . ' ' . $this->bookOutDialog($thing, $lot, $place, $quantity)
                     . ($first ? ' ' . $this->lotLabel($thing, $lot, $name, $charges[$lot] ?? '') : '') . '</td></tr>';
                 $first = false;
             }
@@ -1724,24 +1724,24 @@ final class StockPage
             . self::actForm([
                 ['label' => __('Menge', 'taxmod-stock'), 'control' => '<input type="text" inputmode="decimal" name="quantity" style="width:7em" value="' . esc_attr(DecimalText::stored($quantity, 3)) . '">',
                     'hint' => __('Weniger als alles teilt den Posten auf zwei Orte.', 'taxmod-stock')],
-                ['label' => __('Nach', 'taxmod-stock'), 'control' => $this->stock->placeChooser('location', 0, '', [$from]),
+                ['label' => __('Nach', 'taxmod-stock'), 'control' => $this->stock->placeChooser('location', 0, '', [$from], inline: true),
                     'hint' => __('Bucht die Menge vom bisherigen Ort ab und am neuen zu, als Vorgang «Umbuchung»; «Stornieren» bei den Vorgängen nimmt es zurück.', 'taxmod-stock')],
-                // D-1414: his wish 2026-11-16 «angeben können, dass die Quelle jetzt leer ist» — a rest left there goes out
-                // only by inventory, and only after the dialog has named it.
-                ['label' => __('Quelle leer', 'taxmod-stock'), 'control' => '<button type="submit" class="button" name="booking" value="umbuchenleer"'
-                    . ListPage::confirm(sprintf(
-                        /* translators: 1: quantity at the source now */
-                        __('Am alten Ort liegen von diesem Posten jetzt %1$s. Was nach dem Umbuchen dort übrig bleibt (%1$s minus Menge), wird per Inventur auf 0 ausgebucht. Ein Undo nimmt Umbuchung und Inventur zusammen zurück. Fortfahren?', 'taxmod-stock'),
+                // D-1414, changed by his word 2026-11-18 08:08 «eher … so eine Checkbox … Wenn der Benutzer sagt, ach, jetzt ist der
+                // Platz leer, dann kann er das ticken. Ansonsten wird nichts Inventur gebucht»: off by default; the tick is the consent.
+                ['label' => __('Quelle leer', 'taxmod-stock'), 'control' => '<label><input type="checkbox" name="source_empty" value="1"> '
+                    . esc_html(sprintf(
+                        /* translators: %s: quantity at the source now */
+                        __('Quelle danach leer: was am alten Ort übrig bleibt (jetzt %s), per Inventur auf 0 ausbuchen', 'taxmod-stock'),
                         ListPage::number($quantity)
-                    )) . '>' . esc_html__('Umbuchen, Quelle danach leer', 'taxmod-stock') . '</button>',
-                    'hint' => __('Für «hier ist nichts mehr»: ein Rest am alten Ort wird nach Rückfrage per Inventur ausgebucht.', 'taxmod-stock')],
+                    )) . '</label>',
+                    'hint' => __('Nur ankreuzen, wenn am alten Ort wirklich nichts mehr liegt. Ein Undo nimmt Umbuchung und Inventur zusammen zurück.', 'taxmod-stock')],
             ]);
 
         return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'
             . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">' . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
             . ($returnPlace > 0 ? $this->returnFields('lagerorte', $returnPlace) : '')
             . ($toList ? '<input type="hidden" name="return_tab" value="' . esc_attr(self::BACK_TO_LIST) . '">' : '')
-            . ListPage::dialogAction('taxmod-stock-transfer-' . $lot . '-' . $from . ($toList ? '-list' : ''), __('Umbuchen', 'taxmod-stock'), __('Umbuchen', 'taxmod-stock'), $body, 'booking', 'umbuchen', __('Umbuchen', 'taxmod-stock'), '', self::icon('ICON_TRANSFER'))
+            . ListPage::dialogAction('taxmod-stock-transfer-' . $lot . '-' . $from . ($toList ? '-list' : ''), __('Umbuchen', 'taxmod-stock'), $this->dialogTitle(__('Umbuchen', 'taxmod-stock'), $thing, $lot), $body, 'booking', 'umbuchen', __('Umbuchen', 'taxmod-stock'), '', self::icon('ICON_TRANSFER'))
             . '</form>';
     }
 
@@ -2339,6 +2339,100 @@ final class StockPage
     private static function icon(string $constant): string
     {
         return defined(ListPage::class . '::' . $constant) ? (string) constant(ListPage::class . '::' . $constant) : '';
+    }
+
+    /** @var array{name: array<int, string>, unit: array<int, string>, pack: array<int, bool>} what the row dialogs need per material */
+    private array $rowFacts = ['name' => [], 'unit' => [], 'pack' => []];
+
+    /**
+     * CD-7: the names, units and packs of the materials whose rows get dialogs, one read each for all of them.
+     *
+     * @param list<int> $things
+     */
+    private function prefetchRowFacts(array $things): void
+    {
+        $missing = array_values(array_diff(array_unique(array_map('intval', $things)), array_keys($this->rowFacts['name'])));
+
+        if ($missing === []) {
+            return;
+        }
+
+        $names = $this->stock->recordLabels($missing);
+        $units = $this->stock->unitWords($missing);
+        $packs = $this->stock->packsOf($missing);
+
+        foreach ($missing as $thing) {
+            $this->rowFacts['name'][$thing] = (string) ($names[$thing] ?? '');
+            $this->rowFacts['unit'][$thing] = (string) ($units[$thing] ?? '');
+            $this->rowFacts['pack'][$thing] = ($packs[$thing] ?? null) !== null;
+        }
+    }
+
+    /** D-1436: a dialog's title names the act and its subject — «Umbuchen: <material> (P-<lot>)». */
+    private function dialogTitle(string $verb, int $thing, int $lot): string
+    {
+        $this->prefetchRowFacts([$thing]);
+        $name = $this->rowFacts['name'][$thing];
+
+        return sprintf('%s: %s (P-%d)', $verb, $name === '' ? '#' . $thing : $name, $lot);
+    }
+
+    /**
+     * «Ausbuchen» of one row as a dialog (his finding 2026-11-18 08:03: the link to the page «Verbrauch buchen» read as the
+     * wrong dialog): the lot and its place are fixed, the rest is the consumption form. A material counted in pins
+     * (D-1398) still goes to the page, which cuts whole pieces.
+     */
+    private function bookOutDialog(int $thing, int $lot, int $place, float $quantity): string
+    {
+        $page = add_query_arg(['page' => self::PAGE, 'tab' => 'verbrauch', 'thing' => $thing, 'lot' => $lot, 'place' => $place], admin_url('admin.php'));
+
+        $this->prefetchRowFacts([$thing]);
+
+        if ($quantity <= 0.0 || $this->rowFacts['pack'][$thing]) {
+            return $this->bookOutButton($page);
+        }
+
+        $switch   = 'taxmod-stock-bookout-' . $lot . '-' . $place;
+        $form     = $switch . '-form';
+        $controls = $this->stock->consumptionControls($form);
+        $unit     = $this->rowFacts['unit'][$thing];
+        $rows     = [
+            ['label' => __('Menge', 'taxmod-stock'), 'control' => ($controls['quantity'] !== '' ? $controls['quantity']
+                : '<input type="text" inputmode="decimal" name="quantity" required style="width:6em">')
+                . ($unit === '' ? '' : ' <span class="taxmod-stock-unit">' . esc_html($unit) . '</span>'),
+                /* translators: %s: quantity at this place */
+                'hint' => sprintf(__('An diesem Ort liegen %s.', 'taxmod-stock'), ListPage::number($quantity))],
+            $this->purposeRow($place, $switch),
+        ];
+
+        if ($controls['kind'] !== '') {
+            $rows[] = ['label' => __('Art', 'taxmod-stock'), 'control' => $controls['kind'], 'hint' => __('Pflicht: wofür die Ware das Lager verlässt.', 'taxmod-stock')];
+        }
+
+        $rows[] = ['label' => __('Grund (optional)', 'taxmod-stock'), 'control' => '<input type="text" name="reason" list="taxmod-stock-consumption-reasons" style="width:20em">'];
+        $body   = '<input type="hidden" name="thing" value="' . esc_attr((string) $thing) . '"><input type="hidden" name="lot" value="' . esc_attr((string) $lot) . '">'
+            . '<input type="hidden" name="place" value="' . esc_attr((string) $place) . '">'
+            . (self::here() === '' ? '' : '<input type="hidden" name="return" value="' . esc_attr(self::returnUrl(rawurlencode(self::here()))) . '">')
+            . self::actForm($rows) . self::consumptionReasonList();
+
+        return '<form id="' . esc_attr($form) . '" method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'
+            . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">' . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
+            . ListPage::dialogAction($switch, __('Ausbuchen', 'taxmod-stock'), $this->dialogTitle(__('Ausbuchen', 'taxmod-stock'), $thing, $lot), $body, 'booking', 'verbrauch', __('Ausbuchen', 'taxmod-stock'), '', self::icon('ICON_BOOK_OUT'))
+            . '</form>';
+    }
+
+    /** The reasons offered for a consumption, once per page (the dialogs and the page share it). */
+    private static function consumptionReasonList(): string
+    {
+        static $drawn = false;
+
+        if ($drawn) {
+            return '';
+        }
+
+        $drawn = true;
+
+        return '<datalist id="taxmod-stock-consumption-reasons">' . implode('', array_map(static fn (string $r): string => '<option value="' . esc_attr($r) . '">', self::consumptionReasons())) . '</datalist>';
     }
 
     private function bookOutButton(string $url): string
@@ -4050,6 +4144,8 @@ final class StockPage
         $depth = count($tree->lineOf($place));
         $charges = $this->charges(array_values(array_unique(array_merge([], ...array_map(static fn (int $where): array => array_keys($byPlace[$where] ?? []), $tree->withAllBelow($place))))));
 
+        $this->prefetchRowFacts(array_map(static fn (int $lot): int => (int) $lots->first($lot, $s->field('lot_thing')), array_merge([], ...array_map(static fn (int $where): array => array_keys($byPlace[$where] ?? []), $tree->withAllBelow($place)))));
+
         foreach ($tree->withAllBelow($place) as $where) {
             foreach ($byPlace[$where] ?? [] as $lot => $quantity) {
                 $thing = (int) $lots->first($lot, $s->field('lot_thing'));
@@ -4065,7 +4161,7 @@ final class StockPage
                     . '<td>' . esc_html($this->number($quantity)) . '</td>'
                     . '<td>' . esc_html(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10)) . '</td>'
                     . '<td style="text-align:right;white-space:nowrap">' . $this->transferDialog($thing, $lot, $where, $quantity, $places, $place)
-                    . ' ' . $this->bookOutButton(add_query_arg(['page' => self::PAGE, 'tab' => 'verbrauch', 'thing' => $thing, 'lot' => $lot, 'place' => $where], admin_url('admin.php')))
+                    . ' ' . $this->bookOutDialog($thing, $lot, $where, $quantity)
                     // His word 2026-11-08: «Massenfunktion ist da, aber das Drucken pro Posten».
                     . ' ' . $this->lotLabel($thing, $lot, (string) ($things[$thing] ?? ''), $charges[$lot] ?? '') . '</td></tr>';
             }
@@ -4487,11 +4583,13 @@ final class StockPage
         }
         $rows = [...$rows,
             ['label' => __('Grund (optional)', 'taxmod-stock'), 'for' => 'taxmod-stock-consumption-reason', 'control' => '<input type="text" id="taxmod-stock-consumption-reason" name="reason" list="taxmod-stock-consumption-reasons" style="width:20em">'
-                . '<datalist id="taxmod-stock-consumption-reasons">' . implode('', array_map(static fn (string $r): string => '<option value="' . esc_attr($r) . '">', self::consumptionReasons())) . '</datalist>'],
+                . self::consumptionReasonList()],
         ];
         $submit = get_submit_button(__('Verbrauch buchen', 'taxmod-stock'), 'primary', 'submit', false);
 
-        return str_replace('<form ', '<form id="taxmod-stock-consumption" ', $this->formStart('verbrauch')) . self::actForm($rows, $submit) . '</form>';
+        // D-1436: the page says what it does, like a dialog.
+        return '<h2>' . esc_html__('Verbrauch buchen (Ausbuchen)', 'taxmod-stock') . '</h2>'
+            . str_replace('<form ', '<form id="taxmod-stock-consumption" ', $this->formStart('verbrauch')) . self::actForm($rows, $submit) . '</form>';
     }
 
     /** The page being drawn; details drawn later come by admin-ajax, so there it is the page that asked for them. '' unknown. */
@@ -4526,8 +4624,9 @@ final class StockPage
      *
      * @return array{label: string, control: string, hint: string, for: string}
      */
-    private function purposeRow(int $place): array
+    private function purposeRow(int $place, string $idSuffix = ''): array
     {
+        $id       = 'taxmod-stock-consumption-purpose' . ($idSuffix === '' ? '' : '-' . $idSuffix);
         $preset   = $this->stock->purposeAt($place);
         $selected = $preset === null ? '' : ($preset->production ? 'produktion' : (string) $preset->subject);
         $choices  = ['produktion' => __('für Produktion (ohne Projekt)', 'taxmod-stock')];
@@ -4538,8 +4637,8 @@ final class StockPage
             }
         }
 
-        return ['label' => __('Bezug', 'taxmod-stock'), 'for' => 'taxmod-stock-consumption-purpose',
-            'control' => SelectMarkup::of('purpose', $choices, $selected, attributes: ['id' => 'taxmod-stock-consumption-purpose'], nothingWord: __('— kein Bezug —', 'taxmod-stock')),
+        return ['label' => __('Bezug', 'taxmod-stock'), 'for' => $id,
+            'control' => SelectMarkup::of('purpose', $choices, $selected, attributes: ['id' => $id], nothingWord: __('— kein Bezug —', 'taxmod-stock')),
             'hint' => __('Reservierte Ware darf nur für genau ihren Bezug verbraucht werden; der Verbrauch mindert dann die offene Reservierung. Für jeden anderen Zweck erst aus dem reservierten Bereich umbuchen.', 'taxmod-stock')];
     }
 

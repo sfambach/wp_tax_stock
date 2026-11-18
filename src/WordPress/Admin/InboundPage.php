@@ -37,6 +37,9 @@ final class InboundPage
     public const BACK = 'inbound';
 
     private const ALL         = 'all';
+
+    /** D-1448, D-1452: the stages shown as one list of purchases, each naming its order — no order view of their own. */
+    private const POSITION_STAGES = [InboundStage::Arrived, InboundStage::Booked];
     /** D-1002: the lots that wait for their test, after «Eingebucht». */
     private const TEST        = 'test';
     private const OVERDUE     = 'overdue';
@@ -191,11 +194,12 @@ final class InboundPage
             $stage = $here !== null && in_array($here, $tabsOf[$open], true) ? $here : $stages[$open];
 
             // D-1448, his word 2026-11-18 17:29: «Angekommen» has no order view; an old link to one lands on the list, at its rows.
-            if ($stage !== InboundStage::Arrived) {
+            // D-1452: nor has «Eingebucht».
+            if (! in_array($stage, self::POSITION_STAGES, true)) {
                 return $bar . $this->detailView($orders[$open], $stage, $labels[$open] ?? '#' . $open, $today, $tab);
             }
 
-            $tab = InboundStage::Arrived->value;
+            $tab = $stage->value;
         }
 
         $shown  = [];
@@ -226,14 +230,18 @@ final class InboundPage
 
         // D-1440, his words 2026-11-18 11:33/11:36: «oder ich zeige gleich die Position», «einbuchen … sollte das Teil des
         // angekommenen Bildschirms sein» — every purchase that arrived as a row under its order's line, one bar, one form.
-        if ($tab === InboundStage::Arrived->value) {
+        // D-1452, his word 2026-11-18 17:57: «ab angekommen würde ich die Positionen anzeigen … auch bei eingebucht, zu testen, und bei
+        // archiviert würde ich dann wieder nur die Aufträge anzeigen» — «Eingebucht» is the same list of purchases.
+        if (in_array(InboundStage::tryFrom($tab), self::POSITION_STAGES, true)) {
             $heads = [];
 
             foreach ($shown as $id => $order) {
                 $heads[$id] = $this->orderCell($order, $labels[$id] ?? '#' . $id);
             }
 
-            return $html . (new StockPage($this->inbound->stock()))->receiptTable($heads, self::BACK, $tab) . (new StockPage($this->inbound->stock()))->script(true);
+            $went = $tab === InboundStage::Booked->value ? $this->wentWithPictures(array_keys($heads)) : null;
+
+            return $html . (new StockPage($this->inbound->stock()))->receiptTable($heads, self::BACK, $tab, $went) . (new StockPage($this->inbound->stock()))->script(true);
         }
 
         $html .= $this->bulkBar($tab, $filter, count($shown));
@@ -275,6 +283,7 @@ final class InboundPage
         $things    = $stock->things();
         $orderOf   = $this->inbound->orderOfPurchase();
         $orders    = $stock->labels('order');
+        $inbound   = $this->inbound->orders();
         $places    = $stock->places();
         $steps     = $stock->testStepsOf($lots);
         $rows      = '';
@@ -285,7 +294,8 @@ final class InboundPage
             $order    = $orderOf[$purchase] ?? 0;
             $rows    .= ListPage::row(self::BULK_FORM, (string) $lot, [
                 '<strong>' . esc_html($thing === null ? '#' . $lot : $things->word($thing)) . '</strong> <span class="description">' . esc_html(sprintf(/* translators: %d: material number */ __('Nr. %d', 'taxmod-stock'), (int) $thing)) . '</span>',
-                esc_html($order > 0 ? ($orders[$order] ?? '#' . $order) : '—'),
+                // D-1452: the order named as on «Angekommen» — platform, number with its link, tracking.
+                $order > 0 && isset($inbound[$order]) ? $this->orderCell($inbound[$order], $orders[$order] ?? '#' . $order) : esc_html($order > 0 ? ($orders[$order] ?? '#' . $order) : '—'),
                 esc_html(substr((string) $table->first($lot, $s->field('lot_date')), 0, 10)),
                 esc_html(($at = (int) $table->first($lot, $s->field('lot_location'))) > 0 ? ($places[$at] ?? $this->inbound->stock()->locationTree()->pathOf($at)) : ''),
                 esc_html(ListPage::number($ledger->restOf($lot))),
@@ -553,6 +563,49 @@ final class InboundPage
      * His wish 2026-11-09: «bei eingebucht auch die materialbilder anzeigen … rechts neben der box oben» — the title picture of
      * each material the order went in as, once each, linked to the material; none when lists show no pictures (one switch).
      */
+    /**
+     * D-1452: «Eingebucht» as a list of purchases — each row where its purchase went ({@see whereItWent()}), the material's title
+     * picture before it (his wish 2026-11-09, D-1204), the pictures read once for every order shown.
+     *
+     * @param list<int> $orders
+     * @return \Closure(int): array{material: string, place: string, date: string}
+     */
+    private function wentWithPictures(array $orders): \Closure
+    {
+        $stock  = $this->inbound->stock();
+        $s      = $stock->structure();
+        $ledger = $this->ledger ??= $stock->ledger();
+        $thingOf = [];
+
+        foreach ($orders as $order) {
+            foreach (array_map('intval', $stock->table('order')->all($order, $s->field('order_lines'))) as $purchase) {
+                foreach ($this->inbound->lotsOf($purchase) as $lot) {
+                    $thing = $ledger->thingOf($lot);
+                    $thing === null ? null : $thingOf[$purchase][$thing] = true;
+                }
+            }
+        }
+
+        $pictures = array_filter(ListPage::thumbnails($stock->titleImages(array_keys(array_replace([], ...array_values($thingOf))))));
+        $names    = $stock->things();
+
+        return function (int $purchase) use ($thingOf, $pictures, $names): array {
+            $cells = $this->whereItWent($purchase);
+            $shown = '';
+
+            foreach (array_keys($thingOf[$purchase] ?? []) as $thing) {
+                if (isset($pictures[$thing])) {
+                    $name   = $names->word($thing);
+                    $shown .= '<a href="' . esc_url(StockPage::thingUrl($thing, 'daten')) . '" title="' . esc_attr($name) . '" aria-label="' . esc_attr($name) . '">' . $pictures[$thing] . '</a>';
+                }
+            }
+
+            $cells['material'] = ($shown === '' ? '' : '<span class="taxmod-stock-material-pictures" style="float:left;margin:0 8px 4px 0">' . $shown . '</span>') . $cells['material'];
+
+            return $cells;
+        };
+    }
+
     private function materialPictures(int $order): string
     {
         $stock  = $this->inbound->stock();

@@ -2975,7 +2975,7 @@ final class StockPage
      * then saving, booking and the order's own acts, all in one row. The bar stands before the form; its buttons join the form
      * through `form=`, its dialogs' fields too.
      */
-    private function receiptBar(int $order, int $count, string $formId, bool $assign, bool $canClose, bool $canUnbook, string $back): string
+    private function receiptBar(int $order, int $count, string $formId, bool $assign, bool $canClose, bool $canUnbook, string $back, bool $unbookOnly = false): string
     {
         $place = 'taxmod-stock-place-all-' . $order;
         $body  = self::actForm([['label' => __('Lagerort', 'taxmod-stock'), 'control' => $this->stock->placeChooser('fill_location'),
@@ -2984,7 +2984,7 @@ final class StockPage
         $ask   = static fn (string $switch, string $label, string $title, string $text, string $booking, string $submit): array => [$label,
             '<div class="alignleft actions">' . ListPage::dialogAction($switch, $label, $title, $text, 'booking', $booking, $submit, $formId) . '</div>', true];
 
-        if (! $assign) {
+        if (! $assign && ! $unbookOnly) {
             // D-1411, his word 2026-11-16 «aber keine bulk aktion für we von angeharkten positionen?»: booking is a choice of the bulk bar.
             // D-1440: on «Angekommen» the purchases of all orders; one without a place goes to «Lagerort Wareneingang».
             $asks['taxmod-stock-book-' . $order] = $order > 0
@@ -2994,17 +2994,19 @@ final class StockPage
                     '<p>' . esc_html__('Die angehakten Käufe werden mit Material, Menge und Lagerort eingebucht; ohne Lagerort an den «Lagerort Wareneingang», von dort per Umbuchen weiter.', 'taxmod-stock') . '</p>', 'wareneingang', __('Einlagern', 'taxmod-stock'));
         }
 
-        $asks[$place] = [__('Lagerort für alle …', 'taxmod-stock'), '<div class="alignleft actions">'
-            . ListPage::fillAction($place, __('Lagerort für alle angehakten', 'taxmod-stock'), $body, 'location', 'fill_location', __('Übernehmen', 'taxmod-stock')) . '</div>'];
+        if (! $unbookOnly) {
+            $asks[$place] = [__('Lagerort für alle …', 'taxmod-stock'), '<div class="alignleft actions">'
+                . ListPage::fillAction($place, __('Lagerort für alle angehakten', 'taxmod-stock'), $body, 'location', 'fill_location', __('Übernehmen', 'taxmod-stock')) . '</div>'];
 
-        if ($assign) {
-            // Stefan 16.11. «nicht möglich zu sagen dass einzelne teile angekommen sind».
-            $asks['taxmod-stock-arrive-' . $order] = $ask('taxmod-stock-arrive-' . $order, __('Angekommen …', 'taxmod-stock'), __('Angehakte Käufe angekommen', 'taxmod-stock'),
-                '<p>' . esc_html__('Die Zuordnung wird gespeichert, und genau die angehakten Käufe stehen danach unter «Angekommen»; die anderen bleiben, wo sie sind.', 'taxmod-stock') . '</p>', 'angekommen', __('Angekommen', 'taxmod-stock'));
-        } else {
-            // D-1411: a purchase ticked as arrived by mistake steps back; the others stay. His word 2026-11-18 17:13: the choice says where it goes.
-            $asks['taxmod-stock-notarrived-' . $order] = $ask('taxmod-stock-notarrived-' . $order, __('Auf «Versendet» zurückstellen …', 'taxmod-stock'), __('Angehakte Käufe auf «Versendet» zurückstellen', 'taxmod-stock'),
-                '<p>' . esc_html__('Die angehakten Käufe gehen zurück unter «Versendet» bzw. «Bestellt»; die anderen bleiben unter «Angekommen».', 'taxmod-stock') . '</p>', 'nichtangekommen', __('Zurückstellen', 'taxmod-stock'));
+            if ($assign) {
+                // Stefan 16.11. «nicht möglich zu sagen dass einzelne teile angekommen sind».
+                $asks['taxmod-stock-arrive-' . $order] = $ask('taxmod-stock-arrive-' . $order, __('Angekommen …', 'taxmod-stock'), __('Angehakte Käufe angekommen', 'taxmod-stock'),
+                    '<p>' . esc_html__('Die Zuordnung wird gespeichert, und genau die angehakten Käufe stehen danach unter «Angekommen»; die anderen bleiben, wo sie sind.', 'taxmod-stock') . '</p>', 'angekommen', __('Angekommen', 'taxmod-stock'));
+            } else {
+                // D-1411: a purchase ticked as arrived by mistake steps back; the others stay. His word 2026-11-18 17:13: the choice says where it goes.
+                $asks['taxmod-stock-notarrived-' . $order] = $ask('taxmod-stock-notarrived-' . $order, __('Auf «Versendet» zurückstellen …', 'taxmod-stock'), __('Angehakte Käufe auf «Versendet» zurückstellen', 'taxmod-stock'),
+                    '<p>' . esc_html__('Die angehakten Käufe gehen zurück unter «Versendet» bzw. «Bestellt»; die anderen bleiben unter «Angekommen».', 'taxmod-stock') . '</p>', 'nichtangekommen', __('Zurückstellen', 'taxmod-stock'));
+            }
         }
 
         if ($canClose) {
@@ -3018,7 +3020,7 @@ final class StockPage
             $asks['taxmod-stock-unbook-' . $order] = $ask('taxmod-stock-unbook-' . $order, __('Wareneingang rückgängig …', 'taxmod-stock'), __('Wareneingang rückgängig machen', 'taxmod-stock'),
                 '<p>' . esc_html($order > 0
                     ? __('Nimmt die gebuchten Käufe dieser Bestellung wieder aus dem Bestand; ein Kauf, dessen Posten schon umgebucht oder verbraucht ist, bleibt und wird genannt.', 'taxmod-stock')
-                    : __('Nimmt die gebuchten Käufe der angehakten Bestellungen wieder aus dem Bestand; ein Kauf, dessen Posten schon umgebucht oder verbraucht ist, bleibt und wird genannt.', 'taxmod-stock')) . '</p>', 'wareneingangzurueck', __('Rückgängig', 'taxmod-stock'));
+                    : __('Nimmt die gebuchten Käufe der Bestellungen der angehakten Käufe wieder aus dem Bestand; ein Kauf, dessen Posten schon umgebucht oder verbraucht ist, bleibt und wird genannt.', 'taxmod-stock')) . '</p>', 'wareneingangzurueck', __('Rückgängig', 'taxmod-stock'));
         }
 
         $buttons = '<div class="alignleft actions">' . ListPage::toolbar([
@@ -3126,8 +3128,9 @@ final class StockPage
      *
      * @param array<int, string> $heads order id → its line, drawn by the caller (escaped)
      * @param string             $stage the cockpit tab: only the purchases standing in it
+     * @param \Closure|null      $went  D-1452, on «Eingebucht»: purchase → its escaped cells material, place, date
      */
-    public function receiptTable(array $heads, string $back, string $stage): string
+    public function receiptTable(array $heads, string $back, string $stage, ?\Closure $went = null): string
     {
         $tab    = \TaxmodStock\Core\InboundStage::tryFrom($stage);
         $orders = $tab === null ? [] : (new \TaxmodStock\WordPress\InboundService($this->stock))->orders();
@@ -3143,13 +3146,17 @@ final class StockPage
         $open   = count(array_filter($all, static fn (array $row): bool => $row['lock'] === null));
         $booked = count(array_filter($all, static fn (array $row): bool => $row['lock'] === 'received'));
         $formId = self::receiptFormId(0);
-        $html   = $this->receiptBar(0, count($all), $formId, false, $look['closing'] && $open > 0, $booked > 0, $back)
+        // D-1452: on «Eingebucht» the booked purchases are ticked for «Wareneingang rückgängig …», the only act there.
+        $look['booked_stage'] = $tab === \TaxmodStock\Core\InboundStage::Booked;
+        $look['went']         = $went;
+        $html   = ($look['booked_stage'] ? $this->receiptBar(0, count($all), $formId, false, false, $booked > 0, $back, true)
+                : $this->receiptBar(0, count($all), $formId, false, $look['closing'] && $open > 0, $booked > 0, $back))
             . $this->receiptFormStart($formId, 'wareneingang', false)
             . '<input type="hidden" name="multi" value="1">'
             . ($back === '' ? '' : '<input type="hidden" name="back" value="' . esc_attr($back) . '">')
             . ($tab === null ? '' : '<input type="hidden" name="stage" value="' . esc_attr($tab->value) . '">')
-            . $this->receiptHelp(false, $look['closing'])
-            . '<table class="wp-list-table widefat fixed striped table-view-list taxmod-stock-receipt-all"><thead>' . $this->receiptHead(true) . '</thead><tbody>' . ($all === [] ? $this->noItems(6) : '');
+            . ($look['booked_stage'] ? '' : $this->receiptHelp(false, $look['closing']))
+            . '<table class="wp-list-table widefat fixed striped table-view-list taxmod-stock-receipt-all"><thead>' . $this->receiptHead(true, $look['booked_stage']) . '</thead><tbody>' . ($all === [] ? $this->noItems(6) : '');
 
         // D-1448, his word 2026-11-18 17:29: no line per order — every purchase a row, its order in its own column, in the order of the orders.
         $look['heads'] = $heads;
@@ -3187,7 +3194,8 @@ final class StockPage
     }
 
     /** With `$withOrder` (D-1448, «Angekommen» over all orders) the first column names each row's order. */
-    private function receiptHead(bool $withOrder = false): string
+    /** With `$booked` (D-1452, «Eingebucht») the last column is the day it was booked, linked to its lot, instead of the acts. */
+    private function receiptHead(bool $withOrder = false, bool $booked = false): string
     {
         // D-1448, his word 2026-11-18 17:57: «Material ist ja jetzt relativ breit … könnte ja auch ruhig umbrechen» — the purchase gets the room.
         $buy  = $withOrder ? '30%' : '34%';
@@ -3198,7 +3206,8 @@ final class StockPage
             . '<th scope="col" class="manage-column" style="width:' . $buy . '">' . esc_html__('Kauf', 'taxmod-stock') . '</th><th scope="col" class="manage-column taxmod-stock-receipt-material" style="width:' . $wide . '">' . esc_html__('Material', 'taxmod-stock')
             . '</th><th scope="col" class="manage-column" style="width:6em">' . esc_html__('Menge', 'taxmod-stock') . '</th><th scope="col" class="manage-column">' . esc_html__('Lagerort', 'taxmod-stock') . '</th>'
             // His word 2026-11-01: «buttons immer nach rechts».
-            . '<th scope="col" class="manage-column" style="width:10em;text-align:right">' . esc_html__('Aktionen', 'taxmod-stock') . '</th></tr>';
+            . ($booked ? '<th scope="col" class="manage-column" style="width:8em">' . esc_html__('Eingebucht am', 'taxmod-stock') . '</th></tr>'
+                : '<th scope="col" class="manage-column" style="width:10em;text-align:right">' . esc_html__('Aktionen', 'taxmod-stock') . '</th></tr>');
     }
 
     /**
@@ -3257,7 +3266,7 @@ final class StockPage
         // The row's choosers name their form, so they can share their tree with the other rows ({@see StockService::sharedTrees()}).
         $formId   = self::receiptFormId($multi ? 0 : $order);
         $html     = '<tr id="taxmod-stock-purchase-' . esc_attr((string) $purchase) . '"' . ($multi ? ' data-order="' . esc_attr((string) $order) . '"' : '') . '><th scope="row" class="check-column"><input type="checkbox" name="purchases[]" value="' . esc_attr((string) $purchase) . '"'
-            . ($lock === null && $model !== null && ! $assign && ! $multi && ($pick === [] || in_array($purchase, $pick, true)) ? ' checked' : '') . ($lock === null ? '' : ' disabled') . '>'
+            . ($lock === null && $model !== null && ! $assign && ! $multi && ($pick === [] || in_array($purchase, $pick, true)) ? ' checked' : '') . ($lock === null || ($lock === 'received' && ($look['booked_stage'] ?? false)) ? '' : ' disabled') . '>'
             . ($multi ? '<input type="hidden" name="order_of[' . esc_attr((string) $purchase) . ']" value="' . esc_attr((string) $order) . '">' : '') . '</th>'
             . ($multi ? '<td>' . ($look['heads'][$order] ?? esc_html('#' . $order)) . '</td>' : '')
             . '<td>' . (($look['thumbs'][$purchase] ?? '') === '' ? '' : '<span style="float:left;margin:0 8px 4px 0">' . $look['thumbs'][$purchase] . '</span>')
@@ -3277,6 +3286,13 @@ final class StockPage
                 $lock === 'purchase_undetermined' && $look['closing'] => $this->closeControls($purchase),
                 default => '',
             };
+
+            // D-1452, his wish 2026-11-09: once booked, where it went — material, place and day, each linked (as in the order view before).
+            if ($lock === 'received' && ($look['went'] ?? null) instanceof \Closure) {
+                $cells = ($look['went'])($purchase);
+
+                return $html . '<td>' . $cells['material'] . '</td><td>' . esc_html($quantity) . '</td><td>' . $cells['place'] . '</td><td>' . $cells['date'] . '</td></tr>';
+            }
 
             return $html . '<td>' . ($model === null ? esc_html('—') : $this->materialLink($purchase, $model, '#' . $model . ' · ' . ($models[$model] ?? ''))) . '</td>'
                 . '<td>' . esc_html($quantity) . '</td>'

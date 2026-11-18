@@ -293,15 +293,16 @@ $details = static function (string $tab): string {
 };
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'booked'];
 $html = (new InboundPage())->render();
-$pruefe(! str_contains($html, 'button taxmod-list-toggle') && ! str_contains($html, 'Expand all') && str_contains($html, 'order=' . $r['o5']), '«Eingebucht» lists its orders without opening rows, each linked to its own view');
+// D-1452 (changes the order list of «Eingebucht»): its purchases as rows, no rows to open, no order view.
+$pruefe(! str_contains($html, 'button taxmod-list-toggle') && ! str_contains($html, 'Expand all') && str_contains($html, 'name="order_of[') && ! str_contains($html, 'taxmod-stock-order-head'), 'D-1452: «Eingebucht» lists its purchases without opening rows, each naming its order');
 // His wish 2026-11-09: «bei eingebucht auch die materialbilder anzeigen … rechts neben der box oben» — a real picture of the library.
 $png  = wp_upload_bits('taxmod-check-' . wp_generate_password(6, false) . '.png', null, (string) base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='));
 $bild = (int) wp_insert_attachment(['post_mime_type' => 'image/png', 'post_title' => 'taxmod check', 'post_status' => 'inherit'], $png['file']);
 require_once ABSPATH . 'wp-admin/includes/image.php';
 wp_update_attachment_metadata($bild, wp_generate_attachment_metadata($bild, $png['file']));
 (new StockService())->write([['op' => 'set_values', 'record' => (string) $r['et4000'], 'values' => [(string) $r['bilder'] => ['values' => ['media:' . $bild]]]]]);
-$html .= $details('booked');
-$pruefe(! \Taxmod\WordPress\Admin\ListPage::showsImages() || (str_contains($html, 'taxmod-stock-material-pictures') && str_contains($html, basename($png['file']) . '" class="taxmod-list-thumb"') && substr_count($html, 'taxmod-stock-material-pictures') <= count((new InboundService())->orders())), '«Eingebucht»: the material\'s title picture stands beside the box, linked to the material');
+$html .= (new InboundPage())->render() . $details('booked');
+$pruefe(! \Taxmod\WordPress\Admin\ListPage::showsImages() || (str_contains($html, 'taxmod-stock-material-pictures') && str_contains($html, basename($png['file']) . '" class="taxmod-list-thumb"')), 'D-1452: «Eingebucht»: the material\'s title picture stands in its row, linked to the material');
 wp_delete_attachment($bild, true);
 $pruefe(str_contains($html, 'Ladegerät') && str_contains($html, 'thing=' . $r['et4000']) && str_contains($html, 'view=bestand'), '«Eingebucht» shows where each purchase went, linked to its material');
 // His wish 2026-11-09, his choice «Als Spalten in der Käufe-Tabelle»: material, place and day as columns, the purchase named by its number only.
@@ -373,6 +374,12 @@ $pruefe(str_contains($html, '1 unbestimmt'), 'it counts the purchases not yet de
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'arrived'];
 $html = (new InboundPage())->render();
 $pruefe(! str_contains($html, 'taxmod-stock-order-head') && ! str_contains($html, 'name="orders[]"') && str_contains($html, '>Bestellung</th>'), 'D-1448: «Angekommen» is one list of purchases with a column «Bestellung», no line and no tick per order');
+$_GET = ['page' => InboundPage::PAGE, 'tab' => 'booked'];
+$html = (new InboundPage())->render();
+$_GET = [];
+file_put_contents('/tmp/claude-0/booked.html', $html);
+$pruefe(str_contains($html, 'id="taxmod-stock-receipt-all"') && ! str_contains($html, 'taxmod-stock-order-head') && str_contains($html, '>Bestellung</th>')
+    && ! str_contains($html, 'Angehakte einlagern …') && ! str_contains($html, 'Lagerort für alle …'), 'D-1452: «Eingebucht» is the same list of purchases as «Angekommen», its bar without the acts of booking');
 
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'ordered', 'filter' => 'overdue', 's' => 'retro'];
 $html = (new InboundPage())->render();
@@ -528,7 +535,7 @@ update_option(StockService::TESTS, ['place' => $r['ortTest']]);
 // D-1009 · back from «Eingebucht».
 $pruefe((new InboundService())->orders()[$r['o8']]->stage((new StockService())->structure()) === InboundStage::Booked, 'a booked order stands under «Eingebucht»');
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'booked'];
-$pruefe(str_contains((new InboundPage())->render(), 'wieder ausgebucht'), 'its «Zurück» warns that the stock goes out again');
+$pruefe(str_contains((new InboundPage())->render(), 'wieder aus dem Bestand'), 'D-1452: its «Wareneingang rückgängig …» warns that the stock goes out again');
 $pruefe((new InboundService())->stock()->structureWithKinds()->composes('transaction_lines') === ($kind === 'composition'), "the module reads «Positionen» as {$kind} from the model");
 
 if ($kind === 'composition') {

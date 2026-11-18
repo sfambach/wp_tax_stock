@@ -386,6 +386,7 @@ $pruefe(str_contains($hier, 'value="' . $r['kaufP1'] . '" checked') && ! str_con
     'D-1411: «Angekommen» shows the arrived purchase ticked, «Versendet» the other one alone');
 $pruefe(str_contains($hier, 'value="ask:taxmod-stock-book-' . $r['o10'] . '"') && ! str_contains($hier, '>Wareneingang buchen</button>') && str_contains($hier, 'value="nichtangekommen"'),
     'D-1411: «Wareneingang buchen …» and «Nicht angekommen …» are choices of the bulk bar for the ticked purchases');
+$pruefe(str_contains($hier, '>Einlagern</button>') && ! str_contains($weg, '>Einlagern</button>'), 'his finding 2026-11-18 17:19: «Einlagern» per row in the order view under «Angekommen», none while assigning under «Versendet»');
 $pruefe(str_contains($hier, 'thing[' . $r['kaufP1'] . ']" value="' . $r['kabel'] . '" checked'), 'his report 2026-11-16: the material chosen on its way stands chosen at the receipt');
 foreach (['shipped', 'arrived'] as $reiter) {
     $_GET = ['page' => InboundPage::PAGE, 'tab' => $reiter];

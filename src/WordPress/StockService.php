@@ -2225,7 +2225,7 @@ final class StockService
                 'form'         => $form,
                 // D-1360: the material's Standard-Lagerorte on top as «Bevorzugt» (modeller 0.2.95; an older one ignores it).
                 'preferred'    => $preferred,
-                // D-1436: the tree inline when a caller asks; the transfer dialog no longer does (D-1444).
+                // The tree inline when a caller asks; in a dialog the modeller draws it standing anyway (D-1467).
                 'inline'       => $inline,
                 // The tree once per page, however many rows open it ({@see self::sharedTrees()}); an older modeller ignores it.
                 'shared'       => $shared && $form !== '' && ! $inline,

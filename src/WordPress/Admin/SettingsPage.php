@@ -83,7 +83,7 @@ final class SettingsPage
             // His wish 2026-11-09: the trees on the left open as he left them; this forgets it.
             . '<tr><th scope="row">' . esc_html__('Bäume links', 'taxmod-stock') . '</th><td><label><input type="checkbox" name="reset_trees" value="1"> '
                 . esc_html__('Gemerkten Ast und offene Äste aller Bäume vergessen', 'taxmod-stock') . '</label></td></tr>'
-            // D-1467: the person's own choice wins over the Grundeinstellung.
+            // D-1468: the person's own choice wins over the Grundeinstellung.
             . '<tr><th scope="row"><label for="taxmod-stock-single">' . esc_html__('Bei genau einem Treffer', 'taxmod-stock') . '</label></th><td><select id="taxmod-stock-single" name="single_hit">'
             . self::singleOption('', __('Wie in den Grundeinstellungen', 'taxmod-stock'), $own)
             . self::singleOption('0', __('In der Liste bleiben', 'taxmod-stock'), $own)
@@ -92,10 +92,10 @@ final class SettingsPage
             . '</tbody></table>' . '</form>']], (string) TAXMOD_STOCK_VERSION);
     }
 
-    /** The user meta of D-1467: '' follows the site, '0' stays in the list, '1' opens the one hit. */
+    /** The user meta of D-1468: '' follows the site, '0' stays in the list, '1' opens the one hit. */
     public const SINGLE_HIT_META = 'taxmod_stock_single_hit';
 
-    /** D-1467: the person's own choice for a single hit; null follows the Grundeinstellung. */
+    /** D-1468: the person's own choice for a single hit; null follows the Grundeinstellung. */
     public static function ownSingleHit(): ?bool
     {
         $own = (string) get_user_meta(get_current_user_id(), self::SINGLE_HIT_META, true);
@@ -153,7 +153,7 @@ final class SettingsPage
             $html .= '<tr><th scope="row">' . esc_html($title) . '</th><td><label><input type="checkbox" name="taxmod_stock_views[' . esc_attr($tab) . ']" value="1"'
                 . checked($views->expanded($tab), true, false) . '> ' . esc_html__('Gleich aufgeklappt', 'taxmod-stock') . '</label>'
                 . '<p class="description">' . esc_html($explain) . '</p>'
-                // D-1467: off unless set — the list shows its one row and the person opens it.
+                // D-1468: off unless set — the list shows its one row and the person opens it.
                 . '<p><label><input type="checkbox" name="taxmod_stock_single[' . esc_attr($tab) . ']" value="1"' . checked($views->opensSingleHit($tab), true, false) . '> '
                 . esc_html__('Bei genau einem Treffer gleich öffnen', 'taxmod-stock') . '</label></p>'
                 . '<p class="description">' . esc_html__('Sonst bleibt die Liste mit der einen Zeile stehen. Jede Person kann das in den Benutzereinstellungen für sich anders wählen.', 'taxmod-stock') . '</p></td></tr>';

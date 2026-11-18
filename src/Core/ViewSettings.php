@@ -5,7 +5,7 @@ namespace TaxmodStock\Core;
 /**
  * How each tab of the stock page opens: with «Gleich aufgeklappt» the rows below a table row (an order's purchases,
  * a thing's lots) are open without a click. «Wareneingang» left with D-1440: its purchases stand in the rows themselves,
- * nothing is left to open. D-1467: whether a search with exactly one hit opens it at once — off unless set; a person's own
+ * nothing is left to open. D-1468: whether a search with exactly one hit opens it at once — off unless set; a person's own
  * choice wins over the site's.
  */
 final class ViewSettings
@@ -41,7 +41,7 @@ final class ViewSettings
     }
 
     /**
-     * D-1467: whether a search with exactly one hit opens it at once. His word 2026-11-18: «soll dann bei einer filterzeile stehen
+     * D-1468: whether a search with exactly one hit opens it at once. His word 2026-11-18: «soll dann bei einer filterzeile stehen
      * bleiben nutzer wählt manuell aus … im benutzer profil hinterlegen und generell in den einstellungen, benutzer profil schlägt
      * einstellungen».
      *

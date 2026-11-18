@@ -36,7 +36,7 @@ final class ViewSettingsTest extends TestCase
         $site = ViewSettings::fromArray([]);
         $on   = ViewSettings::fromArray(['material' => ['open_single' => true]]);
 
-        // D-1467: off unless set; the person's own choice wins over the site's, either way.
+        // D-1468: off unless set; the person's own choice wins over the site's, either way.
         self::assertFalse($site->opensSingleHit('material'));
         self::assertTrue($on->opensSingleHit('material'));
         self::assertTrue($site->opensSingleHit('material', true));

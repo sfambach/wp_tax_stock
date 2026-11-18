@@ -635,7 +635,7 @@ final class StockPage
         // «back» shows this list with its one row, not the one before.
         set_transient(self::LAST_LIST . get_current_user_id(), $url(['paged' => absint($_GET['paged'] ?? 0) > 1 ? (string) absint($_GET['paged']) : '']), DAY_IN_SECONDS);
 
-        // D-1329, changed by D-1467: a search with exactly one hit opens that material only where it is chosen — in the
+        // D-1329, changed by D-1468: a search with exactly one hit opens that material only where it is chosen — in the
         // Grundeinstellungen, or by the person, whose choice wins. Otherwise the list stays with its one row.
         if (! $branch && trim($list->search) !== '' && count($shown) === 1
             && $this->stock->viewSettings()->opensSingleHit('material', SettingsPage::ownSingleHit())) {

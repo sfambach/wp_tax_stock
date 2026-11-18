@@ -107,6 +107,18 @@ final class TestQueueTest extends TestCase
         self::assertTrue($q->needsTest(30, '', $parents, $settings) && ! $q->needsTest(30, '400', $parents, $settings), 'one rule for the queue and the proposal');
     }
 
+    #[Test]
+    public function back_to_test_makes_the_lot_untested_without_a_test_date_and_with_the_note(): void
+    {
+        $s = $this->structure();
+
+        self::assertSame([['op' => 'set_values', 'record' => '7', 'values' => [
+            (string) $s->field('lot_condition') => '401',
+            (string) $s->field('lot_tested_on') => '',
+            (string) $s->field('lot_test_note') => 'Nacharbeit: Lötbrücke',
+        ]]], (new TestQueue($s))->reopen(7, ' Nacharbeit: Lötbrücke '));
+    }
+
     private function structure(): Structure
     {
         $raw = Fixture::structure()->toArray();

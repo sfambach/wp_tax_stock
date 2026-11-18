@@ -94,6 +94,8 @@ final class Plugin
     public const TEST_RESULT = 'taxmod_stock_test_result';
     public const SCRAP_LOTS  = 'taxmod_stock_scrap_lots';
     public const TEST_LOTS   = 'taxmod_stock_test_lots';
+    /** D-1433: whole lots to a place, with their test result in the same act. */
+    public const MOVE_LOTS   = 'taxmod_stock_move_lots';
     /** D-1425: the prices of what a build takes, and the calculation a finished lot carries. */
     public const BUILD_PRICES   = 'taxmod_stock_build_prices';
     public const COST_BREAKDOWN = 'taxmod_stock_cost_breakdown';
@@ -205,6 +207,7 @@ final class Plugin
         add_filter(self::TEST_RESULT, [self::class, 'testResult'], 10, 2);
         add_filter(self::SCRAP_LOTS, [self::class, 'scrapLots'], 10, 2);
         add_filter(self::TEST_LOTS, [self::class, 'testLots'], 10, 2);
+        add_filter(self::MOVE_LOTS, [self::class, 'moveLots'], 10, 2);
         add_filter(self::BUILD_PRICES, [self::class, 'buildPrices'], 10, 2);
         add_filter(self::COST_BREAKDOWN, [self::class, 'costBreakdown'], 10, 2);
         add_filter(self::LOT_STAGES, [self::class, 'lotStages'], 10, 2);
@@ -610,7 +613,8 @@ final class Plugin
     /**
      * D-1419: `apply_filters('taxmod_stock_test_result', null, ['lots' => [id, …], 'result' => 'passed'|'failed', 'note' => '…',
      * 'date' => Y-m-d])` → the change number (undo it with `undo_act`, D-1410) or a WP_Error. «passed» sets «funktioniert»,
-     * «failed» «defekt»; both free the lot (D-1342).
+     * «failed» «defekt»; both free the lot (D-1342). D-1433: «untested» sets «ungetestet» with the note as finding and blocks
+     * it again (rework done, back to test).
      *
      * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
      * @param mixed $args     the result as the caller sends it; `mixed`: checked here
@@ -627,14 +631,10 @@ final class Plugin
 
         $args   = is_array($args) ? $args : [];
         $date   = sanitize_text_field((string) ($args['date'] ?? ''));
-        $result = match (sanitize_key((string) ($args['result'] ?? ''))) {
-            'passed' => TestResult::Ok,
-            'failed' => TestResult::Defect,
-            default  => null,
-        };
+        $result = self::resultOf($args['result'] ?? '');
 
-        if ($result === null) {
-            return new \WP_Error('taxmod_stock_no_result', __('Das Testergebnis muss «passed» oder «failed» sein.', 'taxmod-stock'));
+        if ($result === false) {
+            return new \WP_Error('taxmod_stock_no_result', __('Das Testergebnis muss «passed», «failed» oder «untested» sein.', 'taxmod-stock'));
         }
 
         if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
@@ -650,9 +650,68 @@ final class Plugin
         }
     }
 
+    /** @return TestResult|false|null the result asked for; null is «untested» (D-1433), false none of the three */
+    private static function resultOf(mixed $given): TestResult|false|null
+    {
+        return match (sanitize_key((string) $given)) {
+            'passed'   => TestResult::Ok,
+            'failed'   => TestResult::Defect,
+            'untested' => null,
+            default    => false,
+        };
+    }
+
+    /**
+     * D-1433: `apply_filters('taxmod_stock_move_lots', null, ['lots' => [id, …], 'place' => id, 'date' => Y-m-d, 'title' => …,
+     * 'reference' => order (optional), 'result' => 'passed'|'untested' (optional), 'note' => …])` → the change number or a
+     * WP_Error. Whole lots from wherever they lie to the place (D-1233), the result in the same act — one undo (D-1410).
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     the booking as the caller sends it; `mixed`: checked here
+     */
+    public static function moveLots(mixed $previous, mixed $args): int|\WP_Error
+    {
+        if (is_int($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args   = is_array($args) ? $args : [];
+        $date   = sanitize_text_field((string) ($args['date'] ?? ''));
+        $result = isset($args['result']) ? self::resultOf($args['result']) : false;
+
+        if (isset($args['result']) && ! in_array($result, [TestResult::Ok, null], true)) {
+            return new \WP_Error('taxmod_stock_no_result', __('Beim Umbuchen darf das Testergebnis nur «passed» oder «untested» sein.', 'taxmod-stock'));
+        }
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+            return new \WP_Error('taxmod_stock_not_a_date', Messages::of(StockError::notADate($date)));
+        }
+
+        try {
+            $answer = self::writing()->moveLotsTested(
+                array_values(array_map('absint', is_array($args['lots'] ?? null) ? $args['lots'] : [])),
+                absint($args['place'] ?? 0),
+                $date,
+                sanitize_text_field((string) ($args['title'] ?? __('Umbuchung', 'taxmod-stock'))),
+                absint($args['reference'] ?? 0),
+                $result,
+                sanitize_textarea_field((string) ($args['note'] ?? ''))
+            );
+
+            return (int) ($answer['act'] ?? 0);
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
     /**
      * D-1419: `apply_filters('taxmod_stock_test_lots', null, ['reference' => order])` → lot => ['thing', 'place', 'quantity',
      * 'state' => untested|passed|failed|scrapped, 'tested_on', 'note'] for the lots the order's receipts brought in, or a WP_Error.
+     * D-1433: with ['references' => [order, …]] → order → (lot → the same row), all orders in one read.
      *
      * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
      * @param mixed $args     the question as the caller sends it; `mixed`: checked here
@@ -668,7 +727,14 @@ final class Plugin
         }
 
         try {
-            return self::reading()->testLots(absint((is_array($args) ? $args : [])['reference'] ?? 0));
+            $args = is_array($args) ? $args : [];
+
+            // D-1433: the order list asks for all its orders at once.
+            if (is_array($args['references'] ?? null)) {
+                return self::reading()->testLotsOf(array_values(array_filter(array_map('absint', $args['references']))));
+            }
+
+            return self::reading()->testLots(absint($args['reference'] ?? 0));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }

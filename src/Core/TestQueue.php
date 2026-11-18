@@ -101,6 +101,27 @@ final class TestQueue
         return $settings->place !== null && $this->needsTest($node, $condition, $parents, $settings) ? $settings->place : $usual;
     }
 
+    /**
+     * D-1433 «Nacharbeit erledigt → zurück in Test»: the lot is «ungetestet» again, its test date cleared and the note as its
+     * finding — which blocks it until a new result (D-1342).
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function reopen(int $lot, string $note): array
+    {
+        $s = $this->structure;
+
+        if (! $s->hasValue('condition_untested')) {
+            throw StockError::notConfigured('values.condition_untested');
+        }
+
+        return [['op' => 'set_values', 'record' => (string) $lot, 'values' => [
+            (string) $s->field('lot_condition') => (string) $s->value('condition_untested'),
+            (string) $s->field('lot_tested_on') => '',
+            (string) $s->field('lot_test_note') => trim($note),
+        ]]];
+    }
+
     /** @return list<array<string, mixed>> */
     public function record(int $lot, TestResult $result, string $reason, string $today): array
     {

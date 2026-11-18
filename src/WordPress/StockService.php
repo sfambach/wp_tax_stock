@@ -4635,31 +4635,44 @@ final class StockService
     /** @return list<int> the lots the receipts naming `$reference` brought in (D-1303, book_output), one read of the Vorgänge */
     private function receivedFor(int $reference): array
     {
-        $s = $this->structure();
+        return $this->receivedForAll([$reference])[$reference];
+    }
 
-        if (! $s->hasField('transaction_reference')) {
-            return [];
+    /**
+     * D-1433: per order, the lots its receipts brought in — all orders in one read of the Vorgänge (CD-7).
+     *
+     * @param list<int> $references
+     * @return array<int, list<int>>
+     */
+    private function receivedForAll(array $references): array
+    {
+        $s   = $this->structure();
+        $out = array_fill_keys($references, []);
+
+        if (! $s->hasField('transaction_reference') || $references === []) {
+            return $out;
         }
 
         $deals = $this->table('transaction');
         $lines = $this->table('line');
-        $lots  = [];
 
         foreach ($deals->ids() as $deal) {
-            if ((int) $deals->first($deal, $s->field('transaction_reference')) !== $reference || (int) $deals->first($deal, $s->field('transaction_kind')) !== $s->value('kind_receipt')) {
+            $reference = (int) $deals->first($deal, $s->field('transaction_reference'));
+
+            if (! isset($out[$reference]) || (int) $deals->first($deal, $s->field('transaction_kind')) !== $s->value('kind_receipt')) {
                 continue;
             }
 
             foreach ($deals->all($deal, $s->field('transaction_lines')) as $line) {
                 $lot = (int) $lines->first((int) $line, $s->field('line_lot'));
 
-                if ($lot > 0) {
-                    $lots[$lot] = true;
+                if ($lot > 0 && ! in_array($lot, $out[$reference], true)) {
+                    $out[$reference][] = $lot;
                 }
             }
         }
 
-        return array_keys($lots);
+        return $out;
     }
 
     /**
@@ -4671,38 +4684,56 @@ final class StockService
      */
     public function testLots(int $reference): array
     {
-        $s       = $this->structure();
-        $lots    = $this->receivedFor($reference);
-        $ledger  = $this->ledger();
-        $stock   = $ledger->stockByPlace();
-        $table   = $this->table('lot');
-        $blocked = array_flip($this->blockedLots($lots));
-        $read    = static fn (int $lot, string $key): string => $s->hasField($key) ? (string) ($table->first($lot, $s->field($key)) ?? '') : '';
-        $out     = [];
+        return $this->testLotsOf([$reference])[$reference];
+    }
 
-        foreach ($lots as $lot) {
-            $condition = $read($lot, 'lot_condition');
-            $rest      = $ledger->restOf($lot);
-            $result    = TestResult::ofValue($s, $condition);
-            $at        = array_keys(array_filter($stock[$lot] ?? [], static fn (float $q): bool => $q > 0.0));
+    /**
+     * D-1433: {@see testLots()} for several orders at once — order → lot → the same row; one read of the Vorgänge, the
+     * ledger and the blocks for all of them.
+     *
+     * @param list<int> $references
+     * @return array<int, array<int, array{thing: int, place: int, quantity: float, state: string, tested_on: string, note: string}>>
+     */
+    public function testLotsOf(array $references): array
+    {
+        $s        = $this->structure();
+        $received = $this->receivedForAll(array_values(array_unique($references)));
+        $ledger   = $this->ledger();
+        $stock    = $ledger->stockByPlace();
+        $table    = $this->table('lot');
+        $blocked  = array_flip($this->blockedLots(array_values(array_unique(array_merge([], ...array_values($received))))));
+        $read     = static fn (int $lot, string $key): string => $s->hasField($key) ? (string) ($table->first($lot, $s->field($key)) ?? '') : '';
+        $all      = [];
 
-            $out[$lot] = [
-                'thing'     => (int) ($ledger->thingOf($lot) ?? 0),
-                'place'     => (int) ($at[0] ?? 0),
-                'quantity'  => $rest,
-                'state'     => match (true) {
-                    isset($blocked[$lot])                                    => 'untested',
-                    $result === TestResult::Ok                               => 'passed',
-                    $result === TestResult::Defect && $rest <= 0.0           => 'scrapped',
-                    $result !== null                                         => 'failed',
-                    default                                                  => 'untested',
-                },
-                'tested_on' => substr($read($lot, 'lot_tested_on'), 0, 10),
-                'note'      => $read($lot, 'lot_test_note'),
-            ];
+        foreach ($received as $reference => $lots) {
+            $out = [];
+
+            foreach ($lots as $lot) {
+                $condition = $read($lot, 'lot_condition');
+                $rest      = $ledger->restOf($lot);
+                $result    = TestResult::ofValue($s, $condition);
+                $at        = array_keys(array_filter($stock[$lot] ?? [], static fn (float $q): bool => $q > 0.0));
+
+                $out[$lot] = [
+                    'thing'     => (int) ($ledger->thingOf($lot) ?? 0),
+                    'place'     => (int) ($at[0] ?? 0),
+                    'quantity'  => $rest,
+                    'state'     => match (true) {
+                        isset($blocked[$lot])                                    => 'untested',
+                        $result === TestResult::Ok                               => 'passed',
+                        $result === TestResult::Defect && $rest <= 0.0           => 'scrapped',
+                        $result !== null                                         => 'failed',
+                        default                                                  => 'untested',
+                    },
+                    'tested_on' => substr($read($lot, 'lot_tested_on'), 0, 10),
+                    'note'      => $read($lot, 'lot_test_note'),
+                ];
+            }
+
+            $all[$reference] = $out;
         }
 
-        return $out;
+        return $all;
     }
 
     /** @return array<int, array<int, float>> thing → lot → pieces the Vorgänge naming `$reference` took, net of what came back */
@@ -5407,7 +5438,60 @@ final class StockService
      * @param list<int> $lots
      * @return array<string, mixed> the modeller's answer, with its change number as `act`
      */
-    public function recordTests(array $lots, TestResult $result, string $note, string $today): array
+    public function recordTests(array $lots, ?TestResult $result, string $note, string $today): array
+    {
+        return $this->model->write($this->testChanges($this->configuredQueue(), $lots, $result, $note, $today));
+    }
+
+    /**
+     * D-1433: whole lots, from every place they lie at, to `$place` as one Vorgang «Umbuchung» (D-1233), with the order as
+     * its Bezug — and, in the same act, their test result: «passed» (Test → Wareneingang Produktion) or back to untested
+     * (`null`, «zurück in Fertigung»). One change number undoes both (D-1410).
+     *
+     * @param list<int> $lots
+     * @param false|TestResult|null $result false: no result is written
+     * @return array<string, mixed> the modeller's answer, with its change number as `act`
+     */
+    public function moveLotsTested(array $lots, int $place, string $today, string $title, int $reference, false|TestResult|null $result, string $note = ''): array
+    {
+        $lots = array_values(array_unique(array_filter(array_map('intval', $lots))));
+
+        // A lot freed by its result in this same act may leave the test place; any other blocked lot may not (D-1342).
+        if ($result !== TestResult::Ok) {
+            $this->guardUnblocked($lots);
+        }
+
+        if (! $this->table('location')->has($place)) {
+            throw StockError::notALocation($place);
+        }
+
+        $ledger = $this->ledger();
+        $rows   = [];
+
+        foreach ($lots as $lot) {
+            if (! $this->table('lot')->has($lot)) {
+                throw StockError::noLot($lot);
+            }
+
+            foreach ($ledger->placesOf($lot) as $from => $rest) {
+                if ($rest > 0.0 && (int) $from !== $place) {
+                    $rows[] = new TransferRow($lot, (int) $from, $place, DecimalText::stored($rest));
+                }
+            }
+        }
+
+        $tests = $result === false ? [] : $this->testChanges($this->configuredQueue(), $lots, $result, $note, $today);
+
+        if ($rows === [] && $tests === []) {
+            throw StockError::nothingToBook();
+        }
+
+        $moves = $rows === [] ? [] : (new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $this->boundLots(), $reference);
+
+        return $this->model->write([...$tests, ...$moves]);
+    }
+
+    private function configuredQueue(): TestQueue
     {
         $queue = new TestQueue($this->structure());
 
@@ -5415,7 +5499,7 @@ final class StockService
             throw StockError::notConfigured('fields.lot_condition, lot_tested_on, lot_test_note');
         }
 
-        return $this->model->write($this->testChanges($queue, $lots, $result, $note, $today));
+        return $queue;
     }
 
     /**
@@ -5460,7 +5544,7 @@ final class StockService
      * @param list<int> $lots
      * @return list<array<string, mixed>>
      */
-    private function testChanges(TestQueue $queue, array $lots, TestResult $result, string $note, string $today): array
+    private function testChanges(TestQueue $queue, array $lots, ?TestResult $result, string $note, string $today): array
     {
         $lots  = array_values(array_unique(array_filter(array_map('intval', $lots))));
         $table = $this->table('lot');
@@ -5476,7 +5560,8 @@ final class StockService
                 throw StockError::noLot($lot);
             }
 
-            $changes = [...$changes, ...$queue->record($lot, $result, $note, $today)];
+            // D-1433: no result is «back to test» — untested and blocked again.
+            $changes = [...$changes, ...($result === null ? $queue->reopen($lot, $note) : $queue->record($lot, $result, $note, $today))];
         }
 
         return $changes;

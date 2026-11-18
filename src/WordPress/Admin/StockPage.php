@@ -555,7 +555,8 @@ final class StockPage
         $data      = $technical !== [] ? $this->stock->tableOf($group) : null;
         // D-1204: a picture per row, unless the Configuration has pictures in lists off.
         $images    = ListPage::showsImages();
-        $columns   = [...($images ? [new ListColumn('image', __('Bild', 'taxmod-stock'), fixed: true, width: '56px')] : []),
+        // D-1462: a picture has nothing to filter by; stock and minimum filter by number (2, >2, <2, 2-10).
+        $columns   = [...($images ? [new ListColumn('image', __('Bild', 'taxmod-stock'), fixed: true, width: '56px', filterable: false)] : []),
             new ListColumn('nr', __('Nr.', 'taxmod-stock'), fixed: true, width: '6em'), new ListColumn('name', __('Material', 'taxmod-stock'), fixed: true),
             new ListColumn('group', __('Gruppe', 'taxmod-stock'))];
         // D-1030: where it lies, by path and project — so a search for a project finds the parts in its box.
@@ -567,8 +568,8 @@ final class StockPage
             $columns[] = new ListColumn('f' . $relation, $name, $position++ < 4);
         }
 
-        $columns[] = new ListColumn('stock', __('Bestand', 'taxmod-stock'), width: '7em');
-        $columns[] = new ListColumn('min', __('Mindestbestand', 'taxmod-stock'), width: '9em');
+        $columns[] = new ListColumn('stock', __('Bestand', 'taxmod-stock'), width: '7em', number: true);
+        $columns[] = new ListColumn('min', __('Mindestbestand', 'taxmod-stock'), width: '9em', number: true);
         $listId    = ($branch ? 'stock-groupstock' : 'stock-material') . ($group > 0 ? '-' . $group : '');
         $view      = ListPage::view($listId, $columns, 'name');
         $groups    = [];
@@ -686,11 +687,13 @@ final class StockPage
             // His wish 2026-11-06: «druck button pro positon» — the material label from the row; the modeller reads the
             // material's own words when it prints, so the rows cost no query each.
             $print = $this->materialLabel($id, (string) ($row['cells']['name'] ?? ''));
+            // D-1462: the row carries what the search looked at, so the head narrows by the same words.
             $body .= ListPage::row(self::BULK_FORM, (string) $id, $cells, $move . ($print === '' ? '' : $print . ' ') . '<a class="button button-small" href="' . $link . '">'
-                . esc_html__('Öffnen', 'taxmod-stock') . '</a>', ListPage::lazyDetails(self::DETAILS_MATERIAL, ['thing' => $id]), $open);
+                . esc_html__('Öffnen', 'taxmod-stock') . '</a>', ListPage::lazyDetails(self::DETAILS_MATERIAL, ['thing' => $id]), $open, ListView::searched($row));
         }
 
-        return $html . ListPage::table(ListPage::heads($view, $url), $body, ListPage::filterRow(self::FILTER_FORM, $view))
+        // D-1462: every hit on this page — the head narrows and sorts it without asking again.
+        return $html . ListPage::table(ListPage::heads($view, $url), $body, ListPage::filterRow(self::FILTER_FORM, $view), ! $waits && ListView::onePage(count($shown), self::PER_PAGE))
             . ListPage::pagination(count($shown), $paged, self::PER_PAGE, $url);
     }
 

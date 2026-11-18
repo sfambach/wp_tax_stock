@@ -925,7 +925,7 @@ final class StockService
      * (the Lager's own branch, and those he names) left out with everything under them. With `$pickUrl` it is the tree
      * fixed on the page (D-1174).
      */
-    public function groupChooser(string $name, int $preselected = 0, string $form = '', string $pickUrl = '', bool $new = false): string
+    public function groupChooser(string $name, int $preselected = 0, string $form = '', string $pickUrl = '', bool $new = false, bool $shared = false): string
     {
         $s    = $this->structure();
         // D-1257: a new material is made under «Material»; the views keep the whole root, where older material still lies.
@@ -935,7 +935,8 @@ final class StockService
             return '';
         }
 
-        $all     = $this->model->tree($root);
+        // Once per request: the receipt asks for every row without a material.
+        $all     = $this->groupTrees[$root] ??= $this->model->tree($root);
         $own     = $all[$s->node('lager')]['parent'] ?? 0;
         $exclude = array_values(array_unique(array_filter(
             array_merge($own !== $root ? [$own] : [], $this->notMaterial()),
@@ -952,6 +953,8 @@ final class StockService
             // D-1174: with a pick address the tree stands on the page and a click opens it, «{id}» for the group.
             'inline'      => $pickUrl !== '',
             'pick_url'    => $pickUrl,
+            // The tree once per page, however many rows open it ({@see self::sharedTrees()}); an older modeller ignores it.
+            'shared'      => $shared && $form !== '',
         ], static fn (mixed $v): bool => $v !== '' && $v !== 0 && $v !== [] && $v !== false) + ['name' => $name, 'root' => $root]);
     }
 
@@ -2172,13 +2175,26 @@ final class StockService
         return (int) ($answer['refs']['kopie'] ?? 0);
     }
 
+    /** @var array<int, array<int, array{name: string, parent: int, class: string, hidden: bool}>> root → its tree, {@see self::groupChooser()} */
+    private array $groupTrees = [];
+
+    /**
+     * The trees of the choosers drawn with `$shared` since the last call, as the modeller's templates — for the end of a
+     * piece with a chooser per row, outside every form. Measured 2026-11-18 on «Angekommen»: each purchase row drew every
+     * place again and each row without a material every group — 7 MB for 30 purchases, 880 statements.
+     */
+    public function sharedTrees(): string
+    {
+        return (string) apply_filters('taxmod_shared_templates', '');
+    }
+
     /**
      * D-1186, A4: the one way to choose a place — the modeller's record chooser over the place tree, with its search; a plain
      * select only while the model has no tree of places or the modeller offers no chooser. Empty means «none» (or the top level).
      *
      * @param list<int> $exclude places left out with everything under them
      */
-    public function placeChooser(string $name, int $chosen = 0, string $form = '', array $exclude = [], array $preferred = [], bool $inline = false): string
+    public function placeChooser(string $name, int $chosen = 0, string $form = '', array $exclude = [], array $preferred = [], bool $inline = false, bool $shared = false): string
     {
         try {
             $s = $this->structure();
@@ -2200,7 +2216,9 @@ final class StockService
                 'preferred'    => $preferred,
                 // D-1436: the tree inline when a caller asks; the transfer dialog no longer does (D-1444).
                 'inline'       => $inline,
-            ], static fn (mixed $v): bool => $v !== '' && $v !== 0 && $v !== []));
+                // The tree once per page, however many rows open it ({@see self::sharedTrees()}); an older modeller ignores it.
+                'shared'       => $shared && $form !== '' && ! $inline,
+            ], static fn (mixed $v): bool => $v !== '' && $v !== 0 && $v !== [] && $v !== false));
 
             if ($choice !== '') {
                 return $choice;

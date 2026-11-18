@@ -3090,7 +3090,7 @@ final class StockPage
         // His wish 2026-11-09: «bulk funktion platz für alle wählen» — the bar stands before the form, a form holds no form.
         // D-1403, his words 2026-11-16 «wir haben bulk funktionen und du machst zwei buttons dahin», «alles in eine zeile»: every
         // act on ticked purchases is a choice of the bulk bar, and saving, booking and the order's own acts stand beside it.
-        $formId = 'taxmod-stock-receipt-' . $order;
+        $formId = self::receiptFormId($order);
         $html   = $this->receiptBar($order, count($plan), $formId, $assign, $look['closing'] && $open > 0, ! $assign && $booked > 0, $back)
             . $this->receiptFormStart($formId, $first, $assign)
             . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
@@ -3103,7 +3103,7 @@ final class StockPage
             $html .= $this->receiptRow($order, (int) $purchase, $row, $look, $assign, $pick, $back, false);
         }
 
-        return $html . '</tbody></table></form>';
+        return $html . '</tbody></table></form>' . $this->stock->sharedTrees();
     }
 
     /**
@@ -3129,7 +3129,7 @@ final class StockPage
         $look   = $this->receiptLookups($all, false);
         $open   = count(array_filter($all, static fn (array $row): bool => $row['lock'] === null));
         $booked = count(array_filter($all, static fn (array $row): bool => $row['lock'] === 'received'));
-        $formId = 'taxmod-stock-receipt-all';
+        $formId = self::receiptFormId(0);
         $html   = $this->receiptBar(0, count($all), $formId, false, $look['closing'] && $open > 0, $booked > 0, $back)
             . $this->receiptFormStart($formId, 'wareneingang', false)
             . '<input type="hidden" name="multi" value="1">'
@@ -3148,7 +3148,13 @@ final class StockPage
             }
         }
 
-        return $html . '</tbody></table></form>';
+        return $html . '</tbody></table></form>' . $this->stock->sharedTrees();
+    }
+
+    /** The id of a receipt form: one order's, or with 0 the one of «Angekommen» over all orders (D-1440). */
+    private static function receiptFormId(int $order): string
+    {
+        return $order > 0 ? 'taxmod-stock-receipt-' . $order : 'taxmod-stock-receipt-all';
     }
 
     /** The receipt form's opening: its id, the booking a plain Enter sends, and the shared reasons for «Nicht einlagern». */
@@ -3229,6 +3235,8 @@ final class StockPage
         $quantity = (string) $look['bought']->first($purchase, $look['amount']);
         // His finding 2026-11-18 17:35 «machen wir jetzt button gößen bingo»: one size, one per line, right-aligned.
         $actions  = static fn (string $buttons): string => '<td><span class="taxmod-stock-row-actions" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">' . $buttons . '</span></td>';
+        // The row's choosers name their form, so they can share their tree with the other rows ({@see StockService::sharedTrees()}).
+        $formId   = self::receiptFormId($multi ? 0 : $order);
         $html     = '<tr id="taxmod-stock-purchase-' . esc_attr((string) $purchase) . '"' . ($multi ? ' data-order="' . esc_attr((string) $order) . '"' : '') . '><th scope="row" class="check-column"><input type="checkbox" name="purchases[]" value="' . esc_attr((string) $purchase) . '"'
             . ($lock === null && $model !== null && ! $assign && ! $multi && ($pick === [] || in_array($purchase, $pick, true)) ? ' checked' : '') . ($lock === null ? '' : ' disabled') . '>'
             . ($multi ? '<input type="hidden" name="order_of[' . esc_attr((string) $purchase) . ']" value="' . esc_attr((string) $order) . '">' : '') . '</th>'
@@ -3270,8 +3278,8 @@ final class StockPage
             // His wish 2026-11-05: «Menge 1, geliefert wurden 40» — the quantity is corrected here, not in the purchase.
             . '<td><input type="number" min="1" step="1" style="width:5em" name="quantity[' . esc_attr((string) $purchase) . ']" value="' . esc_attr($quantity) . '"></td>'
             // The place the server proposed, so the page can tell it from one he chose in the row (D-1361).
-            . '<td class="taxmod-stock-receipt-place" data-drawn="' . esc_attr((string) $proposed) . '">' . $this->stock->placeChooser('location[' . $purchase . ']', $proposed, '', [], $model === null ? [] : ($look['preferred'][$model] ?? [])) . '</td>'
-            . $actions($store . ($model === null ? $this->newThingDialog($purchase) : $this->materialDialog($purchase, $model, (string) ($models[$model] ?? ''))) . ($look['closing'] ? $this->closeControls($purchase) : '')
+            . '<td class="taxmod-stock-receipt-place" data-drawn="' . esc_attr((string) $proposed) . '">' . $this->stock->placeChooser('location[' . $purchase . ']', $proposed, $formId, [], $model === null ? [] : ($look['preferred'][$model] ?? []), false, true) . '</td>'
+            . $actions($store . ($model === null ? $this->newThingDialog($purchase, $formId) : $this->materialDialog($purchase, $model, (string) ($models[$model] ?? ''))) . ($look['closing'] ? $this->closeControls($purchase) : '')
                 . (isset($look['takable'][$purchase]) ? '<button type="submit" class="button" name="booking" value="bilduebernehmen-' . esc_attr((string) $purchase) . '">' . esc_html__('Bild übernehmen', 'taxmod-stock') . '</button>' : '')) . '</tr>';
     }
 
@@ -4816,6 +4824,8 @@ final class StockPage
             . ' data-record-nodes="' . $address(self::THING_NODES) . '" data-record-branch="' . $address($lots ? self::LOT_BRANCH : self::THING_BRANCH) . '"'
             . ' data-browse-title="' . ($lots ? esc_attr__('Bestandsposten im Baum wählen', 'taxmod-stock') : esc_attr__('Material im Baum wählen', 'taxmod-stock')) . '"'
             . ' data-browse-filter="' . ($lots ? esc_attr__('Material, Posten oder Gruppe suchen …', 'taxmod-stock') : esc_attr__('Material oder Gruppe suchen …', 'taxmod-stock')) . '"'
+            // Read by the modeller's script when a tree fetched for a chooser is gone (D-898).
+            . ' data-reload-list="' . esc_attr__('Diese Liste ist nicht mehr verfügbar. Bitte die Seite neu laden.', 'taxmod-stock') . '"'
             . ' data-no-hits="' . esc_attr__('Nichts gefunden.', 'taxmod-stock') . '"></span>';
     }
 
@@ -4886,7 +4896,11 @@ final class StockPage
             // D-1309: a view dialog's frame is loaded by the modeller's view-dialog.js, which STYLE_ACTION brings (modeller 0.2.69).
             . 'document.addEventListener("change",function(e){var sw=e.target;if(!sw.classList||!sw.classList.contains("taxmod-dialog-switch")||!sw.checked){return;}'
             // A group already chosen in the row's search is the group «Neues Material» proposes (his report 2026-11-01).
-            . 'var nm=/^taxmod-stock-new-(\\d+)$/.exec(sw.id||"");if(nm){var r=document.querySelector("input[name=\\"thing["+nm[1]+"]\\"]:checked"),g=r&&/^new-(\\d+)$/.exec(r.value),gid=g?g[1]:(browsed[nm[1]]||""),sel=document.querySelector("select[name=\\"newgroup["+nm[1]+"]\\"]");if(gid&&sel&&sel.querySelector("option[value=\\""+gid+"\\"]")){sel.value=gid;}var rb=gid&&document.querySelector("input[name=\\"newgroup["+nm[1]+"]\\"][value=\\""+gid+"\\"]");if(rb){rb.checked=true;var ch=rb.closest(".taxmod-chooser"),tx=rb.parentNode.textContent.trim();if(ch){ch.querySelectorAll(":scope > .taxmod-dialog-open, .taxmod-chooser-current").forEach(function(e){e.textContent=tx;});}}}});'
+            . 'var nm=/^taxmod-stock-new-(\\d+)$/.exec(sw.id||"");if(nm){var r=document.querySelector("input[name=\\"thing["+nm[1]+"]\\"]:checked"),g=r&&/^new-(\\d+)$/.exec(r.value),gid=g?g[1]:(browsed[nm[1]]||""),sel=document.querySelector("select[name=\\"newgroup["+nm[1]+"]\\"]");if(gid&&sel&&sel.querySelector("option[value=\\""+gid+"\\"]")){sel.value=gid;}'
+            // The group tree stands once per page and only a placeholder in the row ({@see StockService::sharedTrees()}): it is put in
+            // first — fetched where it is large — and the group is chosen once it stands there.
+            . 'var pre=function(){var rb=gid&&document.querySelector("input[name=\\"newgroup["+nm[1]+"]\\"][value=\\""+gid+"\\"]");if(rb){rb.checked=true;var ch=rb.closest(".taxmod-chooser"),tx=rb.parentNode.textContent.trim();if(ch){ch.querySelectorAll(":scope > .taxmod-dialog-open, .taxmod-chooser-current").forEach(function(e){e.textContent=tx;});}}};'
+            . 'var st=gid&&document.querySelector(".taxmod-record-stub[data-taxmod-name=\\"newgroup["+nm[1]+"]\\"]");if(st&&window.taxmodPutBodies){window.taxmodPutBodies(st.parentNode,pre);}pre();}});'
             // D-1361, his report 2026-11-14 «übernimmt er immer noch nicht den Lagerort, den ich eingestellt habe im Material … wenn
             // ich den Dialog schließe»: the server draws the order's rows again and only this row's place is swapped — when he
             // has not chosen another one in the row meanwhile. Nothing is saved until «Zuordnung speichern» or the booking.
@@ -4896,7 +4910,10 @@ final class StockPage
             . 'if(now(cell)!==cell.dataset.drawn){return;}'
             . 'fetch(pos+"&order="+encodeURIComponent(box.dataset.order)+(box.dataset.back?"&back="+encodeURIComponent(box.dataset.back):"")+(box.dataset.assign?"&assign=1":"")+(box.dataset.pick?"&pick="+encodeURIComponent(box.dataset.pick):""),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){'
             . 'var doc=new DOMParser().parseFromString((j.data&&j.data.html)||"","text/html"),fr=doc.getElementById("taxmod-stock-purchase-"+m[1]),fc=fr&&fr.querySelector("td.taxmod-stock-receipt-place");'
-            . 'if(!fc||fc.dataset.drawn===cell.dataset.drawn||now(cell)!==cell.dataset.drawn){return;}fc=document.importNode(fc,true);cell.replaceWith(fc);var cb=row.querySelector("input[name=\\"purchases[]\\"]");if(cb&&!cb.disabled){cb.checked=true;}});});'
+            . 'if(!fc||fc.dataset.drawn===cell.dataset.drawn||now(cell)!==cell.dataset.drawn){return;}fc=document.importNode(fc,true);'
+            // The cell's chooser may name a tree this page has not drawn yet (the material's Standard-Lagerorte on top): its template comes along.
+            . 'doc.querySelectorAll("template.taxmod-shared-body").forEach(function(t){if(!document.querySelector("template.taxmod-shared-body[data-taxmod-body=\\""+t.getAttribute("data-taxmod-body")+"\\"]")){row.closest("table").after(document.importNode(t,true));}});'
+            . 'cell.replaceWith(fc);var cb=row.querySelector("input[name=\\"purchases[]\\"]");if(cb&&!cb.disabled){cb.checked=true;}});});'
             . '(function(){var mo=(new URLSearchParams(location.search).get("material")||"").replace(/\\D/g,""),n=0;if(!mo){return;}'
             // The rows of an order arrive after the page (lazy details), so the switch is looked for until it is there.
             . 'var t=setInterval(function(){var ms=document.getElementById("taxmod-stock-material-"+mo);if(ms){clearInterval(t);ms.checked=true;ms.dispatchEvent(new Event("change",{bubbles:true}));}else if(++n>40){clearInterval(t);}},250);})();'
@@ -4996,10 +5013,10 @@ final class StockPage
      * D-1072, his word 2026-11-01: «wir brauc hen einen button für neues material erst suchen ist doof» — the group asked in a dialog,
      * the material created at once (D-1062, D-1071) and then filled through «Material».
      */
-    private function newThingDialog(int $purchase): string
+    private function newThingDialog(int $purchase, string $formId): string
     {
         // D-1075: the modeller's node chooser — search and tree, the one view he set for choosing in the tree.
-        $chooser = $this->stock->groupChooser('newgroup[' . $purchase . ']', 0, '', '', true);
+        $chooser = $this->stock->groupChooser('newgroup[' . $purchase . ']', 0, $formId, '', true, true);
         $maker   = $this->manufacturerControl('newfields_' . $purchase, 'newgroup[' . $purchase . ']');
         $field   = self::actForm(array_merge([['label' => __('Gruppe', 'taxmod-stock'),
             'control' => $chooser,

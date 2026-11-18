@@ -351,7 +351,7 @@ $plugin = (string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Plugi
 $pruefe(str_contains($plugin, "'admin_post_' . StockPage::ASSIGN"), 'the choice is saved without a reload, under its own action');
 $stockPage = (string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Admin/StockPage.php');
 $pruefe(substr_count($stockPage, '$this->manufacturerControl(') === 2 && substr_count($stockPage, '$this->stock->manufacturerTyped(') === 2 && str_contains((string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Plugin.php'), "'admin_post_' . StockPage::MAKER"), 'D-1255, D-1256: both «Neues Material» dialogs ask the manufacturer of the chosen group with the modeller\'s control and pass it into the new material');
-$pruefe(substr_count($stockPage, "[group]', 0, '', '', true)") === 2 && str_contains($stockPage, "groupChooser('newgroup[' . \$purchase . ']', 0, '', '', true)"), 'D-1257: every «Neues Material» chooses its group under «Material»');
+$pruefe(substr_count($stockPage, "[group]', 0, '', '', true)") === 2 && str_contains($stockPage, "groupChooser('newgroup[' . \$purchase . ']', 0, \$formId, '', true, true)"), 'D-1257: every «Neues Material» chooses its group under «Material»');
 // D-1254: no act ends on an empty page.
 preg_match_all("/add_action\('admin_post_' \. [A-Za-z]+::[A-Z_]+, (.*)\);/", $plugin, $handlers);
 $pruefe($handlers[1] !== [] && array_filter($handlers[1], static fn (string $h): bool => ! str_starts_with($h, 'static fn () => Acts::run(') && ! str_starts_with($h, 'static fn () => Acts::json(')) === [], 'D-1254: every handler runs through Acts, a failure becomes a message on the page it came from');
@@ -473,7 +473,14 @@ $pruefe($stock->receiptLocations($plan) === [$r['kaufT'] => $r['ortTest'], $r['k
 
 // D-1440: the receipt is the one table of «Angekommen».
 $html = (new \TaxmodStock\WordPress\Admin\StockPage())->receiptTable([$r['o9'] => 'o9'], InboundPage::BACK, '');
-$pruefe(preg_match('/name="location\[' . $r['kaufT'] . '\]">(.*?)<\/select>/s', $html, $select) === 1
+// 2026-11-18, measured on «Angekommen» (7 MB and 880 statements for 30 purchases): a row's choosers ask for the shared tree, and
+// both receipt tables hand the trees out once, after their form.
+$pruefe(substr_count($stockPage, "</tbody></table></form>' . \$this->stock->sharedTrees()") === 2
+    && str_contains($stockPage, "\$model === null ? [] : (\$look['preferred'][\$model] ?? []), false, true)")
+    && str_contains((string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/StockService.php'), "apply_filters('taxmod_shared_templates', '')"),
+    'the receipt draws the tree of places and of groups once per table, not once per purchase');
+// 2026-11-18: the row's chooser names the receipt form, so the rows can share one tree of places ({@see StockService::sharedTrees()}).
+$pruefe(preg_match('/name="location\[' . $r['kaufT'] . '\]" form="taxmod-stock-receipt-all">(.*?)<\/select>/s', $html, $select) === 1
     && str_contains($select[1], 'value="' . $r['ortTest'] . '" selected') && str_contains($select[1], 'value="' . $r['ortRegal'] . '"'), 'the Einlagern row preselects the test place and still offers the others');
 $pruefe(str_contains($html, 'id="taxmod-stock-material-' . $r['kaufT'] . '"')
     && str_contains($html, 'taxmod-stock-material-link" for="taxmod-stock-material-' . $r['kaufT'] . '"') && str_contains($html, '>ET4000</label>'), 'the material text opens the same dialog as the row\'s «Material» button');
@@ -543,6 +550,75 @@ try {
     $pruefe(false, 'a lot with another line keeps its receipt');
 } catch (StockError $e) {
     $pruefe($e->reason === 'lot_already_used', 'a lot with another line keeps its receipt');
+}
+
+// ⚠️ **Ceilings for «Angekommen» ([D-1447](../../../wp-taxonomy-modeler/docs/NewConcept/90-decision-log.md), a ratchet as in D-1424).**
+// *Measured 2026-11-18: every purchase row drew a whole place tree and a whole group tree and asked the database anew —
+// 7 MB and 880 statements for 33 rows. What a further purchase row may cost is held here: ten more rows, then ten more,
+// and the difference per row. Above a ceiling is red; below, the ceiling may follow. **A ceiling rises only with a decision.***
+// *Measured with the trees shared: 3 statements and 4562 bytes a row (24337 bytes with a tree per row). The bytes have some room
+// because record ids of another length move them; the three statements a row are what is left to take out (`CD-7`).*
+const RECEIPT_CEILINGS = ['statements per further purchase row' => 3, 'bytes per further purchase row' => 5000];
+
+$baum = [['op' => 'add_field', 'ref' => 'lo_parent', 'node' => $r['lo'], 'name' => 'Übergeordneter Ort', 'target' => $r['lo'], 'kind' => 'aggregation', 'multiplicity' => '0..1']];
+
+for ($i = 0; $i < 40; $i++) {
+    $baum[] = ['op' => 'create_record', 'ref' => 'pl' . $i, 'node' => $r['lo']];
+    $baum[] = ['op' => 'set_values', 'record' => '@pl' . $i, 'values' => [$r['label'] => '__Platz ' . $i] + ($i < 4 ? [] : ['@lo_parent' => '@pl' . intdiv($i, 4)])];
+}
+
+for ($i = 0; $i < 60; $i++) {
+    $baum[] = ['op' => 'create_node', 'ref' => 'g' . $i, 'name' => '__Gruppe ' . $i, 'parent' => $i < 4 ? 402 : '@g' . intdiv($i, 4)];
+}
+
+$gebaut = wp_get_ability('taxmod/apply')->execute(['changes' => $baum]);
+$pruefe(is_array($gebaut), 'ceilings: a tree of forty places and sixty groups' . (is_wp_error($gebaut) ? ' — ' . $gebaut->get_error_message() : ''));
+
+// Drawing does not depend on the kind of «Positionen»; measured once, in the aggregation run.
+if (is_array($gebaut) && $kind === 'aggregation') {
+    $opt = get_option(StockService::OPTION);
+    $opt['fields']['location_parent'] = $gebaut['refs']['lo_parent'];
+    update_option(StockService::OPTION, $opt);
+    update_option('taxmod_import_targets', ['order_fields' => ['ordered_at' => $r['o_best'], 'received_at' => $r['o_ein'], 'tracking' => $r['o_sn'],
+        'platform' => $r['o_plat'], 'merchant' => $r['o_hand'], 'order_number' => $r['o_nr']]]);
+
+    // Ten purchases without a material — the dearest row: it draws the place chooser and the group chooser of «Neues Material».
+    $zehnMehr = static function (string $ref) use ($r): void {
+        $mehr = [];
+
+        for ($p = 0; $p < 10; $p++) {
+            $mehr[] = ['op' => 'create_record', 'ref' => $ref . $p, 'node' => $r['pur']];
+            $mehr[] = ['op' => 'set_values', 'record' => '@' . $ref . $p, 'values' => [$r['label'] => '__Kauf ' . $ref . $p]];
+        }
+
+        $mehr[] = ['op' => 'create_record', 'ref' => $ref, 'node' => $r['ord']];
+        $mehr[] = ['op' => 'set_values', 'record' => '@' . $ref, 'values' => [$r['label'] => '__Angekommen ' . $ref, $r['o_best'] => '2026-11-10', $r['o_ein'] => '2026-11-17',
+            $r['o_pos'] => ['values' => array_map(static fn (int $p): string => '@' . $ref . $p, range(0, 9))]]];
+        wp_get_ability('taxmod/apply')->execute(['changes' => $mehr]);
+    };
+    $messen = static function (): array {
+        global $wpdb;
+        $_GET   = ['page' => InboundPage::PAGE, 'tab' => 'arrived'];
+        $vorher = $wpdb->num_queries;
+        $html   = (new InboundPage())->render();
+
+        return [$wpdb->num_queries - $vorher, strlen($html), substr_count($html, 'taxmod-stock-purchase-')];
+    };
+
+    $zehnMehr('ca');
+    $messen();
+    $eins = $messen();
+    $zehnMehr('cb');
+    $zwei = $messen();
+    $pruefe($zwei[2] > $eins[2], 'ceilings: the second measure draws more purchase rows than the first');
+    $jetzt = ['statements per further purchase row' => (int) ceil(($zwei[0] - $eins[0]) / 10), 'bytes per further purchase row' => (int) ceil(($zwei[1] - $eins[1]) / 10)];
+
+    foreach (RECEIPT_CEILINGS as $was => $decke) {
+        printf("       %-40s %6d  (ceiling %d)%s\n", $was, $jetzt[$was], $decke, $jetzt[$was] > $decke ? '  ← ROSE' : ($jetzt[$was] < $decke ? '  ← fell, the ceiling may follow' : ''));
+        $pruefe($jetzt[$was] <= $decke, 'ceilings: ' . $was . ' at or under the ceiling');
+    }
+
+    printf("       «Angekommen» with %d purchase rows: %d statements, %d KB\n", $zwei[2], $zwei[0], intdiv($zwei[1], 1024));
 }
 
 update_option('taxmod_import_targets', ['order_fields' => ['received_at' => 0]]);

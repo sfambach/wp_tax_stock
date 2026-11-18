@@ -53,6 +53,46 @@ final class NotStockedTest extends TestCase
         self::assertSame(InboundStage::Archived, (new InboundOrder(70, (int) $s->value('status_received'), '2026-11-01', null, [], [], true))->stage($s));
     }
 
+    /** Review 2026-11-18: asked once per order of the model, so each answer costs its own lines only — and stays what it was. */
+    #[Test]
+    public function an_order_is_all_in_when_every_purchase_is_booked_or_closed_and_one_is_booked(): void
+    {
+        $s      = Fixture::structure();
+        $orders = new Table([70 => [$s->field('order_lines') => ['71', '72']], 80 => []]);
+
+        self::assertTrue(NotStocked::allIn($s, $orders, 70, [71 => true, 72 => true], []));
+        self::assertTrue(NotStocked::allIn($s, $orders, 70, [71 => true], [72 => true]));
+        self::assertFalse(NotStocked::allIn($s, $orders, 70, [71 => true], []));
+        self::assertFalse(NotStocked::allIn($s, $orders, 70, [], [71 => true, 72 => true]));
+        self::assertFalse(NotStocked::allIn($s, $orders, 80, [71 => true], []));
+        self::assertFalse(NotStocked::wholeOrder($s, $orders, 70, [], [71 => true]));
+        self::assertFalse(NotStocked::wholeOrder($s, $orders, 80, [], [71 => true]));
+    }
+
+    #[Test]
+    public function two_thousand_orders_are_told_apart_without_walking_every_purchase_for_each(): void
+    {
+        $s       = Fixture::structure();
+        $records = [];
+        $booked  = [];
+
+        for ($order = 1; $order <= 2000; $order++) {
+            $records[$order]           = [$s->field('order_lines') => [(string) (10000 + $order)]];
+            $booked[10000 + $order]  = true;
+        }
+
+        $orders = new Table($records);
+        $start  = microtime(true);
+
+        foreach ($orders->ids() as $order) {
+            self::assertTrue(NotStocked::allIn($s, $orders, $order, $booked, []));
+            self::assertFalse(NotStocked::wholeOrder($s, $orders, $order, $booked, []));
+        }
+
+        // Measured 2026-11-18: 2 s before (the key lists copied per order), 1 ms now.
+        self::assertLessThan(0.5, microtime(true) - $start);
+    }
+
     #[Test]
     public function taking_it_back_empties_the_reason_and_the_status(): void
     {

@@ -216,7 +216,7 @@ final class LogisticsShell
 
         return self::style() . (self::isFullscreen() ? self::fullscreenStyle() : '') . '<div class="taxmod-shell' . ($side === '' ? '' : ' has-side') . '">'
             . '<div class="taxmod-shell-column"><nav class="taxmod-shell-nav" aria-label="' . esc_attr__('Logistik', 'taxmod-stock') . '">'
-            . self::menu($navigation, $active) . '</nav>' . ($side === '' ? '' : '<div class="taxmod-shell-side">' . $side . '</div>')
+            . self::menu($navigation, $active) . '</nav>' . ($side === '' ? '' : '<div class="taxmod-shell-side" id="taxmod-shell-side" data-taxmod-morph>' . $side . '</div>')
             . '</div><div class="taxmod-shell-main">' . self::backLink() . $html . '</div></div>';
     }
 

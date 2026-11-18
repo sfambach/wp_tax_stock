@@ -3259,7 +3259,8 @@ final class StockPage
         // D-1440, his word 2026-11-18 11:33: «Und hier müsst ihr dann einen Einlagern geben. Und wenn kein Lagerort angegeben ist,
         // dann wird es in den Wareneingang gelegt.» Without that place set and none proposed, the button says what is missing.
         $proposed = (int) ($look['where'][$purchase] ?? 0);
-        $store    = ! $multi ? '' : ($look['arrival'] > 0 || $proposed > 0
+        // His finding 2026-11-18 17:19: «Einlagern» per row in the order's own view too, not only in the overview; never while assigning («Versendet»).
+        $store    = $assign ? '' : ($look['arrival'] > 0 || $proposed > 0
             ? '<button type="submit" class="button button-primary" name="booking" value="positioneinlagern-' . esc_attr((string) $purchase) . '">' . esc_html__('Einlagern', 'taxmod-stock') . '</button> '
             : '<button type="button" class="button" disabled title="' . esc_attr__('Ohne Lagerort braucht «Einlagern» den «Lagerort Wareneingang» in den Einstellungen.', 'taxmod-stock') . '">' . esc_html__('Einlagern', 'taxmod-stock') . '</button> ');
 

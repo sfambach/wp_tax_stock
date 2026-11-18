@@ -81,6 +81,8 @@ final class StockPage
     private const BACK_TO_LIST = 'materialliste';
     /** Rows per page of the material list (design 20: a list of thousands draws only what is seen). */
     private const PER_PAGE  = 50;
+    /** Where {@see self::tools()} puts the search into the bar (D-1462). */
+    private const SEARCH_SPOT = '<!--taxmod-stock-search-->';
     private const ROWS      = 6;
     private const MANUFACTURING = 'taxmod-fertigung';
     /** D-1377: the bookings that go back to where their form was opened. */
@@ -5205,10 +5207,11 @@ final class StockPage
         $bar = str_replace(
             ['name="action" id="' . self::BULK_FORM . '-action"', '</form>'],
             ['name="bulk" id="' . self::BULK_FORM . '-action"', '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"></form>'],
-            self::bulkBar(self::BULK_FORM, $count, ListPage::filters(self::FILTER_FORM, $filters) . $more, $asking)
+            // D-1462: the search stands in the bar's row, on the right — put in after, so its GET form keeps no «action».
+            ListPage::bulkBar(self::BULK_FORM, self::ACTION, [], $count, ListPage::filters(self::FILTER_FORM, $filters) . $more, true, $asking, self::SEARCH_SPOT)
         );
 
-        return ListPage::searchBox(self::FILTER_FORM, $list->search, $placeholder, $hidden, __('Suchen', 'taxmod-stock')) . $bar;
+        return str_replace(self::SEARCH_SPOT, ListPage::searchBox(self::FILTER_FORM, $list->search, $placeholder, $hidden, __('Suchen', 'taxmod-stock')), $bar);
     }
 
     /**

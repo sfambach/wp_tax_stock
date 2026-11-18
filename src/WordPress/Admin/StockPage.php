@@ -677,7 +677,7 @@ final class StockPage
                 $text    = $row['cells'][$column->key] ?? '';
                 $cells[] = match ($column->key) {
                     'image' => ($thumbs[$id] ?? '') === '' ? '' : '<a href="' . $link . '">' . $thumbs[$id] . '</a>',
-                    'nr'    => '<a href="' . $link . '">' . esc_html($text) . '</a>',
+                    'nr'    => '<a id="taxmod-stock-row-' . esc_attr((string) $id) . '" href="' . $link . '">' . esc_html($text) . '</a>',
                     'name'  => '<strong><a href="' . $link . '">' . esc_html($text === '' ? '—' : $text) . '</a></strong>',
                     'stock' => '<span' . ($row['low'] ? ' style="color:#b32d2e;font-weight:600"' : '') . '>' . esc_html($text) . '</span>',
                     default => esc_html($text === '' ? '—' : $text),
@@ -1205,7 +1205,7 @@ final class StockPage
         $label  = (string) $table->first($thing, $s->field('label'));
         $about  = $s->hasField('description') ? (string) $table->first($thing, $s->field('description')) : '';
         $media  = $this->stock->titleImages([$thing])[$thing] ?? 0;
-        $back   = $this->lastList();
+        $back   = $this->lastList() . '#taxmod-stock-row-' . $thing;
         $chips  = $this->chips($thing);
         $titles = [
             'daten'   => __('Technische Daten', 'taxmod-stock'),
@@ -1259,9 +1259,11 @@ final class StockPage
     private function lastList(): string
     {
         $plain = add_query_arg(['page' => self::PAGE, 'tab' => 'material'], admin_url('admin.php'));
+        $group = add_query_arg(['page' => self::PAGE, 'tab' => 'gruppenbestand'], admin_url('admin.php'));
         $last  = get_transient(self::LAST_LIST . get_current_user_id());
 
-        return is_string($last) && str_starts_with($last, $plain) ? $last : $plain;
+        // His report 2026-11-18 19:52: from «Gruppenbestand» back goes to that group, not to «Material».
+        return is_string($last) && (str_starts_with($last, $plain) || str_starts_with($last, $group)) ? $last : $plain;
     }
 
     /**
@@ -1907,12 +1909,14 @@ final class StockPage
      */
     private function bulkGroupAsk(): array
     {
-        $chooser = $this->stock->groupChooser('group', 0, self::BULK_FORM);
+        // His wish 2026-11-18 19:52: «wenn die Gruppe, in der es gerade ist, also der Ast zumindest vorausgewählt wäre».
+        $chooser = $this->stock->groupChooser('group', absint($_GET['group'] ?? 0), self::BULK_FORM);
         $body    = self::actForm([['label' => __('Gruppe', 'taxmod-stock'), 'control' => $chooser,
                 'hint' => __('Felder, die die neue Gruppe zusätzlich hat, kommen leer dazu. Gingen bei einem Material Werte verloren, wird keines verschoben.', 'taxmod-stock')]])
             . '<input type="hidden" name="return_tab" value="' . esc_attr(self::BACK_TO_LIST) . '" form="' . esc_attr(self::BULK_FORM) . '">';
 
-        return ['taxmod-stock-bulk-group' => [__('Verschieben nach …', 'taxmod-stock'), '<div class="alignleft actions">' . ListPage::dialogAction('taxmod-stock-bulk-group', __('Verschieben nach …', 'taxmod-stock'), __('Ausgewählte in andere Gruppe', 'taxmod-stock'), $body, 'booking', 'sammelverschieben', __('Verschieben', 'taxmod-stock'), self::BULK_FORM) . '</div>']];
+        // His report 2026-11-18 19:52: «umbuchen nach, verschieben nach sind nicht weit auseinander» — each names what it moves.
+        return ['taxmod-stock-bulk-group' => [__('Material in andere Gruppe …', 'taxmod-stock'), '<div class="alignleft actions">' . ListPage::dialogAction('taxmod-stock-bulk-group', __('Material in andere Gruppe …', 'taxmod-stock'), __('Material in andere Gruppe verschieben', 'taxmod-stock'), $body, 'booking', 'sammelverschieben', __('Verschieben', 'taxmod-stock'), self::BULK_FORM) . '</div>']];
     }
 
     /** His wish 2026-11-11: no link out into the modeller; without its record editor the page says the modeller is too old. */
@@ -1945,7 +1949,7 @@ final class StockPage
                 'hint' => __('Bucht alles von den angehakten Materialien, jeden Posten von jedem Ort, an den gewählten Ort um: ein Vorgang «Umbuchung», «Stornieren» bei den Vorgängen nimmt ihn zurück.', 'taxmod-stock')]])
             . '<input type="hidden" name="return_tab" value="' . esc_attr(self::BACK_TO_LIST) . '" form="' . esc_attr(self::BULK_FORM) . '">';
 
-        return ['taxmod-stock-bulk-transfer' => [__('Umbuchen nach …', 'taxmod-stock'), '<div class="alignleft actions">' . ListPage::dialogAction('taxmod-stock-bulk-transfer', __('Umbuchen nach …', 'taxmod-stock'), __('Ausgewählte umbuchen', 'taxmod-stock'), $body, 'booking', 'sammelumbuchen', __('Umbuchen', 'taxmod-stock'), self::BULK_FORM) . '</div>']];
+        return ['taxmod-stock-bulk-transfer' => [__('Bestand an anderen Lagerort …', 'taxmod-stock'), '<div class="alignleft actions">' . ListPage::dialogAction('taxmod-stock-bulk-transfer', __('Bestand an anderen Lagerort …', 'taxmod-stock'), __('Bestand an anderen Lagerort umbuchen', 'taxmod-stock'), $body, 'booking', 'sammelumbuchen', __('Umbuchen', 'taxmod-stock'), self::BULK_FORM) . '</div>']];
     }
 
     /**

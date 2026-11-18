@@ -381,6 +381,16 @@ $_GET = ['page' => StockPage::PAGE, 'tab' => 'gruppenbestand', 'group' => (strin
 $html = (new StockPage())->render();
 $pruefe(! class_exists(Taxmod\Core\Renderer\DialogMarkup::class) || str_contains($html, 'value="materialetiketten-pdf"'), 'D-1202: the group stock offers the same bulk label print');
 $pruefe(str_contains($html, 'LM2930T-5.0') && str_contains($html, 'Menge gesamt') && str_contains($html, 'data-source="' . StockPage::DETAILS_MATERIAL . '"') && ! str_contains($html, 'notice-error'), 'D-1174: a group shows its materials, the totals as tiles and lots loaded when a row opens');
+// D-1470, his report 2026-11-18 19:52: the current branch stands chosen in «Material in andere Gruppe …», the two bulk moves
+// name what they move, each row is an anchor the way back lands on, and the side column takes part when an act redraws the page.
+$pruefe((bool) preg_match('/name="group"[^>]*value="' . $r['teile'] . '"[^>]*checked|value="' . $r['teile'] . '"[^>]*name="group"[^>]*checked/', $html), 'D-1470: «Material in andere Gruppe …» opens on the group shown');
+$pruefe(str_contains($html, 'Material in andere Gruppe …') && str_contains($html, 'Bestand an anderen Lagerort …') && ! str_contains($html, '>Verschieben nach …<') && ! str_contains($html, '>Umbuchen nach …<'), 'D-1470: the bulk moves say «Material in andere Gruppe …» and «Bestand an anderen Lagerort …»');
+$pruefe(str_contains($html, 'id="taxmod-stock-row-' . $bc . '"'), 'D-1470: each material row is an anchor');
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => (string) $bc, 'view' => 'daten'];
+$zurueck = (new StockPage())->render();
+$pruefe((bool) preg_match('/class="button taxmod-icon-button taxmod-back" href="[^"]*tab=gruppenbestand(&#038;|&amp;|&)group=' . $r['teile'] . '[^"]*#taxmod-stock-row-' . $bc . '"/', $zurueck), 'D-1470: back from a material opened in «Gruppenbestand» leads to that group, at its row');
+$pruefe(str_contains(LogisticsShell::wrap(StockPage::PAGE, '<p>x</p>', '<p>side</p>'), 'id="taxmod-shell-side" data-taxmod-morph'), 'D-1470: the side column is redrawn with the page after an act (data-taxmod-morph)');
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'gruppenbestand', 'group' => (string) $r['teile']];
 // D-1259, his word «wir müssen einstellungen auch an der material gruppe ermöglichen»: the group's Lager view sets its properties.
 $pruefe(str_contains($html, 'value="' . StockPage::GROUP_PROPERTIES . '"') && str_contains($html, 'id="taxmod-stock-group-test"') && str_contains($html, 'name="place"'), 'D-1259: the group\'s Lager view offers «Nach Wareneingang testen» and «Standard-Lagerort»');
 (new StockService())->setGroupProperty($r['teile'], StockService::TEST_PROPERTY, true);
@@ -1585,8 +1595,9 @@ $pruefe(apply_filters('taxmod_stock_test_place', null) === (int) ((new StockServ
 
 // D-1357: the Lager's searches take the one rule from the modeller; the core gets it handed in, never a copy of its own.
 $quelle = static fn (string $datei): string => (string) file_get_contents(dirname(__DIR__, 2) . '/src/' . $datei);
-// D-1444, his choice 2026-11-18 12:26 «Button wie überall»: no place chooser of the Lager stands open as a tree; each has its button.
-$pruefe(! preg_match('/inline:\s*true/', $quelle('WordPress/Admin/StockPage.php') . $quelle('WordPress/Admin/InboundPage.php')), 'D-1444: every place chooser of the Lager is the field with its tree button, none inline');
+// Changed with D-1467 (his word 2026-11-18 22:49 «in dialogen bitte immer inline»): the modeller stands every chooser in a
+// dialog as a tree; the Lager asks for none itself, so a form outside a dialog keeps the field with its tree button.
+$pruefe(! preg_match('/inline:\s*true/', $quelle('WordPress/Admin/StockPage.php') . $quelle('WordPress/Admin/InboundPage.php')), 'D-1467: the Lager asks for no inline chooser; in a dialog the modeller stands it, outside the button stays');
 
 // Changed with D-1440: the old order list of «Einbuchen» and its search are gone; the material list keeps its own.
 $pruefe(substr_count($quelle('WordPress/Admin/StockPage.php'), 'Wildcard::matches(...)') >= 1 && str_contains($quelle('WordPress/Admin/ContactsPage.php'), 'Wildcard::matches(...)')

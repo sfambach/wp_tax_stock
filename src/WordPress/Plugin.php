@@ -11,6 +11,7 @@ use TaxmodStock\Core\TestSettings;
 use TaxmodStock\WordPress\Admin\Acts;
 use TaxmodStock\WordPress\Admin\CockpitPage;
 use TaxmodStock\WordPress\Admin\ContactsPage;
+use TaxmodStock\Core\InboundStage;
 use TaxmodStock\WordPress\Admin\InboundPage;
 use TaxmodStock\WordPress\Admin\LogisticsShell;
 use TaxmodStock\WordPress\Admin\MaterialPicker;
@@ -146,6 +147,15 @@ final class Plugin
         // Only where a setting is saved (options.php) or read over REST: naming the options compiled the 100 KB stock service on every page view (D-1187).
         if (($GLOBALS['pagenow'] ?? '') === 'options.php') {
             add_action('admin_init', [$this, 'registerSettings']);
+            // D-1440: booking is part of «Angekommen»; the old address of «Einbuchen» goes there, the split form stays.
+            add_action('admin_init', static function (): void {
+                $tab = sanitize_key((string) ($_GET['tab'] ?? ''));
+
+                if (sanitize_key((string) ($_GET['page'] ?? '')) === Pages::STOCK && in_array($tab, ['', 'wareneingang'], true) && absint($_GET['split'] ?? 0) === 0 && current_user_can('manage_options')) {
+                    wp_safe_redirect(InboundPage::url(array_filter(['tab' => InboundStage::Arrived->value, 's' => sanitize_text_field(wp_unslash((string) ($_GET['s'] ?? '')))])));
+                    exit;
+                }
+            });
             // D-1259: the old branch rows move to the groups once, as soon as the modeller can hold them.
             add_action('admin_init', static fn () => current_user_can('manage_options') ? (new StockService())->moveBranchSettingsToGroups() : null);
         }
@@ -1380,6 +1390,14 @@ final class Plugin
             'default'           => [],
             'sanitize_callback' => static fn ($value): array => array_values(array_filter(array_map('absint', is_array($value) ? $value : []))),
             'show_in_rest'      => ['schema' => ['type' => 'array', 'items' => ['type' => 'integer']]],
+        ]);
+
+        // D-1440: «Lagerort Wareneingang», like D-1303.
+        register_setting('taxmod_stock', StockService::RECEIPT_INBOUND, [
+            'type'              => 'integer',
+            'default'           => 0,
+            'sanitize_callback' => 'absint',
+            'show_in_rest'      => true,
         ]);
 
         // D-1303: «Lagerort Wareneingang Produktion», like D-1111.

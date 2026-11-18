@@ -91,6 +91,9 @@ final class StockService
     /** D-1303: «Lagerort Wareneingang Produktion», where finished boards come in (like D-1111). */
     public const PRODUCTION_INBOUND = 'taxmod_stock_production_inbound';
 
+    /** D-1440: «Lagerort Wareneingang», where «Einlagern» puts a purchase without a place; from there it is moved on. */
+    public const RECEIPT_INBOUND = 'taxmod_stock_receipt_inbound';
+
     /** D-1111: «Lagerort für Test»; which groups are tested is the group property {@see TEST_PROPERTY} (D-1259). */
     public const TESTS = 'taxmod_stock_tests';
 
@@ -1329,6 +1332,14 @@ final class StockService
     }
 
     /** D-1303: the place finished boards come in; 0 while none is set or it is gone. */
+    /** D-1440: «Lagerort Wareneingang», 0 while none is set — a place is never guessed. */
+    public function receiptInbound(): int
+    {
+        $place = absint(get_option(self::RECEIPT_INBOUND, 0));
+
+        return $place > 0 && $this->table('location')->has($place) ? $place : 0;
+    }
+
     public function productionInbound(): int
     {
         $place = absint(get_option(self::PRODUCTION_INBOUND, 0));

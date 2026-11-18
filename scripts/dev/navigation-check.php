@@ -124,7 +124,12 @@ $einstellungen = array_values(array_filter($areas, static fn (array $area): bool
 $druck = array_values(array_filter($einstellungen, static fn (array $item): bool => ($item['module'] ?? '') === '__navcheck-print'))[0] ?? null;
 $pruefe($druck !== null && ($druck['path'] ?? []) === ['Druck'] && ! in_array('print', array_column($areas, 'key'), true), 'a page announced with area «print» stands under Einstellungen › Druck, not in an area of its own');
 $vorlagen = array_values(array_filter($einstellungen, static fn (array $item): bool => $item['key'] === 'label-templates'))[0] ?? null;
-$pruefe(($vorlagen['path'] ?? []) === ['Druck'] && ($vorlagen['label'] ?? '') === 'Etiketten' && ($vorlagen['tab'] ?? '') === 'etikettenvorlagen' && ($vorlagen['page'] ?? '') === StockPage::PAGE, 'D-1165: Druck › Etiketten opens the Lager tab of the templates');
+// Changed 2026-11-18 (his word «etiketten gibts jetzt zweimal als menüpunkt», «drucker auch»): with the labels module the Lager's own
+// two items step back, so the module's are the only ones.
+$pruefe(defined('TAXMOD_LABEL_VERSION')
+    ? $vorlagen === null && array_values(array_filter($einstellungen, static fn (array $item): bool => $item['key'] === 'printers')) === []
+    : ($vorlagen['path'] ?? []) === ['Druck'] && ($vorlagen['label'] ?? '') === 'Etiketten' && ($vorlagen['tab'] ?? '') === 'etikettenvorlagen' && ($vorlagen['page'] ?? '') === StockPage::PAGE,
+    'D-1165: Druck › Etiketten opens the Lager tab of the templates — unless the labels module brings its own «Etiketten» and «Drucker»');
 $bestand = array_values(array_filter($areas, static fn (array $area): bool => $area['key'] === 'stock'))[0]['items'] ?? [];
 $platz   = array_values(array_filter($bestand, static fn (array $item): bool => $item['key'] === 'places'))[0] ?? null;
 $pruefe(($platz['label'] ?? '') === 'Platzbestand' && ($platz['tab'] ?? '') === 'lagerorte', 'Bestand › Platzbestand opens what lies at a place (renamed from «Lagerorte», his word 2026-11-05)');

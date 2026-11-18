@@ -55,6 +55,7 @@ use TaxmodStock\Core\SplitRow;
 use TaxmodStock\Core\StockError;
 use Taxmod\Core\Renderer\DecimalText;
 use Taxmod\WordPress\Admin\ListPage;
+use TaxmodStock\WordPress\Admin\InboundPage;
 use TaxmodStock\WordPress\Admin\LogisticsShell;
 use TaxmodStock\WordPress\Admin\StockPage;
 use TaxmodStock\WordPress\LabelAbilities;
@@ -125,8 +126,9 @@ $plan = $s->receiptPlan($r['best2']);
 $pruefe($plan[$r['kaufC']]['proposal']?->keep === true && $plan[$r['kaufC']]['model'] === $r['t1'], 'the receipt proposes the purchase\'s Modell');
 $pruefe($plan[$r['kaufD']]['proposal'] === null, 'without a Modell the user chooses');
 
-$_GET = ['page' => StockPage::PAGE, 'tab' => 'wareneingang', 'order' => $r['best2']];
-$html = (new StockPage())->render();
+// D-1440: the receipt is the one table of «Angekommen»; drawn here for one order.
+$einbuchen = static fn (int $order): string => (new StockPage())->receiptTable([$order => (string) ((new StockService())->labels('order')[$order] ?? '')], InboundPage::BACK, '');
+$html = $einbuchen($r['best2']);
 $hits = array_column($s->searchThings('BC640'), 'id');
 $pruefe(in_array($r['t1'], $hits, true) && ! in_array($r['kaufC'], $hits, true), 'the material search finds the thing, never the purchase named like it');
 // D-1011, his word «Erst Text, dann Baum»: the tree beside the search shows the groups of things, and a group its things.
@@ -286,7 +288,7 @@ $pruefe(str_contains($frage, 'Platz leer? ') && str_contains($frage, 'name="sour
     'D-1438: an Umbuchung held back by «Platz leer?» comes back as an open dialog with both answers, once');
 
 // The page renders its tabs from the same data.
-foreach (['material' => '>' . $r['lm'] . '</a></td>', 'inventur' => 'Material suchen', 'wareneingang' => 'Bestellung 1', 'verbrauch' => 'Bestandsposten'] as $tab => $erwartet) {
+foreach (['material' => '>' . $r['lm'] . '</a></td>', 'inventur' => 'Material suchen', 'verbrauch' => 'Bestandsposten'] as $tab => $erwartet) {
     // D-1147: the material list waits for a search; «Alle anzeigen» draws it all.
     $_GET = ['page' => StockPage::PAGE, 'tab' => $tab, 'order' => $r['best']] + ($tab === 'material' ? [ListPage::SHOW_ALL => '1'] : []);
     $html = (new StockPage())->render();
@@ -413,29 +415,41 @@ $pruefe(str_contains($html, 'name="' . StockService::MATERIAL_LABEL_PROPERTY . '
 $pruefe((new StockService())->groupLabelOf($r['t1'], StockService::MATERIAL_LABEL_PROPERTY) === $r['etk40'] && (new StockService())->groupLabelOf($r['t1'], StockService::LOT_LABEL_PROPERTY) === 0, 'D-1266: a material reads its group\'s default label, the lot label stays unset');
 (new StockService())->setGroupProperty($r['teile'], StockService::MATERIAL_LABEL_PROPERTY, null);
 
-// Laid out as the eBay shipping page (2026-10-25): «Wareneingang» first and default, list tables with search, filter and sorting.
-$_GET = ['page' => StockPage::PAGE];
-$html = (new StockPage())->render();
-// His word 2026-11-02: «Lagerort mit in den Bestand verschieben und den Menüpunkt Lager entfernen» — the tabs are the menu group
-// «Bestand»; «Wareneingang» is Eingang → Einbuchen and the structure a setting, both without the stock's tabs.
-$pruefe(strpos($html, 'nav-tab-active') === false && str_contains($html, 'taxmod-list-details'), 'without a tab the page opens «Wareneingang», without the tabs of «Bestand»');
+// D-1440, his words 2026-11-18 11:33/11:36: «Einbuchen» is no item of its own — booking is part of «Angekommen», one row per
+// purchase under its order's line, one bar, nothing to open. ⚠️ Changed with D-1440: the checks of the old order list with
+// «Gleich aufgeklappt» (D-989) are gone with that list; «Wareneingang» is no longer a choice of «Ansicht der Reiter».
+// Gone too: «the goods receipt finds an order by what its purchases are» — «Angekommen» searches with the cockpit's own search.
+$links = array_column(array_merge(...array_column(TaxmodStock\WordPress\Admin\LogisticsShell::navigation()->areas(), 'items')), 'tab');
+$pruefe(! in_array('wareneingang', $links, true) && in_array('arrived', $links, true), 'D-1440: the navigation has no «Einbuchen»; booking stands under «Angekommen»');
+$pruefe(! array_key_exists('wareneingang', TaxmodStock\Core\ViewSettings::DEFAULTS), 'D-1440: «Gleich aufgeklappt» is no choice for the goods receipt any more');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'material'];
 $tabs = (new StockPage())->render();
 // D-1243: the tabs of «Bestand» are gone; every one of its pages is still an item of the navigation on the left.
-$links = array_column(array_merge(...array_column(TaxmodStock\WordPress\Admin\LogisticsShell::navigation()->areas(), 'items')), 'tab');
 $pruefe(! str_contains($tabs, 'nav-tab-wrapper') && array_diff(['material', 'gruppenbestand', 'inventur', 'verbrauch', 'reservierungen', 'lagerorte'], $links) === [], 'D-1243: «Bestand» has no tabs; Material, Gruppenbestand, Inventur, Verbrauch, Reservierungen, Platzbestand stand in the navigation');
-$_GET = ['page' => StockPage::PAGE];
-$pruefe(str_contains($html, 'Bestellung 1') && str_contains($html, 'tr class="taxmod-list-details"><td') && ! str_contains($html, 'tr class="taxmod-list-details" hidden') && ! str_contains($html, 'name="purchases[]"'), 'by default the orders stand open (shared list page, D-989), their purchases load as they scroll into view');
-// D-1085: the view of the tabs is set on Logistik › Einstellungen › Grundeinstellungen, no longer on the Configuration tab.
-(new TaxmodStock\WordPress\Admin\SettingsPage())->save(['taxmod_stock_views_sent' => '1', 'taxmod_stock_views' => ['material' => '1']]);
-$html = (new StockPage())->render();
-$pruefe(str_contains($html, 'tr class="taxmod-list-details" hidden') && ! str_contains($html, 'tr class="taxmod-list-details"><td') && ! str_contains($html, 'name="purchases[]"'), 'with «Gleich aufgeklappt» off the purchases stay folded and unloaded');
-$_GET = ['page' => StockPage::PAGE, 'tab' => 'material', ListPage::SHOW_ALL => '1'];
-$html = (new StockPage())->render();
-$pruefe(str_contains($html, 'tr class="taxmod-list-details"><td') && ! str_contains($html, 'tr class="taxmod-list-details" hidden'), 'with «Gleich aufgeklappt» on for Material the lots stand open');
-delete_option(StockService::VIEWS);
-$_GET = ['page' => StockPage::PAGE, 'tab' => 'wareneingang', 'order' => $r['best']];
-$pruefe(str_contains((new StockPage())->render(), 'data-loaded="1"'), 'an order handed in is open and loaded');
+$html = (new StockPage())->receiptTable([$r['best'] => 'Bestellung 1', $r['best2'] => 'Bestellung 2'], InboundPage::BACK, '');
+$pruefe(substr_count($html, 'taxmod-stock-order-head') === 2 && substr_count($html, 'id="taxmod-stock-receipt-all"') === 1 && substr_count($html, 'taxmod-stock-receipt-bulk-0') >= 1
+    && substr_count($html, 'Je Kauf das Material:') === 1 && ! str_contains($html, 'taxmod-list-details') && str_contains($html, 'name="order_of[' . $r['kaufC'] . ']" value="' . $r['best2'] . '"'),
+    'D-1440: the purchases of several orders stand in one table under their order\'s line, with one bar, one form and the explanation once');
+$pruefe(str_contains($html, 'Angehakte einlagern …') && str_contains($html, 'Lagerort für alle …') && str_contains($html, 'value="zuordnen"'), 'D-1440: the one bar has «Angehakte einlagern …», «Lagerort für alle …» and saving');
+// An order with a purchase still open, wherever the fixture stands by now.
+$offen = [0, 0];
+
+foreach (array_keys((new StockService())->labels('order')) as $o) {
+    foreach ((new StockService())->receiptPlan($o) as $kauf => $zeile) {
+        if ($zeile['lock'] === null && $offen === [0, 0]) {
+            $offen = [$o, (int) $kauf];
+        }
+    }
+}
+
+delete_option(StockService::RECEIPT_INBOUND);
+$ohne = $offen[0] > 0 ? (new StockPage())->receiptTable([$offen[0] => 'offen'], InboundPage::BACK, '') : '';
+update_option(StockService::RECEIPT_INBOUND, $r['platz'], false);
+$mit  = $offen[0] > 0 ? (new StockPage())->receiptTable([$offen[0] => 'offen'], InboundPage::BACK, '') : '';
+$pruefe($offen[0] > 0 && str_contains($mit, 'value="positioneinlagern-' . $offen[1] . '"')
+    && (str_contains($ohne, 'value="positioneinlagern-' . $offen[1] . '"') || str_contains($ohne, '«Lagerort Wareneingang» in den Einstellungen')),
+    'D-1440: each open row has «Einlagern»; without a place and without «Lagerort Wareneingang» it is greyed and says why');
+delete_option(StockService::RECEIPT_INBOUND);
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'material'];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'taxmod-list') && str_contains($html, 'search-box') && str_contains($html, '<tfoot>') && str_contains($html, 'sortable') && ! str_contains($html, 'taxmod-stock-pagetabs') && str_contains($html, 'Taxonomy Modeller › Lager'), 'the material list is the shared list page with search and sortable columns, without the tabs of «Bestand» (D-1243)');
@@ -446,13 +460,8 @@ $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'filter' => 'instock', 
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'sorted desc') && str_contains($html, 'value="instock" selected') && ! str_contains($html, 'notice-error'), 'the material list sorts by stock and filters');
 
-$_GET = ['page' => StockPage::PAGE, 'tab' => 'wareneingang', 'status' => '', 's' => 'MPSA56'];
-$html = (new StockPage())->render();
-$pruefe(str_contains($html, 'Bestellung 2') && ! str_contains($html, 'Bestellung 1'), 'the goods receipt finds an order by what its purchases are');
-
 // Concept R3 · a lot purchase told apart: its parts become purchases of the order, each with its material, and can then be received.
-$_GET = ['page' => StockPage::PAGE, 'tab' => 'wareneingang', 'order' => $r['best']];
-$pruefe(str_contains((new StockPage())->render(), 'split=' . $r['kaufA']), 'a lot purchase offers «Aufteilen»');
+$pruefe(str_contains($einbuchen($r['best']), 'split=' . $r['kaufA']), 'a lot purchase offers «Aufteilen»');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'wareneingang', 'order' => $r['best'], 'split' => $r['kaufA']];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'Konvolut aufteilen: Konvolut unbestimmt') && str_contains($html, 'name="rows[0][quantity]"') && ! str_contains($html, 'notice-error'), 'the split form names the lot purchase and offers rows');

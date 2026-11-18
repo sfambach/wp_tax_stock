@@ -217,8 +217,21 @@ final class InboundPage
         uasort($shown, static fn (InboundOrder $a, InboundOrder $b): int => strcmp((string) $b->orderedOn, (string) $a->orderedOn) ?: $b->id <=> $a->id);
 
         $html = $bar
-            . ListPage::searchBox(self::FILTER_FORM, $search, __('Bestellung, Händler, Sendungsnummer …', 'taxmod-stock'), ['page' => self::PAGE, 'tab' => $tab], __('Suchen', 'taxmod-stock'))
-            . $this->bulkBar($tab, $filter, count($shown));
+            . ListPage::searchBox(self::FILTER_FORM, $search, __('Bestellung, Händler, Sendungsnummer …', 'taxmod-stock'), ['page' => self::PAGE, 'tab' => $tab], __('Suchen', 'taxmod-stock'));
+
+        // D-1440, his words 2026-11-18 11:33/11:36: «oder ich zeige gleich die Position», «einbuchen … sollte das Teil des
+        // angekommenen Bildschirms sein» — every purchase that arrived as a row under its order's line, one bar, one form.
+        if ($tab === InboundStage::Arrived->value) {
+            $heads = [];
+
+            foreach ($shown as $id => $order) {
+                $heads[$id] = $this->orderLine($order, $labels[$id] ?? '#' . $id, $today, $tab);
+            }
+
+            return $html . (new StockPage($this->inbound->stock()))->receiptTable($heads, self::BACK, $tab) . (new StockPage($this->inbound->stock()))->script(true);
+        }
+
+        $html .= $this->bulkBar($tab, $filter, count($shown));
         $rows = '';
 
         foreach ($shown as $id => $order) {
@@ -361,6 +374,23 @@ final class InboundPage
         }
 
         return ListPage::row(self::BULK_FORM, (string) $order->id, $cells, $this->buttons($order, $stage, $counts['booked'], $tab), '');
+    }
+
+    /** D-1440: an order's line above its purchases on «Angekommen» — its name opens its own view with its acts. */
+    private function orderLine(InboundOrder $order, string $label, string $today, string $tab): string
+    {
+        $about = $this->inbound->about($order->id);
+        $late  = $order->overdue($this->inbound->stock()->structure(), $today, $this->inbound->stock()->inboundArchive($today));
+        $facts = array_filter([
+            ($order->orderedOn ?? '') === '' ? '' : esc_html(sprintf(/* translators: %s: date */ __('bestellt %s', 'taxmod-stock'), substr((string) $order->orderedOn, 0, 10))),
+            ($order->receivedOn ?? '') === '' ? '' : esc_html(sprintf(/* translators: %s: date */ __('angekommen %s', 'taxmod-stock'), substr((string) $order->receivedOn, 0, 10))),
+            $this->trackingCell($order),
+        ]);
+
+        return '<strong><a href="' . esc_url(self::url(['tab' => $tab, 'order' => $order->id])) . '">' . esc_html($label) . '</a></strong>'
+            . ($late ? ' <span style="color:#b32d2e;font-weight:600">' . esc_html__('überfällig', 'taxmod-stock') . '</span>' : '')
+            . ($about === '' ? '' : ' <span class="description">' . esc_html($about) . '</span>')
+            . ($facts === [] ? '' : '<br><span class="description">' . implode(' · ', $facts) . '</span>');
     }
 
     /** One order's own view: its head with the buttons, then its purchases — the receipt form once it has arrived. */

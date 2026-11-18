@@ -83,7 +83,7 @@ final class LogisticsShell
                 $item('awaited', __('Bestellt', 'taxmod-stock'), Pages::INBOUND, 'ordered'),
                 $item('on-the-way', __('Versendet', 'taxmod-stock'), Pages::INBOUND, 'shipped'),
                 $item('arrived', __('Angekommen', 'taxmod-stock'), Pages::INBOUND, 'arrived'),
-                $item('book', __('Einbuchen', 'taxmod-stock'), Pages::STOCK, 'wareneingang'),
+                // D-1440, his word 2026-11-18 11:36: «einbuchen … sollte das Teil des angekommenen Bildschirms sein» — no item of its own.
                 $item('booked', __('Eingebucht', 'taxmod-stock'), Pages::INBOUND, 'booked'),
                 $item('test', __('Zu testen', 'taxmod-stock'), Pages::INBOUND, 'test'),
                 $item('archive', __('Archiv', 'taxmod-stock'), Pages::INBOUND, 'archived'),
@@ -121,10 +121,12 @@ final class LogisticsShell
                 ...self::modules('settings'),
                 // His words 2026-11-03: «pack mal das menü drucken unter einstellungen», «warum hat das nur zwei ebenen», «kannst du
                 // das so bauen das es n ebenen zulässt» — an item's `path` puts it any depth below its area (D-1121).
-                // D-1153: label templates are records; their list sits with the print pages.
-                ['path' => [__('Druck', 'taxmod-stock')]] + $item('label-templates', __('Etiketten', 'taxmod-stock'), Pages::STOCK, 'etikettenvorlagen'),
-                // D-1192: the printers, the roll each holds, «Rolle wechseln».
-                ['path' => [__('Druck', 'taxmod-stock')]] + $item('printers', __('Drucker', 'taxmod-stock'), Pages::STOCK, 'drucker'),
+                // D-1153, D-1192: label templates and printers — while the labels module (wp_tax_label, D-1296) is not there. With it,
+                // its own «Etiketten» and «Drucker» stand here and these would be the same items twice (his word 2026-11-18 11:40).
+                ...(defined('TAXMOD_LABEL_VERSION') ? [] : [
+                    ['path' => [__('Druck', 'taxmod-stock')]] + $item('label-templates', __('Etiketten', 'taxmod-stock'), Pages::STOCK, 'etikettenvorlagen'),
+                    ['path' => [__('Druck', 'taxmod-stock')]] + $item('printers', __('Drucker', 'taxmod-stock'), Pages::STOCK, 'drucker'),
+                ]),
                 ...array_map(static fn (array $item): array => ['path' => [__('Druck', 'taxmod-stock'), ...$item['path']]] + $item, self::modules('print')),
                 // D-1232, his question 2026-11-08: «was ist eigentlich mit dem Benutzereinstellungen los? Die sind noch nicht sichtbar».
                 $item('user', __('Benutzereinstellungen', 'taxmod-stock'), Pages::SETTINGS, SettingsPage::USER_TAB),

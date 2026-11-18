@@ -343,7 +343,8 @@ $pruefe(str_contains($assignForm, 'value="ask:taxmod-stock-arrive-') && ! str_co
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'arrived', 'order' => $r['o4']];
 $oneView = (new InboundPage())->render();
 $_GET = [];
-$pruefe(! str_contains($oneView, 'class="taxmod-toolbar"'), 'D-1403: an order shown with its one table has no second toolbar above it; the order\'s acts stand in the table\'s bar');
+// D-1448 (changes D-1440): «Angekommen» has no order view — a link to an arrived order lands on the one list.
+$pruefe(substr_count($oneView, 'class="taxmod-toolbar"') === 1 && ! str_contains($oneView, 'Zurück zu «Angekommen»') && str_contains($oneView, 'id="taxmod-stock-receipt-all"'), 'D-1448: a link to an arrived order shows the list of «Angekommen» with its one bar, no order view');
 $pruefe(substr_count($receiptForm, '" checked') <= 1, 'D-1400: the receipt opened after «Angehakte angekommen» ticks only those purchases');
 $pruefe(str_contains($assignForm, 'data-taxmod-fill="location"') && strpos($assignForm, 'taxmod-stock-receipt-bulk-') < strpos($assignForm, 'class="taxmod-stock-assign"'), 'his wish «bulk funktion platz für alle wählen»: the bar before the form sets the place of every ticked purchase');
 $pruefe(str_contains(InboundPage::orderUrl($r['o4'], 'ordered'), 'tab=arrived'), 'his word «sollte dann auf eingebucht oben springen … sollte generell so sein»: after an action the order opens at the stage it stands in now');
@@ -360,14 +361,18 @@ $pruefe(! preg_match('/\bwp_die\(|check_admin_referer\(|check_ajax_referer\(/', 
 
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'arrived', 'order' => $r['o4']];
 $html = (new InboundPage())->render();
-$pruefe(str_contains($html, 'data-back="' . InboundPage::BACK . '"') && str_contains($html, 'data-order="' . $r['o4'] . '"') && str_contains($html, 'Zurück zu «Angekommen»'), 'the view of an arrived order holds the Lager booking form, returning here');
+$pruefe(str_contains($html, 'name="order_of[') && ! str_contains($html, 'taxmod-stock-order-head') && ! str_contains($html, 'Zurück zu «Angekommen»'), 'D-1448: an arrived order opens no view of its own; its purchases stand in the list, no line per order');
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'ordered', 'order' => $r['o4']];
 $html = (new InboundPage())->render();
-$pruefe(str_contains($html, 'Zurück zu «Angekommen»') && preg_match('/is-active[^"]*" href="[^"]*tab=arrived[^"]*" aria-current="step"/', $html) === 1, 'his word «der blaue Pfeil ist immer noch bei bestellt»: an opened order stands at its own stage');
+$pruefe(preg_match('/is-active[^"]*" href="[^"]*tab=arrived[^"]*" aria-current="step"/', $html) === 1, 'his word «der blaue Pfeil ist immer noch bei bestellt»: an opened order stands at its own stage (D-1448: for «Angekommen» the list)');
 $pruefe(! str_contains($html, 'data-assign'), 'an arrived order has the booking form, not the choice alone');
-$_GET = ['page' => InboundPage::PAGE, 'tab' => 'arrived'];
+// D-1448: the order's line with its counts stands in the lists of orders, not on «Angekommen».
+$_GET = ['page' => InboundPage::PAGE, 'tab' => 'all'];
 $html = (new InboundPage())->render();
 $pruefe(str_contains($html, '1 unbestimmt'), 'it counts the purchases not yet determined (R1)');
+$_GET = ['page' => InboundPage::PAGE, 'tab' => 'arrived'];
+$html = (new InboundPage())->render();
+$pruefe(! str_contains($html, 'taxmod-stock-order-head') && ! str_contains($html, 'name="orders[]"') && str_contains($html, '>Bestellung</th>'), 'D-1448: «Angekommen» is one list of purchases with a column «Bestellung», no line and no tick per order');
 
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'ordered', 'filter' => 'overdue', 's' => 'retro'];
 $html = (new InboundPage())->render();
@@ -424,7 +429,7 @@ $pruefe((new InboundService())->refreshTracking([$r['o2'], $r['o3']]) === 2 && $
 $gls = (new InboundService())->trackingAnswer('ZQ123GLS');
 $pruefe(($gls['carrier'] ?? '') === 'GLS' && ($gls['stage'] ?? '') === 'delivered', 'D-1132: a number DHL does not know is answered by GLS');
 $pruefe((new InboundService())->orders()[$r['o1']]->stage($s) === InboundStage::Arrived, 'GLS «delivered» makes it «Angekommen»');
-$_GET = ['page' => InboundPage::PAGE, 'tab' => 'arrived'];
+$_GET = ['page' => InboundPage::PAGE, 'tab' => 'all'];
 $html = (new InboundPage())->render();
 $pruefe(str_contains($html, 'ZQ123GLS</code> <span class="description">GLS zugestellt'), 'the page names the carrier GLS with its stage');
 $asked = 0;

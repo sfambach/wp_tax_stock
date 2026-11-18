@@ -412,9 +412,9 @@ $tabs = (new StockPage())->render();
 // D-1243: the tabs of «Bestand» are gone; every one of its pages is still an item of the navigation on the left.
 $pruefe(! str_contains($tabs, 'nav-tab-wrapper') && array_diff(['material', 'gruppenbestand', 'inventur', 'verbrauch', 'reservierungen', 'lagerorte'], $links) === [], 'D-1243: «Bestand» has no tabs; Material, Gruppenbestand, Inventur, Verbrauch, Reservierungen, Platzbestand stand in the navigation');
 $html = (new StockPage())->receiptTable([$r['best'] => 'Bestellung 1', $r['best2'] => 'Bestellung 2'], InboundPage::BACK, '');
-$pruefe(substr_count($html, 'taxmod-stock-order-head') === 2 && substr_count($html, 'id="taxmod-stock-receipt-all"') === 1 && substr_count($html, 'taxmod-stock-receipt-bulk-0') >= 1
+$pruefe(substr_count($html, 'taxmod-stock-order-head') === 0 && str_contains($html, '<td>Bestellung 1</td>') && str_contains($html, '<td>Bestellung 2</td>') && substr_count($html, 'id="taxmod-stock-receipt-all"') === 1 && substr_count($html, 'taxmod-stock-receipt-bulk-0') >= 1
     && substr_count($html, 'Je Kauf das Material:') === 1 && ! str_contains($html, 'taxmod-list-details') && str_contains($html, 'name="order_of[' . $r['kaufC'] . ']" value="' . $r['best2'] . '"'),
-    'D-1440: the purchases of several orders stand in one table under their order\'s line, with one bar, one form and the explanation once');
+    'D-1448 (changes D-1440): the purchases of several orders stand in one table, each naming its order in its own column, with one bar, one form and the explanation once');
 $pruefe(str_contains($html, 'Angehakte einlagern …') && str_contains($html, 'Lagerort für alle …') && str_contains($html, 'value="zuordnen"'), 'D-1440: the one bar has «Angehakte einlagern …», «Lagerort für alle …» and saving');
 // An open row drawn on its own: by now the fixture's purchases are booked, so the row is given as open (lock none, no material).
 $zeile = new ReflectionMethod(StockPage::class, 'receiptRow');

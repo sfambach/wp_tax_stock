@@ -187,10 +187,15 @@ final class InboundPage
 
         // His word 2026-11-05: «man klickt auf das item und bekommt eine teilview des listeneintrags mit den postionen».
         if ($open > 0 && isset($orders[$open])) {
-            $here = InboundStage::tryFrom($tab);
+            $here  = InboundStage::tryFrom($tab);
+            $stage = $here !== null && in_array($here, $tabsOf[$open], true) ? $here : $stages[$open];
 
-            return $bar
-                . $this->detailView($orders[$open], $here !== null && in_array($here, $tabsOf[$open], true) ? $here : $stages[$open], $labels[$open] ?? '#' . $open, $today, $tab);
+            // D-1448, his word 2026-11-18 17:29: «Angekommen» has no order view; an old link to one lands on the list, at its rows.
+            if ($stage !== InboundStage::Arrived) {
+                return $bar . $this->detailView($orders[$open], $stage, $labels[$open] ?? '#' . $open, $today, $tab);
+            }
+
+            $tab = InboundStage::Arrived->value;
         }
 
         $shown  = [];
@@ -225,7 +230,7 @@ final class InboundPage
             $heads = [];
 
             foreach ($shown as $id => $order) {
-                $heads[$id] = $this->orderLine($order, $labels[$id] ?? '#' . $id, $today, $tab);
+                $heads[$id] = $this->orderCell($order, $labels[$id] ?? '#' . $id);
             }
 
             return $html . (new StockPage($this->inbound->stock()))->receiptTable($heads, self::BACK, $tab) . (new StockPage($this->inbound->stock()))->script(true);
@@ -377,6 +382,13 @@ final class InboundPage
     }
 
     /** D-1440: an order's line above its purchases on «Angekommen» — its name opens its own view with its acts. */
+    /** D-1448: the order in a purchase's row on «Angekommen» — its name and day of arrival, no link into an order view (escaped). */
+    private function orderCell(InboundOrder $order, string $label): string
+    {
+        return esc_html($label) . (($order->receivedOn ?? '') === '' ? ''
+            : '<br><span class="description">' . esc_html(sprintf(/* translators: %s: date */ __('angekommen %s', 'taxmod-stock'), substr((string) $order->receivedOn, 0, 10))) . '</span>');
+    }
+
     private function orderLine(InboundOrder $order, string $label, string $today, string $tab): string
     {
         $about = $this->inbound->about($order->id);

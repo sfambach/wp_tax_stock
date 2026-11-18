@@ -3136,13 +3136,12 @@ final class StockPage
             . ($back === '' ? '' : '<input type="hidden" name="back" value="' . esc_attr($back) . '">')
             . ($tab === null ? '' : '<input type="hidden" name="stage" value="' . esc_attr($tab->value) . '">')
             . $this->receiptHelp(false, $look['closing'])
-            . '<table class="wp-list-table widefat fixed striped table-view-list taxmod-stock-receipt-all"><thead>' . $this->receiptHead() . '</thead><tbody>' . ($heads === [] ? $this->noItems(5) : '');
+            . '<table class="wp-list-table widefat fixed striped table-view-list taxmod-stock-receipt-all"><thead>' . $this->receiptHead(true) . '</thead><tbody>' . ($all === [] ? $this->noItems(6) : '');
 
-        foreach ($heads as $order => $head) {
-            // Not a «check-column»: «Alle wählen» ticks the purchases, never the orders a «Wareneingang rückgängig …» acts on.
-            $html .= '<tr class="taxmod-stock-order-head"><td><input type="checkbox" name="orders[]" value="' . esc_attr((string) $order) . '" aria-label="' . esc_attr__('Bestellung wählen', 'taxmod-stock') . '"></td>'
-                . '<td colspan="5">' . $head . '</td></tr>';
+        // D-1448, his word 2026-11-18 17:29: no line per order — every purchase a row, its order in its own column, in the order of the orders.
+        $look['heads'] = $heads;
 
+        foreach (array_keys($heads) as $order) {
             foreach ($plans[$order] as $purchase => $row) {
                 $html .= $this->receiptRow($order, (int) $purchase, $row, $look, false, [], $back, true);
             }
@@ -3174,10 +3173,14 @@ final class StockPage
             . ($assign ? '' : '<p>' . esc_html__('Je Kauf das Material: vorgeschlagen ist das «Modell» des Kaufs; «Zurücksetzen» (Pfeil) gibt die Suche frei; «Neues Material» (oder eine Gruppe in der Suche) legt ein neues Material in der Gruppe an. Der Lagerort ist vorgeschlagen: der Standard-Lagerort des Materials, sonst der Ort seiner Gruppe; Gebrauchtware aus einem Zweig mit Test nach dem Wareneingang geht an den «Lagerort für Test», wenn einer eingestellt ist. Der Materialtext öffnet das Material wie der Knopf «Material». Die Menge ist die gekaufte Anzahl (bei Ware in Packungen: Packungen); geändert wird sie beim Buchen oder Speichern in den Kauf geschrieben.', 'taxmod-stock') . '</p>');
     }
 
-    private function receiptHead(): string
+    /** With `$withOrder` (D-1448, «Angekommen» over all orders) the first column names each row's order. */
+    private function receiptHead(bool $withOrder = false): string
     {
+        $wide = $withOrder ? '22%' : '28%';
+
         return '<tr><td class="manage-column column-cb check-column"><input type="checkbox" aria-label="' . esc_attr__('Alle wählen', 'taxmod-stock') . '"></td>'
-            . '<th scope="col" class="manage-column" style="width:28%">' . esc_html__('Kauf', 'taxmod-stock') . '</th><th scope="col" class="manage-column" style="width:28%">' . esc_html__('Material', 'taxmod-stock')
+            . ($withOrder ? '<th scope="col" class="manage-column" style="width:16%">' . esc_html__('Bestellung', 'taxmod-stock') . '</th>' : '')
+            . '<th scope="col" class="manage-column" style="width:' . $wide . '">' . esc_html__('Kauf', 'taxmod-stock') . '</th><th scope="col" class="manage-column" style="width:' . $wide . '">' . esc_html__('Material', 'taxmod-stock')
             . '</th><th scope="col" class="manage-column" style="width:6em">' . esc_html__('Menge', 'taxmod-stock') . '</th><th scope="col" class="manage-column">' . esc_html__('Lagerort', 'taxmod-stock') . '</th>'
             // His word 2026-11-01: «buttons immer nach rechts».
             . '<th scope="col" class="manage-column" style="width:10em;text-align:right">' . esc_html__('Aktionen', 'taxmod-stock') . '</th></tr>';
@@ -3240,6 +3243,7 @@ final class StockPage
         $html     = '<tr id="taxmod-stock-purchase-' . esc_attr((string) $purchase) . '"' . ($multi ? ' data-order="' . esc_attr((string) $order) . '"' : '') . '><th scope="row" class="check-column"><input type="checkbox" name="purchases[]" value="' . esc_attr((string) $purchase) . '"'
             . ($lock === null && $model !== null && ! $assign && ! $multi && ($pick === [] || in_array($purchase, $pick, true)) ? ' checked' : '') . ($lock === null ? '' : ' disabled') . '>'
             . ($multi ? '<input type="hidden" name="order_of[' . esc_attr((string) $purchase) . ']" value="' . esc_attr((string) $order) . '">' : '') . '</th>'
+            . ($multi ? '<td>' . ($look['heads'][$order] ?? esc_html('#' . $order)) . '</td>' : '')
             . '<td>' . (($look['thumbs'][$purchase] ?? '') === '' ? '' : '<span style="float:left;margin:0 8px 4px 0">' . $look['thumbs'][$purchase] . '</span>')
             . esc_html($look['labels'][$purchase] ?? '#' . $purchase) . ($lock === null ? '' : ' <em>(' . esc_html(Messages::lockReason($lock)) . ')</em>')
             . ($assign ? InboundPage::purchaseFacts($look['inbound'], $look['bought'], $order, $purchase) . $this->priceLine($purchase, $look['prices'], $look['warned'])

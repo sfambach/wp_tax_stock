@@ -11,9 +11,16 @@ final class PlatformLink
 {
     public const NUMBER = '{nr}';
 
-    /** The template with the number put in; null without a template, without the placeholder or without a number. */
+    /**
+     * The template with the number put in; null without a template, without the placeholder or without a number. D-1484: the
+     * modeller's one block fills it where it is there (only http/https then), so a field link and this link are the same thing.
+     */
     public static function filled(string $template, string $number): ?string
     {
+        if (class_exists(\Taxmod\Core\Model\Type\TextType::class) && method_exists(\Taxmod\Core\Model\Type\TextType::class, 'linkFrom')) {
+            return \Taxmod\Core\Model\Type\TextType::linkFrom($template, $number);
+        }
+
         $template = trim($template);
         $number   = trim($number);
 

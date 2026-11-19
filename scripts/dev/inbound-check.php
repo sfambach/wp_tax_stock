@@ -66,6 +66,18 @@ $order = static fn (string $ref, string $label, array $values): array => [
     ['op' => 'set_values', 'record' => '@' . $ref, 'values' => ['@label' => $label] + $values],
 ];
 
+// Prüftor 2026-11-19: the run left its nodes behind on another database. A second connection sees only what is committed, so it
+// counts the run's own names before and after: more after means something in the run committed the bracket (a DDL, a COMMIT).
+$draussen = static function (): int {
+    global $wpdb;
+    $zweite = new wpdb(DB_USER, DB_PASSWORD, DB_NAME, DB_HOST);
+    $zahl   = (int) $zweite->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}taxmod_nodes_named WHERE name IN ('__Stock', '__Grafikkarten', '__Kabel')");
+    $zweite->close();
+
+    return $zahl;
+};
+$vorher = $draussen();
+
 $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'create_node', 'ref' => 'stock', 'name' => '__Stock', 'parent' => 402],
     $field('label', 402, 'Bezeichnung', $text, 'composition', '0..1'),
@@ -665,6 +677,9 @@ try {
 } catch (StockError $e) {
     $pruefe($e->reason === 'no_import_targets' && $e->detail === 'received_at', 'a missing order field is named');
 }
+
+$nachher = $draussen();
+$pruefe($nachher === $vorher, "nothing of this run is visible outside it ({$vorher} before, {$nachher} after) — the bracket held");
 
 echo $fehler === 0 ? "inbound-check: all green ({$kind})\n" : "inbound-check: {$fehler} FAILED ({$kind})\n";
 exit($fehler === 0 ? 0 : 1);

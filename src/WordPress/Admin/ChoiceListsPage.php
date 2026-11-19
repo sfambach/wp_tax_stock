@@ -54,7 +54,7 @@ final class ChoiceListsPage
             $node = absint($_GET['tab'] ?? 0);
             $node = isset($tree[$node]) ? $node : $root;
 
-            return $page($this->title($tree, $root, $node), $html . $this->undoBar($node) . ($node === $root ? $this->tiles($tree, $root) : $this->list($tree, $root, $node)));
+            return $page($this->title($tree, $root, $node), $html . ($node === $root ? ListPage::toolbar([[$this->undoButton($node)]]) . $this->tiles($tree, $root) : $this->list($tree, $root, $node)));
         } catch (StockError $e) {
             return $page(__('Auswahllisten', 'taxmod-stock'), $html . '<div class="notice notice-error"><p>' . esc_html(Messages::of($e)) . '</p></div>');
         }
@@ -154,7 +154,7 @@ final class ChoiceListsPage
         $uses     = $this->stock->choiceUses(array_keys($children));
         $up       = $tree[$node]['parent'];
         $count    = sprintf(/* translators: %d: number of values */ _n('%d Wert', '%d Werte', count($children), 'taxmod-stock'), count($children));
-        $toolbar  = '<div class="alignleft actions">' . ListPage::toolbar([[ListPage::back(self::url(['tab' => $up === $root ? '' : (string) $up]), __('Zurück', 'taxmod-stock'))], [$this->newDialog($node, $tree[$node]['name'])]]) . '</div>';
+        $toolbar  = '<div class="alignleft actions">' . ListPage::toolbar([[ListPage::back(self::url(['tab' => $up === $root ? '' : (string) $up]), __('Zurück', 'taxmod-stock'))], [$this->newDialog($node, $tree[$node]['name']), $this->undoButton($node)]]) . '</div>';
         $body     = '';
 
         foreach ($children as $child => $name) {
@@ -271,13 +271,17 @@ final class ChoiceListsPage
     }
 
     /** D-1474: «Rückgängig» for this user's last change on this page, while it is fresh. */
-    private function undoBar(int $node): string
+    /** «Letzte Änderung rückgängig» as an icon in the one toolbar, only while this user has a change to take back. */
+    private function undoButton(int $node): string
     {
         if (! is_array(get_transient(self::UNDO . get_current_user_id()))) {
             return '';
         }
 
-        return '<p>' . $this->formStart($node) . '<button type="submit" class="button" name="booking" value="zuruecknehmen">' . esc_html__('Letzte Änderung rückgängig', 'taxmod-stock') . '</button></form></p>';
+        $label = __('Letzte Änderung rückgängig', 'taxmod-stock');
+
+        return $this->formStart($node) . '<button type="submit" class="button taxmod-icon-button" name="booking" value="zuruecknehmen" title="' . esc_attr($label) . '">'
+            . ListPage::icon('undo', $label) . '</button></form>';
     }
 
     private function formStart(int $list, int $value = 0): string

@@ -348,6 +348,23 @@ final class StockService
         return array_values(array_filter(array_keys($tree), static fn (int $id): bool => ! isset($parents[$id])));
     }
 
+    /**
+     * D-1480: the stock's say in a record merge, added to what other modules answered before.
+     *
+     * @param array{veto?: string, trash?: list<int>} $answer
+     * @return array{veto?: string, trash?: list<int>}
+     */
+    public function mergeAnswer(array $answer, int $from, int $into): array
+    {
+        if (($answer['veto'] ?? '') !== '') {
+            return $answer;
+        }
+
+        $mine = (new \TaxmodStock\Core\LagerMerge($this->structure()))->answer($from, $into, $this->table('lager'));
+
+        return isset($mine['veto']) ? $mine : ['trash' => [...($answer['trash'] ?? []), ...($mine['trash'] ?? [])]];
+    }
+
     public function table(string $node): Table
     {
         return $this->tableOf($this->structure()->node($node));

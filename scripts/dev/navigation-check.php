@@ -102,9 +102,10 @@ foreach ($navigation->areas() as $area) {
 }
 
 $pruefe($outside === [], 'no item leaves the logistics navigation' . ($outside === [] ? '' : ': ' . implode('; ', $outside)));
-$settingsAll = array_values(array_filter($navigation->areas(), static fn (array $area): bool => $area['key'] === 'settings'))[0]['items'] ?? [];
-// D-1193: the contact group stands in Einstellungen too; the module checks below look at the rest.
-$settings    = array_values(array_filter($settingsAll, static fn (array $item): bool => ! str_starts_with((string) $item['key'], 'contact')));
+$settings   = array_values(array_filter($navigation->areas(), static fn (array $area): bool => $area['key'] === 'settings'))[0]['items'] ?? [];
+$stammdaten = array_values(array_filter($navigation->areas(), static fn (array $area): bool => $area['key'] === 'masterdata'))[0]['items'] ?? [];
+// D-1472 (replaces the place of D-1193): Einstellungen holds no contact item any more.
+$pruefe(array_filter($settings, static fn (array $item): bool => str_starts_with((string) $item['key'], 'contact')) === [], 'D-1472: Einstellungen holds no Kontakte');
 // Grenzlauf 2026-11-17 (modeller D-1427, PR-9): «Drucker» (D-1192) and «Benutzereinstellungen» (D-1232) stand there since; the list names them.
 $pruefe(array_slice(array_column($settings, 'key'), 0, 4) === ['basics', 'structure', 'place-types', 'module-__navcheck-dhl'] && array_filter(array_slice(array_column($settings, 'key'), 4), static fn (string $key): bool => ! str_starts_with($key, 'module-') && ! in_array($key, ['form-labels', 'user'], true)) === [], 'Einstellungen: Grundeinstellungen, Lagerstruktur › Layout and Platzarten (D-1129), then the module (' . implode(', ', array_column($settings, 'key')) . ')');
 $pruefe(($settings[1]['path'] ?? []) === ['Lagerstruktur'] && ($settings[2]['path'] ?? []) === ['Lagerstruktur'] && ($settings[2]['tab'] ?? '') === 'platzarten', 'Layout and Platzarten stand in the group «Lagerstruktur»');
@@ -131,10 +132,14 @@ $pruefe(array_filter($einstellungen, static fn (array $item): bool => in_array($
 $bestand = array_values(array_filter($areas, static fn (array $area): bool => $area['key'] === 'stock'))[0]['items'] ?? [];
 $platz   = array_values(array_filter($bestand, static fn (array $item): bool => $item['key'] === 'places'))[0] ?? null;
 $pruefe(($platz['label'] ?? '') === 'Platzbestand' && ($platz['tab'] ?? '') === 'lagerorte', 'Bestand › Platzbestand opens what lies at a place (renamed from «Lagerorte», his word 2026-11-05)');
-$pruefe(array_slice(array_column($bestand, 'key'), 0, 2) === ['material', 'group-stock'] && ($bestand[1]['tab'] ?? '') === 'gruppenbestand', 'D-1174: Bestand › Gruppenbestand stands after Material');
-// D-1193, his word 2026-11-06: «kontakte nochmal in einstellungen ? finde sie da gut aber dann sollten sie aus dem andren menü raus».
-$kontakte = array_values(array_filter($settingsAll, static fn (array $item): bool => str_starts_with((string) $item['key'], 'contact')));
-$pruefe(! in_array('contacts', array_column($areas, 'key'), true) && ($kontakte[0]['page'] ?? '') === \TaxmodStock\WordPress\Admin\ContactsPage::PAGE && ($kontakte[0]['path'] ?? []) === ['Kontakte'] && ! empty($kontakte[0]['head']), 'D-1193: Kontakte is a group under Einstellungen only, its head opens all contacts');
+$pruefe(($bestand[0]['key'] ?? '') === 'group-stock' && ($bestand[0]['tab'] ?? '') === 'gruppenbestand' && ! in_array('material', array_column($bestand, 'key'), true), 'D-1174, D-1472: Bestand opens with Gruppenbestand; Material stands under Stammdaten');
+// D-1472, his word 2026-11-19: «Stammdaten sollen ein eigenes Stammdatenbereich bekommen. Ja, die Kontakte werden das gleiche.»
+$areaKeys = array_column($areas, 'key');
+$pruefe(array_search('masterdata', $areaKeys, true) === array_search('outbound', $areaKeys, true) + 1 && array_search('settings', $areaKeys, true) === array_search('masterdata', $areaKeys, true) + 1, 'D-1472: Stammdaten stands between Warenausgang and Einstellungen (' . implode(', ', $areaKeys) . ')');
+$pruefe(($stammdaten[0]['key'] ?? '') === 'material' && ($stammdaten[0]['page'] ?? '') === StockPage::PAGE && ($stammdaten[0]['tab'] ?? '') === 'material', 'D-1472: Stammdaten › Material keeps its address (page=taxmod-stock, tab=material)');
+$pruefe($navigation->active(StockPage::PAGE, 'material') === ['area' => 'masterdata', 'item' => 'material'], 'D-1472: a material page marks Stammdaten as the current area');
+$kontakte = array_values(array_filter($stammdaten, static fn (array $item): bool => str_starts_with((string) $item['key'], 'contact')));
+$pruefe(! in_array('contacts', $areaKeys, true) && ($kontakte[0]['page'] ?? '') === \TaxmodStock\WordPress\Admin\ContactsPage::PAGE && ($kontakte[0]['path'] ?? []) === ['Kontakte'] && ! empty($kontakte[0]['head']), 'D-1472: Kontakte is a group under Stammdaten only, its head opens all contacts');
 $pruefe(count($kontakte) > 1 && array_unique(array_column($kontakte, 'page')) === [\TaxmodStock\WordPress\Admin\ContactsPage::PAGE] && array_filter($kontakte, static fn (array $item): bool => ($item['path'][0] ?? '') !== 'Kontakte') === [], 'D-1185: the contact nodes are the items of the group Kontakte');
 // D-1193: a page the stock frames itself must never come back as a connection module — ModulePage would frame it a second time
 // (his finding 2026-11-06 «warum nun zweimal menü ?» on Kontakte).
@@ -149,7 +154,10 @@ $pruefe(substr_count($tief, 'taxmod-shell-group is-open') === 2 && str_contains(
 // D-1128, his word «auf dem hauptknoten eine übersicht zu bekommen mit abstprung»: an area and a group open an overview of tiles.
 $_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'stock'];
 $uebersicht = LogisticsShell::wrap(CockpitPage::PAGE, (new CockpitPage())->render());
-$pruefe(str_contains($uebersicht, 'taxmod-shell-area is-open"><a href="' . esc_url(add_query_arg(LogisticsShell::VIA_MENU, '1', CockpitPage::overviewUrl('stock'))) . '">Bestand</a>') && substr_count($uebersicht, 'taxmod-tile-label"') === 6 && str_contains($uebersicht, '<span class="taxmod-tile-label">Platzbestand</span>'), 'Bestand opens an overview with a tile for each of its six items, the area open in the navigation');
+$pruefe(str_contains($uebersicht, 'taxmod-shell-area is-open"><a href="' . esc_url(add_query_arg(LogisticsShell::VIA_MENU, '1', CockpitPage::overviewUrl('stock'))) . '">Bestand</a>') && substr_count($uebersicht, 'taxmod-tile-label"') === 5 && str_contains($uebersicht, '<span class="taxmod-tile-label">Platzbestand</span>'), 'Bestand opens an overview with a tile for each of its five items (D-1472: Material moved to Stammdaten), the area open in the navigation');
+$_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'masterdata'];
+$uebersicht = (new CockpitPage())->render();
+$pruefe(str_contains($uebersicht, '<span class="taxmod-tile-label">Material</span>') && str_contains($uebersicht, 'taxmod-material-search'), 'D-1472: Stammdaten opens an overview with a Material tile and the material search');
 $_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'settings'];
 $uebersicht = (new CockpitPage())->render();
 $pruefe(str_contains($uebersicht, esc_attr(CockpitPage::overviewUrl('settings', 'Lagerstruktur'))) && substr_count($uebersicht, '>Lagerstruktur</span>') === 1, 'a group (Lagerstruktur) is one tile that opens its own overview');

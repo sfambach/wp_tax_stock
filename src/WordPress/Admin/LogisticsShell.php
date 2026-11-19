@@ -89,7 +89,6 @@ final class LogisticsShell
                 $item('archive', __('Archiv', 'taxmod-stock'), Pages::INBOUND, 'archived'),
             ]],
             ['key' => 'stock', 'label' => __('Bestand', 'taxmod-stock'), 'items' => [
-                $item('material', __('Material', 'taxmod-stock'), Pages::STOCK, 'material'),
                 // D-1174: a node of the material tree is a group; its stock holds every group below it.
                 $item('group-stock', __('Gruppenbestand', 'taxmod-stock'), Pages::STOCK, 'gruppenbestand'),
                 $item('count', __('Inventur', 'taxmod-stock'), Pages::STOCK, 'inventur'),
@@ -105,6 +104,12 @@ final class LogisticsShell
                 ...self::modules('production'),
             ]],
             ['key' => 'outbound', 'label' => __('Warenausgang', 'taxmod-stock'), 'items' => self::modules('outbound')],
+            // D-1472, his word 2026-11-19: «Stammdaten sollen ein eigenes Stammdatenbereich bekommen. Ja, die Kontakte werden das
+            // gleiche.» — what there is (material, contacts) apart from how much lies where; only the menu moves, every address stays.
+            ['key' => 'masterdata', 'label' => __('Stammdaten', 'taxmod-stock'), 'items' => [
+                $item('material', __('Material', 'taxmod-stock'), Pages::STOCK, 'material'),
+                ...self::contactItems(),
+            ]],
             // D-1184, his word 2026-11-05: «kontakt ast in logistik menü einbauen» — firms, suppliers, manufacturers, persons.
             // D-1185, his word 2026-11-06: «kontakte hat doch schon unter knoten die bitte im kontakte knoten an zueigen und der kontakte knoten
             // selbst ist alle kontakte», then «ich meine das kontakte menü» — the area itself opens all contacts, the nodes below it are its items.
@@ -115,9 +120,6 @@ final class LogisticsShell
                 // His words 2026-11-03 (D-1129): «sollte eigener punkt in einstellungen sein vielleicht lagerstrukut platzarten, layout».
                 ['path' => [__('Lagerstruktur', 'taxmod-stock')]] + $item('structure', __('Layout', 'taxmod-stock'), Pages::STOCK, 'lagerstruktur'),
                 ['path' => [__('Lagerstruktur', 'taxmod-stock')]] + $item('place-types', __('Platzarten', 'taxmod-stock'), Pages::STOCK, 'platzarten'),
-                // D-1193, his word 2026-11-06: «kontakte nochmal in einstellungen ? finde sie da gut aber dann sollten sie aus dem andren
-                // menü raus» — the contact group stands under Einstellungen only; its head opens all contacts.
-                ...self::contactItems(),
                 ...self::modules('settings'),
                 // His words 2026-11-03: «pack mal das menü drucken unter einstellungen», «warum hat das nur zwei ebenen», «kannst du
                 // das so bauen das es n ebenen zulässt» — an item's `path` puts it any depth below its area (D-1121).
@@ -136,7 +138,7 @@ final class LogisticsShell
     }
 
     /**
-     * D-1185, D-1193: the contact branch's nodes as items of the group «Kontakte» under Einstellungen — the group's head opens all
+     * D-1185, D-1472: the contact branch's nodes as items of the group «Kontakte» under Stammdaten — the group's head opens all
      * contacts, a node with nodes below it a group whose head item is its own link. One read-tree per request.
      *
      * @return list<array<string, mixed>>

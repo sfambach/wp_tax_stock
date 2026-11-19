@@ -242,6 +242,65 @@ final class Plugin
         }, 10, 3);
         // D-1203: the modeller's scanner test page opens a scanned place, box or material here.
         add_filter('taxmod_scan_links', [self::class, 'scanLinks'], 10, 3);
+        // D-1483: a record this module keeps opens on its page wherever the modeller links to it.
+        add_filter('taxmod_record_home', [self::class, 'recordHome'], 10, 3);
+    }
+
+    /** @var array<string, array<int, true>>|null The branches whose records open here, read once per request: key → node ids. */
+    private static ?array $homes = null;
+
+    /**
+     * D-1483: orders open in logistics, materials and lots at their stock, places and boxes in the storage structure, sales in
+     * the sales module. The node the modeller names is tried first; only a node above every branch asks for the record's own.
+     */
+    public static function recordHome(?string $url, int $record, int $node): ?string
+    {
+        if ($url !== null && $url !== '' || $record <= 0) {
+            return $url;
+        }
+
+        $stock = self::reading();
+
+        try {
+            $key = self::homeOf($node, $stock) ?? self::homeOf($stock->nodesOf([$record])[$record] ?? 0, $stock);
+        } catch (StockError) {
+            return $url;
+        }
+
+        return match ($key) {
+            'order'    => InboundPage::url(['order' => $record]),
+            'lot'      => array_values(self::lotLink($record))[0] ?? $url,
+            'location' => add_query_arg(['page' => Pages::STOCK, 'tab' => 'lagerstruktur', 'ort' => $record], admin_url('admin.php')),
+            'lager'    => StockPage::thingUrl($record, 'bestand'),
+            'sale'     => add_query_arg(['page' => Pages::MODULE, 'module' => 'taxmod-verkauf'], admin_url('admin.php')),
+            default    => $url,
+        };
+    }
+
+    /** The branch `$node` lies in — the narrower ones first, since lots and places may hang below the materials. */
+    private static function homeOf(int $node, StockService $stock): ?string
+    {
+        if ($node <= 0) {
+            return null;
+        }
+
+        if (self::$homes === null) {
+            $s           = $stock->structure();
+            $model       = new ModelGateway();
+            self::$homes = [];
+
+            foreach (['lot', 'location', 'order', 'sale', 'lager'] as $key) {
+                self::$homes[$key] = $s->hasNode($key) ? array_fill_keys(array_keys($model->tree($s->node($key))), true) : [];
+            }
+        }
+
+        foreach (self::$homes as $key => $nodes) {
+            if (isset($nodes[$node])) {
+                return $key;
+            }
+        }
+
+        return null;
     }
 
     /**

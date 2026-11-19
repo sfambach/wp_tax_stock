@@ -21,18 +21,9 @@ final class ModelGateway
         $this->door = new ModelDoor();
     }
 
-    /**
-     * @param list<int> $fields only these fields are read (D-1486); none: all of them. A modeller without the narrow read gives all.
-     */
-    public function table(int $node, array $fields = []): Table
+    public function table(int $node): Table
     {
-        $whole = fn (): array => $this->ask(fn (): array => $this->door->records($node));
-
-        if ($fields === [] || ! method_exists($this->door, 'recordsOfFields')) {
-            return new Table($whole());
-        }
-
-        return new Table($this->ask(fn (): array => $this->door->recordsOfFields($node, $fields)), array_fill_keys($fields, true), $whole);
+        return new Table($this->ask(fn (): array => $this->door->records($node)));
     }
 
     /** @return array<int, array{name: string, target: int, type: string|null, kind: string, multiplicity: string}> relation id → field */

@@ -44,7 +44,6 @@ require __DIR__ . '/../../vendor/autoload.php';
 
 use TaxmodStock\Core\InboundStage;
 use TaxmodStock\Core\StockError;
-use TaxmodStock\Core\Table;
 use TaxmodStock\WordPress\Admin\InboundPage;
 use TaxmodStock\WordPress\Admin\StockPage;
 use TaxmodStock\WordPress\Admin\Messages;
@@ -670,23 +669,6 @@ if (is_array($gebaut) && $kind === 'aggregation') {
     }
 
     printf("       «Angekommen» with %d purchase rows: %d statements, %d KB\n", $zwei[2], $zwei[0], intdiv($zwei[1], 1024));
-
-    // D-1486: the big nodes are read in the fields the stock names; no tab may ask for another and read the node whole after all.
-    $weit = Table::$widened;
-
-    foreach (['ordered', 'arrived', 'test', 'booked', 'archived'] as $reiter) {
-        $_GET = ['page' => InboundPage::PAGE, 'tab' => $reiter];
-        (new InboundPage())->render();
-    }
-
-    $pruefe(Table::$widened === $weit, 'narrow read: no tab of the goods receipt reads a node whole after all (' . (Table::$widened - $weit) . ' times)');
-    $schmal = (new StockService())->table('purchase');
-    $ganz   = (new \TaxmodStock\WordPress\ModelGateway())->table((new StockService())->structure()->node('purchase'));
-    $feld   = (new StockService())->structure()->field('label');
-    $pruefe($schmal->ids() === $ganz->ids() && array_map(static fn (int $id): array => $schmal->all($id, $feld), $schmal->ids()) === array_map(static fn (int $id): array => $ganz->all($id, $feld), $ganz->ids()) && Table::$widened === $weit,
-        'narrow read: the purchases answer a field the stock names as the whole read does, without reading whole');
-    $schmal->valuesOf($schmal->ids()[0] ?? 0);
-    $pruefe(Table::$widened === $weit + 1, 'narrow read: the purchases were read narrow — asked for everything, the node is read whole once (the counter counts)');
 }
 
 // D-1487: «Plattform» becomes a reference to the firm — the code goes live first, the data after; both must read alike.

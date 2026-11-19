@@ -128,6 +128,50 @@ final class ModelGateway
         return (int) ($this->ask(fn (): array => ['id' => $this->door->createChild($parent, $name)])['id'] ?? 0);
     }
 
+    /** D-1474: whether the modeller offers the choice-list door (0.2.152). */
+    public function canKeepChoiceLists(): bool
+    {
+        return method_exists($this->door, 'constantsRoot');
+    }
+
+    /** D-1474: the node every choice list hangs below. */
+    public function constantsRoot(): int
+    {
+        return $this->canKeepChoiceLists() ? (int) ($this->ask(fn (): array => ['id' => $this->door->constantsRoot()])['id'] ?? 0) : 0;
+    }
+
+    /**
+     * D-1474: how many values choose each of these nodes, in one query.
+     *
+     * @param list<int> $nodes
+     * @return array<int, int>
+     */
+    public function constantUses(array $nodes): array
+    {
+        return $this->canKeepChoiceLists() ? $this->ask(fn (): array => $this->door->constantUses($nodes)) : [];
+    }
+
+    /**
+     * D-1474: one change to a choice list through the modeller's door — `rename`, `merge`, `trash` or `undo`; its change number.
+     *
+     * @param list<int|string> $arguments
+     */
+    public function keepChoiceList(string $change, array $arguments): int
+    {
+        if (! $this->canKeepChoiceLists()) {
+            throw StockError::fromModel('The Taxonomy Modeller is too old to keep choice lists (0.2.152).');
+        }
+
+        self::$writes++;
+
+        return (int) ($this->ask(fn (): array => ['act' => match ($change) {
+            'rename' => $this->door->renameNode((int) $arguments[0], (string) $arguments[1]),
+            'merge'  => $this->door->mergeConstant((int) $arguments[0], (int) $arguments[1]),
+            'trash'  => $this->door->trashUnusedConstant((int) $arguments[0]),
+            'undo'   => $this->door->undoModel((int) $arguments[0]),
+        }])['act'] ?? 0);
+    }
+
     /** D-1259: one act, undoable; null lets the node inherit again. */
     public function setProperty(int $node, string $key, bool|int|null $value): void
     {

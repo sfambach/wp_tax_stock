@@ -68,6 +68,7 @@ $submenu[Plugin::PARENT]          = [
     ['Lager', 'manage_options', StockPage::PAGE],
     // D-1193: the stock's own pages stand in the submenu as Plugin registers them, so a missing exclusion shows.
     ['Kontakte', 'manage_options', \TaxmodStock\WordPress\Admin\ContactsPage::PAGE],
+    ['Auswahllisten', 'manage_options', \TaxmodStock\WordPress\Admin\ChoiceListsPage::PAGE],
     ['Grundeinstellungen', 'manage_options', SettingsPage::PAGE],
     ['Logistik', 'manage_options', ModulePage::PAGE],
     ['eBay-Versand', 'manage_options', 'taxebay-shipping'],
@@ -138,12 +139,13 @@ $areaKeys = array_column($areas, 'key');
 $pruefe(array_search('masterdata', $areaKeys, true) === array_search('outbound', $areaKeys, true) + 1 && array_search('settings', $areaKeys, true) === array_search('masterdata', $areaKeys, true) + 1, 'D-1472: Stammdaten stands between Warenausgang and Einstellungen (' . implode(', ', $areaKeys) . ')');
 $pruefe(($stammdaten[0]['key'] ?? '') === 'material' && ($stammdaten[0]['page'] ?? '') === StockPage::PAGE && ($stammdaten[0]['tab'] ?? '') === 'material', 'D-1472: Stammdaten › Material keeps its address (page=taxmod-stock, tab=material)');
 $pruefe($navigation->active(StockPage::PAGE, 'material') === ['area' => 'masterdata', 'item' => 'material'], 'D-1472: a material page marks Stammdaten as the current area');
+$pruefe(($stammdaten[1]['key'] ?? '') === 'choice-lists' && ($stammdaten[1]['page'] ?? '') === \TaxmodStock\WordPress\Admin\ChoiceListsPage::PAGE && $navigation->active(\TaxmodStock\WordPress\Admin\ChoiceListsPage::PAGE, '') === ['area' => 'masterdata', 'item' => 'choice-lists'], 'D-1474: Stammdaten › Auswahllisten follows Material and marks Stammdaten');
 $kontakte = array_values(array_filter($stammdaten, static fn (array $item): bool => str_starts_with((string) $item['key'], 'contact')));
 $pruefe(! in_array('contacts', $areaKeys, true) && ($kontakte[0]['page'] ?? '') === \TaxmodStock\WordPress\Admin\ContactsPage::PAGE && ($kontakte[0]['path'] ?? []) === ['Kontakte'] && ! empty($kontakte[0]['head']), 'D-1472: Kontakte is a group under Stammdaten only, its head opens all contacts');
 $pruefe(count($kontakte) > 1 && array_unique(array_column($kontakte, 'page')) === [\TaxmodStock\WordPress\Admin\ContactsPage::PAGE] && array_filter($kontakte, static fn (array $item): bool => ($item['path'][0] ?? '') !== 'Kontakte') === [], 'D-1185: the contact nodes are the items of the group Kontakte');
 // D-1193: a page the stock frames itself must never come back as a connection module — ModulePage would frame it a second time
 // (his finding 2026-11-06 «warum nun zweimal menü ?» on Kontakte).
-$own = [\TaxmodStock\WordPress\Admin\CockpitPage::PAGE, \TaxmodStock\WordPress\Admin\PurchasePage::PAGE, \TaxmodStock\WordPress\Plugin::MENU, \TaxmodStock\WordPress\Admin\StockPage::PAGE, \TaxmodStock\WordPress\Admin\ContactsPage::PAGE, \TaxmodStock\WordPress\Admin\SettingsPage::PAGE];
+$own = [\TaxmodStock\WordPress\Admin\CockpitPage::PAGE, \TaxmodStock\WordPress\Admin\PurchasePage::PAGE, \TaxmodStock\WordPress\Plugin::MENU, \TaxmodStock\WordPress\Admin\StockPage::PAGE, \TaxmodStock\WordPress\Admin\ContactsPage::PAGE, \TaxmodStock\WordPress\Admin\ChoiceListsPage::PAGE, \TaxmodStock\WordPress\Admin\SettingsPage::PAGE];
 $twice = array_values(array_intersect($own, array_column(\TaxmodStock\WordPress\Admin\ModulePage::all(), 'slug')));
 $pruefe($twice === [], 'no page of the stock is framed twice as a connection module' . ($twice === [] ? '' : ': ' . implode(', ', $twice)));
 $fertigung = array_values(array_filter($areas, static fn (array $area): bool => $area['key'] === 'production'))[0]['items'] ?? [];

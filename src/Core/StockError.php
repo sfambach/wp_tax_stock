@@ -42,6 +42,18 @@ final class StockError extends \RuntimeException
         return new self('contact_without_name', '');
     }
 
+    /** D-1474: a value of a choice list needs a name. */
+    public static function choiceWithoutName(): self
+    {
+        return new self('choice_without_name', '');
+    }
+
+    /** D-1474: the node is not below the model's Konstanten, or a merge would leave its list. */
+    public static function notAChoice(int $nodeId): self
+    {
+        return new self('not_a_choice', (string) $nodeId);
+    }
+
     /** D-1184: the node is not in the contact branch. */
     public static function notAContactGroup(int $nodeId): self
     {

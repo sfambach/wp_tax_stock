@@ -279,5 +279,25 @@ $kopf = LogisticsShell::wrap(CockpitPage::PAGE, '<p>x</p>');
 $pruefe(preg_match('/<a href="[^"]*module=__navcheck-head-1[^"]*">Fertigung<\/a>/', $kopf) === 1 && preg_match('/<a href="[^"]*area=stock[^"]*">Bestand<\/a>/', $kopf) === 1,
     'D-1372: Fertigung opens the page its module marks (the first of two), Bestand still its overview');
 
+// D-1483: a record this module keeps opens on its page wherever the modeller links to it — by its own node, and from a node above.
+$heim  = new StockService();
+$heimS = $heim->structure();
+
+foreach (['order' => 'page=taxmod-logistik&order=', 'location' => 'tab=lagerstruktur&ort=', 'lager' => 'thing=', 'lot' => 'thing='] as $key => $erwartet) {
+    $id = $heimS->hasNode($key) ? (array_map('intval', $heim->table($key)->ids())[0] ?? 0) : 0;
+
+    if ($id === 0) {
+        $pruefe(true, "D-1483: no {$key} record here — nothing to open");
+        continue;
+    }
+
+    $mitKnoten = (string) apply_filters('taxmod_record_home', null, $id, $heim->nodesOf([$id])[$id] ?? 0);
+    $ohne      = (string) apply_filters('taxmod_record_home', null, $id, 402);
+    $pruefe(str_contains($mitKnoten, $erwartet) && $mitKnoten === $ohne, "D-1483: {$key} #{$id} opens at {$erwartet}… (by its node and from above)");
+}
+
+$pruefe(apply_filters('taxmod_record_home', 'https://x.test/', 1, 0) === 'https://x.test/', 'D-1483: an address another module gave stays');
+$pruefe(apply_filters('taxmod_record_home', null, 2147483646, 0) === null, 'D-1483: a record no branch here keeps stays in the modeller');
+
 printf("\n%s\n", $fehler === 0 ? 'navigation-check: green' : "navigation-check: {$fehler} FAIL");
 exit($fehler === 0 ? 0 : 1);

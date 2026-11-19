@@ -76,6 +76,9 @@ final class Messages
             /* translators: %s: record id of the lot */
             'lot_blocked'               => sprintf(__('Posten #%s ist gesperrt: er muss noch getestet werden. Erst ein Testergebnis gibt ihn frei.', 'taxmod-stock'), $error->detail),
             'no_way_chosen'             => __('Bitte wählen, wohin der Bestand der bisherigen Unterplätze geht.', 'taxmod-stock'),
+            /* translators: %s: the material and its variants */
+            'choose_variant'            => sprintf(__('Das Material hat Varianten; eingelagert wird eine Variante. Bitte beim Kauf eine Variante zuordnen — %s', 'taxmod-stock'), $error->detail),
+            'variants_need_two'         => __('Mindestens zwei Materialien anhaken, um sie als Varianten zusammenzufassen.', 'taxmod-stock'),
             'nothing_to_book'           => __('Nichts zu buchen: keine Zeile ausgefüllt.', 'taxmod-stock'),
             /* translators: %s: record id of the thing */
             'no_lot'                    => sprintf(__('Material #%s hat keinen passenden Bestandsposten.', 'taxmod-stock'), $error->detail),

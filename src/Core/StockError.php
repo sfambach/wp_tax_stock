@@ -203,6 +203,18 @@ final class StockError extends \RuntimeException
         return new self('no_way_chosen', '');
     }
 
+    /** D-1479: a material with variants is not received; one of its variants is. */
+    public static function chooseVariant(int $thing, string $variants): self
+    {
+        return new self('choose_variant', '#' . $thing . ': ' . $variants);
+    }
+
+    /** D-1478: «Als Varianten zusammenfassen» needs at least two materials ticked. */
+    public static function variantsNeedTwo(): self
+    {
+        return new self('variants_need_two', '');
+    }
+
     public static function nothingToBook(): self
     {
         return new self('nothing_to_book', '');

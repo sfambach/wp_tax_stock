@@ -632,6 +632,71 @@ final class StockService
         }
     }
 
+    /** @var array<int, int>|null variant → parent among the things, read once a request */
+    private ?array $variantParents = null;
+
+    /** D-1479: whether the modeller knows variants — the lists sum a parent's stock, the bulk choice offers «Als Varianten zusammenfassen». */
+    public function knowsVariants(): bool
+    {
+        return $this->model->knowsVariants();
+    }
+
+    /**
+     * D-1479: which of the things the stock knows are variants, and of which parent; one read for all.
+     *
+     * @return array<int, int> variant → parent
+     */
+    public function variantParents(): array
+    {
+        return $this->variantParents ??= array_intersect_key($this->model->variantParents($this->things()->nodes()), $this->things()->all());
+    }
+
+    /**
+     * D-1479: a material with variants is not received — only a variant is stored; the refusal names the variants to choose
+     * from. One read for the nodes, one for their variant links (CD-7).
+     *
+     * @param list<int> $things
+     */
+    private function refuseParents(array $things): void
+    {
+        if ($things === [] || ! $this->knowsVariants()) {
+            return;
+        }
+
+        $links    = $this->model->variantParents(array_values(array_unique($this->model->nodesOf($things))));
+        $variants = [];
+
+        foreach ($links as $variant => $parent) {
+            $variants[$parent][] = $variant;
+        }
+
+        foreach ($things as $thing) {
+            if (isset($variants[$thing])) {
+                $names = $this->recordLabels($variants[$thing]);
+
+                throw StockError::chooseVariant($thing, implode(', ', array_map(static fn (int $id): string => '#' . $id . ' ' . ($names[$id] ?? ''), $variants[$thing])));
+            }
+        }
+    }
+
+    /**
+     * D-1478: the ticked materials become the variants of a new parent in one act; the modeller refuses, naming field and
+     * materials, where they differ outside «Je Variante».
+     *
+     * @param list<int> $things
+     * @return array<string, mixed> the modeller's answer
+     */
+    public function makeVariants(array $things): array
+    {
+        if (count($things) < 2) {
+            throw StockError::variantsNeedTwo();
+        }
+
+        $this->checkThings($things);
+
+        return $this->model->write([['op' => 'make_variants', 'records' => $things]]);
+    }
+
     /**
      * D8 (D-1320): several materials into another group in one act; refused whole when values would fall (D-1073).
      *
@@ -1869,6 +1934,7 @@ final class StockService
         }
 
         $this->checkThings(array_values(array_filter(array_map(static fn (ReceiptChoice $c): ?int => $c->thing, $choices))));
+        $this->refuseParents(array_values(array_filter(array_map(static fn (ReceiptChoice $c): ?int => $c->thing, $choices))));
         $this->checkGroups(array_values(array_filter(array_map(static fn (ReceiptChoice $c): ?NewThing => $c->new, $choices))));
 
         // His wish 2026-11-05: «Menge 1, geliefert wurden 40» — a quantity corrected in the receipt is written to the purchase

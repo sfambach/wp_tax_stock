@@ -16,6 +16,7 @@ define('WP_USE_THEMES', false);
 
 require rtrim($wordpress, '/') . '/wp-load.php';
 require rtrim($modeller, '/') . '/scripts/dev/lib/no-write.php';
+require_once ABSPATH . 'wp-admin/includes/template.php';
 require __DIR__ . '/../../vendor/autoload.php';
 
 use Taxmod\Core\Model\Type\TextType;
@@ -32,17 +33,19 @@ $pruefe = static function (bool $gut, string $was) use (&$fehler): void {
     $fehler += $gut ? 0 : 1;
 };
 
+// The small Stock structure the other checks build (lib/struktur.php): its «__Teile» is a group the stock takes as material.
+$kind = 'aggregation';
+require __DIR__ . '/lib/struktur.php';
+$teile = (int) ($r['teile'] ?? 0);
+$pruefe($teile > 0, 'the check structure stands, with a group of materials');
+
 $stock = new StockService();
 $pruefe($stock->knowsVariants(), 'the modeller knows variants (0.2.154)');
 
-if (! $stock->knowsVariants()) {
+if (! $stock->knowsVariants() || $teile === 0) {
     exit(1);
 }
 
-// The material root as the stock itself finds it: the target of the Lager record's «Material» field.
-$s      = $stock->structure();
-$wurzel = (int) ((new ModelGateway())->fields($s->node('lager'))[$s->field('lager_thing')]['target'] ?? 0);
-$pruefe($wurzel > 0, 'the material root is known');
 $text  = (new WpdbNodeRepository())->byImplementations([TextType::class])[TextType::class] ?? null;
 $apply = static function (array $changes) use ($pruefe): array {
     $answer = wp_get_ability('taxmod/apply')->execute(['changes' => $changes]);
@@ -56,8 +59,7 @@ $apply = static function (array $changes) use ($pruefe): array {
     return (array) $answer;
 };
 $bau   = $apply([
-    // The material root of this installation, not a fixed id: a node elsewhere is no material to the stock.
-    ['op' => 'create_node', 'ref' => 'm', 'name' => '__Displays', 'parent' => $wurzel],
+    ['op' => 'create_node', 'ref' => 'm', 'name' => '__Displays', 'parent' => $teile],
     ['op' => 'add_field', 'ref' => 'name', 'node' => '@m', 'target' => $text?->id ?? 0, 'name' => '__Controller'],
     ['op' => 'add_field', 'ref' => 'farbe', 'node' => '@m', 'target' => $text?->id ?? 0, 'name' => '__Farbe'],
     ['op' => 'add_field', 'ref' => 'von', 'node' => '@m', 'target' => '@m', 'name' => '__Variante von', 'kind' => 'aggregation'],

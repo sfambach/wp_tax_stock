@@ -1440,14 +1440,15 @@ final class StockPage
     private function dataView(int $thing, int $node): string
     {
         $fields = $this->technicalFields($node);
-        $note   = '<p><a class="button" href="' . esc_url($this->thingUrl($thing, 'bearbeiten')) . '">' . esc_html__('Bearbeiten', 'taxmod-stock') . '</a></p>';
+        // His finding 2026-11-19 20:56 «bearbeiten button bei material details immer noch unten»: the one toolbar on top (D-1373, D-1403).
+        $note   = ListPage::toolbar([[ListPage::iconLink(ListPage::ICON_EDIT, __('Bearbeiten', 'taxmod-stock'), $this->thingUrl($thing, 'bearbeiten'))]]);
 
         // The modeller draws the record as readers see it — units, parts and choices in their own words; the plain table
         // below is only for a modeller without that block.
         if (\WP_Block_Type_Registry::get_instance()->is_registered('taxmod/record')) {
             wp_enqueue_style('taxmod-record-block');
 
-            return render_block(['blockName' => 'taxmod/record', 'attrs' => ['record' => $thing, 'rowFields' => implode(',', array_keys($fields))], 'innerBlocks' => []]) . $note;
+            return $note . render_block(['blockName' => 'taxmod/record', 'attrs' => ['record' => $thing, 'rowFields' => implode(',', array_keys($fields))], 'innerBlocks' => []]);
         }
 
         $table  = $this->stock->tableOf($node);
@@ -1470,7 +1471,7 @@ final class StockPage
             $html  .= '<tr><th scope="row">' . esc_html($field['name']) . '</th><td>' . esc_html($shown === [] ? '—' : implode(', ', $shown)) . '</td></tr>';
         }
 
-        return $html . '</tbody></table>' . $note;
+        return $note . $html . '</tbody></table>';
     }
 
     /** The purchases whose «Modell» is this thing. ⚠️ «Preisangaben» are not listed yet: no ability finds what points here. */
@@ -1513,7 +1514,7 @@ final class StockPage
         foreach ($about as $id) {
             $order    = $orderOf[$id] ?? null;
             $merchant = $orderValue($order, 'order_merchant');
-            $merchant = $merchant !== '' ? $merchant : $orderValue($order, 'order_platform');
+            $merchant = $merchant !== '' ? $merchant : $this->stock->platformWord($orderValue($order, 'order_platform'));
             $total    = $s->hasField('purchase_total_price') ? $purchases->first($id, $s->field('purchase_total_price')) : null;
             $unit     = $purchases->first($id, $s->field('purchase_landed_price')) ?? $purchases->first($id, $s->field('purchase_unit_price'));
             $count    = (float) ($purchases->first($id, $s->field('purchase_quantity')) ?? 0);
@@ -3459,7 +3460,8 @@ final class StockPage
         if ($lock !== null) {
             // Concept R3: a lot purchase is told apart first; its parts are then received like any purchase.
             $split = $lock === 'purchase_undetermined'
-                ? '<a class="button" href="' . esc_url(add_query_arg(array_filter(['page' => self::PAGE, 'tab' => 'wareneingang', 'order' => $order, 'split' => $purchase, 'back' => $back]), admin_url('admin.php'))) . '">' . esc_html__('Aufteilen', 'taxmod-stock') . '</a>'
+                // His finding 2026-11-19 20:51 «buttons aufteilen braucht ein button»: a square of the row's size, the word as tooltip (D-1451).
+                ? ListPage::iconLink('screenoptions', __('Aufteilen', 'taxmod-stock'), add_query_arg(array_filter(['page' => self::PAGE, 'tab' => 'wareneingang', 'order' => $order, 'split' => $purchase, 'back' => $back]), admin_url('admin.php')))
                 : '';
             // D-1058: a purchase closed without stock shows its reason and can be taken back.
             $again = match (true) {
@@ -5190,7 +5192,7 @@ final class StockPage
     {
         $look = ' style="cursor:pointer;color:#2271b1;text-decoration:underline"';
 
-        return '<label class="' . esc_attr(trim($class . ' taxmod-stock-material-link')) . '" for="' . esc_attr('taxmod-stock-material-' . $purchase) . '"' . $look . '>' . esc_html($text) . '</label>';
+        return '<label class="' . esc_attr(trim($class . ' taxmod-stock-material-link')) . '" for="' . esc_attr('taxmod-stock-material-' . $purchase) . '"' . $look . '>' . esc_html(trim($text) === '' ? '#' . $thing : $text) . '</label>';
     }
 
     /** D-1058: the reason field and the «Nicht einlagern» button of one purchase. */

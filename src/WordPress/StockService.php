@@ -134,6 +134,9 @@ final class StockService
     /** @var array<string, array{order: string, product: string}>|null firm name (lower case) → its link templates (D-1249), read once per request */
     private ?array $linkTemplates = null;
 
+    /** @var array<int, string>|null D-1487: the firms «Plattform» points at, id → own word; `[]` while the field is text */
+    private ?array $platformFirms = null;
+
     private ?LocationTree $locationTree = null;
 
     /** @var array{0: string, 1: Ledger}|null the book with the tables it was built from; see {@see self::ledger()} */
@@ -640,7 +643,7 @@ final class StockService
 
         // The firm is found by its name only: the order carries the shop as text.
         foreach (array_replace([], ...array_values($this->firms())) as $id => $name) {
-            foreach ([$value('order_platform'), $merchant] as $shop) {
+            foreach ([$this->platformWord($value('order_platform')), $merchant] as $shop) {
                 if ($shop !== '' && mb_strtolower(trim($name)) === mb_strtolower($shop)) {
                     $firm ??= $id;
                 }
@@ -3454,6 +3457,70 @@ final class StockService
     }
 
     /**
+     * D-1487: the firms «Plattform» points at once it is a reference — the records under the field's target, each by its own
+     * word, read once per request. Empty while the field holds text.
+     *
+     * @return array<int, string> firm id → word
+     */
+    public function platformFirms(): array
+    {
+        if ($this->platformFirms !== null) {
+            return $this->platformFirms;
+        }
+
+        $s     = $this->structure();
+        $field = $s->hasField('order_platform') ? ($this->model->fields($s->node('order'))[$s->field('order_platform')] ?? null) : null;
+        $this->platformFirms = [];
+
+        // Before modeller 0.2.164 the field does not say whether it chooses records; a field without a data type does.
+        if ($field === null || ! ($field['records'] ?? $field['type'] === null) || $field['target'] < 1) {
+            return [];
+        }
+
+        $name = $s->hasField('firm_name') ? $s->field('firm_name') : $s->field('label');
+
+        foreach (array_keys($this->model->tree($field['target'])) as $node) {
+            $table = $this->tableOf((int) $node);
+
+            foreach ($table->ids() as $id) {
+                $this->platformFirms[$id] = trim((string) ($table->first($id, $name) ?? ''));
+            }
+        }
+
+        return $this->platformFirms;
+    }
+
+    /** D-1487: an order's «Plattform» as a word — the stored text, or the word of the firm it points at. */
+    public function platformWord(string $stored): string
+    {
+        $stored = trim($stored);
+        $firms  = $stored === '' ? [] : $this->platformFirms();
+
+        return $firms === [] ? $stored : ($firms[(int) $stored] ?? '#' . $stored);
+    }
+
+    /**
+     * D-1487: what «Plattform» is written as for a shop's name — the name while the field is text, the firm's id once it is a
+     * reference; `null` when the name names no firm ({@see \Taxmod\Core\Import\PlatformFirms}).
+     */
+    public function platformValue(string $name): ?string
+    {
+        $firms = $this->platformFirms();
+
+        if ($firms === []) {
+            return trim($name);
+        }
+
+        // The one rule import, order key and this share (Prüftor 2026-11-19): exact, else one firm beginning with the name.
+        // Before modeller 0.2.164 the exact word alone.
+        $id = class_exists(\Taxmod\Core\Import\PlatformFirms::class)
+            ? (new \Taxmod\Core\Import\PlatformFirms($firms))->idOf($name)
+            : (array_keys(array_filter($firms, static fn (string $word): bool => mb_strtolower($word) === mb_strtolower(trim($name))))[0] ?? null);
+
+        return $id === null ? null : (string) $id;
+    }
+
+    /**
      * D-1249: the link templates of the firm whose name is `$shop`, read once per request for all firms — the order carries the
      * shop as text («Plattform»), so the firm is found by its name; no firm or no template gives empty strings.
      *
@@ -6204,7 +6271,7 @@ final class StockService
         $merchant = $s->hasField('order_merchant') ? (string) $orders->first($draft, $s->field('order_merchant')) : '';
 
         // D-1405 (INFERRED): a firm is a platform when it carries an order link template (D-1249) — the model marks nothing else.
-        return $this->model->write($this->purchasing()->markOrdered($draft, $number, $orders, $this->linkTemplates($merchant)['order'] !== ''));
+        return $this->model->write($this->purchasing()->markOrdered($draft, $number, $orders, $this->linkTemplates($merchant)['order'] !== '' ? $this->platformValue($merchant) : null));
     }
 
     /**

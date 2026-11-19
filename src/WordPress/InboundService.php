@@ -134,8 +134,11 @@ final class InboundService
         $table  = $this->stock->table('order');
         $fields = $this->fields();
 
+        $stock  = $this->stock;
+
         return implode(' · ', array_filter(array_map(
-            static fn (string $role): string => trim((string) $table->first($order, $fields[$role])),
+            // D-1487: the platform may point at a firm — its word, not its id.
+            static fn (string $role): string => $role === 'platform' ? $stock->platformWord((string) $table->first($order, $fields[$role])) : trim((string) $table->first($order, $fields[$role])),
             ['platform', 'merchant', 'order_number']
         )));
     }
@@ -166,7 +169,7 @@ final class InboundService
         $table = $this->stock->table('order');
 
         return [
-            'platform' => trim((string) ($table->first($order, $this->fields()['platform']) ?? '')),
+            'platform' => $this->stock->platformWord((string) ($table->first($order, $this->fields()['platform']) ?? '')),
             'number'   => trim((string) ($table->first($order, $this->fields()['order_number']) ?? '')),
             'link'     => $this->orderLink($order),
         ];
@@ -181,7 +184,7 @@ final class InboundService
     /** @return array{order: string, product: string} the templates of the firm named in the order's «Plattform» */
     private function templates(int $order): array
     {
-        return $this->stock->linkTemplates((string) ($this->stock->table('order')->first($order, $this->fields()['platform']) ?? ''));
+        return $this->stock->linkTemplates($this->stock->platformWord((string) ($this->stock->table('order')->first($order, $this->fields()['platform']) ?? '')));
     }
 
     /**

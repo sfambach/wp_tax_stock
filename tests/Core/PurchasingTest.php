@@ -203,7 +203,9 @@ final class PurchasingTest extends TestCase
         $raw = $s->toArray();
         $raw['fields']['order_platform'] = 990;
         $withPlatform = Structure::fromArray($raw);
-        self::assertSame('LCSC', (new Purchasing($withPlatform, '2026-10-30'))->markOrdered(self::DRAFT, 'X1', $this->orders(), true)[0]['values']['990'] ?? null);
+        self::assertSame('LCSC', (new Purchasing($withPlatform, '2026-10-30'))->markOrdered(self::DRAFT, 'X1', $this->orders(), 'LCSC')[0]['values']['990'] ?? null);
+        // D-1487: once «Plattform» is a reference, the firm's id is what it gets.
+        self::assertSame('45968', (new Purchasing($withPlatform, '2026-10-30'))->markOrdered(self::DRAFT, 'X1', $this->orders(), '45968')[0]['values']['990'] ?? null);
         self::assertArrayNotHasKey('990', (new Purchasing($withPlatform, '2026-10-30'))->markOrdered(self::DRAFT, 'X1', $this->orders())[0]['values']);
 
         $this->expectException(StockError::class);

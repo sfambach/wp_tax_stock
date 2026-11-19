@@ -149,7 +149,8 @@ $aufbau = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'create_record', 'ref' => 'kaufE', 'node' => '@pur'],
     ['op' => 'set_values', 'record' => '@kaufE', 'values' => ['@label' => 'Edge Card Connector S...', '@k_desc' => 'Variante: Right Angle, 62P', '@k_nr' => '1005003647067417']],
     // D-1249: a firm with its link templates, named by the order's «Plattform».
-    ['op' => 'create_node', 'ref' => 'firm', 'name' => '__Firmen', 'parent' => 410, 'class' => 'Choice'],
+    // D-1487: firms are records of the model, as «Organisation» on fambach.net — a field pointing at them holds records.
+    ['op' => 'create_node', 'ref' => 'firm', 'name' => '__Firmen', 'parent' => 402],
     $field('f_name', '@firm', 'Name', $text, 'composition', '0..1'),
     $field('f_ol', '@firm', 'Bestell-Link', $text, 'composition', '0..1'),
     $field('f_pl', '@firm', 'Produkt-Link', $text, 'composition', '0..1'),
@@ -226,6 +227,8 @@ update_option(StockService::OPTION, [
         'purchase_undetermined' => $r['k_offen'], 'purchase_model' => $r['k_mod'], 'money_amount' => 4234, 'money_unit' => 4236,
         'description' => $r['k_desc'], 'purchase_number' => $r['k_nr'], 'purchase_arrived_on' => $r['k_ank'],
         'firm_name' => $r['f_name'], 'firm_order_link' => $r['f_ol'], 'firm_product_link' => $r['f_pl'],
+        // D-1487: set on fambach.net to the import's «Plattform» (measured 2026-11-19).
+        'order_platform' => $r['o_plat'],
     ],
     'values' => ['kind_receipt' => $r['a_we'], 'kind_consumption' => 1, 'kind_count' => 1, 'source_manual' => 1, 'location_default' => $r['ortRegal'],
         'status_partial' => $r['s_teil'], 'status_received' => $r['s_ganz'], 'status_draft' => $r['s_entw'],
@@ -685,6 +688,20 @@ if (is_array($gebaut) && $kind === 'aggregation') {
     $schmal->valuesOf($schmal->ids()[0] ?? 0);
     $pruefe(Table::$widened === $weit + 1, 'narrow read: the purchases were read narrow — asked for everything, the node is read whole once (the counter counts)');
 }
+
+// D-1487: «Plattform» becomes a reference to the firm — the code goes live first, the data after; both must read alike.
+$vorText = (new InboundService())->orderFacts($r['o2']);
+$umbau   = wp_get_ability('taxmod/apply')->execute(['changes' => [
+    ['op' => 'set_kind', 'node' => $r['ord'], 'field' => $r['o_plat'], 'kind' => 'aggregation'],
+    ['op' => 'retarget_field', 'node' => $r['ord'], 'field' => $r['o_plat'], 'target' => $r['firm'], 'drop_values' => true],
+    ['op' => 'set_values', 'record' => (string) $r['o2'], 'values' => [(string) $r['o_plat'] => (string) $r['ali']]],
+]]);
+$pruefe(is_array($umbau), 'D-1487: «Plattform» points at the firm' . (is_wp_error($umbau) ? ' — ' . $umbau->get_error_message() : ''));
+$verweis = new StockService();
+$alsVerweis = (new InboundService($verweis))->orderFacts($r['o2']);
+$pruefe($vorText['link'] !== null && $alsVerweis['link'] === $vorText['link'], 'D-1487: the order link stays the same once the platform is the firm (' . ($alsVerweis['link'] ?? 'none') . ')');
+$pruefe($alsVerweis['platform'] === '__Ali', 'D-1487: the order names the firm by its word, not its id (' . $alsVerweis['platform'] . ')');
+$pruefe($verweis->platformValue('__ALI') === (string) $r['ali'] && $verweis->platformValue('__nobody') === null, 'D-1487: «Als bestellt» writes the firm\'s id, and nothing for a name no firm has');
 
 update_option('taxmod_import_targets', ['order_fields' => ['received_at' => 0]]);
 

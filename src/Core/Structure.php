@@ -259,6 +259,12 @@ final class Structure
         return $this->nodes[$key] ?? throw StockError::notConfigured('nodes.' . $key);
     }
 
+    /** @return list<int> every field the stock has a role for, each once */
+    public function fieldIds(): array
+    {
+        return array_values(array_unique(array_map('intval', $this->fields)));
+    }
+
     public function field(string $key): int
     {
         return $this->fields[$key] ?? throw StockError::notConfigured('fields.' . $key);

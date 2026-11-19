@@ -372,7 +372,48 @@ final class StockService
 
     public function tableOf(int $node): Table
     {
-        return $this->tables[$node] ??= $this->model->table($node);
+        return $this->tables[$node] ??= $this->model->table($node, $this->fieldsReadOf($node));
+    }
+
+    /**
+     * The nodes with many and wide records are read in the fields the stock has a role for and no others (D-1486) — the one
+     * place that says which. Measured live 2026-11-19: 3145 purchases with some eleven values and three price parts each; a
+     * page that read them whole peaked at 160–270 MB.
+     */
+    private const READ_NARROW = ['purchase', 'order', 'lot', 'transaction', 'line'];
+
+    /** @return list<int> the fields to read of this node; none: all of them */
+    private function fieldsReadOf(int $node): array
+    {
+        $s = $this->structure();
+
+        foreach (self::READ_NARROW as $key) {
+            if ($s->hasNode($key) && $s->node($key) === $node) {
+                return array_values(array_unique([...$s->fieldIds(), ...$this->importFieldIds()]));
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * The fields the modeller's import targets name (order number, platform, tracking …): the goods receipt reads them from
+     * the same tables, by those ids and not by a role of the stock.
+     *
+     * @return list<int>
+     */
+    private function importFieldIds(): array
+    {
+        $targets = \Taxmod\WordPress\Import\Targets::class;
+        $ids     = [];
+
+        foreach (class_exists($targets) && method_exists($targets, 'raw') ? $targets::raw() : [] as $group => $fields) {
+            if (str_ends_with((string) $group, '_fields') && is_array($fields)) {
+                $ids = [...$ids, ...array_values(array_filter(array_map('intval', array_filter($fields, 'is_scalar'))))];
+            }
+        }
+
+        return array_values(array_unique($ids));
     }
 
     /** D-995: the things the stock knows, named by their own label — one read per node they live in (CD-7). */

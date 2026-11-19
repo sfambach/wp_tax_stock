@@ -6,7 +6,7 @@
  *
  *     php scripts/dev/variants-check.php [path/to/wordpress]
  *
- * Uses the modeller's no-write bracket: nothing survives the run. Needs the Taxonomy Modeller 0.2.154 active (WP_ROOT, TAXMOD_ROOT).
+ * Uses the modeller's no-write bracket: nothing survives the run. Needs the Taxonomy Modeller 0.2.155 active (WP_ROOT, TAXMOD_ROOT).
  */
 
 $wordpress = $argv[1] ?? (getenv('WP_ROOT') ?: '/home/user/wordpress');
@@ -39,10 +39,13 @@ if (! $stock->knowsVariants()) {
     exit(1);
 }
 
+$baum  = $stock->tree();
+$wurzel = (int) array_key_first(array_filter($baum, static fn (array $knoten): bool => ! isset($baum[$knoten['parent']])));
 $text  = (new WpdbNodeRepository())->byImplementations([TextType::class])[TextType::class] ?? null;
 $apply = static fn (array $changes): array => (array) wp_get_ability('taxmod/apply')->execute(['changes' => $changes]);
 $bau   = $apply([
-    ['op' => 'create_node', 'ref' => 'm', 'name' => '__Displays', 'parent' => 402],
+    // The material root of this installation, not a fixed id: a node elsewhere is no material to the stock.
+    ['op' => 'create_node', 'ref' => 'm', 'name' => '__Displays', 'parent' => $wurzel],
     ['op' => 'add_field', 'ref' => 'name', 'node' => '@m', 'target' => $text?->id ?? 0, 'name' => '__Controller'],
     ['op' => 'add_field', 'ref' => 'farbe', 'node' => '@m', 'target' => $text?->id ?? 0, 'name' => '__Farbe'],
     ['op' => 'add_field', 'ref' => 'von', 'node' => '@m', 'target' => '@m', 'name' => '__Variante von', 'kind' => 'aggregation'],
@@ -53,18 +56,27 @@ $bau   = $apply([
 ]);
 $r = $bau['refs'] ?? [];
 $pruefe(isset($r['a'], $r['b']), 'two displays that differ only in colour');
+// The tree read before the build does not know the new group.
+$stock = new StockService();
 
 try {
-    $stock->makeVariants([(int) $r['a']]);
+    $stock->makeVariants([(int) ($r['a'] ?? 0)]);
     $pruefe(false, 'one material alone is refused');
 } catch (StockError $e) {
     $pruefe($e->reason === 'variants_need_two', 'one material alone is refused');
 }
 
-$answer = $stock->makeVariants([(int) $r['a'], (int) $r['b']]);
-$links  = (new ModelGateway())->variantParents([(int) $r['m']]);
-$parent = (int) ($links[(int) $r['a']] ?? 0);
-$pruefe($parent > 0 && ($links[(int) $r['b']] ?? 0) === $parent && ! empty($answer['act']), 'both become variants of one new parent, one act');
+try {
+    $answer = $stock->makeVariants([(int) ($r['a'] ?? 0), (int) ($r['b'] ?? 0)]);
+    $links  = (new ModelGateway())->variantParents([(int) ($r['m'] ?? 0)]);
+    $parent = (int) ($links[(int) $r['a']] ?? 0);
+    $pruefe($parent > 0 && ($links[(int) $r['b']] ?? 0) === $parent && ! empty($answer['act']), 'both become variants of one new parent, one act');
+} catch (\Throwable $e) {
+    $pruefe(false, 'both become variants of one new parent, one act — ' . $e->getMessage());
+}
+
+$lager = new \TaxmodStock\Core\LagerMerge($stock->structure());
+$pruefe($lager->answer((int) ($r['a'] ?? 0), (int) ($r['b'] ?? 0), $stock->table('lager')) === [], 'D-1480: materials without a Lager record of their own — the stock has nothing to say');
 
 echo $fehler === 0 ? "\nAll checks passed.\n" : "\n{$fehler} check(s) failed.\n";
 exit($fehler === 0 ? 0 : 1);

@@ -449,7 +449,10 @@ $pruefe(str_contains($mit, 'value="positioneinlagern-' . $r['kaufC'] . '"') && !
 delete_option(StockService::RECEIPT_INBOUND);
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'material'];
 $html = (new StockPage())->render();
-$pruefe(str_contains($html, 'taxmod-list') && str_contains($html, 'search-box') && str_contains($html, '<tfoot>') && str_contains($html, 'sortable') && ! str_contains($html, 'taxmod-stock-pagetabs') && str_contains($html, 'Taxonomy Modeller › Lager'), 'the material list is the shared list page with search and sortable columns, without the tabs of «Bestand» (D-1243)');
+// D-1462 (Modeller 0.2.152): the foot repeats the head only below rows — a search prompt or an empty list has none (PR-9: the
+// check follows the current target state).
+$fehlt = array_keys(array_filter(['taxmod-list' => true, 'search-box' => true, '<tfoot>' => ! str_contains($html, 'class="no-items'), 'sortable' => true, 'taxmod-stock-pagetabs' => false, 'Taxonomy Modeller › Lager' => true], static fn (bool $soll, string $teil): bool => str_contains($html, $teil) !== $soll, ARRAY_FILTER_USE_BOTH));
+$pruefe($fehlt === [], 'the material list is the shared list page with search and sortable columns, without the tabs of «Bestand» (D-1243)' . ($fehlt === [] ? '' : ' — wrong: ' . implode(', ', $fehlt)));
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 's' => 'LM2930'];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'LM2930T-5.0') && ! str_contains($html, 'BC640'), 'the search narrows the material list');

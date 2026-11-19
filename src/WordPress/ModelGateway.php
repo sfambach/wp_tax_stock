@@ -134,6 +134,23 @@ final class ModelGateway
         return method_exists($this->door, 'constantsRoot');
     }
 
+    /** D-1479: whether the modeller knows variants (0.2.154): parents in the lists, «Als Varianten zusammenfassen». */
+    public function knowsVariants(): bool
+    {
+        return method_exists($this->door, 'variantParents');
+    }
+
+    /**
+     * D-1479: variant → parent among the records of these nodes.
+     *
+     * @param list<int> $nodes
+     * @return array<int, int>
+     */
+    public function variantParents(array $nodes): array
+    {
+        return $this->knowsVariants() && $nodes !== [] ? $this->ask(fn (): array => $this->door->variantParents($nodes)) : [];
+    }
+
     /** D-1474: the node every choice list hangs below. */
     public function constantsRoot(): int
     {

@@ -264,6 +264,7 @@ final class StockPage
                     $today,
                     $this->title(__('Umbuchung', 'taxmod-stock'), $today)
                 ),
+                'sammelvarianten' => $this->stock->makeVariants(array_values(array_filter(array_map('absint', (array) ($_POST['selected'] ?? []))))),
                 'sammelverschieben' => $this->stock->moveThingsToGroup(array_values(array_filter(array_map('absint', (array) ($_POST['selected'] ?? [])))), absint($_POST['group'] ?? 0)),
                 'gruppeanlegen' => $copy = $this->stock->createGroup(absint($_POST['group'] ?? 0), sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? '')))),
                 'sammelumbuchen' => $this->stock->moveThings(
@@ -404,6 +405,7 @@ final class StockPage
                         ? __('Umgebucht; was am alten Platz noch liegt, ist dort per Inventur eingebucht. Ein Undo nimmt beides zurück.', 'taxmod-stock')
                             : __('Umgebucht: ein Vorgang «Umbuchung» mit Abgang am alten und Zugang am neuen Ort.', 'taxmod-stock')),
                 'sammelverschieben' => __('Verschoben: die gewählten Materialien stehen jetzt in der neuen Gruppe.', 'taxmod-stock'),
+                'sammelvarianten' => __('Zusammengefasst: die gewählten Materialien sind jetzt Varianten eines neuen Materials; Nummern, Bestand und Etiketten bleiben.', 'taxmod-stock'),
                 'gruppeanlegen'  => __('Gruppe angelegt.', 'taxmod-stock'),
                 'sammelumbuchen' => __('Umgebucht: alle gewählten Materialien liegen jetzt am neuen Ort, als ein Vorgang «Umbuchung».', 'taxmod-stock'),
                 'postenumbuchen' => __('Umgebucht: die gewählten Posten liegen jetzt ganz am neuen Ort, als ein Vorgang «Umbuchung».', 'taxmod-stock'),
@@ -617,6 +619,10 @@ final class StockPage
                     'name' => mb_strtolower((string) preg_replace('/^#\d+( · )?/u', '', $name))]];
         }
 
+        // D-1479: a parent stands as a row of its own with the sum of its variants' stock.
+        $parentOf = $waits ? [] : $this->stock->variantParents();
+        $rows     = $this->withParentRows($rows, $parentOf, $technical, $groups, $things);
+
         if ($waits) {
             foreach ($things->nodes() as $node) {
                 $groups[$node] ??= $this->stock->path($node);
@@ -626,7 +632,7 @@ final class StockPage
         asort($groups, SORT_NATURAL | SORT_FLAG_CASE);
 
         // The preset filter (with stock, below minimum) stays the page's own; search, column filters and order are the list's.
-        $shown   = $view->apply((new StockList('', $list->filter))->apply($rows));
+        $shown   = self::variantsBeneath($view->apply((new StockList('', $list->filter))->apply($rows)), $parentOf);
 
         $visible = $view->visible();
         $open    = $this->stock->viewSettings()->expanded('material');
@@ -645,7 +651,7 @@ final class StockPage
             return (new self($this->stock->scopedTo($one)))->thingView($one);
         }
 
-        $html    = ($branch ? $this->groupTotals($rows) : '') . $this->tools($tab, $list, [
+        $html    = ($branch ? $this->groupTotals(array_values(array_filter($rows, static fn (array $row): bool => empty($row['parent'])))) : '') . $this->tools($tab, $list, [
             ['filter', $this->materialFilters(), $list->filter, __('Filter', 'taxmod-stock')],
             ...($branch ? [] : [['group', ['' => __('Alle Gruppen', 'taxmod-stock')] + $groups, $group > 0 ? (string) $group : '', __('Gruppe', 'taxmod-stock')]]),
         ], ['group' => $group > 0 ? (string) $group : '', 'orderby' => $view->orderBy === 'name' ? '' : $view->orderBy, 'order' => $view->descending ? 'desc' : ''],
@@ -657,7 +663,7 @@ final class StockPage
             /* translators: %d: number of materials */
             _n('%d Material', '%d Materialien', count($shown), 'taxmod-stock'),
             count($shown)
-        ), ListPage::filterToggle() . ListPage::columnMenu($listId, $view, $url([])), $this->bulkTransferAsk() + $this->bulkGroupAsk() + $this->materialLabelsAsk());
+        ), ListPage::filterToggle() . ListPage::columnMenu($listId, $view, $url([])), $this->bulkTransferAsk() + $this->bulkGroupAsk() + $this->bulkVariantsAsk() + $this->materialLabelsAsk());
         $body    = $waits ? ($branch ? '<tr class="no-items"><td class="colspanchange" colspan="' . esc_attr((string) (count($visible) + 2)) . '">'
             . esc_html__('Links eine Materialgruppe wählen: angezeigt wird alles darin und in den Gruppen darunter.', 'taxmod-stock') . '</td></tr>'
             : ListPage::searchPrompt(count($visible), $url([ListPage::SHOW_ALL => '1']), count($all))) : ($shown === [] ? ($branch && $list->search === '' && $list->filter === ''
@@ -665,7 +671,9 @@ final class StockPage
                 : $this->noItems(count($visible))) : '');
 
         $paged  = absint($_GET['paged'] ?? 1);
-        $page   = ListView::page($shown, $paged, self::PER_PAGE);
+        // D-1479: a parent and its variants count as one unit, so a page never separates them.
+        $units  = self::units($shown);
+        $page   = array_merge(...array_values(ListView::page($units, $paged, self::PER_PAGE)) ?: [[]]);
         $places = $page === [] ? [] : $this->stock->places();
         // Only the rows of this page, in one read (CD-7).
         $thumbs = $images ? ListPage::thumbnails($this->stock->titleImages(array_column($page, 'id'))) : [];
@@ -701,8 +709,127 @@ final class StockPage
         }
 
         // D-1462: every hit on this page — the head narrows and sorts it without asking again.
-        return $html . ListPage::table(ListPage::heads($view, $url), $body, ListPage::filterRow(self::FILTER_FORM, $view), ! $waits && ListView::onePage(count($shown), self::PER_PAGE))
-            . ListPage::pagination(count($shown), $paged, self::PER_PAGE, $url);
+        return $html . ListPage::table(ListPage::heads($view, $url), $body, ListPage::filterRow(self::FILTER_FORM, $view), ! $waits && ListView::onePage(count($units), self::PER_PAGE))
+            . ListPage::pagination(count($units), $paged, self::PER_PAGE, $url);
+    }
+
+    /**
+     * D-1479: each parent of the variants listed as a row of its own, its stock the sum of theirs; a parent the stock knows
+     * already only takes the sum. The names of new parents in one read (CD-7).
+     *
+     * @param list<array<string, mixed>> $rows
+     * @param array<int, int>            $parentOf variant → parent
+     * @param array<int, string>         $technical
+     * @param array<int, string>         $groups
+     * @return list<array<string, mixed>>
+     */
+    private function withParentRows(array $rows, array $parentOf, array $technical, array $groups, \TaxmodStock\Core\Things $things): array
+    {
+        $sums = [];
+        $node = [];
+
+        foreach ($rows as $row) {
+            if (isset($parentOf[$row['id']])) {
+                $parent        = $parentOf[$row['id']];
+                $sums[$parent] = ($sums[$parent] ?? 0.0) + (float) $row['stock'];
+                $node[$parent] ??= $things->nodeOf($row['id']);
+            }
+        }
+
+        if ($sums === []) {
+            return $rows;
+        }
+
+        foreach ($rows as $index => $row) {
+            if (isset($sums[$row['id']])) {
+                $rows[$index]['stock']          = $sums[$row['id']];
+                $rows[$index]['cells']['stock'] = $this->number($sums[$row['id']]);
+                $rows[$index]['sort']['stock']  = $sums[$row['id']];
+                $rows[$index]['parent']         = true;
+                unset($sums[$row['id']]);
+            }
+        }
+
+        $names = $sums === [] ? [] : $this->stock->recordLabels(array_keys($sums));
+
+        foreach ($sums as $parent => $stock) {
+            $name   = $names[$parent] ?? '';
+            $cells  = ['nr' => (string) $parent, 'name' => $name, 'group' => $groups[$node[$parent] ?? 0] ?? '', 'places' => ''];
+
+            foreach (array_keys($technical) as $relation) {
+                $cells['f' . $relation] = '';
+            }
+
+            $rows[] = ['id' => $parent, 'parent' => true, 'name' => $name, 'stock' => $stock, 'low' => false, 'words' => [], 'unit' => '',
+                'cells' => $cells + ['stock' => $this->number($stock), 'min' => ''],
+                'sort'  => ['nr' => $parent, 'stock' => $stock, 'min' => -1.0, 'name' => mb_strtolower($name)]];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * D-1479: the variants of a parent shown stand indented right beneath it, in their own order; a variant whose parent is not
+     * shown keeps its place.
+     *
+     * @param list<array<string, mixed>> $rows
+     * @param array<int, int>            $parentOf
+     * @return list<array<string, mixed>>
+     */
+    private static function variantsBeneath(array $rows, array $parentOf): array
+    {
+        if ($parentOf === []) {
+            return $rows;
+        }
+
+        $shown    = array_flip(array_map(static fn (array $row): int => (int) $row['id'], $rows));
+        $beneath  = [];
+        $out      = [];
+
+        foreach ($rows as $row) {
+            $parent = $parentOf[$row['id']] ?? 0;
+
+            if ($parent > 0 && isset($shown[$parent])) {
+                $row['cells']['name'] = '↳ ' . $row['cells']['name'];
+                $row['beneath']       = true;
+                $beneath[$parent][]   = $row;
+            }
+        }
+
+        foreach ($rows as $row) {
+            if (isset($beneath[$parentOf[$row['id']] ?? 0])) {
+                continue;
+            }
+
+            $out[] = $row;
+
+            foreach ($beneath[$row['id']] ?? [] as $variant) {
+                $out[] = $variant;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * D-1479: the rows as units for paging — a variant drawn beneath its parent belongs to the parent's unit.
+     *
+     * @param list<array<string, mixed>> $rows
+     * @return list<list<array<string, mixed>>>
+     */
+    private static function units(array $rows): array
+    {
+        $units = [];
+
+        foreach ($rows as $row) {
+            if (! empty($row['beneath']) && $units !== []) {
+                $units[count($units) - 1][] = $row;
+            } else {
+                $units[] = [$row];
+            }
+        }
+
+        return $units;
     }
 
     /**
@@ -1920,6 +2047,24 @@ final class StockPage
 
         // His report 2026-11-18 19:52: «umbuchen nach, verschieben nach sind nicht weit auseinander» — each names what it moves.
         return ['taxmod-stock-bulk-group' => [__('Material in andere Gruppe …', 'taxmod-stock'), '<div class="alignleft actions">' . ListPage::dialogAction('taxmod-stock-bulk-group', __('Material in andere Gruppe …', 'taxmod-stock'), __('Material in andere Gruppe verschieben', 'taxmod-stock'), $body, 'booking', 'sammelverschieben', __('Verschieben', 'taxmod-stock'), self::BULK_FORM) . '</div>']];
+    }
+
+    /**
+     * D-1478, his question 2026-11-19 «wie legt man eine variante an, über eigenen button?»: no button of its own — the ticked
+     * materials become the variants of a new material in the bulk choice; nothing while the modeller does not know variants.
+     *
+     * @return array<string, array{0: string, 1: string}>
+     */
+    private function bulkVariantsAsk(): array
+    {
+        if (! $this->stock->knowsVariants()) {
+            return [];
+        }
+
+        $body = '<p class="description" style="margin-top:0">' . esc_html__('Ein neues Material übernimmt, was die angehakten gemeinsam haben; sie werden seine Varianten und behalten Nummer, Bestand, Etiketten und ihre Felder «Je Variante» (Farbe, mit/ohne Pins …). Weicht ein anderes Feld ab, wird nichts zusammengefasst und das Feld genannt. Rückgängig machbar.', 'taxmod-stock') . '</p>'
+            . '<input type="hidden" name="return_tab" value="' . esc_attr(self::BACK_TO_LIST) . '" form="' . esc_attr(self::BULK_FORM) . '">';
+
+        return ['taxmod-stock-bulk-variants' => [__('Als Varianten zusammenfassen …', 'taxmod-stock'), '<div class="alignleft actions">' . ListPage::dialogAction('taxmod-stock-bulk-variants', __('Als Varianten zusammenfassen …', 'taxmod-stock'), __('Als Varianten zusammenfassen', 'taxmod-stock'), $body, 'booking', 'sammelvarianten', __('Zusammenfassen', 'taxmod-stock'), self::BULK_FORM) . '</div>']];
     }
 
     /** His wish 2026-11-11: no link out into the modeller; without its record editor the page says the modeller is too old. */

@@ -140,6 +140,8 @@ final class Plugin
         }
 
         add_filter('taxmod_config_tabs', [SettingsTab::class, 'register']);
+        // D-1480: a merged material takes its doubled Lager record to the trash, or the merge is vetoed — applied by the modeller.
+        add_filter('taxmod_merge_record', static fn (mixed $answer, int $from, int $into): array => (new StockService())->mergeAnswer(is_array($answer) ? $answer : [], $from, $into), 10, 3);
         // D-1209: the stock for a reader over MCP, in the modeller's category (registered by the modeller beforehand).
         add_action('wp_abilities_api_init', static fn () => (new StockAbility())->register());
         add_action('wp_abilities_api_init', static fn () => (new CorrectionAbility())->register());

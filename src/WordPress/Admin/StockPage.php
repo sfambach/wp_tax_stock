@@ -671,7 +671,9 @@ final class StockPage
                 : $this->noItems(count($visible))) : '');
 
         $paged  = absint($_GET['paged'] ?? 1);
-        $page   = ListView::page($shown, $paged, self::PER_PAGE);
+        // D-1479: a parent and its variants count as one unit, so a page never separates them.
+        $units  = self::units($shown);
+        $page   = array_merge(...array_values(ListView::page($units, $paged, self::PER_PAGE)) ?: [[]]);
         $places = $page === [] ? [] : $this->stock->places();
         // Only the rows of this page, in one read (CD-7).
         $thumbs = $images ? ListPage::thumbnails($this->stock->titleImages(array_column($page, 'id'))) : [];
@@ -707,8 +709,8 @@ final class StockPage
         }
 
         // D-1462: every hit on this page — the head narrows and sorts it without asking again.
-        return $html . ListPage::table(ListPage::heads($view, $url), $body, ListPage::filterRow(self::FILTER_FORM, $view), ! $waits && ListView::onePage(count($shown), self::PER_PAGE))
-            . ListPage::pagination(count($shown), $paged, self::PER_PAGE, $url);
+        return $html . ListPage::table(ListPage::heads($view, $url), $body, ListPage::filterRow(self::FILTER_FORM, $view), ! $waits && ListView::onePage(count($units), self::PER_PAGE))
+            . ListPage::pagination(count($units), $paged, self::PER_PAGE, $url);
     }
 
     /**
@@ -789,6 +791,7 @@ final class StockPage
 
             if ($parent > 0 && isset($shown[$parent])) {
                 $row['cells']['name'] = '↳ ' . $row['cells']['name'];
+                $row['beneath']       = true;
                 $beneath[$parent][]   = $row;
             }
         }
@@ -806,6 +809,27 @@ final class StockPage
         }
 
         return $out;
+    }
+
+    /**
+     * D-1479: the rows as units for paging — a variant drawn beneath its parent belongs to the parent's unit.
+     *
+     * @param list<array<string, mixed>> $rows
+     * @return list<list<array<string, mixed>>>
+     */
+    private static function units(array $rows): array
+    {
+        $units = [];
+
+        foreach ($rows as $row) {
+            if (! empty($row['beneath']) && $units !== []) {
+                $units[count($units) - 1][] = $row;
+            } else {
+                $units[] = [$row];
+            }
+        }
+
+        return $units;
     }
 
     /**

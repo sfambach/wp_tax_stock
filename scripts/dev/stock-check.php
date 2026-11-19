@@ -374,6 +374,8 @@ $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'value="' . $r['teile'] . '" selected') && str_contains($html, 'LM2930T-5.0') && ! str_contains($html, 'notice-error'), 'the list filters by group');
 
 // D-1174: «Gruppenbestand» — nothing until a group is picked in the tree; then everything in it and below it, with the totals.
+// The group kept in the tree is his (user meta); the check starts without one.
+delete_user_meta(get_current_user_id(), 'taxmod_tree_state');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'gruppenbestand'];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'Materialgruppen') && str_contains($html, 'Links eine Materialgruppe wählen') && ! str_contains($html, 'LM2930T-5.0</a>') && ! str_contains($html, 'notice-error'), 'D-1174: «Gruppenbestand» waits for a group from the tree');
@@ -381,6 +383,11 @@ $_GET = ['page' => StockPage::PAGE, 'tab' => 'gruppenbestand', 'group' => (strin
 $html = (new StockPage())->render();
 $pruefe(! class_exists(Taxmod\Core\Renderer\DialogMarkup::class) || str_contains($html, 'value="materialetiketten-pdf"'), 'D-1202: the group stock offers the same bulk label print');
 $pruefe(str_contains($html, 'LM2930T-5.0') && str_contains($html, 'Menge gesamt') && str_contains($html, 'data-source="' . StockPage::DETAILS_MATERIAL . '"') && ! str_contains($html, 'notice-error'), 'D-1174: a group shows its materials, the totals as tiles and lots loaded when a row opens');
+// D-1174, his screenshot 2026-11-19 05:47: the group the tree holds for him is the list's group, also without «group» in the
+// address — never «Links eine Materialgruppe wählen» beside a chosen group.
+$ohneAdresse = (static function (): string { $_GET = ['page' => StockPage::PAGE, 'tab' => 'gruppenbestand']; return (new StockPage())->render(); })();
+$pruefe(str_contains($ohneAdresse, 'LM2930T-5.0') && ! str_contains($ohneAdresse, 'Links eine Materialgruppe wählen'), 'D-1174: the group kept in the tree shows its materials without «group» in the address');
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'gruppenbestand', 'group' => (string) $r['teile']];
 // D-1470, his report 2026-11-18 19:52: the current branch stands chosen in «Material in andere Gruppe …», the two bulk moves
 // name what they move, each row is an anchor the way back lands on, and the side column takes part when an act redraws the page.
 $pruefe((bool) preg_match('/name="group"[^>]*value="' . $r['teile'] . '"[^>]*checked|value="' . $r['teile'] . '"[^>]*name="group"[^>]*checked/', $html), 'D-1470: «Material in andere Gruppe …» opens on the group shown');

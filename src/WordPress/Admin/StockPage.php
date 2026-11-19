@@ -539,13 +539,14 @@ final class StockPage
      * D-997: the things the stock knows as one list; a group chosen adds the columns of its technical data, and a
      * row's details are its lots.
      */
-    private function materialList(StockList $list, bool $branch = false): string
+    private function materialList(StockList $list, bool $branch = false, int $chosen = 0): string
     {
         $tab    = $branch ? 'gruppenbestand' : 'material';
         $s      = $this->stock->structure();
         $things = $this->stock->things();
         $all    = $things->all();
-        $group  = absint($_GET['group'] ?? 0);
+        // His screenshot 2026-11-19 05:47: on «Gruppenbestand» the group is the one the tree holds (kept per user), not only the address's.
+        $group  = $branch && $chosen > 0 ? $chosen : absint($_GET['group'] ?? 0);
 
         if ($all === []) {
             return '<p>' . esc_html__('Noch kein Material. Eine Inventur oder ein Wareneingang bringt das erste.', 'taxmod-stock') . '</p>';
@@ -629,7 +630,7 @@ final class StockPage
 
         $visible = $view->visible();
         $open    = $this->stock->viewSettings()->expanded('material');
-        $url     = fn (array $change): string => $this->listUrl($tab, $list, $change + [ListPage::SHOW_ALL => ListPage::showsAll() ? '1' : '', 'f' => $view->filters(), 'orderby' => $view->orderBy === 'name' ? '' : $view->orderBy, 'order' => $view->descending ? 'desc' : '']);
+        $url     = fn (array $change): string => $this->listUrl($tab, $list, $change + ['group' => $group > 0 ? (string) $group : '', ListPage::SHOW_ALL => ListPage::showsAll() ? '1' : '', 'f' => $view->filters(), 'orderby' => $view->orderBy === 'name' ? '' : $view->orderBy, 'order' => $view->descending ? 'desc' : '']);
 
         // «← Zur Liste» in the material view comes back to exactly this list (design 7.3) — kept before a single hit opens, so
         // «back» shows this list with its one row, not the one before.
@@ -659,7 +660,9 @@ final class StockPage
         ), ListPage::filterToggle() . ListPage::columnMenu($listId, $view, $url([])), $this->bulkTransferAsk() + $this->bulkGroupAsk() + $this->materialLabelsAsk());
         $body    = $waits ? ($branch ? '<tr class="no-items"><td class="colspanchange" colspan="' . esc_attr((string) (count($visible) + 2)) . '">'
             . esc_html__('Links eine Materialgruppe wählen: angezeigt wird alles darin und in den Gruppen darunter.', 'taxmod-stock') . '</td></tr>'
-            : ListPage::searchPrompt(count($visible), $url([ListPage::SHOW_ALL => '1']), count($all))) : ($shown === [] ? $this->noItems(count($visible)) : '');
+            : ListPage::searchPrompt(count($visible), $url([ListPage::SHOW_ALL => '1']), count($all))) : ($shown === [] ? ($branch && $list->search === '' && $list->filter === ''
+                ? '<tr class="no-items"><td class="colspanchange" colspan="' . esc_attr((string) (count($visible) + 2)) . '">' . esc_html__('Keine Materialien in dieser Gruppe und den Gruppen darunter.', 'taxmod-stock') . '</td></tr>'
+                : $this->noItems(count($visible))) : '');
 
         $paged  = absint($_GET['paged'] ?? 1);
         $page   = ListView::page($shown, $paged, self::PER_PAGE);
@@ -723,7 +726,7 @@ final class StockPage
 
         $newGroup = $group > 0 ? $this->newGroupDialog($group) : '';
 
-        return ($group > 0 ? '<h2>' . esc_html($this->stock->path($group)) . '</h2>' . ($newGroup === '' ? '' : ListPage::toolbar([[$newGroup]])) . $this->groupProperties($group) : '') . $this->materialList($list, true);
+        return ($group > 0 ? '<h2>' . esc_html($this->stock->path($group)) . '</h2>' . ($newGroup === '' ? '' : ListPage::toolbar([[$newGroup]])) . $this->groupProperties($group) : '') . $this->materialList($list, true, $group);
     }
 
     /**

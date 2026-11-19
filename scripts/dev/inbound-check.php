@@ -534,7 +534,10 @@ $pruefe($einmal->receivedPurchases() === $einmal->receivedPurchases() && substr_
 $pruefe(preg_match('/name="location\[' . $r['kaufT'] . '\]" form="taxmod-stock-receipt-all">(.*?)<\/select>/s', $html, $select) === 1
     && str_contains($select[1], 'value="' . $r['ortTest'] . '" selected') && str_contains($select[1], 'value="' . $r['ortRegal'] . '"'), 'the Einlagern row preselects the test place and still offers the others');
 $pruefe(str_contains($html, 'id="taxmod-stock-material-' . $r['kaufT'] . '"')
-    && str_contains($html, 'taxmod-stock-material-link" for="taxmod-stock-material-' . $r['kaufT'] . '"') && str_contains($html, '>ET4000</label>'), 'the material text opens the same dialog as the row\'s «Material» button');
+    && preg_match('/class="[^"]*taxmod-record-opens[^"]*" for="taxmod-stock-material-' . $r['kaufT'] . '"[^>]*>ET4000<\/label>/', $html) === 1, 'the material text opens the same dialog as the row\'s «Material» button');
+// D-1488: one chooser, the modeller's — the stock draws no copy of its markup.
+$seite = (string) file_get_contents(__DIR__ . '/../../src/WordPress/Admin/StockPage.php');
+$pruefe(! str_contains($seite, 'taxmod-record-quick') && ! str_contains($seite, 'taxmod-record-choices') && str_contains($seite, 'RecordPick::remote('), 'the material chooser is the modeller\'s, not a copy of its markup (D-1488)');
 
 $stock->planPlaces([$r['kaufT'] => $r['ortRegal']]);
 $pruefe((new StockService())->receiptLocations($plan)[$r['kaufT']] === $r['ortRegal'], 'a place saved with «Zuordnung speichern» stays his choice');

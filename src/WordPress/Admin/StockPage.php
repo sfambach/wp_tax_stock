@@ -4992,31 +4992,18 @@ final class StockPage
 
     /**
      * The modeller's chooser for «every record under Model» (D-958 F3a, D-1011): the chosen word with a bin, or a search field and
-     * a tree button. Hits and tree come from the material endpoints, kept to the groups of things. Same markup as the modeller's
-     * summary field, so its script and stylesheet drive it.
+     * a tree button. Hits and tree come from the material endpoints, kept to the groups of things. D-1488: the modeller draws it —
+     * one chooser, no copy here.
      *
      * @param int|null $purchase D-1111: the receipt row whose «Material» dialog the chosen word opens; null: a plain word
      */
     private function recordPicker(string $name, ?int $value, string $word, ?int $purchase = null, string $placeholder = '', bool $wrap = false): string
     {
-        $radio = static fn (string $choice, bool $on): string => '<label class="taxmod-record-choice"><input type="radio" name="' . esc_attr($name) . '" value="' . esc_attr($choice) . '"'
-            . ($on ? ' checked' : '') . '></label>';
-        $none  = $value === null;
-        $clear = __('Zurücksetzen', 'taxmod-stock');
-        $tree  = __('Im Baum wählen', 'taxmod-stock');
-
-        return '<span class="taxmod-record-pick taxmod-record-remote' . ($none ? '' : ' taxmod-record-taken') . ($wrap ? ' taxmod-record-wrap' : '') . '">'
-            . '<span class="taxmod-record-choices" hidden>' . $radio('', $none) . ($none ? '' : $radio((string) $value, true)) . '</span>'
-            . '<input type="search" class="taxmod-record-quick" autocomplete="off" placeholder="' . esc_attr($placeholder === '' ? __('Material suchen …', 'taxmod-stock') : $placeholder) . '"' . ($none ? '' : ' hidden') . '>'
-            . '<button type="button" class="button taxmod-icon-button taxmod-record-browse"' . ($none ? '' : ' hidden') . ' title="' . esc_attr($tree) . '">'
-                . \Taxmod\Core\Renderer\IconMarkup::dashicon('networking') . '<span class="screen-reader-text">' . esc_html($tree) . '</span></button>'
-            . ($none || $purchase === null
-                ? '<span class="taxmod-record-dialog-open taxmod-record-word"' . ($none ? ' hidden' : '') . '>' . esc_html($word) . '</span>'
-                : $this->materialLink($purchase, $value, $word, 'taxmod-record-dialog-open taxmod-record-word'))
-            . '<button type="button" class="button taxmod-icon-button taxmod-record-clear"' . ($none ? ' hidden' : '') . ' title="' . esc_attr($clear) . '">'
-                . \Taxmod\Core\Renderer\IconMarkup::dashicon('undo') . '<span class="screen-reader-text">' . esc_html($clear) . '</span></button>'
-            . '<span class="taxmod-record-hits" hidden></span>'
-            . '</span>';
+        return \Taxmod\WordPress\Admin\RecordPick::remote($name, $value, $word, [
+            'search' => $placeholder === '' ? __('Material suchen …', 'taxmod-stock') : $placeholder,
+            'tree'   => __('Im Baum wählen', 'taxmod-stock'),
+            'clear'  => __('Zurücksetzen', 'taxmod-stock'),
+        ], $wrap, $value === null || $purchase === null ? '' : 'taxmod-stock-material-' . $purchase);
     }
 
     /** Stefan 2026-11-14 «einfach ein Material wählen»: the material chooser of the stock with what it needs, for another page. */

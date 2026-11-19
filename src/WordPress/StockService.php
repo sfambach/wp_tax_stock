@@ -3575,6 +3575,107 @@ final class StockService
         return $this->model->write([['op' => 'remove_record', 'record' => $record]]);
     }
 
+    /** D-1474: whether the modeller can keep choice lists (0.2.152). */
+    public function canKeepChoiceLists(): bool
+    {
+        return $this->model->canKeepChoiceLists();
+    }
+
+    /** D-1474: the node every choice list hangs below (D-1457). */
+    public function choiceRoot(): int
+    {
+        return $this->model->constantsRoot();
+    }
+
+    /**
+     * D-1474: every list and value below the Konstanten, one read-tree.
+     *
+     * @return array<int, array{name: string, parent: int, class: string, hidden: bool}>
+     */
+    public function choiceTree(): array
+    {
+        $root = $this->choiceRoot();
+
+        return $root > 0 ? $this->model->tree($root) : [];
+    }
+
+    /**
+     * D-1474: how many values choose each of these nodes, one query.
+     *
+     * @param list<int> $nodes
+     * @return array<int, int>
+     */
+    public function choiceUses(array $nodes): array
+    {
+        return $this->model->constantUses($nodes);
+    }
+
+    /** D-1474: «+ Wert» — a new value in a list, by the name he typed; its id. */
+    public function addChoice(int $list, string $name): int
+    {
+        $name = trim($name);
+        $this->choiceInTree($list);
+
+        if ($name === '') {
+            throw StockError::choiceWithoutName();
+        }
+
+        return $this->model->createChild($list, $name);
+    }
+
+    /** D-1474: «Umbenennen»; the change number. */
+    public function renameChoice(int $node, string $name): int
+    {
+        $name = trim($name);
+        $this->choiceInTree($node);
+
+        if ($name === '') {
+            throw StockError::choiceWithoutName();
+        }
+
+        return $this->model->keepChoiceList('rename', [$node, $name]);
+    }
+
+    /** D-1474, D-1458: «Zusammenführen» into a value of the same list; the modeller refuses with a reason. The change number. */
+    public function mergeChoice(int $from, int $into): int
+    {
+        $tree = $this->choiceInTree($from);
+
+        if ($from === $into || ! isset($tree[$into]) || $tree[$into]['parent'] !== $tree[$from]['parent']) {
+            throw StockError::notAChoice($into);
+        }
+
+        return $this->model->keepChoiceList('merge', [$from, $into]);
+    }
+
+    /** D-1474: «Löschen» — only a value nothing chooses; the change number. */
+    public function trashChoice(int $node): int
+    {
+        $this->choiceInTree($node);
+
+        return $this->model->keepChoiceList('trash', [$node]);
+    }
+
+    /** D-1474: take one of the changes above back by its number. */
+    public function undoChoice(int $act): int
+    {
+        return $this->model->keepChoiceList('undo', [$act]);
+    }
+
+    /**
+     * @return array<int, array{name: string, parent: int, class: string, hidden: bool}> the tree, when `$node` lies below the root
+     */
+    private function choiceInTree(int $node): array
+    {
+        $tree = $this->choiceTree();
+
+        if ($node === 0 || ! isset($tree[$node]) || $node === $this->choiceRoot()) {
+            throw StockError::notAChoice($node);
+        }
+
+        return $tree;
+    }
+
     /**
      * D-1019: the units and the prefixes a base unit is made of, each one read-tree; hidden ones left out.
      *

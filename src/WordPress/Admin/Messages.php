@@ -29,6 +29,9 @@ final class Messages
             /* translators: %s: record id of the purchase */
             'not_closed_without_stock'  => sprintf(__('Kauf #%s ist nicht als «nicht eingelagert» abgeschlossen.', 'taxmod-stock'), $error->detail),
             'contact_without_name'      => __('Ein neuer Kontakt braucht einen Namen.', 'taxmod-stock'),
+            'choice_without_name'       => __('Ein Wert einer Auswahlliste braucht einen Namen.', 'taxmod-stock'),
+            /* translators: %s: node id */
+            'not_a_choice'              => sprintf(__('Knoten %s ist kein Wert dieser Auswahlliste.', 'taxmod-stock'), $error->detail),
             /* translators: %s: node id */
             'not_a_contact_group'       => sprintf(__('Knoten %s liegt nicht im Kontakt-Ast.', 'taxmod-stock'), $error->detail),
             /* translators: %s: record id */

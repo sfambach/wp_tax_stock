@@ -10,6 +10,7 @@ use TaxmodStock\Core\Structure;
 use TaxmodStock\Core\TestSettings;
 use TaxmodStock\WordPress\Admin\Acts;
 use TaxmodStock\WordPress\Admin\CockpitPage;
+use TaxmodStock\WordPress\Admin\ChoiceListsPage;
 use TaxmodStock\WordPress\Admin\ContactsPage;
 use TaxmodStock\Core\InboundStage;
 use TaxmodStock\WordPress\Admin\InboundPage;
@@ -178,6 +179,8 @@ final class Plugin
             add_action('admin_post_' . InboundPage::ACTION, static fn () => Acts::run(static fn () => self::serially(static fn () => (new InboundPage())->handle())));
             add_action('admin_post_' . PurchasePage::ACTION, static fn () => Acts::run(static fn () => self::serially(static fn () => (new PurchasePage())->handle())));
             add_action('admin_post_' . ContactsPage::ACTION, static fn () => Acts::run(static fn () => (new ContactsPage())->handle()));
+            // D-1474: Stammdaten › Auswahllisten.
+            add_action('admin_post_' . ChoiceListsPage::ACTION, static fn () => Acts::run(static fn () => (new ChoiceListsPage())->handle()));
             add_action('admin_post_' . SettingsPage::ACTION, static fn () => Acts::run(static fn () => (new SettingsPage())->handle()));
             add_action('admin_post_' . SettingsPage::USER_ACTION, static fn () => Acts::run(static fn () => (new SettingsPage())->handleUser()));
             add_action('admin_post_' . LogisticsShell::FULLSCREEN_ACTION, static fn () => Acts::run([LogisticsShell::class, 'switchFullscreen']));
@@ -1453,6 +1456,8 @@ final class Plugin
             add_submenu_page(self::PARENT, __('Lager', 'taxmod-stock'), __('Lager', 'taxmod-stock'), 'manage_options', Pages::STOCK, $page(Pages::STOCK, static fn (): array => (new StockPage())->parts())),
             // D-1184: Logistik › Kontakte, the model's contact branch.
             add_submenu_page(self::PARENT, __('Kontakte', 'taxmod-stock'), __('Kontakte', 'taxmod-stock'), 'manage_options', Pages::CONTACTS, $page(Pages::CONTACTS, static fn (): array => (new ContactsPage())->render())),
+            // D-1474: Logistik › Stammdaten › Auswahllisten, the model's choice lists.
+            add_submenu_page(self::PARENT, __('Auswahllisten', 'taxmod-stock'), __('Auswahllisten', 'taxmod-stock'), 'manage_options', Pages::CHOICES, $page(Pages::CHOICES, static fn (): string => (new ChoiceListsPage())->render())),
             // D-1085: Logistik › Einstellungen › Grundeinstellungen, inside the navigation.
             add_submenu_page(self::PARENT, __('Grundeinstellungen', 'taxmod-stock'), __('Grundeinstellungen', 'taxmod-stock'), 'manage_options', Pages::SETTINGS, $page(Pages::SETTINGS, static fn (): string => (new SettingsPage())->render())),
         ];
@@ -1476,7 +1481,7 @@ final class Plugin
         // Removed only when the menu is drawn: WordPress checks access to a page against the submenu, so removing them here
         // would lock the pages. D-1085: the modules' entries go too — the menu keeps Modeller, Logistik, maintenance, Configuration.
         add_action('admin_head', static function (): void {
-            foreach ([self::MENU, Pages::STOCK, Pages::PURCHASE, Pages::SETTINGS, Pages::CONTACTS, Pages::MODULE, ...ModulePage::menuEntries()] as $hidden) {
+            foreach ([self::MENU, Pages::STOCK, Pages::PURCHASE, Pages::SETTINGS, Pages::CONTACTS, Pages::CHOICES, Pages::MODULE, ...ModulePage::menuEntries()] as $hidden) {
                 remove_submenu_page(self::PARENT, $hidden);
             }
         });
@@ -1484,7 +1489,7 @@ final class Plugin
         // The modeller's forms (record editor, choosers, dialogs) on a logistics page need its stylesheet in the head: enqueued late,
         // from inside the filter, it came too late, and a chosen project showed its hidden search field beside it (2026-11-03).
         add_action('admin_enqueue_scripts', static function (): void {
-            if (in_array(sanitize_key((string) ($_GET['page'] ?? '')), [self::MENU, Pages::COCKPIT, Pages::STOCK, Pages::PURCHASE, Pages::SETTINGS, Pages::MODULE, Pages::INBOUND, Pages::CONTACTS], true)) {
+            if (in_array(sanitize_key((string) ($_GET['page'] ?? '')), [self::MENU, Pages::COCKPIT, Pages::STOCK, Pages::PURCHASE, Pages::SETTINGS, Pages::MODULE, Pages::INBOUND, Pages::CONTACTS, Pages::CHOICES], true)) {
                 do_action('taxmod_enqueue_admin_style');
             }
         });

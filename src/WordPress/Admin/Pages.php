@@ -16,6 +16,7 @@ final class Pages
     public const INBOUND  = 'taxmod-logistik';
     public const STOCK    = 'taxmod-stock';
     public const CONTACTS = 'taxmod-lager-kontakte';
+    public const CHOICES  = 'taxmod-lager-auswahllisten';
     public const SETTINGS = 'taxmod-lager-einstellungen';
     public const MODULE   = 'taxmod-lager-modul';
 }

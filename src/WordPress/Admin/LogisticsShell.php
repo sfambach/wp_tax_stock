@@ -108,6 +108,8 @@ final class LogisticsShell
             // gleiche.» — what there is (material, contacts) apart from how much lies where; only the menu moves, every address stays.
             ['key' => 'masterdata', 'label' => __('Stammdaten', 'taxmod-stock'), 'items' => [
                 $item('material', __('Material', 'taxmod-stock'), Pages::STOCK, 'material'),
+                // D-1474, his word 2026-11-19: «die Konstanten … Dass ich die auf eine gute Art pflegen kann, zum Beispiel eine Farbe hinzufügen».
+                $item('choice-lists', __('Auswahllisten', 'taxmod-stock'), Pages::CHOICES),
                 ...self::contactItems(),
             ]],
             // D-1184, his word 2026-11-05: «kontakt ast in logistik menü einbauen» — firms, suppliers, manufacturers, persons.

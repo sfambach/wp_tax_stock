@@ -39,10 +39,22 @@ if (! $stock->knowsVariants()) {
     exit(1);
 }
 
-$baum  = $stock->tree();
-$wurzel = (int) array_key_first(array_filter($baum, static fn (array $knoten): bool => ! isset($baum[$knoten['parent']])));
+// The material root as the stock itself finds it: the target of the Lager record's «Material» field.
+$s      = $stock->structure();
+$wurzel = (int) ((new ModelGateway())->fields($s->node('lager'))[$s->field('lager_thing')]['target'] ?? 0);
+$pruefe($wurzel > 0, 'the material root is known');
 $text  = (new WpdbNodeRepository())->byImplementations([TextType::class])[TextType::class] ?? null;
-$apply = static fn (array $changes): array => (array) wp_get_ability('taxmod/apply')->execute(['changes' => $changes]);
+$apply = static function (array $changes) use ($pruefe): array {
+    $answer = wp_get_ability('taxmod/apply')->execute(['changes' => $changes]);
+
+    if (is_wp_error($answer)) {
+        $pruefe(false, 'apply — ' . $answer->get_error_message());
+
+        return [];
+    }
+
+    return (array) $answer;
+};
 $bau   = $apply([
     // The material root of this installation, not a fixed id: a node elsewhere is no material to the stock.
     ['op' => 'create_node', 'ref' => 'm', 'name' => '__Displays', 'parent' => $wurzel],

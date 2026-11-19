@@ -66,6 +66,36 @@ final class PlaceTypesTest extends TestCase
         (new PlaceTypes([1 => 'Kiste'], [1 => true], [1 => [[1, 2]]]))->brought(1);
     }
 
+    #[Test]
+    public function the_number_of_labels_comes_from_the_type_then_the_template_then_the_box_mark(): void
+    {
+        // D-1152, D-1153 (moved here from the stock's label copy, D-1296): the labels module answers the template.
+        $templates = [90 => ['name' => 'Platz', 'copies' => 1], 91 => ['name' => 'Kiste groß', 'copies' => 2]];
+        $get       = static fn (int $id): ?array => $templates[$id] ?? null;
+        $types     = new PlaceTypes([1 => 'Alex', 2 => 'Kiste', 3 => 'Regal', 4 => 'Fach'], [2 => true], [], [1 => [90, 3], 2 => [91, 0], 3 => [0, 0], 4 => [92, 0]]);
+
+        self::assertSame([$templates[90], 3], $types->labelFor(1, false, $get));
+        self::assertSame([$templates[91], 2], $types->labelFor(2, true, $get));
+        self::assertSame([null, 1], $types->labelFor(3, false, $get));
+        self::assertSame([null, 2], $types->labelFor(0, true, $get));
+        self::assertSame([null, 1], $types->labelFor(4, false, $get), 'an unusable template falls back to the fixed label');
+    }
+
+    #[Test]
+    public function a_place_type_reads_its_template_and_number(): void
+    {
+        $s     = $this->structure();
+        $raw   = $s->toArray();
+        $raw['fields'] += ['type_label_template' => 410, 'type_label_copies' => 411];
+        $s     = Structure::fromArray($raw);
+        $types = PlaceTypes::from($s, new Table([60 => [$s->field('label') => ['Alex'], 410 => ['90'], 411 => ['4']], 61 => [$s->field('label') => ['Fach']]]), new Table([]));
+
+        self::assertSame(90, $types->labelTemplateOf(60));
+        self::assertSame(4, $types->labelCopiesOf(60));
+        self::assertSame(0, $types->labelTemplateOf(61));
+        self::assertSame(0, $types->labelCopiesOf(99));
+    }
+
     private function structure(): Structure
     {
         $raw = Fixture::structure()->toArray();

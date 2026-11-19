@@ -18,8 +18,6 @@ use Taxmod\WordPress\Printing\PrintService;
 use TaxmodStock\Core\FitLevel;
 use TaxmodStock\Core\GroupStock;
 use TaxmodStock\Core\InventoryRow;
-use TaxmodStock\Core\LabelContents;
-use TaxmodStock\Core\LabelTemplates;
 use TaxmodStock\Core\LagerInput;
 use TaxmodStock\Core\Pack;
 use TaxmodStock\Core\SourceRow;
@@ -3800,7 +3798,7 @@ final class StockPage
         $s      = $this->stock->structure();
         $type   = $s->hasField('location_place_type') ? (int) $this->stock->table('location')->first($place, $s->field('location_place_type')) : 0;
         $parent = ! $movable && $tree->parentOf($place) > 0 ? $tree->pathOf($tree->parentOf($place)) : '';
-        [$template, $copies] = $this->stock->labelTemplates()->forPlace($this->stock->placeTypes(), $type, $movable);
+        [$template, $copies] = $this->stock->labelForPlace($type, $movable);
 
         return [$movable ? 'K' : 'O', $place, $tree->titleOf($place), implode(' · ', array_filter([
             $tree->shortOf($place),
@@ -3915,7 +3913,7 @@ final class StockPage
 
         foreach ($children as $child) {
             $type = $types === null ? 0 : (int) $table->first($child, $s->field('location_place_type'));
-            [$own, $count] = $templates === null || $types === null ? [null, $tree->isMovable($child) ? 2 : 1] : $templates->forPlace($types, $type, $tree->isMovable($child));
+            [$own, $count] = $templates === null || $types === null ? [null, $tree->isMovable($child) ? 2 : 1] : $types->labelFor($type, $tree->isMovable($child), static fn (int $id): ?array => $templates->get($id));
             $id   = $own === null || $types === null ? 0 : $types->labelTemplateOf($type);
             $used[$id] = ($used[$id] ?? 0) + 1;
             $copies[$count] = true;

@@ -350,6 +350,17 @@ $pruefe(str_contains($liste, 'value="sammelumbuchen" form="taxmod-stock-bulk"') 
 (new StockService())->moveThings([$r['lm']], $von, '2026-11-02', 'Sammelumbuchung');
 $ledger = (new StockService())->ledger();
 $pruefe($ledger->restAt($lot, $von) === $ledger->restOf($lot) && $ledger->restAt($lot, $r['platz']) === 0.0, '«Umbuchen nach …» moves all of a material from every place to the one chosen');
+
+// His word 2026-11-20 20:23: «ich kann nicht zu dem Platz springen. Oder … zu der Gruppe» — both cells of the list are links.
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'material', ListPage::SHOW_ALL => '1'];
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'tab=material&#038;group=') && str_contains($html, 'tab=lagerorte&#038;ort=' . $von . '"'), 'the material list: the group leads to the list of that group, the place to what lies there');
+// «Wenn ich im Bestand suche, springt er in die Materialübersicht … ich möchte den Bestand wissen».
+$suche = \TaxmodStock\WordPress\Admin\MaterialPicker::page(true);
+$pruefe(str_contains($suche, 'name="' . StockPage::ASKS_STOCK . '" value="1"') && str_contains($suche, 'name="filter" value="instock"') && ! str_contains(\TaxmodStock\WordPress\Admin\MaterialPicker::page(), 'name="' . StockPage::ASKS_STOCK . '"'), 'the search on «Bestand» keeps to what is in stock; the one on «Stammdaten» does not');
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'material', ListPage::SHOW_ALL => '1', 'filter' => 'instock', StockPage::ASKS_STOCK => '1'];
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, StockPage::ASKS_STOCK . '=1') && str_contains($html, 'name="' . StockPage::ASKS_STOCK . '" value="1"'), 'a search from «Bestand» stays one: its addresses and the list\'s own search keep it');
 try {
     (new StockService())->moveThings([$r['lm']], $von, '2026-11-02', 'nichts');
     $pruefe(false, 'a bulk Umbuchung with nothing left to move is refused');
@@ -361,7 +372,7 @@ try {
 foreach (['daten' => 'Taxonomy Modeller', 'einkauf' => 'LM2930T-5.0 ×5', 'lager' => 'Mindestbestand', 'bestand' => 'Umbuchen', 'verkauf' => 'später'] as $view => $erwartet) {
     $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => $r['lm'], 'view' => $view];
     $html = (new StockPage())->render();
-    $pruefe(str_contains($html, '>LM2930T-5.0</h2>') && str_contains($html, 'nav-tab-active') && str_contains($html, $erwartet) && ! str_contains($html, 'notice-error'), "the thing's tab «{$view}» shows its head and «{$erwartet}»");
+    $pruefe(str_contains($html, '>Material – LM2930T-5.0</h2>') && str_contains($html, 'nav-tab-active') && str_contains($html, $erwartet) && ! str_contains($html, 'notice-error'), "the thing's tab «{$view}» shows its head «Material – …» (D-1526) and «{$erwartet}»");
 }
 
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'thing' => $r['lm'], 'view' => 'daten'];
@@ -656,7 +667,7 @@ $pruefe($s->ledger()->stockOf($teil) === 0.0 && $s->ledger()->stockOf($bc) === $
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'lagerstruktur', 'ort' => $kiste];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'taxmod-record-tree') && str_contains($html, 'data-taxmod-drag="1"') && str_contains($html, 'tab=lagerstruktur&amp;ort=__ID__') && str_contains($html, '__Kiste (1)'), 'Lagerstruktur: the tree on the left, a click opens a place, the count follows the name');
-$pruefe(str_contains($html, '<h2 style="margin-top:0">__Kiste') && str_contains($html, 'Lager › __Schrank › __Schublade 2') && str_contains($html, 'Umlagerungen') && str_contains($html, 'taxmod-stock-move-place-' . $kiste) && str_contains($html, 'taxmod-stock-new-place-' . $kiste), 'Lagerstruktur: the place on the right with where it lies, its moves and its actions');
+$pruefe(str_contains($html, '>Lagerort – __Kiste<') && str_contains($html, 'Lager › __Schrank › __Schublade 2') && str_contains($html, 'Umlagerungen') && str_contains($html, 'taxmod-stock-move-place-' . $kiste) && str_contains($html, 'taxmod-stock-new-place-' . $kiste), 'Lagerstruktur: the place on the right with where it lies, its moves and its actions');
 $pruefe(str_contains($html, 'data-taxmod-drop-record="0"') && str_contains($html, 'taxmod-stock-drop-place') && str_contains($html, 'name="return_ort" value="' . $kiste . '"'), 'Lagerstruktur: the top level takes a drop, a drop asks first, the forms come back to the place');
 $pruefe(! str_contains($html, 'name="parent[' . $kiste . ']" value="' . $kiste . '"'), 'Verschieben does not offer the box itself');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'lagerstruktur', 'ort' => $schrank];
@@ -1775,6 +1786,24 @@ $pruefe($ability !== null && $ohne instanceof WP_Error && $falsch instanceof WP_
     && is_array($gebucht) && abs($s->ledger()->restOf($korrLos) - ($vorher + 1)) < 1e-9 && count($s->ledger()->lotsOf($r['t1'])) === $vorAnz + 1,
     'D-1382: taxmod-stock/book-correction books +1 on a lot and a new lot through the inventory booking; without a note or with an unknown place nothing is booked, the error names the row' . ($gebucht instanceof WP_Error ? ': ' . $gebucht->get_error_message() : ''));
 
+// Prüftor 2026-11-20 (Stefan's THT box): an Umbuchung over MCP is the Lager's own Vorgang «Umbuchung» (D-1233) — all rows checked
+// first, all or nothing, the error naming the row; empty quantity moves all that lies there.
+$s       = new StockService();
+$nach    = (int) array_key_first(array_diff_key($s->places(), [$korrOrt => true]));
+$daVor   = $s->ledger()->restAt($korrLos, $korrOrt);
+$umbuch  = wp_get_ability(TaxmodStock\WordPress\TransferAbility::NAME);
+$zuviel  = $umbuch?->execute(['note' => 'Prüfung', 'rows' => [['lot' => $korrLos, 'from' => $korrOrt, 'to' => $nach, 'quantity' => '1'], ['lot' => $korrLos, 'from' => $korrOrt, 'to' => $nach, 'quantity' => (string) ($daVor + 5)]]]);
+$s       = new StockService();
+$still   = abs($s->ledger()->restAt($korrLos, $korrOrt) - $daVor) < 1e-9;
+$eins    = $umbuch?->execute(['note' => 'Prüfung', 'date' => '2026-11-20', 'rows' => [['lot' => $korrLos, 'from' => $korrOrt, 'to' => $nach, 'quantity' => '1']]]);
+$s       = new StockService();
+$einsOk  = abs($s->ledger()->restAt($korrLos, $korrOrt) - ($daVor - 1)) < 1e-9;
+$rest    = $umbuch?->execute(['note' => 'Prüfung zurück', 'date' => '2026-11-20', 'rows' => [['lot' => $korrLos, 'from' => $nach, 'to' => $korrOrt]]]);
+$s       = new StockService();
+$pruefe($umbuch !== null && $zuviel instanceof WP_Error && str_contains($zuviel->get_error_message(), 'row 2') && $still && is_array($eins) && $einsOk
+    && is_array($rest) && abs($s->ledger()->restAt($korrLos, $korrOrt) - $daVor) < 1e-9 && $s->ledger()->restAt($korrLos, $nach) < 1e-9 && $umbuch->execute(['note' => ' ', 'rows' => [['lot' => $korrLos, 'from' => $korrOrt, 'to' => $nach]]]) instanceof WP_Error,
+    'taxmod-stock/book-transfer moves 1 there and, without a quantity, all of it back, as Vorgang «Umbuchung»; too much in row 2 books nothing and names the row; no note, no booking' . ($eins instanceof WP_Error ? ': ' . $eins->get_error_message() : ''));
+
 // D-1385, his wish 2026-11-15 «im menü bestand unten suchmaske für material»: the search under «Bestand» finds «µ» and «u»
 // alike, the number from the label opens the material, each hit with its stock — and it stands in the navigation.
 $s       = new StockService();
@@ -1805,6 +1834,12 @@ $pruefe(str_contains($pk1, 'value="BC327"') && str_contains($pk1, 'name="wahl[1]
     && str_contains($pk1, 'preferred=' . $r['t1']) && str_contains($pk1, 'action=' . TaxmodStock\WordPress\Admin\MaterialPicker::PLACES)
     && str_contains($pk2, 'id="taxmod-material-pick-pos2"') && substr_count($pk1 . $pk2, 'window.taxmodMaterialSearch') <= 1 && count($pkHt) === 1 && $pkHt[0]['id'] === $r['t1'],
     'D-1387: the picker filter draws a prefilled search with the preferred materials first, place and quantity as fields, several on one page');
+// Stefan 20.11. 20:39 («Aus Bestand wählen» soll den Material-Baum zeigen): each picker carries the stock's standard material
+// chooser with its tree (RecordPick::remote), the endpoints once per page; its choice goes on to the places like a search hit.
+$pruefe(str_contains($pk1, 'class="taxmod-material-search-tree"') && str_contains($pk2, 'class="taxmod-material-search-tree"')
+    && str_contains($pk1, 'taxmod-material-pick-pos1-tree') && str_contains($pk2, 'taxmod-material-pick-pos2-tree')
+    && substr_count($pk1 . $pk2, 'id="taxmod-words"') === 1 && str_contains($pk1, 'data-record-branch=') && str_contains((string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Admin/MaterialPicker.php'), 'root.addEventListener("taxmod-record-picked",fromTree)'),
+    'Aus Bestand wählen: every picker has the material tree of the standard chooser, its endpoints drawn once, its choice heard');
 
 // D-1139 (CD-7), asked by the manufacturing 2026-11-15: presentInEach reads once for many boxes and says for each what presentIn says.
 $s      = new StockService();

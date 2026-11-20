@@ -2,6 +2,8 @@
 
 namespace TaxmodStock\WordPress\Admin;
 
+use TaxmodStock\Core\StockList;
+
 /**
  * The material search of the stock (D-1385): on the page «Bestand» opens it jumps to a material's stock; as a building block
  * in another module's dialog (D-1387) it picks a material, then a place and a quantity, and hands them on as fields and as
@@ -30,10 +32,13 @@ final class MaterialPicker
     private static bool $assets = false;
 
     /** D-1385: the search on the page of «Bestand», below its tiles; a hit opens that material's stock. */
-    public static function page(): string
+    public static function page(bool $stock = false): string
     {
+        // His word 2026-11-20 20:23: «die Suche im Bestand soll im Bestand bleiben» — from «Bestand» the list keeps to what is in
+        // stock and shows the lots ({@see StockPage::asksStock()}); from «Stammdaten» it stays the material list.
         return '<form class="taxmod-material-search is-page" role="search" method="get" action="' . esc_url(admin_url('admin.php')) . '" data-mode="jump"' . self::data([]) . '>'
             . '<input type="hidden" name="page" value="' . esc_attr(Pages::STOCK) . '"><input type="hidden" name="tab" value="material">'
+            . ($stock ? '<input type="hidden" name="filter" value="' . esc_attr(StockList::IN_STOCK) . '"><input type="hidden" name="' . esc_attr(StockPage::ASKS_STOCK) . '" value="1">' : '')
             . self::field('taxmod-material-search', 's', '', __('Material suchen', 'taxmod-stock'), true)
             . self::hint() . '</form>' . self::assets();
     }
@@ -67,6 +72,9 @@ final class MaterialPicker
             . ' data-strips="' . esc_attr__('%d Leiste(n) anbrechen', 'taxmod-stock') . '" data-no-fit="' . esc_attr__('Stücke passen hier in keine Leiste', 'taxmod-stock') . '">'
             . self::field($id . '-input', '', sanitize_text_field((string) ($args['term'] ?? '')), __('Material aus dem Bestand wählen', 'taxmod-stock'), false)
             . self::hint()
+            // Stefan 20.11. 20:39 «Aus Bestand wählen» shows the material tree: the stock's standard material chooser (RecordPick::remote,
+            // in a dialog inline under its field, D-1467/D-1488) beside the search; its choice goes on to the places like a hit.
+            . '<div class="taxmod-material-search-tree">' . self::tree($id . '-tree') . '</div>'
             . '<div class="taxmod-material-search-pick" hidden><p class="taxmod-material-search-chosen"></p>'
             . '<fieldset class="taxmod-material-search-places"><legend>' . esc_html__('Lagerort', 'taxmod-stock') . '</legend><ul></ul></fieldset>'
             . '<p><label><span class="taxmod-material-search-qty-label">' . esc_html__('Menge', 'taxmod-stock') . '</span> <input type="number" class="small-text taxmod-material-search-qty" min="0" step="any"> <span class="taxmod-material-search-qty-unit"></span></label> '
@@ -128,6 +136,17 @@ final class MaterialPicker
             'path'     => (string) ($places[$place] ?? '#' . $place),
             'quantity' => ListPage::number($quantity),
         ] + ($cut ? ['strips' => $strips[$place] ?? 0] : []), array_keys($free), array_values($free)));
+    }
+
+    /** The stock's material chooser with the tree; the endpoints it reads are drawn once per page. */
+    private static function tree(string $name): string
+    {
+        static $assets = false;
+        $page = new StockPage();
+        $html = $assets ? $page->materialChooser($name) : $page->materialPicker($name);
+        $assets = true;
+
+        return $html;
     }
 
     /** @param list<int> $preferred */
@@ -207,6 +226,9 @@ final class MaterialPicker
             . 'rows.forEach(function(p,i){var li=el("li"),l=el("label"),c=document.createElement("input");c.type="radio";c.name=root.id+"-place";c.value=p.place;c.dataset.path=p.path;c.dataset.free=p.quantity;'
             . 'if(i===0){c.checked=true;}c.addEventListener("change",function(){if(!cut&&num(qty.value)>num(p.quantity)){qty.value=p.quantity;}});l.appendChild(c);l.appendChild(document.createTextNode(" "+p.path));l.appendChild(el("span","n",p.quantity+" "+(p.unit||d.unit)));if(cut){l.appendChild(el("span","n",p.strips>0?d.strips.replace("%d",p.strips):d.noFit));}li.appendChild(l);ul.appendChild(li);});'
             . 'qty.value=cut?num(d.pieces):(d.wanted&&num(d.wanted)>0?Math.min(num(d.wanted),num(rows[0].quantity)):rows[0].quantity);}).catch(function(){});}'
+            . 'function fromTree(e){var t=e.target;if(!t||t.type!=="radio"||!t.value||!t.closest(".taxmod-material-search-tree")||!t.closest(".taxmod-record-choice")){return;}'
+            . 'setTimeout(function(){var w=root.querySelector(".taxmod-material-search-tree .taxmod-chooser-shows, .taxmod-material-search-tree .taxmod-dialog-open");var h={id:+t.value,word:w?w.textContent.trim():"#"+t.value};if(d.mode!=="pick"){return;}chosen=h;f.value=h.word;places(h);},0);}'
+            . 'root.addEventListener("change",fromTree);root.addEventListener("taxmod-record-picked",fromTree);'
             . 'if(pick){pick.querySelector(".taxmod-material-search-take").addEventListener("click",function(){var c=pick.querySelector("input[type=radio]:checked"),q=num(pick.querySelector(".taxmod-material-search-qty").value);'
             . 'var msg=pick.querySelector(".taxmod-material-search-msg");msg.textContent="";if(!chosen||!c||q<=0){msg.textContent=d.askPlace;return;}var cut=pick.dataset.cut==="1",v={thing:chosen.id,place:+c.value,quantity:cut?q*num(d.piece):q,pieces:cut?q:"",piece:cut?num(d.piece):""};root.querySelectorAll(".taxmod-material-search-out").forEach(function(o){o.value=v[o.dataset.part];});'
             . 'root.dispatchEvent(new CustomEvent("' . self::EVENT . '",{bubbles:true,detail:{key:d.key,thing:chosen.id,word:chosen.word,place:+c.value,path:c.dataset.path,quantity:v.quantity,pieces:v.pieces,piece:v.piece}}));});}'

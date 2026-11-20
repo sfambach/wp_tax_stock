@@ -728,6 +728,19 @@ $imLager = apply_filters(TaxmodStock\WordPress\Plugin::THINGS_IN_STOCK, null, ['
 $freiT1  = array_sum(is_array($frei) ? ($frei[$r['t1']] ?? []) : []) - 1;
 $pruefe(is_array($imLager) && isset($imLager[$r['t1']]) && abs($imLager[$r['t1']] - $freiT1) < 0.001 && $imLager === apply_filters(TaxmodStock\WordPress\Plugin::THINGS_IN_STOCK, null, ['node' => $gruppe, 'except' => $schrank]),
     'things_in_stock: a group names its materials with free stock outside the box, «node» the same' . (is_array($imLager) ? '' : ': ' . $imLager->get_error_message()));
+// D-1539 (CD-7): several nodes in one call — node → thing → free pieces, each as asked one by one, the queries not growing with the nodes.
+$oben    = (int) ((new StockService())->pickerTree()[$gruppe]['parent'] ?? 0);
+$knoten  = array_values(array_filter([$gruppe, $oben]));
+global $wpdb;
+$vorher  = $wpdb->num_queries;
+$einer   = apply_filters(TaxmodStock\WordPress\Plugin::THINGS_IN_STOCK, null, ['nodes' => [$gruppe], 'except' => $schrank]);
+$fuerEin = $wpdb->num_queries - $vorher;
+$vorher  = $wpdb->num_queries;
+$alle    = apply_filters(TaxmodStock\WordPress\Plugin::THINGS_IN_STOCK, null, ['nodes' => $knoten, 'except' => $schrank]);
+$fuerAll = $wpdb->num_queries - $vorher;
+$pruefe(is_array($einer) && $einer === [$gruppe => $imLager] && is_array($alle) && ($alle[$gruppe] ?? null) === $imLager
+    && (count($knoten) < 2 || isset($alle[$oben][$r['t1']])) && $fuerAll <= $fuerEin,
+    "things_in_stock with 'nodes': node → thing → free pieces, the same as one node at a time, no more queries for more nodes ({$fuerEin}/{$fuerAll})");
 $pruefe(str_contains($html, 'taxmod-stock-drop-lot') && ! str_contains($html, 'taxmod-stock-move-place-'), 'Lagerorte: a lot dropped on a place asks for the Umbuchung; no structure actions here');
 
 // D-1143: the finished board — a material created for it, brought into stock naming the order, cancelled again.

@@ -68,6 +68,18 @@ $pruefe = static function (bool $gut, string $was) use (&$fehler): void {
     $fehler += $gut ? 0 : 1;
 };
 
+// D-1296: the labels are the labels module's; without it the label promises cannot hold and are skipped, said once at the end.
+$etikettenAktiv     = has_filter('taxmod_label_catalog') !== false;
+$etikettUebersprung = 0;
+$pruefeEtikett      = static function (bool $gut, string $was) use ($pruefe, $etikettenAktiv, &$etikettUebersprung): void {
+    if ($etikettenAktiv) {
+        $pruefe($gut, $was);
+
+        return;
+    }
+    $etikettUebersprung++;
+};
+
 require __DIR__ . '/lib/struktur.php';
 
 $arten = (new StockService())->structureWithKinds();
@@ -337,10 +349,10 @@ $html = (new StockPage())->render();
 // D-1433 G (modeller 0.2.134): the empty choice now carries WordPress' words, so the check asks for the empty option, not its text.
 $pruefe(str_contains($html, '<option value="">') && str_contains($html, 'data-taxmod-ask="taxmod-stock-bulk-transfer"') && str_contains($html, 'taxmod-bulk-asks'), 'D-1202: «Umbuchen nach …» stands in the one bulk choice, its dialog opens from there');
 
-$pruefe(! class_exists(Taxmod\Core\Renderer\DialogMarkup::class) || (str_contains($html, 'data-taxmod-ask="taxmod-stock-material-labels"') && str_contains($html, 'value="materialetiketten-pdf"') && str_contains($html, '>Material 40×30</option>')), 'D-1202: «Etiketten drucken …» for the ticked materials stands in the one bulk choice, with the material labels');
+$pruefeEtikett(! class_exists(Taxmod\Core\Renderer\DialogMarkup::class) || (str_contains($html, 'data-taxmod-ask="taxmod-stock-material-labels"') && str_contains($html, 'value="materialetiketten-pdf"') && str_contains($html, '>Material 40×30</option>')), 'D-1202: «Etiketten drucken …» for the ticked materials stands in the one bulk choice, with the material labels');
 
 // His word 2026-11-08: «kein Standard-Int-Feld. Sondern wieder was Eigenes.» — the label count is the model's integer field.
-$pruefe(! class_exists(Taxmod\WordPress\Draw\DialogNumber::class) || (str_contains($html, '<input type="number" name="copies" form="') && ! str_contains($html, 'name="copies" min="1" max="50" step="1" placeholder=')), 'the label count in «Etiketten drucken …» is the model\'s integer field');
+$pruefeEtikett(! class_exists(Taxmod\WordPress\Draw\DialogNumber::class) || (str_contains($html, '<input type="number" name="copies" form="') && ! str_contains($html, 'name="copies" min="1" max="50" step="1" placeholder=')), 'the label count in «Etiketten drucken …» is the model\'s integer field');
 
 // D-1439 (moved from the modeller's LabelButton, PR-9): the stock hands its list to the labels module's one render path.
 if (class_exists(TaxmodLabel\WordPress\LabelButton::class)) {
@@ -360,12 +372,12 @@ if (class_exists(TaxmodLabel\WordPress\LabelButton::class)) {
     $pdf = apply_filters('taxmod_label_render', null, [['code' => 'M-' . $r['lm'], 'title' => 'LM2930T-5.0', 'copies' => 2, 'template' => $dialog]], 'pdf');
     $pruefe(is_array($pdf) && str_starts_with((string) ($pdf['pdf'] ?? ''), '%PDF') && ($pdf['labels'] ?? 0) === 2, 'D-1439: the material labels go through taxmod_label_render, one PDF for the list');
 } else {
-    echo "stock: labels module not active, D-1202/D-1439 not checked\n";
+    $etikettUebersprung += 2;
 }
 
 // D-1238: «print-label» reaches the place label through the filter, not only material and lot.
 $platzEtikett = apply_filters('taxmod_label_for', null, 'O', $r['platz'], $r['etk40'], 0);
-$pruefe(is_array($platzEtikett) && isset($platzEtikett['template']), 'D-1238: a place label (O-) comes back through taxmod_label_for');
+$pruefeEtikett(is_array($platzEtikett) && isset($platzEtikett['template']), 'D-1238: a place label (O-) comes back through taxmod_label_for');
 
 // D-1239: the label abilities moved to the labels module (taxmod-label/labels, label-save, label-remove; D-1296) — their check went with them.
 
@@ -390,7 +402,7 @@ $html = (new StockPage())->render();
 $pruefe(str_contains($html, 'Materialgruppen') && str_contains($html, 'Links eine Materialgruppe wählen') && ! str_contains($html, 'LM2930T-5.0</a>') && ! str_contains($html, 'notice-error'), 'D-1174: «Gruppenbestand» waits for a group from the tree');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'gruppenbestand', 'group' => (string) $r['teile']];
 $html = (new StockPage())->render();
-$pruefe(! class_exists(Taxmod\Core\Renderer\DialogMarkup::class) || str_contains($html, 'value="materialetiketten-pdf"'), 'D-1202: the group stock offers the same bulk label print');
+$pruefeEtikett(! class_exists(Taxmod\Core\Renderer\DialogMarkup::class) || str_contains($html, 'value="materialetiketten-pdf"'), 'D-1202: the group stock offers the same bulk label print');
 $pruefe(str_contains($html, 'LM2930T-5.0') && str_contains($html, 'Menge gesamt') && str_contains($html, 'data-source="' . StockPage::DETAILS_MATERIAL . '"') && ! str_contains($html, 'notice-error'), 'D-1174: a group shows its materials, the totals as tiles and lots loaded when a row opens');
 // D-1174, his screenshot 2026-11-19 05:47: the group the tree holds for him is the list's group, also without «group» in the
 // address — never «Links eine Materialgruppe wählen» beside a chosen group.
@@ -421,9 +433,9 @@ $pruefe($above > 0 && $jaGewaehlt($html), 'D-1259: an own «Ja» equal to the on
 $above > 0 ? (new StockService())->setGroupProperty($above, StockService::TEST_PROPERTY, null) : null;
 (new StockService())->setGroupProperty($r['teile'], StockService::TEST_PROPERTY, null);
 // D-1266, his choice «Material- und Posten-Etikett»: the group's Lager view chooses both default labels from «Materialetiketten».
-$pruefe(str_contains($html, 'name="' . StockService::MATERIAL_LABEL_PROPERTY . '"') && str_contains($html, 'name="' . StockService::LOT_LABEL_PROPERTY . '"') && str_contains($html, '<option value="' . $r['etk40'] . '"'), 'D-1266: the group\'s Lager view offers «Standard-Etikett Material» and «Standard-Etikett Posten» from the label category');
+$pruefeEtikett(str_contains($html, 'name="' . StockService::MATERIAL_LABEL_PROPERTY . '"') && str_contains($html, 'name="' . StockService::LOT_LABEL_PROPERTY . '"') && str_contains($html, '<option value="' . $r['etk40'] . '"'), 'D-1266: the group\'s Lager view offers «Standard-Etikett Material» and «Standard-Etikett Posten» from the label category');
 (new StockService())->setGroupProperty($r['teile'], StockService::MATERIAL_LABEL_PROPERTY, $r['etk40']);
-$pruefe((new StockService())->groupLabelOf($r['t1'], StockService::MATERIAL_LABEL_PROPERTY) === $r['etk40'] && (new StockService())->groupLabelOf($r['t1'], StockService::LOT_LABEL_PROPERTY) === 0, 'D-1266: a material reads its group\'s default label, the lot label stays unset');
+$pruefeEtikett((new StockService())->groupLabelOf($r['t1'], StockService::MATERIAL_LABEL_PROPERTY) === $r['etk40'] && (new StockService())->groupLabelOf($r['t1'], StockService::LOT_LABEL_PROPERTY) === 0, 'D-1266: a material reads its group\'s default label, the lot label stays unset');
 (new StockService())->setGroupProperty($r['teile'], StockService::MATERIAL_LABEL_PROPERTY, null);
 
 // D-1440, his words 2026-11-18 11:33/11:36: «Einbuchen» is no item of its own — booking is part of «Angekommen», one row per
@@ -1091,13 +1103,13 @@ if (is_array($opt)) {
     update_option('taxmod_stock_structure', $opt);
 }
 (new StockService())->setGroupProperty($r['teile'], StockService::LOT_LABEL_PROPERTY, $r['etk40']);
-$pruefe((new StockService())->formRoot() === (int) $bf['root'] && (new StockService())->labelSourceOf($r['t1'], StockService::LOT_LABEL_PROPERTY) === [$r['etk40'], 'group', $r['teile']], 'D-1284: without a label at the Bauform the group\'s stands, and says so');
+$pruefeEtikett((new StockService())->formRoot() === (int) $bf['root'] && (new StockService())->labelSourceOf($r['t1'], StockService::LOT_LABEL_PROPERTY) === [$r['etk40'], 'group', $r['teile']], 'D-1284: without a label at the Bauform the group\'s stands, and says so');
 (new StockService())->setGroupProperty((int) $bf['smd'], StockService::LOT_LABEL_PROPERTY, $r['etk40'] + 0);
 $quelle = (new StockService())->labelSourceOf($r['t1'], StockService::LOT_LABEL_PROPERTY);
-$pruefe($quelle === [$r['etk40'], 'form', (int) $bf['f0603']], 'D-1284: a label set at «SMD» is read for a material of «0603», before the group\'s');
+$pruefeEtikett($quelle === [$r['etk40'], 'form', (int) $bf['f0603']], 'D-1284: a label set at «SMD» is read for a material of «0603», before the group\'s');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'etikettenvorlagen'];
 $html = (new StockPage())->render();
-$pruefe(str_contains($html, 'value="' . StockPage::FORM_LABELS . '"') && str_contains($html, '__0603') && preg_match('/name="' . StockService::LOT_LABEL_PROPERTY . '\[' . $bf['smd'] . '\]".{0,400}?value="' . $r['etk40'] . '" selected/s', $html) === 1,
+$pruefeEtikett(str_contains($html, 'value="' . StockPage::FORM_LABELS . '"') && str_contains($html, '__0603') && preg_match('/name="' . StockService::LOT_LABEL_PROPERTY . '\[' . $bf['smd'] . '\]".{0,400}?value="' . $r['etk40'] . '" selected/s', $html) === 1,
     'D-1284: «Etiketten je Bauform» lists the Bauformen with their own labels to choose');
 // D-1296: the label dialog left the modeller; that it names the preselection's origin is now the labels module's (PR-9, moved).
 (new StockService())->setGroupProperty((int) $bf['smd'], StockService::LOT_LABEL_PROPERTY, null);
@@ -1745,5 +1757,8 @@ $quellen = implode('', array_map('file_get_contents', glob(dirname(__DIR__, 2) .
 $pruefe(! preg_match('/[.]submit\(\)/', $quellen) && substr_count($quellen, 'taxmod:replaced') >= 2 && ! str_contains($quellen, 'dataset.ready'),
     'D-1408: no form is sent past the background send, and the Lager scripts set up again (once per element) after a swap');
 
+if ($etikettUebersprung > 0) {
+    echo "  skip Etikettenmodul nicht aktiv, {$etikettUebersprung} Etiketten-Zusagen übersprungen (D-1296)\n";
+}
 echo $fehler === 0 ? "all green ({$kind})\n" : "{$fehler} red ({$kind})\n";
 exit($fehler === 0 ? 0 : 1);

@@ -7,6 +7,7 @@ use Taxmod\WordPress\Admin\ListPage;
 use TaxmodStock\Core\Contacts;
 use TaxmodStock\Core\CutPlan;
 use TaxmodStock\Core\CutSources;
+use TaxmodStock\Core\RoundContact;
 use TaxmodStock\Core\StripCut;
 use TaxmodStock\Core\Bookings;
 use TaxmodStock\Core\BuildPlan;
@@ -5346,9 +5347,10 @@ final class StockService
 
             return (string) wp_json_encode($all);
         };
-        $kinds = [];
-        $poles = [];
-        $rows  = [];
+        $kinds   = [];
+        $poles   = [];
+        $rows    = [];
+        $contact = [];
 
         foreach ($ids as $thing) {
             $form          = $field('thing_form') > 0 ? $things->first($thing, $field('thing_form')) : null;
@@ -5358,9 +5360,39 @@ final class StockService
             $kinds[$thing] = CutSources::kindOf($nodes[$thing] ?? 0, $canonical($field('connector_rows'), $thing), $canonical($field('connector_pitch'), $thing), $things->first($thing, $field('connector_orientation')), $form);
             $part          = (int) $things->first($thing, $field('connector_poles'));
             $poles[$thing] = $part > 0 ? (int) round((float) $values->first($part, $s->field('money_amount'))) : 0;
+            // D-1535 (P4): the «Kontaktart», none where the strip has none.
+            $contact[$thing] = $field('connector_contact') > 0 ? $things->first($thing, $field('connector_contact')) : null;
         }
 
-        return ['kinds' => $kinds, 'poles' => $poles, 'rows' => $rows, 'things' => $things, 'values' => $values];
+        return ['kinds' => $kinds, 'poles' => $poles, 'rows' => $rows, 'things' => $things, 'values' => $values, 'contact' => $contact];
+    }
+
+    /**
+     * D-1535 (P4): plain strip → its round-contact counterpart (RoundContact), all strips of their nodes read once (CD-7).
+     * Without «Kontaktart» or «Rundkontakt» in the structure, none.
+     *
+     * @param list<int> $things
+     * @return array<int, int>
+     */
+    public function roundCounterparts(array $things): array
+    {
+        $s = $this->structure();
+
+        if ($things === [] || ! $s->hasField('connector_contact') || ! $s->hasValue('contact_round') || ! $s->hasField('connector_poles')) {
+            return [];
+        }
+
+        $nodes = $this->model->nodesOf($things);
+        $all   = $things;
+
+        foreach (array_unique(array_values($nodes)) as $node) {
+            $all = [...$all, ...$this->model->table($node)->ids()];
+        }
+
+        $all   = array_values(array_unique($all));
+        $facts = $this->stripFacts($all, $nodes + $this->model->nodesOf(array_values(array_diff($all, $things))));
+
+        return $facts === null ? [] : RoundContact::counterparts($things, $facts['kinds'], $facts['poles'], $facts['contact'], (string) $s->value('contact_round'));
     }
 
     /**

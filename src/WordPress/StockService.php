@@ -4708,6 +4708,55 @@ final class StockService
     }
 
     /**
+     * D-1539 (CD-7): {@see self::thingsInStock()} for several nodes at once — node → thing → free pieces below it, from one read of
+     * the book, so the production asks once for all catalogue nodes of its missing materials, not once per node.
+     *
+     * @param list<int> $nodes
+     * @return array<int, array<int, float>>
+     */
+    public function thingsInStockByNode(array $nodes, int $except = 0): array
+    {
+        $branches = [];
+
+        foreach (array_values(array_unique(array_filter($nodes))) as $node) {
+            $branches[$node] = array_flip($this->branchOf($node));
+        }
+
+        if ($branches === []) {
+            return [];
+        }
+
+        $nodeOf = $this->model->nodesOf($this->ledger()->things());
+        $inside = array_keys(array_filter($nodeOf, static function (int $node) use ($branches): bool {
+            foreach ($branches as $branch) {
+                if (isset($branch[$node])) {
+                    return true;
+                }
+            }
+
+            return false;
+        }));
+        $free   = $this->freeStockByPlace($inside, $except);
+        $out    = array_fill_keys(array_keys($branches), []);
+
+        foreach ($free as $thing => $at) {
+            $total = array_sum($at);
+
+            if ($total <= 0.0) {
+                continue;
+            }
+
+            foreach ($branches as $root => $branch) {
+                if (isset($branch[$nodeOf[$thing] ?? 0])) {
+                    $out[$root][$thing] = $total;
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * D-1146, the pick list of a build order: where the things lie free — not in the box `$except` or below it, not in a
      * reserved area (D-1082), not in a lot a reservation names (D-1083).
      *

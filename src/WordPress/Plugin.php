@@ -1330,7 +1330,8 @@ final class Plugin
 
     /**
      * `apply_filters('taxmod_stock_things_in_stock', null, ['group' => node] or ['node' => node], 'except' => box)` → thing →
-     * free pieces below that node (D-1298 root), outside the box; reserved places and bound lots do not count.
+     * free pieces below that node (D-1298 root), outside the box; reserved places and bound lots do not count. D-1539: with
+     * `['nodes' => [node, …], 'except' => box]` → node → thing → free pieces, in one read.
      *
      * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
      * @param mixed $args     `mixed`: checked here
@@ -1349,6 +1350,11 @@ final class Plugin
         $root = absint($args['group'] ?? 0) ?: absint($args['node'] ?? 0);
 
         try {
+            // D-1539 (CD-7): with 'nodes' all at once, node → thing → free pieces.
+            if (is_array($args['nodes'] ?? null)) {
+                return self::reading()->thingsInStockByNode(array_values(array_filter(array_map('absint', $args['nodes']))), absint($args['except'] ?? 0));
+            }
+
             return $root === 0 ? [] : self::reading()->thingsInStock($root, absint($args['except'] ?? 0));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));

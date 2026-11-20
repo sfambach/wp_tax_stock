@@ -2,6 +2,7 @@
 
 namespace TaxmodStock\WordPress\Admin;
 
+use Taxmod\Core\Description\InputKind;
 use Taxmod\Core\Listing\ListView;
 use Taxmod\Core\Listing\Wildcard;
 use Taxmod\WordPress\Admin\ListPage;
@@ -221,8 +222,8 @@ final class ContactsPage
     /** «+ Neuer Kontakt» in the chosen node: the name (and a person's first name) only. */
     private function newDialog(int $node, string $group): string
     {
-        $body = '<label style="display:block">' . esc_html__('Name', 'taxmod-stock') . '<br><input type="text" name="name" style="width:100%" required></label>'
-            . ($this->stock->hasContactFirstName($node) ? '<label style="display:block;margin-top:8px">' . esc_html__('Vorname', 'taxmod-stock') . '<br><input type="text" name="first_name" style="width:100%"></label>' : '');
+        $body = '<label style="display:block">' . esc_html__('Name', 'taxmod-stock') . '<br>' . ListPage::field(InputKind::Line, 'name', '', ['required' => true, 'size' => 40]) . '</label>'
+            . ($this->stock->hasContactFirstName($node) ? '<label style="display:block;margin-top:8px">' . esc_html__('Vorname', 'taxmod-stock') . '<br>' . ListPage::field(InputKind::Line, 'first_name', '', ['size' => 40]) . '</label>' : '');
 
         return $this->formStart($node) . ListPage::dialogAction(
             'taxmod-stock-new-contact',

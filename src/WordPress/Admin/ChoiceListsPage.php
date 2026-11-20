@@ -175,7 +175,7 @@ final class ChoiceListsPage
         }
 
         // D-1521: the way back stands before the list's name in the one head.
-        return ListPage::head($tree[$node]['name'], self::url(['tab' => $up === $root ? '' : (string) $up]), __('Zurück', 'taxmod-stock'))
+        return ListPage::recordHead(__('Auswahlliste', 'taxmod-stock'), $tree[$node]['name'], self::url(['tab' => $up === $root ? '' : (string) $up]), __('Zurück', 'taxmod-stock'))
             . ListPage::bulkBar(self::BULK_FORM, self::ACTION, [], $count, $toolbar, false)
             . ListPage::table([[__('Wert', 'taxmod-stock'), ''], [__('Darunter', 'taxmod-stock'), '8em'], [__('Verwendet', 'taxmod-stock'), '8em']], $body);
     }

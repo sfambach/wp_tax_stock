@@ -71,6 +71,8 @@ final class StockPage
     /** The notice after a booking; the goods receipt cockpit shows it too, when the booking came from there. */
     public const NOTICE     = 'taxmod_stock_notice';
     private const LAST_LIST = 'taxmod_stock_last_list_';
+    /** The address word of a search begun on the page «Bestand» ({@see self::asksStock()}). */
+    public const ASKS_STOCK = 'bestand';
     /** D-1438: the Umbuchung held back by the question «Platz leer?», per user, until the page draws it. */
     private const EMPTY_QUESTION = 'taxmod_stock_empty_question_';
 
@@ -606,13 +608,14 @@ final class StockPage
             $stock  = $ledger->stockOf($id);
             $name   = $things->word($id);
             // His word 2026-11-05: «bei mehreren positionen den platz in der zusammenfassung weg lassen».
-            $cells  = ['nr' => (string) $id, 'name' => $name, 'group' => $node === null ? '' : $groups[$node], 'places' => count(array_unique(array_column($this->heldAt($id, $ledger), 1))) > 1 ? '' : $this->placesOf($id, $ledger)];
+            $at     = count(array_unique(array_column($this->heldAt($id, $ledger), 1))) > 1 ? [] : $this->placesOf($id, $ledger);
+            $cells  = ['nr' => (string) $id, 'name' => $name, 'group' => $node === null ? '' : $groups[$node], 'places' => implode('; ', $at)];
 
             foreach (array_keys($technical) as $relation) {
                 $cells['f' . $relation] = implode(', ', (array) $data?->all($id, $relation));
             }
 
-            $rows[] = ['id' => $id, 'name' => $name, 'stock' => $stock, 'low' => $min !== null && $stock < (float) $min, 'words' => [],
+            $rows[] = ['id' => $id, 'name' => $name, 'stock' => $stock, 'groupId' => $node ?? 0, 'placeIds' => $at, 'low' => $min !== null && $stock < (float) $min, 'words' => [],
                 // Optional fields (Structure::OPTIONAL_FIELDS): a model without a base unit has none to group by.
                 'unit' => $record === null || ! $s->hasField('lager_unit') ? '' : $lager->first($record, $s->field('lager_unit')) . '/' . ($s->hasField('lager_prefix') ? $lager->first($record, $s->field('lager_prefix')) : ''),
                 'cells' => $cells + ['stock' => $this->number($stock) . (isset($packs[$id]) ? ' ' . $this->inPacks($packs[$id], $stock) : ''), 'min' => $min === null ? '' : (string) $min],
@@ -636,7 +639,7 @@ final class StockPage
         $shown   = self::variantsBeneath($view->apply((new StockList('', $list->filter))->apply($rows)), $parentOf);
 
         $visible = $view->visible();
-        $open    = $this->stock->viewSettings()->expanded('material');
+        $open    = $this->stock->viewSettings()->expanded('material') || self::asksStock();
         $url     = fn (array $change): string => $this->listUrl($tab, $list, $change + ['group' => $group > 0 ? (string) $group : '', ListPage::SHOW_ALL => ListPage::showsAll() ? '1' : '', 'f' => $view->filters(), 'orderby' => $view->orderBy === 'name' ? '' : $view->orderBy, 'order' => $view->descending ? 'desc' : '']);
 
         // «← Zur Liste» in the material view comes back to exactly this list (design 7.3) — kept before a single hit opens, so
@@ -655,7 +658,7 @@ final class StockPage
         $html    = ($branch ? $this->groupTotals(array_values(array_filter($rows, static fn (array $row): bool => empty($row['parent'])))) : '') . $this->tools($tab, $list, [
             ['filter', $this->materialFilters(), $list->filter, __('Filter', 'taxmod-stock')],
             ...($branch ? [] : [['group', ['' => __('Alle Gruppen', 'taxmod-stock')] + $groups, $group > 0 ? (string) $group : '', __('Gruppe', 'taxmod-stock')]]),
-        ], ['group' => $group > 0 ? (string) $group : '', 'orderby' => $view->orderBy === 'name' ? '' : $view->orderBy, 'order' => $view->descending ? 'desc' : ''],
+        ], ['group' => $group > 0 ? (string) $group : '', self::ASKS_STOCK => self::asksStock() ? '1' : '', 'orderby' => $view->orderBy === 'name' ? '' : $view->orderBy, 'order' => $view->descending ? 'desc' : ''],
             __('Material, Nummer, Gruppe …', 'taxmod-stock'), $waits ? sprintf(
             /* translators: %d: number of materials */
             _n('%d Material im Lager', '%d Materialien im Lager', count($all), 'taxmod-stock'),
@@ -692,6 +695,11 @@ final class StockPage
                     'nr'    => '<a id="taxmod-stock-row-' . esc_attr((string) $id) . '" href="' . $link . '">' . esc_html($text) . '</a>',
                     'name'  => '<strong><a href="' . $link . '">' . esc_html($text === '' ? '—' : $text) . '</a></strong>',
                     'stock' => '<span' . ($row['low'] ? ' style="color:#b32d2e;font-weight:600"' : '') . '>' . esc_html($text) . '</span>',
+                    // His word 2026-11-20 20:23: «ich kann nicht zu dem Platz springen. Oder … zu der Gruppe».
+                    'group'  => ($row['groupId'] ?? 0) > 0 && $text !== '' ? '<a href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'material', 'group' => $row['groupId']], admin_url('admin.php'))) . '">' . esc_html($text) . '</a>' : esc_html($text === '' ? '—' : $text),
+                    'places' => ($row['placeIds'] ?? []) === [] ? esc_html($text === '' ? '—' : $text) : implode('; ', array_map(
+                        static fn (int $place, string $path): string => '<a href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'lagerorte', 'ort' => $place], admin_url('admin.php'))) . '">' . esc_html($path) . '</a>',
+                        array_keys($row['placeIds']), $row['placeIds'])),
                     default => esc_html($text === '' ? '—' : $text),
                 };
             }
@@ -1039,7 +1047,8 @@ final class StockPage
     }
 
     /** The places where a thing has a rest, by path and project; a lot may lie at several (D-1039). */
-    private function placesOf(int $thing, \TaxmodStock\Core\Ledger $ledger): string
+    /** @return array<int, string> place id => path */
+    private function placesOf(int $thing, \TaxmodStock\Core\Ledger $ledger): array
     {
         $places = $this->stock->places();
         $out    = [];
@@ -1052,7 +1061,7 @@ final class StockPage
             }
         }
 
-        return implode('; ', $out);
+        return $out;
     }
 
     /**
@@ -1331,7 +1340,7 @@ final class StockPage
             throw StockError::notAThing($thing);
         }
 
-        $view   = sanitize_key((string) ($_GET['view'] ?? 'daten'));
+        $view   = sanitize_key((string) ($_GET['view'] ?? (self::asksStock() ? 'bestand' : 'daten')));
         $view   = in_array($view, self::VIEWS, true) ? $view : 'daten';
         $table  = $this->stock->tableOf($node);
         $label  = (string) $table->first($thing, $s->field('label'));
@@ -1349,7 +1358,7 @@ final class StockPage
 
         // D-1329 (his wish 2026-11-13): the list's search on top, to go on to the next material without going back.
         // D-1373: «← Zur Liste» on top, first in the toolbar.
-        $search = ListPage::head($label === '' ? '—' : $label, $back, __('Zur Liste', 'taxmod-stock')) . ListPage::toolbar([[ListPage::searchBox('taxmod-stock-thing-search', '', __('Nächstes Material suchen …', 'taxmod-stock'), ['page' => self::PAGE, 'tab' => 'material'], __('Suchen', 'taxmod-stock'))]]);
+        $search = ListPage::recordHead(__('Material', 'taxmod-stock'), $label === '' ? '—' : $label, $back, __('Zur Liste', 'taxmod-stock')) . ListPage::toolbar([[ListPage::searchBox('taxmod-stock-thing-search', '', __('Nächstes Material suchen …', 'taxmod-stock'), ['page' => self::PAGE, 'tab' => 'material'], __('Suchen', 'taxmod-stock'))]]);
         $html   = $search . '<div class="taxmod-stock-head" style="display:flex;gap:16px;align-items:flex-start;background:#fff;border:1px solid #c3c4c7;padding:16px;margin:8px 0 0">'
             . ($media > 0 ? (string) wp_get_attachment_image($media, [96, 96], false, ['style' => 'width:96px;height:96px;object-fit:cover;border-radius:4px']) : '<div style="width:96px;height:96px;background:#f0f0f1;border-radius:4px"></div>')
             . '<div><p style="margin:0;color:#50575e">' . esc_html(sprintf(/* translators: %d: record id of the thing */ __('Nr. %d', 'taxmod-stock'), $thing)) . ' · ' . $this->pathLinks($node) . '</p>'
@@ -3709,16 +3718,24 @@ final class StockPage
         ]);
     }
 
-    /** The head of the right side: the place's name, where it lies and its marks. */
-    private function placeHead(int $place, LocationTree $tree): string
+    /**
+     * The head of the right side: D-1526 recordHead «← Lagerorte | Lagerort – <Name>», where it lies and its marks as the line
+     * beneath (Prüftor 2026-11-20 on his screenshot 20:25).
+     */
+    private function placeHead(int $place, LocationTree $tree, string $tab): string
     {
         $parent  = $tree->parentOf($place);
         $project = $tree->projectOf($place);
         $marks   = ($tree->isMovable($place) ? ' <span class="description">(' . esc_html__('beweglich', 'taxmod-stock') . ')</span>' : '')
             . $this->reservedMark($place, $this->stock->reservedPlaces());
 
-        return '<h2 style="margin-top:0">' . esc_html((string) (array_reverse(explode(' › ', $tree->pathOf($place)))[0])) . $marks . '</h2>'
-            . '<p>' . esc_html__('Liegt in', 'taxmod-stock') . ': ' . esc_html($parent > 0 ? $tree->pathOf($parent) : __('— oberste Ebene —', 'taxmod-stock'))
+        $layout  = $tab === 'lagerstruktur';
+
+        return ListPage::recordHead(__('Lagerort', 'taxmod-stock'), (string) (array_reverse(explode(' › ', $tree->pathOf($place)))[0]),
+            add_query_arg(['page' => self::PAGE, 'tab' => $tab], admin_url('admin.php')), $layout ? __('Lagerstruktur', 'taxmod-stock') : __('Lagerorte', 'taxmod-stock'),
+            $layout ? __('Die Daten und der Aufbau des Lagerorts: bearbeiten, Unterorte anlegen, verschieben, reservieren, Etikett.', 'taxmod-stock')
+                : __('Was an diesem Lagerort und darunter liegt, je Posten: umbuchen, ausbuchen, Etikett.', 'taxmod-stock'))
+            . '<p>' . ltrim($marks) . ($marks === '' ? '' : ' · ') . esc_html__('Liegt in', 'taxmod-stock') . ': ' . esc_html($parent > 0 ? $tree->pathOf($parent) : __('— oberste Ebene —', 'taxmod-stock'))
             . ($project === null ? '' : ' · ' . esc_html__('Projekt', 'taxmod-stock') . ': ' . esc_html($project))
             // D-1150, his word 2026-11-04: «würde dir auch die id nennen aber die sehe ich nicht im lager layout detail sicht des platzes».
             . ' · ' . esc_html__('Id', 'taxmod-stock') . ': ' . (int) $place . '</p>';
@@ -3777,7 +3794,7 @@ final class StockPage
             [$label],
         ];
         $form = (string) apply_filters('taxmod_record_editor', '', $place, $back, $groups);
-        $html = $this->placeHead($place, $tree)
+        $html = $this->placeHead($place, $tree, 'lagerstruktur')
             . ($form === '' ? ListPage::toolbar([[self::editorMissing()], ...$groups])
                 . '<table class="widefat striped" style="max-width:40em">' . $table . '</table>' : $form)
             . $this->childList($place, $tree, $rows);
@@ -3898,7 +3915,7 @@ final class StockPage
      * D-1224, his word 2026-11-07: «wo sind denn die massen aktionen und das drucken» — the ticked lots of «Platzbestand»
      * reach «Etiketten drucken …» (their materials' labels) and «Umbuchen nach …» (each lot whole), in the shared bulk bar.
      */
-    private function placeLotsBar(int $place, int $count): string
+    private function placeLotsBar(int $place, int $count, string $beside = ''): string
     {
         $body  = self::actForm([['label' => __('Nach', 'taxmod-stock'), 'control' => $this->stock->placeChooser('location', 0, self::PLACE_FORM),
             'hint' => __('Bucht jeden angehakten Posten ganz vom Ort, an dem er liegt, an den gewählten Ort um: ein Vorgang «Umbuchung», «Stornieren» bei den Vorgängen nimmt ihn zurück.', 'taxmod-stock')]]);
@@ -3911,7 +3928,7 @@ final class StockPage
             ['name="action" id="' . self::PLACE_FORM . '-action"', '</form>'],
             ['name="bulk" id="' . self::PLACE_FORM . '-action"', '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
                 . '<input type="hidden" name="return_tab" value="lagerorte"><input type="hidden" name="return_ort" value="' . esc_attr((string) $place) . '"></form>'],
-            self::bulkBar(self::PLACE_FORM, $text, '', $label + $move)
+            self::bulkBar(self::PLACE_FORM, $text, $beside, $label + $move)
         );
     }
 
@@ -4063,7 +4080,7 @@ final class StockPage
             $form = (string) apply_filters('taxmod_record_editor', '', $chosen, $back, $copy);
 
             // D7, his word «Kopf in einer Zeile»: «Platzarten – Name».
-            return ListPage::head(sprintf(/* translators: %s: name of the place type */ __('Platzarten – %s', 'taxmod-stock'), $types->nameOf($chosen)), $list, __('Alle Platzarten', 'taxmod-stock'))
+            return ListPage::recordHead(__('Platzart', 'taxmod-stock'), $types->nameOf($chosen), $list, __('Alle Platzarten', 'taxmod-stock'))
                 . ($form === '' ? ListPage::toolbar($copy) . self::editorMissing() : $form);
         }
 
@@ -4278,11 +4295,11 @@ final class StockPage
 
         // His wish 2026-11-11: «vom Platzbestand … nicht wieder zurück zur Layout-Sicht» — the counterpart of
         // «Zur Bestandsansicht» (D-1224), first in the toolbar (D-1308).
-        return $this->placeHead($place, $tree)
-            . ListPage::toolbar([['<a class="button" href="' . esc_url($structure) . '">' . esc_html__('Zur Layout-Sicht', 'taxmod-stock') . '</a>']])
+        // D-1526: «Zur Layout-Sicht» stands in the one bar, not in a row of its own.
+        return $this->placeHead($place, $tree, 'lagerorte')
             // His word 2026-11-14: «in Lagerplatzbestand … sieht irgendwie die Leiste oben noch anders aus als in anderen» — the
             // count stands in the list's bar like everywhere, and the bar stands also when nothing lies here.
-            . $this->placeLotsBar($place, $count)
+            . $this->placeLotsBar($place, $count, '<a class="button" href="' . esc_url($structure) . '">' . esc_html__('Zur Layout-Sicht', 'taxmod-stock') . '</a>')
             . ListPage::table([[__('Posten', 'taxmod-stock'), '6em'], [__('Material', 'taxmod-stock'), ''], [__('Unterort', 'taxmod-stock'), '12em'], [__('Menge', 'taxmod-stock'), '6em'], [__('Buchungsdatum', 'taxmod-stock'), '8em']], $body === '' ? $this->noItems(5) : $body);
     }
 
@@ -5351,6 +5368,15 @@ final class StockPage
             . wp_nonce_field(self::ACTION, '_wpnonce', true, false);
     }
 
+    /**
+     * His word 2026-11-20 20:23: «Wenn ich im Bestand suche, springt er in die Materialübersicht … ich möchte den Bestand wissen» —
+     * a search started on the page «Bestand» keeps to what is in stock, shows each row's lots open, and a single hit opens its stock.
+     */
+    public static function asksStock(): bool
+    {
+        return ($_GET[self::ASKS_STOCK] ?? '') === '1';
+    }
+
     private function listRequest(): StockList
     {
         $orderBy = sanitize_key((string) ($_GET['orderby'] ?? ''));
@@ -5379,6 +5405,7 @@ final class StockPage
             'orderby' => $list->orderBy === 'name' ? '' : $list->orderBy,
             'order'   => $list->descending ? 'desc' : '',
             'group'   => in_array($tab, ['material', 'gruppenbestand'], true) ? sanitize_key((string) ($_GET['group'] ?? '')) : '',
+            self::ASKS_STOCK => $tab === 'material' && self::asksStock() ? '1' : '',
         ]);
 
         return admin_url('admin.php?' . http_build_query(array_filter(array_merge($query, $change)), '', '&'));

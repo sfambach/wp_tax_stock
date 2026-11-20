@@ -39,4 +39,38 @@ final class PlaceFunctionsTest extends TestCase
 
         self::assertSame([500 => 3.0], $provided);
     }
+
+    /**
+     * D-1503: Wareneingang 20 (inbound) holds Test 21 (with 22 inside) and Klärung 23; Fertigung 30 holds Test 31; Klärung 40
+     * stands alone.
+     */
+    private static function testing(): array
+    {
+        $parents = [20 => 0, 21 => 20, 22 => 21, 23 => 20, 30 => 0, 31 => 30, 40 => 0];
+        $below   = [20 => [21, 22, 23], 21 => [22]];
+
+        return [PlaceFunctions::from(
+            [20 => 1, 21 => 2, 22 => 0, 23 => 3, 30 => 0, 31 => 2, 40 => 3],
+            [1 => 71, 2 => 72, 3 => 73],
+            [71 => PlaceFunctions::INBOUND, 72 => PlaceFunctions::TEST, 73 => PlaceFunctions::CLARIFY],
+            static fn (int $place): array => $below[$place] ?? [],
+        ), $parents];
+    }
+
+    public function testTheGoodsReceiptsTestPlaceIsTheTopmostWithBothFunctions(): void
+    {
+        [$functions, $parents] = self::testing();
+
+        self::assertSame(21, $functions->firstWithBoth(PlaceFunctions::TEST, PlaceFunctions::INBOUND, $parents));
+        self::assertNull(PlaceFunctions::none()->firstWithBoth(PlaceFunctions::TEST, PlaceFunctions::INBOUND, $parents));
+    }
+
+    public function testAFailedLotGoesToTheNearestKlaerung(): void
+    {
+        [$functions, $parents] = self::testing();
+
+        self::assertSame(23, $functions->nearest(PlaceFunctions::CLARIFY, 22, $parents), 'the Klärung in the same goods receipt');
+        self::assertSame(23, $functions->nearest(PlaceFunctions::CLARIFY, 31, $parents), 'none shared: the lowest');
+        self::assertNull(PlaceFunctions::none()->nearest(PlaceFunctions::CLARIFY, 22, $parents));
+    }
 }

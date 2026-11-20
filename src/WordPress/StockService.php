@@ -1925,7 +1925,10 @@ final class StockService
         $planned  = $this->plannedPlaces();
         $tests    = $this->testSettings(array_values($nodes));
         // A test place that is no place any more proposes nothing; the tree is read only when there is one.
-        $testing  = $tests->place !== null && $this->table('location')->has($tests->place);
+        // D-1503: the test place inside the goods receipt, else D-1111's «Lagerort für Test».
+        $testAt   = $this->receiptTestPlace($tests);
+        $testing  = $testAt !== null;
+        $tests    = $testing ? TestSettings::fromArray(['place' => $testAt] + $tests->toArray()) : $tests;
         $queue    = new TestQueue($s);
         $parents  = $testing ? $this->groupParents() : [];
 
@@ -3184,7 +3187,7 @@ final class StockService
 
         $keyOf = [];
 
-        foreach (['function_storage', 'function_inbound', 'function_outbound'] as $key) {
+        foreach (PlaceFunctions::KEYS as $key) {
             if ($s->hasValue($key)) {
                 $keyOf[$s->value($key)] = $key;
             }
@@ -6214,6 +6217,178 @@ final class StockService
         $moves = $rows === [] ? [] : (new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $this->boundLots(), $reference);
 
         return $this->model->write([...$tests, ...$moves]);
+    }
+
+    /** @return array<int, int> place → its parent place, for the place functions (D-1503) — one pass over the tree (CD-7) */
+    private function placeParents(): array
+    {
+        $tree = $this->locationTree();
+        $out  = [];
+
+        foreach (array_keys($tree->labels()) as $place) {
+            $out[(int) $place] = $tree->parentOf((int) $place);
+        }
+
+        return $out;
+    }
+
+    /**
+     * D-1503: where a lot made by the goods receipt waits for its test — the test place inside the goods receipt
+     * («Wareneingang › Test»), else D-1111's «Lagerort für Test».
+     */
+    public function receiptTestPlace(TestSettings $settings): ?int
+    {
+        $place = $this->placeFunctions()->firstWithBoth(PlaceFunctions::TEST, PlaceFunctions::INBOUND, $this->placeParents());
+
+        return $place ?? ($settings->place !== null && $this->table('location')->has($settings->place) ? $settings->place : null);
+    }
+
+    /** @return list<int> D-1503: the test places, those inside them left out — the choices of the «Test» tab's filter */
+    public function testPlaces(): array
+    {
+        $all     = $this->placeFunctions()->with(PlaceFunctions::TEST);
+        $parents = $this->placeParents();
+
+        return array_values(array_filter($all, static fn (int $p): bool => ! in_array($parents[$p] ?? 0, $all, true)));
+    }
+
+    /**
+     * D-1503: a test result for several lots in one act; «defekt» and «teilweise OK» also move what lies on a test place to
+     * the nearest «Klärung» (D-1233 «Umbuchung»). One change number undoes both (D-1410).
+     *
+     * @param list<int> $lots
+     * @return array<string, mixed> the modeller's answer, with its change number as `act`
+     */
+    public function recordTestsRouted(array $lots, TestResult $result, string $note, string $today, string $title): array
+    {
+        $tests = $this->testChanges($this->configuredQueue(), $lots, $result, $note, $today);
+
+        if (! in_array($result, [TestResult::Defect, TestResult::Partial], true)) {
+            return $this->model->write($tests);
+        }
+
+        $functions = $this->placeFunctions();
+        $parents   = $this->placeParents();
+        $ledger    = $this->ledger();
+        $rows      = [];
+
+        foreach (array_values(array_unique(array_map('intval', $lots))) as $lot) {
+            foreach ($ledger->placesOf($lot) as $from => $rest) {
+                $to = $rest > 0.0 && $functions->is((int) $from, PlaceFunctions::TEST) ? $functions->nearest(PlaceFunctions::CLARIFY, (int) $from, $parents) : null;
+
+                if ($to !== null && $to !== (int) $from) {
+                    $rows[] = new TransferRow($lot, (int) $from, $to, DecimalText::stored($rest));
+                }
+            }
+        }
+
+        $moves = $rows === [] ? [] : (new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, $note, $this->reservedPlaces(), $this->boundLots());
+
+        return $this->model->write([...$tests, ...$moves]);
+    }
+
+    /**
+     * D-1503: the lots that passed and still lie on a test place inside the goods receipt — «Einlagern» takes them on.
+     *
+     * @return list<int>
+     */
+    public function lotsToStore(): array
+    {
+        $functions = $this->placeFunctions();
+        $s         = $this->structure();
+        $queue     = new TestQueue($s);
+
+        if (! $queue->isConfigured()) {
+            return [];
+        }
+
+        $inbound = array_flip(array_intersect($functions->with(PlaceFunctions::TEST), $functions->with(PlaceFunctions::INBOUND)));
+
+        if ($inbound === []) {
+            return [];
+        }
+
+        $failed = array_map(static fn (TestResult $r): string => (string) $s->value($r->value), [TestResult::Defect, TestResult::Partial, TestResult::Maintenance]);
+        $lots   = $this->table('lot');
+        $field  = $s->field('lot_condition');
+        $out    = [];
+
+        foreach ($this->ledger()->stockByPlace() as $lot => $at) {
+            $condition = (string) ($lots->first((int) $lot, $field) ?? '');
+
+            if (array_intersect_key(array_filter($at, static fn (float $q): bool => $q > 0.0), $inbound) !== [] && $condition !== '' && ! in_array($condition, $failed, true)
+                && $this->blockedLots([(int) $lot]) === []) {
+                $out[] = (int) $lot;
+            }
+        }
+
+        sort($out);
+
+        return $out;
+    }
+
+    /**
+     * D-1503 «Einlagern» after the test: from the test place to where the material is stored — its own Standard-Lagerort,
+     * else its group's (D-972, D-1259); the target is read from what is stored, no field of its own. One Umbuchung (D-1233).
+     *
+     * @param list<int> $lots
+     * @return array<string, mixed> the modeller's answer, with its change number as `act`
+     */
+    public function storeTested(array $lots, string $today, string $title): array
+    {
+        $lots = array_values(array_unique(array_filter(array_map('intval', $lots))));
+        $this->guardUnblocked($lots);
+
+        $functions = $this->placeFunctions();
+        $ledger    = $this->ledger();
+        $things    = array_filter(array_map(static fn (int $lot): ?int => $ledger->thingOf($lot), array_combine($lots, $lots) ?: []));
+        $usual     = $this->usualPlaces(array_values(array_unique($things)));
+        $rows      = [];
+
+        foreach ($lots as $lot) {
+            $to = $usual[$things[$lot] ?? 0] ?? 0;
+
+            if ($to <= 0) {
+                throw StockError::notALocation(0);
+            }
+
+            foreach ($ledger->placesOf($lot) as $from => $rest) {
+                if ($rest > 0.0 && (int) $from !== $to && $functions->is((int) $from, PlaceFunctions::TEST)) {
+                    $rows[] = new TransferRow($lot, (int) $from, $to, DecimalText::stored($rest));
+                }
+            }
+        }
+
+        if ($rows === []) {
+            throw StockError::nothingToBook();
+        }
+
+        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $this->boundLots()));
+    }
+
+    /**
+     * Where each material is stored when nothing else is said — the place {@see receiptLocations()} proposes without a test.
+     *
+     * @param list<int> $things
+     * @return array<int, int> material → location record, 0 where none
+     */
+    public function usualPlaces(array $things): array
+    {
+        $s        = $this->structure();
+        $nodes    = $this->model->nodesOf($things);
+        $settings = $this->locationSettings(array_values($nodes));
+        $rules    = new LocationRules($settings->branches, array_map(static fn (int $place): array => [], $settings->branches), $settings->unreferenced, $s->value('location_default'));
+        $lager    = $this->table('lager');
+        $all      = $this->things();
+        $out      = [];
+
+        foreach ($things as $thing) {
+            $record      = $all->lagerOf($thing);
+            $own         = $record !== null && $s->hasField('lager_location') ? (int) $lager->first($record, $s->field('lager_location')) : 0;
+            $out[$thing] = $rules->propose($own > 0 ? $own : null, $nodes[$thing] ?? null);
+        }
+
+        return $out;
     }
 
     private function configuredQueue(): TestQueue

@@ -120,12 +120,16 @@ $pruefe(array_column($outbound, 'module') === ['taxebay-shipping'], 'Warenausgan
 add_filter(ModulePage::FILTER, static fn (array $pages): array => [...$pages,
     ['slug' => '__navcheck-print', 'label' => 'Aufträge', 'area' => 'print', 'render' => static fn (): string => ''],
     ['slug' => '__navcheck-production', 'label' => 'Aufträge', 'area' => 'production', 'render' => static fn (): string => ''],
+    ['slug' => '__navcheck-master', 'label' => 'Plätze', 'area' => 'masterdata', 'render' => static fn (): string => ''],
     ['slug' => '__navcheck-deep', 'label' => 'Tief', 'area' => 'settings', 'path' => ['Ebene A', 'Ebene B'], 'render' => static fn (): string => ''],
 ]);
 ModulePage::capture();
 $areas = LogisticsShell::navigation()->areas();
 $einstellungen = array_values(array_filter($areas, static fn (array $area): bool => $area['key'] === 'settings'))[0]['items'] ?? [];
 $druck = array_values(array_filter($einstellungen, static fn (array $item): bool => ($item['module'] ?? '') === '__navcheck-print'))[0] ?? null;
+// D-1502 Stufe 3, his word 2026-11-20 «ein Arbeitsplatz ist ein Stammdatum»: a module page with area «masterdata» stands under Stammdaten, after Lagerstruktur.
+$stamm = array_column(array_values(array_filter($areas, static fn (array $area): bool => $area['key'] === 'masterdata'))[0]['items'] ?? [], 'key');
+$pruefe(($i = array_search('module-__navcheck-master', $stamm, true)) !== false && $i === array_search('place-types', $stamm, true) + 1 && ! in_array('module-__navcheck-master', array_column($einstellungen, 'key'), true), 'D-1502: a master-data page of a module stands under Stammdaten after Lagerstruktur (' . implode(', ', $stamm) . ')');
 $pruefe($druck !== null && ($druck['path'] ?? []) === ['Druck'] && ! in_array('print', array_column($areas, 'key'), true), 'a page announced with area «print» stands under Einstellungen › Druck, not in an area of its own');
 // D-1296, his report 2026-11-18 «etiketten gibts jetzt zweimal als menüpunkt», «drucker auch»: labels, printers and rolls are the
 // labels module's; the stock keeps «Etiketten je Bauform» (replaces D-1165's «Druck › Etiketten» check, PR-9).

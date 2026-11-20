@@ -33,15 +33,16 @@ final class ModulePage
     public const PAGE = Pages::MODULE;
 
     /**
-     * Filter: `list<array{slug: string, label: string, area?: 'settings'|'outbound'|'print', path?: list<string>, capability?: string, render?: callable(): string}>`.
-     * `path` puts the page under groups in the navigation, any depth (D-1121); area «print» stands under Einstellungen › Druck.
+     * Filter: `list<array{slug: string, label: string, area?: 'settings'|'outbound'|'print'|'production'|'masterdata', path?: list<string>, capability?: string, render?: callable(): string}>`.
+     * `path` puts the page under groups in the navigation, any depth (D-1121); area «print» stands under Einstellungen › Druck,
+     * «masterdata» under Stammdaten after the stock structure (D-1502 Stufe 3: «ein Arbeitsplatz ist ein Stammdatum»).
      * `position` (optional, smaller first, default 100) orders the pages of area «print» (Stefan 2026-11-18, «Sortierungswunsch des Menüs»).
      * An entry with the slug of a menu entry replaces what was read from the menu.
      */
     public const FILTER = 'taxmod_logistics_pages';
 
     /** The navigation areas a module page may stand in. */
-    private const AREAS = ['settings', 'outbound', 'print', 'production'];
+    private const AREAS = ['settings', 'outbound', 'print', 'production', 'masterdata'];
 
     /** Pages of the Taxmod menu that are not modules: the modeller's (D-1085 level 1) and ours. */
     private const NOT_MODULES = [Plugin::PARENT, 'taxmod-inbox', 'taxmod-cleanup', 'taxmod-backup', 'taxmod-settings', Pages::COCKPIT, Pages::INBOUND, Pages::STOCK, Pages::PURCHASE, Pages::SETTINGS, Pages::CONTACTS, Pages::CHOICES, Pages::MODULE];

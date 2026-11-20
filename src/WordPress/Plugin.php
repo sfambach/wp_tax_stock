@@ -141,7 +141,18 @@ final class Plugin
 
         add_filter('taxmod_config_tabs', [SettingsTab::class, 'register']);
         // D-1480: a merged material takes its doubled Lager record to the trash, or the merge is vetoed — applied by the modeller.
-        add_filter('taxmod_merge_record', static fn (mixed $answer, int $from, int $into): array => (new StockService())->mergeAnswer(is_array($answer) ? $answer : [], $from, $into), 10, 3);
+        // D-1499: on the modeller's core dispatcher (`taxmod_listen`, D-1498) where it has one; the filter only for an older modeller.
+        if (class_exists(\Taxmod\Core\Event\RecordsMerging::class)) {
+            add_action('taxmod_listen', static function (\Taxmod\Core\Event\ListenerProvider $listeners): void {
+                $listeners->listen(\Taxmod\Core\Event\RecordsMerging::class, static function (\Taxmod\Core\Event\RecordsMerging $merging): void {
+                    $mine = (new StockService())->mergeAnswer([], $merging->from, $merging->into);
+                    $merging->veto((string) ($mine['veto'] ?? ''));
+                    $merging->trash(...array_map('intval', $mine['trash'] ?? []));
+                });
+            });
+        } else {
+            add_filter('taxmod_merge_record', static fn (mixed $answer, int $from, int $into): array => (new StockService())->mergeAnswer(is_array($answer) ? $answer : [], $from, $into), 10, 3);
+        }
         // D-1209: the stock for a reader over MCP, in the modeller's category (registered by the modeller beforehand).
         add_action('wp_abilities_api_init', static fn () => (new StockAbility())->register());
         add_action('wp_abilities_api_init', static fn () => (new CorrectionAbility())->register());
@@ -210,7 +221,14 @@ final class Plugin
         add_filter(self::CANCEL_SALE, [self::class, 'cancelSale'], 10, 2);
         add_filter(self::BOOK_BACKFILL, [self::class, 'bookBackfill'], 10, 2);
         add_filter(self::LOTS_OF, [self::class, 'lotsOf'], 10, 2);
-        add_action(self::ORDER_EVENT, [self::class, 'orderEvent'], 10, 2);
+        // D-1499: the inbox's report as a core event where the modeller sends one; the action only for an older modeller.
+        if (class_exists(\Taxmod\Core\Event\OrderReported::class)) {
+            add_action('taxmod_listen', static function (\Taxmod\Core\Event\ListenerProvider $listeners): void {
+                $listeners->listen(\Taxmod\Core\Event\OrderReported::class, static fn (\Taxmod\Core\Event\OrderReported $report) => self::orderEvent($report->orderRecordId, $report->kind));
+            });
+        } else {
+            add_action(self::ORDER_EVENT, [self::class, 'orderEvent'], 10, 2);
+        }
         add_filter(self::CUT_SOURCES, [self::class, 'cutSources'], 10, 2);
         add_filter(self::BOOK_CUT, [self::class, 'bookCut'], 10, 2);
         add_filter(self::PROJECT_BOXES, [self::class, 'projectBoxes'], 10, 2);

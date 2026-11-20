@@ -352,7 +352,7 @@ $pruefe(str_contains($html, '<option value="">') && str_contains($html, 'data-ta
 $pruefeEtikett(! class_exists(Taxmod\Core\Renderer\DialogMarkup::class) || (str_contains($html, 'data-taxmod-ask="taxmod-stock-material-labels"') && str_contains($html, 'value="materialetiketten-pdf"') && str_contains($html, '>Material 40×30</option>')), 'D-1202: «Etiketten drucken …» for the ticked materials stands in the one bulk choice, with the material labels');
 
 // His word 2026-11-08: «kein Standard-Int-Feld. Sondern wieder was Eigenes.» — the label count is the model's integer field.
-$pruefe(! class_exists(Taxmod\WordPress\Draw\DialogNumber::class) || (str_contains($html, '<input type="number" name="copies" form="') && ! str_contains($html, 'name="copies" min="1" max="50" step="1" placeholder=')), 'the label count in «Etiketten drucken …» is the model\'s integer field');
+$pruefeEtikett(! class_exists(Taxmod\WordPress\Draw\DialogNumber::class) || (str_contains($html, '<input type="number" name="copies" form="') && ! str_contains($html, 'name="copies" min="1" max="50" step="1" placeholder=')), 'the label count in «Etiketten drucken …» is the model\'s integer field');
 
 // D-1439 (moved from the modeller's LabelButton, PR-9): the stock hands its list to the labels module's one render path.
 if (class_exists(TaxmodLabel\WordPress\LabelButton::class)) {

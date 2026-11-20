@@ -1457,7 +1457,7 @@ $pruefe(str_contains($quelle, "ListPage::viewDialog('taxmod-stock-material-'") &
 // in the toolbar above the fields, and no submit row below.
 $oben = static fn (string $html, string $vor): bool => ($t = strpos($html, 'taxmod-toolbar')) !== false && ($f = strpos($html, $vor)) !== false && $t < $f && ! str_contains($html, '<p class="submit"');
 $_GET = ['page' => TaxmodStock\WordPress\Admin\SettingsPage::PAGE];
-$pruefe($oben((new TaxmodStock\WordPress\Admin\SettingsPage())->render(), 'form-table'), 'D-1308: Grundeinstellungen save in the toolbar above the form');
+$pruefe($oben((new TaxmodStock\WordPress\Admin\SettingsPage())->render(), 'taxmod-form-settings'), 'D-1308: Grundeinstellungen save in the toolbar above the form (D-1521: the form is ListPage::settings now, no form-table)');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'inventur'];
 $pruefe($oben((new StockPage())->render(), 'rows[0][quantity]'), 'D-1308: «Inventur buchen» in the toolbar above the rows');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'verbrauch'];

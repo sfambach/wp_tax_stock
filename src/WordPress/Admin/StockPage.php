@@ -1349,11 +1349,10 @@ final class StockPage
 
         // D-1329 (his wish 2026-11-13): the list's search on top, to go on to the next material without going back.
         // D-1373: «← Zur Liste» on top, first in the toolbar.
-        $search = ListPage::toolbar([[ListPage::back($back, __('Zur Liste', 'taxmod-stock'))], [ListPage::searchBox('taxmod-stock-thing-search', '', __('Nächstes Material suchen …', 'taxmod-stock'), ['page' => self::PAGE, 'tab' => 'material'], __('Suchen', 'taxmod-stock'))]]);
+        $search = ListPage::head($label === '' ? '—' : $label, $back, __('Zur Liste', 'taxmod-stock')) . ListPage::toolbar([[ListPage::searchBox('taxmod-stock-thing-search', '', __('Nächstes Material suchen …', 'taxmod-stock'), ['page' => self::PAGE, 'tab' => 'material'], __('Suchen', 'taxmod-stock'))]]);
         $html   = $search . '<div class="taxmod-stock-head" style="display:flex;gap:16px;align-items:flex-start;background:#fff;border:1px solid #c3c4c7;padding:16px;margin:8px 0 0">'
             . ($media > 0 ? (string) wp_get_attachment_image($media, [96, 96], false, ['style' => 'width:96px;height:96px;object-fit:cover;border-radius:4px']) : '<div style="width:96px;height:96px;background:#f0f0f1;border-radius:4px"></div>')
             . '<div><p style="margin:0;color:#50575e">' . esc_html(sprintf(/* translators: %d: record id of the thing */ __('Nr. %d', 'taxmod-stock'), $thing)) . ' · ' . $this->pathLinks($node) . '</p>'
-            . '<h2 style="margin:4px 0;font-size:1.6em">' . esc_html($label === '' ? '—' : $label) . '</h2>'
             . ($about === '' ? '' : '<p style="margin:0">' . esc_html($about) . '</p>') . $chips . '</div>'
             . '<span style="margin-left:auto;white-space:nowrap"><a class="button button-primary" href="' . esc_url(PurchasePage::reorderUrl($thing)) . '">'
             . esc_html__('Nachbestellen', 'taxmod-stock') . '</a> <a class="button" href="' . esc_url($this->thingUrl($thing, 'bearbeiten')) . '">'
@@ -4059,15 +4058,13 @@ final class StockPage
 
         if ($chosen > 0 && $types->has($chosen)) {
             $back = add_query_arg('typ', $chosen, $list);
-            // D-1316 (D7): the way back to the list is the toolbar's first group; D-1308: «Kopieren» joins it.
-            $return = [[ListPage::back($list, __('Alle Platzarten', 'taxmod-stock'))]];
-            $copy   = [...$return, [$this->copyTypeDialog($chosen, $types->nameOf($chosen))]];
-            $form   = (string) apply_filters('taxmod_record_editor', '', $chosen, $back, $copy);
+            // D-1308: «Kopieren» in the toolbar; D-1521: the way back stands before the title in the one head.
+            $copy = [[$this->copyTypeDialog($chosen, $types->nameOf($chosen))]];
+            $form = (string) apply_filters('taxmod_record_editor', '', $chosen, $back, $copy);
 
             // D7, his word «Kopf in einer Zeile»: «Platzarten – Name».
-            return '<h2>' . esc_html(sprintf(/* translators: %s: name of the place type */ __('Platzarten – %s', 'taxmod-stock'), $types->nameOf($chosen))) . '</h2>' . ($form === '' ? ListPage::toolbar($copy) : '')
-                . ($form === '' ? self::editorMissing() : $form)
-                . ($return === [] ? '<p><a href="' . esc_url($list) . '">' . esc_html__('← alle Platzarten', 'taxmod-stock') . '</a></p>' : '');
+            return ListPage::head(sprintf(/* translators: %s: name of the place type */ __('Platzarten – %s', 'taxmod-stock'), $types->nameOf($chosen)), $list, __('Alle Platzarten', 'taxmod-stock'))
+                . ($form === '' ? ListPage::toolbar($copy) . self::editorMissing() : $form);
         }
 
         $places = $this->stock->table('location');

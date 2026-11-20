@@ -155,7 +155,7 @@ final class ChoiceListsPage
         $uses     = $this->stock->choiceUses(array_keys($children));
         $up       = $tree[$node]['parent'];
         $count    = sprintf(/* translators: %d: number of values */ _n('%d Wert', '%d Werte', count($children), 'taxmod-stock'), count($children));
-        $toolbar  = '<div class="alignleft actions">' . ListPage::toolbar([[ListPage::back(self::url(['tab' => $up === $root ? '' : (string) $up]), __('Zurück', 'taxmod-stock'))], [$this->newDialog($node, $tree[$node]['name']), $this->undoButton($node)]]) . '</div>';
+        $toolbar  = '<div class="alignleft actions">' . ListPage::toolbar([[$this->newDialog($node, $tree[$node]['name']), $this->undoButton($node)]]) . '</div>';
         $body     = '';
 
         foreach ($children as $child => $name) {
@@ -174,7 +174,9 @@ final class ChoiceListsPage
             $body = '<tr class="no-items"><td class="colspanchange" colspan="5">' . esc_html__('Diese Liste hat noch keinen Wert.', 'taxmod-stock') . '</td></tr>';
         }
 
-        return ListPage::bulkBar(self::BULK_FORM, self::ACTION, [], $count, $toolbar, false)
+        // D-1521: the way back stands before the list's name in the one head.
+        return ListPage::head($tree[$node]['name'], self::url(['tab' => $up === $root ? '' : (string) $up]), __('Zurück', 'taxmod-stock'))
+            . ListPage::bulkBar(self::BULK_FORM, self::ACTION, [], $count, $toolbar, false)
             . ListPage::table([[__('Wert', 'taxmod-stock'), ''], [__('Darunter', 'taxmod-stock'), '8em'], [__('Verwendet', 'taxmod-stock'), '8em']], $body);
     }
 

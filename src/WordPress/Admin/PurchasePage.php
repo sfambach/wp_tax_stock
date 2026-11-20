@@ -248,16 +248,16 @@ final class PurchasePage
         }
 
         $reorder = $this->reorderRows($orders, $purchases);
-        $tabs    = [
-            ['nachbestellen', __('Mindestbestand unterschritten', 'taxmod-stock'), count($reorder)],
+        // D-1500 (Prüftor 20.11. a): the purchasing stages as process arrows like the goods receipt (D-1197) — demand, draft,
+        // ordered, ended, archived; «below minimum» (feeds the demand) and «dropped» stand beside the process as tabs.
+        $bar     = ListPage::steps([
             ['bedarf', __('Bedarf', 'taxmod-stock'), count($groups['bedarf'])],
             ['bestellen', __('Bestellen', 'taxmod-stock'), count($groups['bestellen'])],
             ['bestellt', __('Bestellt', 'taxmod-stock'), count($groups['bestellt'])],
             ['beendet', __('Beendet', 'taxmod-stock'), count($groups['beendet'])],
             ['archiviert', __('Archiviert', 'taxmod-stock'), count($groups['archiviert'])],
-            ['verworfen', __('Verworfen', 'taxmod-stock'), count($groups['verworfen'])],
-        ];
-        $bar     = ListPage::tabs($tabs, match ($tab) { 'neu' => 'nachbestellen', 'angebote' => 'bedarf', default => $tab }, static fn (string $slug): string => self::url(['tab' => $slug]));
+        ], match ($tab) { 'neu' => 'nachbestellen', 'angebote' => 'bedarf', default => $tab }, static fn (string $slug): string => self::url(['tab' => $slug]),
+            [['nachbestellen', __('Mindestbestand unterschritten', 'taxmod-stock'), count($reorder)], ['verworfen', __('Verworfen', 'taxmod-stock'), count($groups['verworfen'])]]);
 
         if ($tab === 'angebote') {
             return $bar . $this->offersView(absint($_GET['order'] ?? 0), absint($_GET['purchase'] ?? 0), $orders, $purchases);
@@ -288,7 +288,12 @@ final class PurchasePage
             default     => __('Verworfene Bedarfe und Entwürfe; «Wiederherstellen» macht sie wieder zum Entwurf.', 'taxmod-stock'),
         };
 
-        return $bar . '<p class="description">' . esc_html($hint) . '</p>' . ListPage::table($columns, $rows);
+        $count = count($groups[$tab]);
+
+        return $bar . '<p class="description">' . esc_html($hint) . '</p>'
+            // D-1500: the one bar over every list.
+            . ListPage::listBar(sprintf(/* translators: %d: entries */ _n('%d Eintrag', '%d Einträge', $count, 'taxmod-stock'), $count), '', '', true)
+            . ListPage::table($columns, $rows);
     }
 
     /**
@@ -341,7 +346,7 @@ final class PurchasePage
                 esc_html($this->number($row['stock'])),
                 esc_html($this->number($row['minimum'])),
                 esc_html($this->number($row['open'])),
-            ], '<a class="button button-primary" href="' . esc_url(self::reorderUrl($thing)) . '">' . esc_html__('Nachbestellen', 'taxmod-stock') . '</a>', '');
+            ], ListPage::iconButton('cart', __('Nachbestellen', 'taxmod-stock'), self::reorderUrl($thing)), '');
         }
 
         $body = $body !== '' ? $body : '<tr class="no-items"><td colspan="6">' . esc_html__('Alles über dem Mindestbestand.', 'taxmod-stock') . '</td></tr>';
@@ -449,15 +454,15 @@ final class PurchasePage
     /** The buttons of an order in its tab — in its row and on its own page alike. */
     private function rowButtons(string $tab, int $order): string
     {
-        $again    = in_array($tab, ['beendet', 'archiviert'], true) ? $this->button('again', $order, 0, __('Als neuen Bedarf kopieren', 'taxmod-stock'), $tab, true)
-            : (in_array($tab, ['bestellt', 'verworfen'], true) ? $this->button('again', $order, 0, __('Nochmal bestellen', 'taxmod-stock'), $tab, false)
-            : ($tab === 'bedarf' ? '<a class="button button-primary" href="' . esc_url(self::url(['bedarf' => $order])) . '">' . esc_html__('Bestellen', 'taxmod-stock') . '</a> ' : ''));
+        $again    = in_array($tab, ['beendet', 'archiviert'], true) ? $this->button('again', $order, 0, __('Als neuen Bedarf kopieren', 'taxmod-stock'), $tab, true, row: true)
+            : (in_array($tab, ['bestellt', 'verworfen'], true) ? $this->button('again', $order, 0, __('Nochmal bestellen', 'taxmod-stock'), $tab, false, row: true)
+            : ($tab === 'bedarf' ? ListPage::iconButton('cart', __('Bestellen', 'taxmod-stock'), self::url(['bedarf' => $order])) . ' ' : ''));
         return $again . match ($tab) {
-            'bedarf', 'bestellen' => $this->button('discard', $order, 0, __('Verwerfen', 'taxmod-stock'), $tab, false, __('Verwerfen? Er wird storniert, nicht gelöscht, und lässt sich unter «Verworfen» wiederherstellen.', 'taxmod-stock')),
+            'bedarf', 'bestellen' => $this->button('discard', $order, 0, __('Verwerfen', 'taxmod-stock'), $tab, false, __('Verwerfen? Er wird storniert, nicht gelöscht, und lässt sich unter «Verworfen» wiederherstellen.', 'taxmod-stock'), true),
             'beendet', 'archiviert' => '',
-            'bestellt'  => $this->button('back', $order, 0, __('Zurück zu Entwurf', 'taxmod-stock'), $tab, false)
-                . '<a class="button" href="' . esc_url(InboundPage::url(['tab' => 'ordered'])) . '">' . esc_html__('Wareneingang', 'taxmod-stock') . '</a>',
-            default     => $this->button('restore', $order, 0, __('Wiederherstellen', 'taxmod-stock'), $tab, true),
+            'bestellt'  => $this->button('back', $order, 0, __('Zurück zu Entwurf', 'taxmod-stock'), $tab, false, row: true)
+                . ListPage::iconButton('download', __('Wareneingang', 'taxmod-stock'), InboundPage::url(['tab' => 'ordered'])),
+            default     => $this->button('restore', $order, 0, __('Wiederherstellen', 'taxmod-stock'), $tab, true, row: true),
         };
     }
 
@@ -496,9 +501,9 @@ final class PurchasePage
                 . ' <span class="description">#' . esc_html((string) $line) . '</span></td><td>' . esc_html($number === '' ? '—' : $number) . '</td>'
                 . '<td>' . ($edit ? $this->quantityForm($order, $line, (string) ($purchases->first($line, $s->field('purchase_quantity')) ?? '1'), $tab) : esc_html((string) ($purchases->first($line, $s->field('purchase_quantity')) ?? '—'))) . '</td>'
                 . '<td>' . ($tab === 'bedarf' ? $this->sourceForm($order, $line, $thing) : '') . '</td><td style="text-align:right;white-space:nowrap">'
-                . ($tab === 'bedarf' && has_filter(self::OFFERS) ? '<a class="button" href="' . esc_url(self::url(['tab' => 'angebote', 'order' => $order, 'purchase' => $line])) . '">' . esc_html__('Angebote', 'taxmod-stock') . '</a> ' : '')
-                . ($tab === 'bestellen' && (int) $purchases->first($line, $s->field('purchase_demand')) > 0 ? $this->button('unsource', $order, $line, __('Zurück in Bedarf', 'taxmod-stock'), $tab, false) : '')
-                . ($edit ? $this->button('remove', $order, $line, __('Entfernen', 'taxmod-stock'), $tab, false, __('Position entfernen? «Nachbestellen» legt sie wieder an.', 'taxmod-stock')) : '') . '</td></tr>';
+                . ($tab === 'bedarf' && has_filter(self::OFFERS) ? ListPage::iconButton('search', __('Angebote', 'taxmod-stock'), self::url(['tab' => 'angebote', 'order' => $order, 'purchase' => $line])) . ' ' : '')
+                . ($tab === 'bestellen' && (int) $purchases->first($line, $s->field('purchase_demand')) > 0 ? $this->button('unsource', $order, $line, __('Zurück in Bedarf', 'taxmod-stock'), $tab, false, row: true) : '')
+                . ($edit ? $this->button('remove', $order, $line, __('Entfernen', 'taxmod-stock'), $tab, false, __('Position entfernen? «Nachbestellen» legt sie wieder an.', 'taxmod-stock'), true) : '') . '</td></tr>';
         }
 
         foreach ($sourced as $line) {
@@ -664,14 +669,25 @@ final class PurchasePage
         );
     }
 
-    private function button(string $op, int $order, int $purchase, string $label, string $tab, bool $primary, string $confirm = ''): string
+    /** D-1500: a row's action is an icon square (`$row`), a toolbar's a text button. */
+    private function button(string $op, int $order, int $purchase, string $label, string $tab, bool $primary, string $confirm = '', bool $row = false): string
     {
         return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline"'
             . ($confirm === '' ? '' : ListPage::confirm($confirm)) . '>'
             . $this->hidden($op, $tab) . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
             . ($purchase > 0 ? '<input type="hidden" name="purchase" value="' . esc_attr((string) $purchase) . '">' : '')
-            . '<button type="submit" class="button' . ($primary ? ' button-primary' : '') . '">' . esc_html($label) . '</button></form> ';
+            . ($row ? ListPage::iconButton(self::ICONS[$op] ?? 'admin-generic', $label) : ListPage::button($label, '', $primary)) . '</form> ';
     }
+
+    /** D-1500: the icon of each row action. */
+    private const ICONS = [
+        'again'    => 'controls-repeat',
+        'discard'  => 'dismiss',
+        'back'     => 'undo',
+        'restore'  => 'undo',
+        'unsource' => 'undo',
+        'remove'   => 'trash',
+    ];
 
     private function hidden(string $op, string $tab): string
     {

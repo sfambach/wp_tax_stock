@@ -702,8 +702,7 @@ final class StockPage
             // material's own words when it prints, so the rows cost no query each.
             $print = $this->materialLabel($id, (string) ($row['cells']['name'] ?? ''));
             // D-1462: the row carries what the search looked at, so the head narrows by the same words.
-            $body .= ListPage::row(self::BULK_FORM, (string) $id, $cells, $move . ($print === '' ? '' : $print . ' ') . '<a class="button button-small" href="' . $link . '">'
-                . esc_html__('Öffnen', 'taxmod-stock') . '</a>', ListPage::lazyDetails(self::DETAILS_MATERIAL, ['thing' => $id]), $open, ListView::searched($row));
+            $body .= ListPage::row(self::BULK_FORM, (string) $id, $cells, $move . ($print === '' ? '' : $print . ' ') . ListPage::iconButton('visibility', __('Öffnen', 'taxmod-stock'), html_entity_decode($link)), ListPage::lazyDetails(self::DETAILS_MATERIAL, ['thing' => $id]), $open, ListView::searched($row));
         }
 
         // D-1462: every hit on this page — the head narrows and sorts it without asking again.
@@ -1072,7 +1071,7 @@ final class StockPage
             $purchase = $lots->first($lot, $s->field('lot_purchase'));
             $origin   = ($amount === null ? '' : ' · ' . esc_html($amount) . ' ' . esc_html__('je Stück', 'taxmod-stock'))
                 . ($purchase === null ? ' · ' . esc_html__('Inventur', 'taxmod-stock') : ' · ' . esc_html__('Kauf', 'taxmod-stock') . ' #' . esc_html($purchase));
-            $date     = esc_html(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10));
+            $date     = ListPage::dateCell(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10));
             $at       = array_filter($ledger->placesOf($lot), static fn (float $q): bool => $q > 0.0);
 
             if ($at === []) {
@@ -1499,7 +1498,7 @@ final class StockPage
         $amountOf   = static function (?string $part) use ($money, $s): string {
             $amount = $part === null ? null : $money->first((int) $part, $s->field('money_amount'));
 
-            return $amount === null ? '—' : number_format_i18n((float) $amount, 2);
+            return $amount === null ? '—' : ListPage::number(round((float) $amount, 2), 2);
         };
 
         // D-1249 on the material's purchases too (his report 2026-11-09 «habe kein link zur bestellung wie wirs vereinbart hatten»).
@@ -1518,7 +1517,7 @@ final class StockPage
             $count    = (float) ($purchases->first($id, $s->field('purchase_quantity')) ?? 0);
             $each     = $unit === null ? null : $money->first((int) $unit, $s->field('money_amount'));
             // Without a total of its own, the price per piece times the quantity.
-            $sum      = $total !== null ? $amountOf($total) : ($each === null || $count <= 0.0 ? '—' : number_format_i18n((float) $each * $count, 2));
+            $sum      = $total !== null ? $amountOf($total) : ($each === null || $count <= 0.0 ? '—' : ListPage::number(round((float) $each * $count, 2), 2));
             $article  = $s->hasField('purchase_number') ? trim((string) ($purchases->first($id, $s->field('purchase_number')) ?? '')) : '';
             $number   = $order === null ? '' : $inbound->orderNumber($order);
             // D-1310, his word 2026-11-11 «auf jeden fall sollte hier ein link zur internen bestellung bestehen»: purchase and order open
@@ -1611,7 +1610,7 @@ final class StockPage
         $empty   = $unit === __('Stück', 'taxmod-stock') ? '1' : '—';
         $content = static fn (array $l): string => (string) preg_replace('/<input\b(?![^>]*type="hidden")/', '<input placeholder="' . esc_attr($empty) . '"', $cell($l, 'source_content'), 1)
             . ' <span class="taxmod-stock-unit">' . esc_html($unit) . '</span>';
-        $price  = static fn (array $p): string => $p['price'] === null ? '—' : number_format_i18n($p['price'], 2) . ($p['date'] === '' ? '' : ' (' . $p['date'] . ')');
+        $price  = static fn (array $p): string => $p['price'] === null ? '—' : ListPage::number(round($p['price'], 2), 2) . ($p['date'] === '' ? '' : ' (' . ListPage::date(substr($p['date'], 0, 10)) . ')');
         $more   = add_query_arg(['page' => self::PAGE, 'tab' => 'material', 'thing' => $thing, 'view' => 'einkauf', 'zeilen' => $blank + 1], admin_url('admin.php'));
         // C2 (D-1320): the suppliers' current offer per source, asked only on request — each a call to the supplier.
         $asking = has_filter(PurchasePage::OFFERS) !== false;
@@ -1732,7 +1731,7 @@ final class StockPage
                     . '<td>' . ($first ? ($purchase === null ? esc_html__('Inventur', 'taxmod-stock')
                         : '<a href="' . esc_url(isset($orderOf[(int) $purchase]) ? InboundPage::url(['order' => $orderOf[(int) $purchase]]) . '#taxmod-stock-purchase-' . (int) $purchase
                             : PurchasePage::url(['kauf' => (string) (int) $purchase])) . '" target="_blank" rel="noopener">#' . esc_html((string) $purchase) . '</a>') : '') . '</td>'
-                    . '<td>' . ($first ? esc_html(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10)) : '') . '</td>'
+                    . '<td>' . ($first ? ListPage::dateCell(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10)) : '') . '</td>'
                     . '<td style="text-align:right;white-space:nowrap">' . ($quantity > 0.0 ? $this->transferDialog($thing, $lot, $place, $quantity, $places) : '')
                     . ' ' . $this->bookOutDialog($thing, $lot, $place, $quantity)
                     . ($first ? ' ' . $this->lotLabel($thing, $lot, $name, $charges[$lot] ?? '') : '') . '</td></tr>';
@@ -1821,7 +1820,7 @@ final class StockPage
             $scrap = array_map(static fn (array $piece): string => esc_html(ListPage::number($piece['quantity'])) . ' × ' . $name($piece['thing']), $b['scrap']);
             $lotsShown = implode(', ', array_map(static fn (int $lot): string => 'P-' . $lot, $deal['lots']));
             /* translators: 1: the order's record, 2: date, 3: the lots */
-            $title = sprintf(__('Kalkulation Auftrag #%1$d vom %2$s (%3$s)', 'taxmod-stock'), $b['order'], $b['date'], $lotsShown);
+            $title = sprintf(__('Kalkulation Auftrag #%1$d vom %2$s (%3$s)', 'taxmod-stock'), $b['order'], ListPage::date(substr((string) $b['date'], 0, 10)), $lotsShown);
 
             $html .= '<section class="taxmod-record-section"><h3>' . esc_html($title) . '</h3>'
                 . ListPage::grid([[__('Material', 'taxmod-stock')], [__('Posten', 'taxmod-stock')], [__('Menge je Platine', 'taxmod-stock'), GridMarkup::NUMBER],
@@ -2455,7 +2454,7 @@ final class StockPage
             $body .= str_replace('<tr>', '<tr id="taxmod-stock-r' . esc_attr((string) $deal) . '">', ListPage::row(
                 self::BULK_FORM,
                 'r' . $deal,
-                [esc_html($head['label']), esc_html($subject), esc_html($head['date']), esc_html($head['deadline'] === '' ? '—' : $head['deadline']), esc_html((string) count($head['positions']))],
+                [esc_html($head['label']), esc_html($subject), ListPage::dateCell($head['date']), $head['deadline'] === '' ? '—' : ListPage::dateCell($head['deadline']), esc_html((string) count($head['positions']))],
                 $this->reserveFormDialog(0, 'reservierungen', $head['subject']) . ' ' . $this->reservationStornoDialog($deal, null, $head['label'] . ' · ' . $subject),
                 '<ul style="margin:0">' . $lines . '</ul>'
             ));
@@ -2565,12 +2564,13 @@ final class StockPage
                 self::BULK_FORM,
                 'g' . $place,
                 [esc_html($tree->pathOf($place)), esc_html($name($boxes[$place])), esc_html((string) count($bill?->needed ?? [])), esc_html($state), esc_html($surplus === 0 ? '—' : (string) $surplus)],
-                '<a class="button button-small" href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'lagerstruktur', 'ort' => $place], admin_url('admin.php'))) . '">' . esc_html__('Zum Ort', 'taxmod-stock') . '</a>',
+                ListPage::iconButton('location', __('Zum Ort', 'taxmod-stock'), add_query_arg(['page' => self::PAGE, 'tab' => 'lagerstruktur', 'ort' => $place], admin_url('admin.php'))),
                 $details
             );
         }
 
         return '<h2>' . esc_html__('Projekt-Gebinde', 'taxmod-stock') . '</h2><p>' . esc_html__('Jeder Lagerort mit Projekt gegen die Stückliste seines Projekts: was da ist, was fehlt, was zu viel ist. Gezählt wird alles im Gebinde und in den Orten darin.', 'taxmod-stock') . '</p>'
+            . ListPage::listBar(sprintf(/* translators: %d: boxes */ _n('%d Gebinde', '%d Gebinde', count($boxes), 'taxmod-stock'), count($boxes)), '', '', true)
             . ListPage::table([[__('Gebinde', 'taxmod-stock'), ''], [__('Projekt', 'taxmod-stock'), '14em'], [__('Teile', 'taxmod-stock'), '5em'], [__('Stand', 'taxmod-stock'), '10em'], [__('Zu viel', 'taxmod-stock'), '6em']],
                 $body === '' ? $this->noItems(5) : $body);
     }
@@ -2904,7 +2904,9 @@ final class StockPage
 
         // The architecture thread 2026-11-09: the repeated rows in the list table, the act's button through the shared form block (modeller 0.2.33).
         // D-1308: the act in the toolbar above the rows.
-        return $this->formStart('inventur') . ListPage::toolbar([[$submit]]) . $intro . $table . '</form>';
+        // D-1500: the one bar over the rows, as over every list.
+        return $this->formStart('inventur') . ListPage::toolbar([[$submit]]) . $intro
+            . ListPage::listBar(sprintf(/* translators: %d: rows */ _n('%d Zeile', '%d Zeilen', self::ROWS, 'taxmod-stock'), self::ROWS)) . $table . '</form>';
     }
 
     /**
@@ -3149,7 +3151,7 @@ final class StockPage
      * then saving, booking and the order's own acts, all in one row. The bar stands before the form; its buttons join the form
      * through `form=`, its dialogs' fields too.
      */
-    private function receiptBar(int $order, int $count, string $formId, bool $assign, bool $canClose, bool $canUnbook, string $back, bool $unbookOnly = false): string
+    private function receiptBar(int $order, int $count, string $formId, bool $assign, bool $canClose, bool $canUnbook, string $back, bool $unbookOnly = false, string $search = ''): string
     {
         $place = 'taxmod-stock-place-all-' . $order;
         $body  = self::actForm([['label' => __('Lagerort', 'taxmod-stock'), 'control' => $this->stock->placeChooser('fill_location'),
@@ -3210,7 +3212,8 @@ final class StockPage
             sprintf(_n('%d Kauf', '%d Käufe', $count, 'taxmod-stock'), $count),
             $buttons,
             false,
-            $asks
+            $asks,
+            $search
         );
     }
 
@@ -3303,8 +3306,9 @@ final class StockPage
      * @param array<int, string> $heads order id → its line, drawn by the caller (escaped)
      * @param string             $stage the cockpit tab: only the purchases standing in it
      * @param \Closure|null      $went  D-1452, on «Eingebucht»: purchase → its escaped cells material, place, date
+     * @param string             $search D-1500: the page's search box, on the right of the list's one bar
      */
-    public function receiptTable(array $heads, string $back, string $stage, ?\Closure $went = null): string
+    public function receiptTable(array $heads, string $back, string $stage, ?\Closure $went = null, string $search = ''): string
     {
         $tab    = \TaxmodStock\Core\InboundStage::tryFrom($stage);
         $orders = $tab === null ? [] : (new \TaxmodStock\WordPress\InboundService($this->stock))->orders();
@@ -3329,8 +3333,8 @@ final class StockPage
         // D-1452: on «Eingebucht» the booked purchases are ticked for «Wareneingang rückgängig …», the only act there.
         $look['booked_stage'] = $tab === \TaxmodStock\Core\InboundStage::Booked;
         $look['went']         = $went;
-        $html   = ($look['booked_stage'] ? $this->receiptBar(0, count($all), $formId, false, false, $booked > 0, $back, true)
-                : $this->receiptBar(0, count($all), $formId, false, $look['closing'] && $open > 0, $booked > 0, $back))
+        $html   = ($look['booked_stage'] ? $this->receiptBar(0, count($all), $formId, false, false, $booked > 0, $back, true, $search)
+                : $this->receiptBar(0, count($all), $formId, false, $look['closing'] && $open > 0, $booked > 0, $back, false, $search))
             . $this->receiptFormStart($formId, 'wareneingang', false)
             . '<input type="hidden" name="multi" value="1">'
             . ($back === '' ? '' : '<input type="hidden" name="back" value="' . esc_attr($back) . '">')
@@ -3525,9 +3529,9 @@ final class StockPage
             $project = $tree->projectOf($place);
             $extra   = $edit
                 ? $this->stock->placeChooser('parent[' . $place . ']', $tree->parentOf($place), '', [$place]) . ' '
-                    . '<button type="submit" class="button button-small" name="booking" value="umhaengen-' . esc_attr((string) $place) . '">' . esc_html__('Umhängen', 'taxmod-stock') . '</button> '
+                    . ListPage::iconButton('randomize', __('Umhängen', 'taxmod-stock'), '', 'booking', 'umhaengen-' . $place) . ' '
                     // His wish 2026-11-11: no way out of the Logistik into the modeller — the place's own view has the record editor.
-                    . '<a class="button button-small" href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'lagerstruktur', 'ort' => $place], admin_url('admin.php'))) . '">' . esc_html__('Bearbeiten', 'taxmod-stock') . '</a> '
+                    . ListPage::iconButton(ListPage::ICON_EDIT, __('Bearbeiten', 'taxmod-stock'), add_query_arg(['page' => self::PAGE, 'tab' => 'lagerstruktur', 'ort' => $place], admin_url('admin.php'))) . ' '
                     . $this->reserveDialog($place, $flags->isFlagged($place), $all)
                 : implode(', ', $links);
             $body .= '<tr><th scope="row" class="check-column"></th><td>' . $name . '</td><td>' . esc_html($project ?? '') . '</td>'
@@ -3757,7 +3761,7 @@ final class StockPage
             $where = static fn (int $p): string => $p > 0 ? $tree->pathOf($p) : __('— oberste Ebene —', 'taxmod-stock');
             $html .= '<h3>' . esc_html__('Umlagerungen', 'taxmod-stock') . '</h3>' . ($moves === []
                 ? '<p class="description">' . esc_html__('Noch keine.', 'taxmod-stock') . '</p>'
-                : '<ul>' . implode('', array_map(static fn (array $m): string => '<li>' . esc_html(substr($m['date'], 0, 10) . ': ' . $where($m['from']) . ' → ' . $where($m['to'])) . '</li>', $moves)) . '</ul>');
+                : '<ul>' . implode('', array_map(static fn (array $m): string => '<li>' . esc_html(ListPage::date(substr($m['date'], 0, 10)) . ': ' . $where($m['from']) . ' → ' . $where($m['to'])) . '</li>', $moves)) . '</ul>');
         }
 
         return $html;
@@ -3848,7 +3852,7 @@ final class StockPage
                 esc_html($tree->isMovable($child) ? __('ja', 'taxmod-stock') : __('nein', 'taxmod-stock')),
                 esc_html((string) (count($below) - 1)),
                 esc_html((string) array_sum(array_map(static fn (int $p): int => $rows[$p]['lots'] ?? 0, $below))),
-            ], '<a class="button button-small" href="' . $link . '">' . esc_html__('Öffnen', 'taxmod-stock') . '</a>', $this->childDetails($child, $tree));
+            ], ListPage::iconButton('visibility', __('Öffnen', 'taxmod-stock'), html_entity_decode($link)), $this->childDetails($child, $tree));
         }
 
         $count = sprintf(/* translators: %d: number of places */ _n('%d Unterort', '%d Unterorte', count($children), 'taxmod-stock'), count($children));
@@ -4235,7 +4239,7 @@ final class StockPage
                     . '<td><a href="' . esc_url($this->lotUrl($thing, $lot)) . '">' . esc_html($things[$thing] ?? '#' . $thing) . '</a></td>'
                     . '<td>' . esc_html($inner) . $this->reservedMark($where, $flags) . '</td>'
                     . '<td>' . esc_html($this->number($quantity)) . '</td>'
-                    . '<td>' . esc_html(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10)) . '</td>'
+                    . '<td>' . ListPage::dateCell(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10)) . '</td>'
                     . '<td style="text-align:right;white-space:nowrap">' . $this->transferDialog($thing, $lot, $where, $quantity, $places, $place)
                     . ' ' . $this->bookOutDialog($thing, $lot, $where, $quantity)
                     // His word 2026-11-08: «Massenfunktion ist da, aber das Drucken pro Posten».

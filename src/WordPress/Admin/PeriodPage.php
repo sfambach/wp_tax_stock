@@ -137,7 +137,7 @@ final class PeriodPage
             $row = [esc_html($names[$kind] ?? '#' . $kind)];
             foreach ($years as $year) {
                 $cell  = $byYear[$year] ?? null;
-                $row[] = ($cell === null ? '' : esc_html(number_format_i18n($cell['value'], 2)
+                $row[] = ($cell === null ? '' : esc_html(ListPage::number(round($cell['value'], 2), 2)
                     /* translators: %d: lines whose lot has no value */
                     . ($cell['unvalued'] > 0 ? ' · ' . sprintf(_n('%d ohne Wert', '%d ohne Wert', $cell['unvalued'], 'taxmod-stock'), $cell['unvalued']) : '')));
             }
@@ -153,7 +153,7 @@ final class PeriodPage
     /** A count against the one before: grey when both are nothing, the trend as ▲ or ▼. */
     private static function compared(string $label, float $now, float $then): Tile
     {
-        $format = static fn (float $v): string => number_format_i18n($v, fmod($v, 1.0) === 0.0 ? 0 : 2);
+        $format = static fn (float $v): string => ListPage::number(round($v, 2), 2);
 
         return new Tile(
             $label,
@@ -224,11 +224,11 @@ final class PeriodPage
                 array_keys($e['things'])
             );
             $rows[] = [
-                esc_html(wp_date('j.n.Y', (int) strtotime($e['date'] . ' 00:00:00 UTC'), new \DateTimeZone('UTC'))),
+                ListPage::dateCell(substr((string) $e['date'], 0, 10)),
                 esc_html(($kinds[$e['kind']] ?? '–') . (isset($arts[$e['art'] ?? 0]) ? ' · ' . $arts[$e['art']] : '')),
                 implode(', ', $names),
-                esc_html($e['in'] > 0 ? '+' . number_format_i18n($e['in'], fmod($e['in'], 1.0) === 0.0 ? 0 : 2) : ''),
-                esc_html($e['out'] > 0 ? '−' . number_format_i18n($e['out'], fmod($e['out'], 1.0) === 0.0 ? 0 : 2) : ''),
+                esc_html($e['in'] > 0 ? '+' . ListPage::number(round($e['in'], 2), 2) : ''),
+                esc_html($e['out'] > 0 ? '−' . ListPage::number(round($e['out'], 2), 2) : ''),
             ];
         }
 
@@ -254,7 +254,7 @@ final class PeriodPage
 
         foreach ($moved as $thing => $quantity) {
             $rows[] = ['<a href="' . esc_url(StockPage::thingUrl($thing, 'bestand')) . '">' . esc_html($things->has($thing) ? $things->name($thing) : '#' . $thing) . '</a>',
-                esc_html(number_format_i18n($quantity, fmod($quantity, 1.0) === 0.0 ? 0 : 2))];
+                esc_html(ListPage::number(round($quantity, 2), 2))];
         }
 
         return ListPage::grid([[__('Material', 'taxmod-stock')], [__('Bewegt', 'taxmod-stock'), GridMarkup::NUMBER]], $rows);

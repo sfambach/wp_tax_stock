@@ -225,8 +225,9 @@ final class InboundPage
         // Newest order first; one without a date at the end.
         uasort($shown, static fn (InboundOrder $a, InboundOrder $b): int => strcmp((string) $b->orderedOn, (string) $a->orderedOn) ?: $b->id <=> $a->id);
 
-        $html = $bar
-            . ListPage::searchBox(self::FILTER_FORM, $search, __('Bestellung, Händler, Sendungsnummer …', 'taxmod-stock'), ['page' => self::PAGE, 'tab' => $tab], __('Suchen', 'taxmod-stock'));
+        // D-1500 (D-1462): the search stands in the list's one bar, on the right — not in a row of its own above it.
+        $searchBox = ListPage::searchBox(self::FILTER_FORM, $search, __('Bestellung, Händler, Sendungsnummer …', 'taxmod-stock'), ['page' => self::PAGE, 'tab' => $tab], __('Suchen', 'taxmod-stock'));
+        $html      = $bar;
 
         // D-1440, his words 2026-11-18 11:33/11:36: «oder ich zeige gleich die Position», «einbuchen … sollte das Teil des
         // angekommenen Bildschirms sein» — every purchase that arrived as a row under its order's line, one bar, one form.
@@ -241,10 +242,10 @@ final class InboundPage
 
             $went = $tab === InboundStage::Booked->value ? $this->wentWithPictures(array_keys($heads)) : null;
 
-            return $html . (new StockPage($this->inbound->stock()))->receiptTable($heads, self::BACK, $tab, $went) . (new StockPage($this->inbound->stock()))->script(true);
+            return $html . (new StockPage($this->inbound->stock()))->receiptTable($heads, self::BACK, $tab, $went, $searchBox) . (new StockPage($this->inbound->stock()))->script(true);
         }
 
-        $html .= $this->bulkBar($tab, $filter, count($shown));
+        $html .= $this->bulkBar($tab, $filter, count($shown), $searchBox);
         $rows = '';
 
         foreach ($shown as $id => $order) {
@@ -298,7 +299,7 @@ final class InboundPage
                 '<strong>' . esc_html($thing === null ? '#' . $lot : $things->word($thing)) . '</strong> <span class="description">' . esc_html(sprintf(/* translators: %d: material number */ __('Nr. %d', 'taxmod-stock'), (int) $thing)) . '</span>',
                 // D-1452: the order named as on «Angekommen» — platform, number with its link, tracking.
                 $order > 0 && isset($inbound[$order]) ? $this->orderCell($inbound[$order], $orders[$order] ?? '#' . $order) : esc_html($order > 0 ? ($orders[$order] ?? '#' . $order) : '—'),
-                esc_html(substr((string) $table->first($lot, $s->field('lot_date')), 0, 10)),
+                ListPage::dateCell(substr((string) $table->first($lot, $s->field('lot_date')), 0, 10)),
                 esc_html(($at = (int) $table->first($lot, $s->field('lot_location'))) > 0 ? ($places[$at] ?? $this->inbound->stock()->locationTree()->pathOf($at)) : ''),
                 esc_html(ListPage::number($ledger->restOf($lot))),
             ], '', $this->testForm($lot, $steps[$lot] ?? []) . (($labels[$lot] ?? '') === '' ? '' : ' <span class="taxmod-row-actions">' . $labels[$lot] . '</span>'), true);
@@ -307,6 +308,8 @@ final class InboundPage
         $rows = $rows !== '' ? $rows : '<tr class="no-items"><td class="colspanchange" colspan="7">' . esc_html__('Nichts zu testen.', 'taxmod-stock') . '</td></tr>';
 
         return '<p>' . esc_html__('Bestandsposten aus Warengruppen mit Test (Configuration › Lager), noch ohne Ergebnis. Neuware geht ohne Test durch. Ungetestet wird nicht verkauft.', 'taxmod-stock') . '</p>'
+            // D-1500: the one bar over every list.
+            . ListPage::listBar(sprintf(/* translators: %d: number of lots */ _n('%d Posten', '%d Posten', count($lots), 'taxmod-stock'), count($lots)), '', '', true)
             . ListPage::table([[__('Material', 'taxmod-stock'), ''], [__('Bestellung', 'taxmod-stock'), ''], [__('Eingegangen am', 'taxmod-stock'), '9em'],
                 [__('Lagerort', 'taxmod-stock'), '10em'], [__('Menge', 'taxmod-stock'), '6em']], $rows);
     }
@@ -346,7 +349,7 @@ final class InboundPage
         ], StockPage::saveButton(__('Ergebnis speichern', 'taxmod-stock'))) . '</form>';
     }
 
-    private function bulkBar(string $tab, string $filter, int $count): string
+    private function bulkBar(string $tab, string $filter, int $count, string $search = ''): string
     {
         $actions = ['arrived' => __('Angekommen', 'taxmod-stock')];
 
@@ -358,7 +361,7 @@ final class InboundPage
             /* translators: %d: number of orders */
             _n('%d Bestellung', '%d Bestellungen', $count, 'taxmod-stock'),
             $count
-        ), ListPage::filters(self::FILTER_FORM, [['filter', ['' => __('Alle Bestellungen', 'taxmod-stock'), self::OVERDUE => __('Überfällig', 'taxmod-stock')], $filter, __('Filter', 'taxmod-stock')]]), false);
+        ), ListPage::filters(self::FILTER_FORM, [['filter', ['' => __('Alle Bestellungen', 'taxmod-stock'), self::OVERDUE => __('Überfällig', 'taxmod-stock')], $filter, __('Filter', 'taxmod-stock')]]), false, [], $search);
 
         // The shared bar posts its choice as «action», which admin-post routes on: the handler's name goes in its place,
         // the choice travels as «bulk».
@@ -378,9 +381,9 @@ final class InboundPage
         $cells  = [
             '<strong><a href="' . esc_url(self::url(['tab' => $tab, 'order' => $order->id])) . '">' . esc_html($label) . '</a></strong>' . ($late ? ' <span style="color:#b32d2e;font-weight:600">' . esc_html__('überfällig', 'taxmod-stock') . '</span>' : '')
                 . ($about === '' ? '' : '<br><span class="description">' . esc_html($about) . '</span>'),
-            esc_html(substr((string) $order->orderedOn, 0, 10)),
+            ListPage::dateCell(substr((string) $order->orderedOn, 0, 10)),
             $this->trackingCell($order),
-            esc_html(substr((string) $order->receivedOn, 0, 10)),
+            ListPage::dateCell(substr((string) $order->receivedOn, 0, 10)),
             esc_html((string) $counts['total'])
                 . ($counts['undetermined'] > 0 ? '<br><span class="description">' . esc_html(sprintf(/* translators: %d: purchases not yet determined */ __('%d unbestimmt', 'taxmod-stock'), $counts['undetermined'])) . '</span>' : '')
                 . ($counts['booked'] > 0 ? '<br><span class="description">' . esc_html(sprintf(/* translators: %d: purchases in stock */ __('%d gebucht', 'taxmod-stock'), $counts['booked'])) . '</span>' : ''),
@@ -414,8 +417,8 @@ final class InboundPage
         $about = $this->inbound->about($order->id);
         $late  = $order->overdue($this->inbound->stock()->structure(), $today, $this->inbound->stock()->inboundArchive($today));
         $facts = array_filter([
-            ($order->orderedOn ?? '') === '' ? '' : esc_html(sprintf(/* translators: %s: date */ __('bestellt %s', 'taxmod-stock'), substr((string) $order->orderedOn, 0, 10))),
-            ($order->receivedOn ?? '') === '' ? '' : esc_html(sprintf(/* translators: %s: date */ __('angekommen %s', 'taxmod-stock'), substr((string) $order->receivedOn, 0, 10))),
+            ($order->orderedOn ?? '') === '' ? '' : esc_html(sprintf(/* translators: %s: date */ __('bestellt %s', 'taxmod-stock'), ListPage::date(substr((string) $order->orderedOn, 0, 10)))),
+            ($order->receivedOn ?? '') === '' ? '' : esc_html(sprintf(/* translators: %s: date */ __('angekommen %s', 'taxmod-stock'), ListPage::date(substr((string) $order->receivedOn, 0, 10)))),
             $this->trackingCell($order),
             // R1: what is still to be told apart, and what is already in stock.
             ($counts = $this->inbound->purchaseCounts($order->id))['undetermined'] > 0 ? esc_html(sprintf(/* translators: %d: purchases not yet determined */ __('%d unbestimmt', 'taxmod-stock'), $counts['undetermined'])) : '',
@@ -449,11 +452,11 @@ final class InboundPage
             . '<div style="display:flex;gap:1em;align-items:flex-start;flex-wrap:wrap;margin-bottom:1em">'
             . '<table class="widefat" style="max-width:40em"><tbody>'
             . $fact(__('Stufe', 'taxmod-stock'), esc_html(self::stageName($stage)))
-            . $fact(__('Bestellt am', 'taxmod-stock'), esc_html(substr((string) $order->orderedOn, 0, 10)))
+            . $fact(__('Bestellt am', 'taxmod-stock'), esc_html(ListPage::date(substr((string) $order->orderedOn, 0, 10))))
             // D-1249: the order at its platform, from the firm's template — built here, never stored.
             . $fact(__('Bestellung', 'taxmod-stock'), $orderLink === null ? '' : '<a href="' . esc_url($orderLink) . '" target="_blank" rel="noopener noreferrer">' . esc_html__('Bei der Plattform öffnen', 'taxmod-stock') . '</a>')
             . $fact(__('Sendung', 'taxmod-stock'), $this->trackingCell($order))
-            . $fact(__('Angekommen', 'taxmod-stock'), esc_html(substr((string) $order->receivedOn, 0, 10)))
+            . $fact(__('Angekommen', 'taxmod-stock'), esc_html(ListPage::date(substr((string) $order->receivedOn, 0, 10))))
             . $fact(__('Käufe', 'taxmod-stock'), esc_html(sprintf(/* translators: 1: purchases, 2: of them in stock */ __('%1$d, davon %2$d gebucht', 'taxmod-stock'), $counts['total'], $counts['booked'])))
             . '</tbody></table>'
             . (in_array($stage, [InboundStage::Booked, InboundStage::Archived], true) ? $this->materialPictures($order->id) : '') . '</div>'
@@ -533,7 +536,7 @@ final class InboundPage
         }
 
         if ($order->tracking !== [] && $this->inbound->hasTracking() && ! in_array($stage, [InboundStage::Booked, InboundStage::Archived], true)) {
-            $html .= $this->button($order->id, 'refresh', __('Status ↻', 'taxmod-stock'), $tab, false);
+            $html .= $this->button($order->id, 'refresh', __('Sendungsstatus aktualisieren', 'taxmod-stock'), $tab, false);
         }
 
         return $html;
@@ -547,7 +550,7 @@ final class InboundPage
             . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '"><input type="hidden" name="tab" value="' . esc_attr($tab) . '">' . $this->stay()
             . wp_nonce_field(self::ACTION, '_wpnonce', true, false);
 
-        return $form . ListPage::dialogAction('taxmod-stock-track-' . $order, __('Sendungsnummer', 'taxmod-stock'), __('Sendungsnummer hinzufügen', 'taxmod-stock'), $field, 'op', 'tracking', __('Hinzufügen', 'taxmod-stock')) . '</form> ';
+        return $form . ListPage::dialogAction('taxmod-stock-track-' . $order, __('Sendungsnummer', 'taxmod-stock'), __('Sendungsnummer hinzufügen', 'taxmod-stock'), $field, 'op', 'tracking', __('Hinzufügen', 'taxmod-stock'), icon: 'location') . '</form> ';
     }
 
     private function button(int $order, string $op, string $label, string $tab, bool $primary, string $confirm = ''): string
@@ -557,8 +560,20 @@ final class InboundPage
             . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"><input type="hidden" name="op" value="' . esc_attr($op) . '">'
             . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '"><input type="hidden" name="tab" value="' . esc_attr($tab) . '">' . $this->stay()
             . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
-            . '<button type="submit" class="button' . ($primary ? ' button-primary' : '') . '">' . esc_html($label) . '</button></form> ';
+            // D-1500: a row's action is an icon square, its word the tooltip.
+            . ListPage::iconButton(self::ICONS[$op] ?? 'admin-generic', $label) . '</form> ';
     }
+
+    /** D-1500: the icon of each row action of an order or a purchase. */
+    private const ICONS = [
+        'arrived'      => 'yes-alt',
+        'back'         => 'undo',
+        'unbook'       => 'undo',
+        'refresh'      => 'update',
+        'private'      => 'hidden',
+        'unprivate'    => 'undo',
+        'take_picture' => 'format-image',
+    ];
 
     /** «Angekommen»: the Lager page's booking form, loaded once it shows; else the purchases, the carrier's events and a tracking field. */
     /**
@@ -671,7 +686,7 @@ final class InboundPage
             $out['material'][] = $thing === null ? esc_html('#' . $lot) : '<a href="' . esc_url(StockPage::thingUrl($thing, 'daten')) . '">' . esc_html($things->word($thing)) . '</a>';
             // His word 2026-11-09: «weiterhin fehlt der platz auf dem es jetzt liegt mit absprunglink zu platz bestand».
             $out['place'][]    = $place === '' ? '—' : '<a href="' . esc_url(add_query_arg(['page' => StockPage::PAGE, 'tab' => 'lagerorte', 'ort' => $at], admin_url('admin.php'))) . '">' . esc_html($place) . '</a>';
-            $out['date'][]     = $thing === null || $date === '' ? esc_html($date === '' ? '—' : $date) : '<a href="' . esc_url(StockPage::lotUrl($thing, $lot)) . '">' . esc_html($date) . '</a>';
+            $out['date'][]     = $thing === null || $date === '' ? esc_html($date === '' ? '—' : ListPage::date($date)) : '<a href="' . esc_url(StockPage::lotUrl($thing, $lot)) . '">' . esc_html(ListPage::date($date)) . '</a>';
         }
 
         return array_map(static fn (array $cells): string => implode('<br>', $cells), $out);
@@ -731,10 +746,10 @@ final class InboundPage
 
         $order   = $warning['previous_order'];
         $text    = sprintf(
-            /* translators: 1: percent above, 2: the earlier unit price in euro */
-            __('%1$s %% über dem letzten Kauf (%2$s €)', 'taxmod-stock'),
-            number_format_i18n($warning['percent'], 0),
-            number_format_i18n($warning['previous_unit'], 2)
+            /* translators: 1: percent above, 2: the earlier unit price with its currency */
+            __('%1$s %% über dem letzten Kauf (%2$s)', 'taxmod-stock'),
+            ListPage::number(round($warning['percent']), 0),
+            ListPage::money($warning['previous_unit'], 'EUR')
         );
         $shown   = $order === null ? esc_html($text) : '<a href="' . esc_url(self::url(['order' => $order]) . '#taxmod-stock-purchase-' . $warning['previous']) . '">' . esc_html($text) . '</a>';
 
@@ -774,7 +789,7 @@ final class InboundPage
 
             return $amount === null || $amount === '' ? null : (float) $amount;
         };
-        $shown     = static fn (?float $amount): string => $amount === null ? '—' : number_format_i18n($amount, 2);
+        $shown     = static fn (?float $amount): string => $amount === null ? '—' : ListPage::number(round($amount, 2), 2);
 
         $stock   = $this->inbound->stock();
         $closing = $stock->canCloseWithoutStock();
@@ -843,7 +858,7 @@ final class InboundPage
                     . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"><input type="hidden" name="op" value="untrack">'
                     . '<input type="hidden" name="order" value="' . esc_attr((string) $order->id) . '"><input type="hidden" name="tab" value="' . esc_attr($tab) . '">' . $this->stay()
                     . '<input type="hidden" name="number" value="' . esc_attr($number) . '">' . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
-                    . '<code>' . esc_html($number) . '</code> ' . get_submit_button(__('Entfernen', 'taxmod-stock'), 'small', '', false) . '</form>';
+                    . '<code>' . esc_html($number) . '</code> ' . ListPage::iconButton('trash', __('Entfernen', 'taxmod-stock')) . '</form>';
             }
 
         }
@@ -857,7 +872,7 @@ final class InboundPage
             . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"><input type="hidden" name="op" value="' . esc_attr($op) . '">'
             . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '"><input type="hidden" name="purchase" value="' . esc_attr((string) $purchase) . '">'
             . '<input type="hidden" name="tab" value="' . esc_attr($tab) . '">' . $this->stay() . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
-            . '<button type="submit" class="button button-small">' . esc_html($label) . '</button></form>';
+            . ListPage::iconButton(self::ICONS[$op] ?? 'admin-generic', $label) . '</form>';
     }
 
     /** The carrier's last events per tracking number, newest first. */

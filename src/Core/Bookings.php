@@ -273,7 +273,7 @@ final class Bookings
             $out[$key] = [];
 
             foreach ($parts as $index => $part) {
-                $text = number_format($part / 100, 2, '.', '');
+                $text = number_format($part / 100, 2, '.', ''); // cents as stored money text, two places kept
                 $out[$key][] = $index === 0 ? ['0' => $this->moneyPart($text, $unit)['neu']] : ($part === 0 ? null : $this->moneyPart($text, $unit));
             }
         }
@@ -491,7 +491,7 @@ final class Bookings
     private function calculationValues(Calculation $calculation): array
     {
         $s       = $this->structure;
-        $number  = static fn (float $n): string => rtrim(rtrim(number_format($n, 4, '.', ''), '0'), '.');
+        $number  = static fn (float $n): string => self::decimal($n, 4);
         $seconds = fn (float $n): array => $this->moneyPart($number($n), $s->hasValue('unit_second') ? (string) $s->value('unit_second') : null);
         $values  = [
             (string) $s->field('calc_wage')          => $this->moneyPart($number($calculation->wage), null),
@@ -847,7 +847,7 @@ final class Bookings
         $this->start();
 
         foreach ($positions as $line => $position) {
-            $this->line($title, $position['lot'] === null ? '' : (string) $position['lot'], '-' . rtrim(rtrim(number_format($position['quantity'], 6, '.', ''), '0'), '.'), null, null, $line, $position['thing']);
+            $this->line($title, $position['lot'] === null ? '' : (string) $position['lot'], '-' . self::decimal($position['quantity'], 6), null, null, $line, $position['thing']);
         }
 
         $extra = ($subject > 0 && $s->hasField('transaction_reference') ? [(string) $s->field('transaction_reference') => (string) $subject] : [])
@@ -1113,11 +1113,24 @@ final class Bookings
 
     private static function signed(float $quantity): string
     {
-        return rtrim(rtrim(number_format($quantity, 6, '.', ''), '0'), '.');
+        return self::decimal($quantity, 6);
     }
 
     private function ref(string $prefix): string
     {
         return $prefix . ++$this->counter;
     }
+
+    /**
+     * A number as the model stores it (dot, no thousands, trailing zeros cut) — storage text, never display (D-1500, CD-1: the
+     * core formats nothing for a reader; what a page shows goes through the modeller's `ListPage::number`/`money`).
+     */
+    private static function decimal(float $value, int $places): string
+    {
+        $text = number_format($value, $places, '.', '');
+        $text = str_contains($text, '.') ? rtrim(rtrim($text, '0'), '.') : $text;
+
+        return $text === '-0' ? '0' : $text;
+    }
+
 }

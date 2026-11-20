@@ -165,7 +165,7 @@ final class ChoiceListsPage
             $body .= ListPage::row(self::BULK_FORM, (string) $child, [
                 $label,
                 esc_html($below > 0 ? sprintf(/* translators: %d: number of values */ _n('%d Wert', '%d Werte', $below, 'taxmod-stock'), $below) : '—'),
-                esc_html(number_format_i18n($used)),
+                esc_html(ListPage::number($used, 0)),
             ], ListPage::toolbar([[$this->renameDialog($node, $child, $name), $this->mergeDialog($node, $child, $name, $children), $this->trashButton($node, $child, $name, $used, $below)]]), '');
         }
 

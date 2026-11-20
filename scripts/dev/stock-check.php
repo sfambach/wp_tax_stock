@@ -1110,6 +1110,40 @@ $pruefeEtikett((new StockService())->formRoot() === (int) $bf['root'] && (new St
 (new StockService())->setGroupProperty((int) $bf['smd'], StockService::LOT_LABEL_PROPERTY, $r['etk40'] + 0);
 $quelle = (new StockService())->labelSourceOf($r['t1'], StockService::LOT_LABEL_PROPERTY);
 $pruefeEtikett($quelle === [$r['etk40'], 'form', (int) $bf['f0603']], 'D-1284: a label set at «SMD» is read for a material of «0603», before the group\'s');
+
+// Live 2026-11-20, «Im Test» 6,1 s / 207 MB: the label of each lot's material asked the material's whole group for its Bauform —
+// one read and one group in memory per group on the page. Now the Bauform of all rows comes in one read of just these records.
+$gruppen = $apply([
+    ['op' => 'create_node', 'ref' => 'a', 'name' => '__Gruppe A', 'parent' => (string) $r['teile']],
+    ['op' => 'create_node', 'ref' => 'b', 'name' => '__Gruppe B', 'parent' => (string) $r['teile']],
+    ['op' => 'create_node', 'ref' => 'c', 'name' => '__Gruppe C', 'parent' => (string) $r['teile']],
+])['refs'] ?? [];
+$inGruppe = [];
+foreach (['a', 'b', 'c'] as $ast) {
+    $inGruppe[$ast] = (new StockService())->createThing('__Teil in ' . $ast, (int) $gruppen[$ast]);
+    $apply([['op' => 'set_values', 'record' => (string) $inGruppe[$ast], 'values' => [(string) $bfFeld => (string) $bf['f0603']]]]);
+}
+// The stock knows a material by its stock.
+(new StockService())->bookInventory(array_map(static fn (int $thing): TaxmodStock\Core\InventoryRow => new TaxmodStock\Core\InventoryRow($thing, null, 'Bauform-Probe', '1', null, ''), array_values($inGruppe)), '2026-11-20', 'Bauform-Probe');
+$lesungen = static function (array $things) use ($wpdb): array {
+    $lager = new StockService();
+    $lager->labelSourceOf(0, StockService::LOT_LABEL_PROPERTY);
+    $lager->formProperty(StockService::LOT_LABEL_PROPERTY);
+    $lager->groupProperty(StockService::LOT_LABEL_PROPERTY);
+    $lager->things();
+    $vorher = $wpdb->num_queries;
+    $lager->rememberForms($things);
+    $eins   = $wpdb->num_queries - $vorher;
+    $quellen = array_map(static fn (int $thing): array => $lager->labelSourceOf($thing, StockService::LOT_LABEL_PROPERTY), $things);
+
+    return [$eins, $wpdb->num_queries - $vorher, $quellen];
+};
+[$fuerEins, $gesamtEins]          = $lesungen([$inGruppe['a']]);
+[$fuerDrei, $gesamtDrei, $quellen] = $lesungen(array_values($inGruppe));
+$pruefeEtikett($fuerDrei === $fuerEins && $gesamtDrei === $fuerDrei && $gesamtEins === $fuerEins,
+    "CD-7: the Bauform of materials from three groups costs the reads of one ({$fuerEins}/{$fuerDrei}), and asking each for its label none more ({$gesamtDrei})");
+$pruefeEtikett($quellen === array_fill(0, 3, [$r['etk40'], 'form', (int) $bf['f0603']]) && (new StockService())->labelSourceOf($inGruppe['b'], StockService::LOT_LABEL_PROPERTY) === [$r['etk40'], 'form', (int) $bf['f0603']],
+    'D-1284: read together or alone, each material names the label of its Bauform');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'etikettenvorlagen'];
 $html = (new StockPage())->render();
 $pruefeEtikett(str_contains($html, 'value="' . StockPage::FORM_LABELS . '"') && str_contains($html, '__0603') && preg_match('/name="' . StockService::LOT_LABEL_PROPERTY . '\[' . $bf['smd'] . '\]".{0,400}?value="' . $r['etk40'] . '" selected/s', $html) === 1,

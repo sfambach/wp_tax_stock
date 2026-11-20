@@ -1186,6 +1186,7 @@ final class StockPage
         $ledger  = $this->stock->ledger();
         $thingOf = array_filter(array_combine($lots, array_map(static fn (int $lot): int => (int) ($ledger->thingOf($lot) ?? 0), $lots)) ?: []);
         $names   = $this->stock->recordLabels(array_values(array_unique($thingOf)));
+        $this->stock->rememberForms(array_values(array_unique($thingOf)));
         $charges = $this->charges(array_keys($thingOf));
         $out     = [];
 
@@ -2703,6 +2704,8 @@ final class StockPage
             return;
         }
 
+        // The label each row's print button starts with is read from the material's Bauform — for all rows at once.
+        $this->stock->rememberForms($missing);
         $names = $this->stock->recordLabels($missing);
         $units = $this->stock->unitWords($missing);
         $packs = $this->stock->packsOf($missing);

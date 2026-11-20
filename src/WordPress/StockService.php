@@ -1598,7 +1598,8 @@ final class StockService
             return [0, '', 0];
         }
         $s    = $this->structure();
-        $form = $s->hasField('thing_form') ? (int) $this->tableOf($node)->first($thing, $s->field('thing_form')) : 0;
+        $this->rememberForms([$thing]);
+        $form = $this->forms[$thing] ?? 0;
         if ($form > 0) {
             $label = $this->formProperty($key)[$form] ?? null;
             if (is_int($label) && $label > 0) {
@@ -1608,6 +1609,42 @@ final class StockService
         $label = $this->groupProperty($key)[$node] ?? null;
 
         return is_int($label) && $label > 0 ? [$label, 'group', $node] : [0, '', 0];
+    }
+
+    /** @var array<int, int> material → its Bauform, 0 for none; filled by {@see rememberForms()} */
+    private array $forms = [];
+
+    /**
+     * The Bauform of these materials, for {@see labelSourceOf()}: groups already read answer from memory, the rest in one read
+     * of just these records. A list of lots from many groups asked each group whole for it — one read and the whole group in
+     * memory per group on the page (CD-7; as {@see recordLabels()} names them, D-1195).
+     *
+     * @param list<int> $things
+     */
+    public function rememberForms(array $things): void
+    {
+        $s       = $this->structure();
+        $missing = array_values(array_diff(array_unique(array_map('intval', $things)), array_keys($this->forms)));
+        if ($missing === []) {
+            return;
+        }
+        $field = $s->hasField('thing_form') ? $s->field('thing_form') : 0;
+        $rest  = [];
+        foreach ($missing as $thing) {
+            $node = $field > 0 ? $this->things()->nodeOf($thing) : null;
+            // As in {@see recordLabels()}: a scoped view holds only its own material's row of a node (D-1381).
+            if ($node !== null && isset($this->tables[$node]) && $this->tables[$node]->has($thing)) {
+                $this->forms[$thing] = (int) $this->tables[$node]->first($thing, $field);
+            } elseif ($node !== null) {
+                $rest[] = $thing;
+            } else {
+                $this->forms[$thing] = 0;
+            }
+        }
+        $read = $rest === [] ? null : $this->model->records($rest);
+        foreach ($rest as $thing) {
+            $this->forms[$thing] = (int) $read?->first($thing, $field);
+        }
     }
 
     /**

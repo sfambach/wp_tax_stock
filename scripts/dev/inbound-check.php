@@ -407,7 +407,7 @@ $test = (new InboundPage())->render();
 $_GET = [];
 remove_filter('taxmod_label_button', $marke, 99);
 $pruefe(str_contains($html, 'class="taxmod-check-label"') && ! str_contains($html, '(nicht eingelagert)') && ! str_contains($html, 'value="einlagern-'), 'D-1461: «Eingebucht» holds the lot label button and none of the purchases decided without stock');
-$pruefe(! str_contains($test, 'taxmod-row-actions') || str_contains($test, 'class="taxmod-check-label"'), 'D-1461: «Zu testen» holds the lot label button');
+$pruefe(! str_contains($test, 'taxmod-row-actions') || str_contains($test, 'class="taxmod-check-label"'), 'D-1461: «Test» holds the lot label button');
 
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'ordered', 'filter' => 'overdue', 's' => 'retro'];
 $html = (new InboundPage())->render();
@@ -485,7 +485,14 @@ $pruefe((new InboundService())->lotsToTest() === [$r['lotA']], 'the «ungetestet
 
 $_GET = ['page' => InboundPage::PAGE, 'tab' => 'test'];
 $html = (new InboundPage())->render();
-$pruefe(str_contains($html, 'Zu testen') && str_contains($html, 'ET4000') && str_contains($html, 'name="result"'), 'the tab «Zu testen» lists it with the result form');
+// His word 2026-11-20 «massen aktionen fehlen im zu testen nenne das mal in test um»: the tab is «Test», its rows take bulk results.
+$pruefe(str_contains($html, '>Test<') && ! str_contains($html, 'Zu testen') && str_contains($html, 'ET4000') && str_contains($html, 'name="result"'), 'the tab «Test» lists it with the result form');
+$pruefe(str_contains($html, 'name="bulk" id="taxmod-stock-inbound-bulk-action"') && str_contains($html, 'value="test_ok"') && str_contains($html, 'value="test_defect"')
+    && ! str_contains($html, 'value="test_partial">') && str_contains($html, 'name="selected[]" value="' . $r['lotA'] . '" form="taxmod-stock-inbound-bulk"'), '«Test» has the bulk choice OK / Defekt for the ticked lots, no result that needs a reason');
+$pruefe(str_contains($html, 'href="' . esc_url(\TaxmodStock\WordPress\Admin\StockPage::lotUrl((int) (new StockService())->ledger()->thingOf($r['lotA']), $r['lotA'])) . '"'), '«Test»: the material links to its lot on the stock page');
+$pruefe(str_contains($html, 'href="' . esc_url(\TaxmodStock\WordPress\Admin\StockPage::thingUrl((int) (new StockService())->ledger()->thingOf($r['lotA']), '')) . '"') && str_contains($html, 'Dort steht «Nach Wareneingang testen».'), '«Test»: the material links to its page and its group, where the test is switched');
+$akt = (new InboundService())->recordTests([$r['lotA'], 999999999], \TaxmodStock\Core\TestResult::Ok, '2026-11-20');
+$pruefe((new StockService())->table('lot')->first($r['lotA'], $r['l_zust']) === (string) $r['t_ok'] && (int) ($akt['act'] ?? 0) > 0, 'a bulk result stands at every ticked lot, as one act; an id that is no lot is left out');
 
 try {
     (new InboundService())->recordTest($r['lotA'], \TaxmodStock\Core\TestResult::Partial, '', '2026-10-28');
@@ -511,6 +518,11 @@ $pruefe(! str_contains($settings->render(), 'taxmod_stock_tests[') && ! str_cont
 $settings->save(['taxmod_stock_tests_sent' => '1', 'taxmod_stock_test_place' => (string) $r['ortTest']]);
 $pruefe(get_option(StockService::TESTS) === ['place' => $r['ortTest']] && (new StockService())->testSettings([$r['gk']])->toArray() === ['branches' => [$r['gk']], 'place' => $r['ortTest']], 'the test place is stored in ' . StockService::TESTS . ', the tested groups come from the group property');
 $pruefe(str_contains($settings->render(), 'value="' . $r['ortTest'] . '" selected'), 'the page shows the chosen test place');
+// Stefan 20.11. 07:08: a place chooser in a <p> or a <label> broke apart — the browser shut the <p> before the tree, so it stood
+// open on the page and «OK» did nothing (the outer label hands every click to the dialog switch). Outside a dialog it is a dialog.
+$einstellungen = $quelle('WordPress/Admin/SettingsPage.php');
+$pruefe(preg_match('#<(?:p|label)>\' \. esc_html__\(\'[^\']*\', \'taxmod-stock\'\) \. \' \' \. \$stock->placeChooser#', $einstellungen) === 0 && substr_count($einstellungen, '$stock->placeChooser(') >= 4, 'Grundeinstellungen: no place chooser inside a <p> or a <label>');
+$pruefe(! str_contains($stockPage, "'<label>' . esc_html__('liegt in'") && ! str_contains($stockPage, "'<label style=\"display:block\">' . esc_html__('Nach'"), 'Lagerstruktur: «liegt in» and «Nach» are no <label> around a chooser');
 
 $stock = new StockService();
 $pruefe($stock->receiptLocations($plan) === [$r['kaufT'] => $r['ortTest'], $r['kaufU'] => $r['ortRegal']], 'the used purchase of the tested group is proposed for the test place, the other keeps its proposal');

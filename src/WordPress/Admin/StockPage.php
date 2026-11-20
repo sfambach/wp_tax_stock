@@ -895,7 +895,7 @@ final class StockPage
         $rows = [
             ['label' => __('Nach Wareneingang testen', 'taxmod-stock'), 'for' => 'taxmod-stock-group-test', 'control' => SelectMarkup::of('test', ['1' => __('Ja', 'taxmod-stock'), '0' => __('Nein', 'taxmod-stock')], $test === null ? null : ($test ? '1' : '0'),
                     attributes: ['id' => 'taxmod-stock-group-test'], nothingWord: sprintf(/* translators: %s: Ja or Nein, from the group above */ __('wie darüber (%s)', 'taxmod-stock'), $label($tested[$parent] ?? null))),
-                'hint' => __('Gebrauchte Ware dieser Gruppe und aller Gruppen darunter steht nach dem Wareneingang unter «Zu testen».', 'taxmod-stock')],
+                'hint' => __('Gebrauchte Ware dieser Gruppe und aller Gruppen darunter steht nach dem Wareneingang unter «Test».', 'taxmod-stock')],
             ['label' => __('Standard-Lagerort', 'taxmod-stock'), 'control' => $this->stock->placeChooser('place', is_int($place) ? $place : 0),
                 'hint' => is_int($above) && isset($names[$above])
                     ? sprintf(/* translators: %s: the place of the group above */ __('Leer: wie darüber, %s. Ein Lagerort am Material geht vor.', 'taxmod-stock'), $names[$above])
@@ -3574,13 +3574,13 @@ final class StockPage
             . '<button type="submit" name="booking" value="ort" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px"></button>'
             . '<p>' . esc_html__('Orte sind ein Baum: Lager → Bereich → Platz. Kisten und Kartons sind bewegliche Orte; «Umhängen» stellt sie samt Inhalt um.', 'taxmod-stock') . '</p>'
             . $table
-            . '<h2>' . esc_html__('Neuer Lagerort', 'taxmod-stock') . '</h2><p>'
+            . '<h2>' . esc_html__('Neuer Lagerort', 'taxmod-stock') . '</h2><div style="margin:1em 0">'
             . '<label>' . esc_html__('Name', 'taxmod-stock') . ' <input type="text" name="name" style="width:14em"></label> '
-            . '<label>' . esc_html__('liegt in', 'taxmod-stock') . ' ' . $this->stock->placeChooser('new_parent') . ' <span class="description">' . esc_html__('leer: oberste Ebene', 'taxmod-stock') . '</span></label> '
+            . '<span>' . esc_html__('liegt in', 'taxmod-stock') . ' ' . $this->stock->placeChooser('new_parent') . ' <span class="description">' . esc_html__('leer: oberste Ebene', 'taxmod-stock') . '</span></span> '
             . '<label><input type="checkbox" name="movable" value="1"> ' . esc_html__('beweglich (Kiste, Karton)', 'taxmod-stock') . '</label> '
             . ($s->hasField('location_reserved') ? '<label><input type="checkbox" name="reserved" value="1"> ' . esc_html__('reserviert für Produktion', 'taxmod-stock') . '</label> ' : '')
             . ($projects === [] ? '' : '<label>' . esc_html__('Projekt', 'taxmod-stock') . ' ' . SelectMarkup::of('project', $projects, nothingWord: '—') . '</label> ')
-            . '<button type="submit" class="button button-primary" name="booking" value="ort">' . esc_html__('Anlegen', 'taxmod-stock') . '</button></p></form>';
+            . '<button type="submit" class="button button-primary" name="booking" value="ort">' . esc_html__('Anlegen', 'taxmod-stock') . '</button></div></form>';
     }
 
     /**
@@ -3972,8 +3972,8 @@ final class StockPage
     {
         $tree   = $this->stock->locationTree();
         $below  = array_values(array_filter(array_diff($tree->withAllBelow($place), [$place]), static fn (int $p): bool => $tree->parentOf($p) === $place));
-        $body   = '<label style="display:block">' . esc_html__('Nach', 'taxmod-stock') . '<br>' . $this->stock->placeChooser('children_parent', $place, self::CHILD_FORM, $below)
-            . ' <span class="description">' . esc_html__('leer: oberste Ebene', 'taxmod-stock') . '</span></label>'
+        $body   = '<div>' . esc_html__('Nach', 'taxmod-stock') . '<br>' . $this->stock->placeChooser('children_parent', $place, self::CHILD_FORM, $below)
+            . ' <span class="description">' . esc_html__('leer: oberste Ebene', 'taxmod-stock') . '</span></div>'
             . '<p class="description">' . esc_html($this->stock->relocates()
                 ? __('Jeder gewählte Ort zieht mit allem, was darin liegt; eine bewegliche Kiste als Vorgang «Umlagerung».', 'taxmod-stock')
                 : __('Jeder gewählte Ort zieht mit allem, was darin liegt.', 'taxmod-stock')) . '</p>';

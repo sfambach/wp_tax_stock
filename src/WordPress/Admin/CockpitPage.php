@@ -197,7 +197,7 @@ final class CockpitPage
         ];
 
         if (isset($counts['test'])) {
-            $tiles[] = [__('Zu testen', 'taxmod-stock'), $counts['test'], InboundPage::url(['tab' => 'test'])];
+            $tiles[] = [__('Test', 'taxmod-stock'), $counts['test'], InboundPage::url(['tab' => 'test'])];
         }
 
         return $tiles;

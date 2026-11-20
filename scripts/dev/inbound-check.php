@@ -518,6 +518,11 @@ $pruefe(! str_contains($settings->render(), 'taxmod_stock_tests[') && ! str_cont
 $settings->save(['taxmod_stock_tests_sent' => '1', 'taxmod_stock_test_place' => (string) $r['ortTest']]);
 $pruefe(get_option(StockService::TESTS) === ['place' => $r['ortTest']] && (new StockService())->testSettings([$r['gk']])->toArray() === ['branches' => [$r['gk']], 'place' => $r['ortTest']], 'the test place is stored in ' . StockService::TESTS . ', the tested groups come from the group property');
 $pruefe(str_contains($settings->render(), 'value="' . $r['ortTest'] . '" selected'), 'the page shows the chosen test place');
+// Stefan 20.11. 07:08: a place chooser in a <p> or a <label> broke apart — the browser shut the <p> before the tree, so it stood
+// open on the page and «OK» did nothing (the outer label hands every click to the dialog switch). Outside a dialog it is a dialog.
+$einstellungen = $quelle('WordPress/Admin/SettingsPage.php');
+$pruefe(preg_match('#<(?:p|label)>\' \. esc_html__\(\'[^\']*\', \'taxmod-stock\'\) \. \' \' \. \$stock->placeChooser#', $einstellungen) === 0 && substr_count($einstellungen, '$stock->placeChooser(') >= 4, 'Grundeinstellungen: no place chooser inside a <p> or a <label>');
+$pruefe(! str_contains($stockPage, "'<label>' . esc_html__('liegt in'") && ! str_contains($stockPage, "'<label style=\"display:block\">' . esc_html__('Nach'"), 'Lagerstruktur: «liegt in» and «Nach» are no <label> around a chooser');
 
 $stock = new StockService();
 $pruefe($stock->receiptLocations($plan) === [$r['kaufT'] => $r['ortTest'], $r['kaufU'] => $r['ortRegal']], 'the used purchase of the tested group is proposed for the test place, the other keeps its proposal');

@@ -170,7 +170,7 @@ final class SettingsPage
 
         return '<h2>' . esc_html__('Einlagerung', 'taxmod-stock') . '</h2>'
             . '<p>' . esc_html__('Der Wareneingang schlägt den Lagerort des Materials vor, sonst den Standard-Lagerort seiner Gruppe (gesetzt in der Lager-Ansicht der Gruppe, vererbt nach unten), sonst den Standard-Ort der Struktur.', 'taxmod-stock') . '</p>'
-            . '<p><label>' . esc_html__('Lagerort für Käufe ohne Material', 'taxmod-stock') . ' ' . $stock->placeChooser('taxmod_stock_unreferenced', (int) $stock->locationSettings()->unreferenced) . '</label></p>'
+            . '<div style="margin:1em 0"><span>' . esc_html__('Lagerort für Käufe ohne Material', 'taxmod-stock') . '</span> ' . $stock->placeChooser('taxmod_stock_unreferenced', (int) $stock->locationSettings()->unreferenced) . '</div>'
             . '<input type="hidden" name="taxmod_stock_places_sent" value="1">';
     }
 
@@ -217,14 +217,14 @@ final class SettingsPage
             . '<p><label>' . esc_html__('Preiswarnung ab', 'taxmod-stock') . ' <input type="number" min="1" name="taxmod_stock_price_warn_percent" value="' . esc_attr((string) $stock->priceWarnPercent()) . '" style="width:6em"> ' . esc_html__('% über dem letzten Kauf', 'taxmod-stock') . '</label> '
             . '<span class="description">' . esc_html__('Der Wareneingang warnt, wenn der Stückpreis so viel über dem letzten Kauf desselben Materials liegt.', 'taxmod-stock') . '</span></p>'
             // D-1111: an ordinary place the setting names, never a name in code.
-            . '<p><label>' . esc_html__('Lagerort für Test', 'taxmod-stock') . ' ' . $stock->placeChooser('taxmod_stock_test_place', (int) $settings->place) . '</label> '
-            . '<span class="description">' . esc_html__('Der Wareneingang schlägt diesen Ort für Gebrauchtware aus diesen Gruppen vor (nicht für Neuware); leer: der übliche Vorschlag.', 'taxmod-stock') . '</span></p>'
+            . '<div style="margin:1em 0"><span>' . esc_html__('Lagerort für Test', 'taxmod-stock') . '</span> ' . $stock->placeChooser('taxmod_stock_test_place', (int) $settings->place) . ' '
+            . '<span class="description">' . esc_html__('Der Wareneingang schlägt diesen Ort für Gebrauchtware aus diesen Gruppen vor (nicht für Neuware); leer: der übliche Vorschlag.', 'taxmod-stock') . '</span></div>'
             // D-1440: where «Einlagern» puts a purchase without a place.
-            . '<p><label>' . esc_html__('Lagerort Wareneingang', 'taxmod-stock') . ' ' . $stock->placeChooser('taxmod_stock_receipt_inbound', $stock->receiptInbound()) . '</label> '
-            . '<span class="description">' . esc_html__('Hierhin legt «Einlagern» einen Kauf ohne Lagerort; von dort geht er per Umbuchen an seinen Platz. Leer: «Einlagern» braucht einen Lagerort in der Zeile.', 'taxmod-stock') . '</span></p>'
+            . '<div style="margin:1em 0"><span>' . esc_html__('Lagerort Wareneingang', 'taxmod-stock') . '</span> ' . $stock->placeChooser('taxmod_stock_receipt_inbound', $stock->receiptInbound()) . ' '
+            . '<span class="description">' . esc_html__('Hierhin legt «Einlagern» einen Kauf ohne Lagerort; von dort geht er per Umbuchen an seinen Platz. Leer: «Einlagern» braucht einen Lagerort in der Zeile.', 'taxmod-stock') . '</span></div>'
             // D-1303: where finished boards come in, an ordinary place the setting names.
-            . '<p><label>' . esc_html__('Lagerort Wareneingang Produktion', 'taxmod-stock') . ' ' . $stock->placeChooser('taxmod_stock_production_inbound', $stock->productionInbound()) . '</label> '
-            . '<span class="description">' . esc_html__('Hier kommen fertige Platinen aus der Fertigung an.', 'taxmod-stock') . '</span></p>'
+            . '<div style="margin:1em 0"><span>' . esc_html__('Lagerort Wareneingang Produktion', 'taxmod-stock') . '</span> ' . $stock->placeChooser('taxmod_stock_production_inbound', $stock->productionInbound()) . ' '
+            . '<span class="description">' . esc_html__('Hier kommen fertige Platinen aus der Fertigung an.', 'taxmod-stock') . '</span></div>'
             . '<input type="hidden" name="taxmod_stock_tests_sent" value="1">';
 
         return $html;

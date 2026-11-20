@@ -222,7 +222,10 @@ final class LogisticsShell
         }
 
         return self::style() . (self::isFullscreen() ? self::fullscreenStyle() : '') . '<div class="taxmod-shell' . ($side === '' ? '' : ' has-side') . '">'
-            . '<div class="taxmod-shell-column"><nav class="taxmod-shell-nav" aria-label="' . esc_attr__('Logistik', 'taxmod-stock') . '">'
+            // D-1521, his word 2026-11-20: «wenn … das Menü auf Höhe des unteren Kästchen anfangen würde. Mach doch da einfach mal ein
+            // Kästchen drüber in der Größe der Überschrift», «Tax Logistik … diesen oberen Punkt im Menü Logistik einfach weglassen» —
+            // the module's name in a box as high as the page head beside it, and no title inside the menu any more.
+            . '<div class="taxmod-shell-column"><div class="taxmod-shell-head">' . esc_html__('Tax Logistik', 'taxmod-stock') . '</div><nav class="taxmod-shell-nav" aria-label="' . esc_attr__('Logistik', 'taxmod-stock') . '">'
             . self::menu($navigation, $active) . '</nav>' . ($side === '' ? '' : '<div class="taxmod-shell-side" id="taxmod-shell-side" data-taxmod-morph>' . $side . '</div>')
             . '</div><div class="taxmod-shell-main">' . self::backLink() . $html . '</div></div>';
     }
@@ -282,7 +285,7 @@ final class LogisticsShell
     {
         $full = self::isFullscreen();
         $back = esc_url_raw((is_ssl() ? 'https://' : 'http://') . sanitize_text_field(wp_unslash((string) ($_SERVER['HTTP_HOST'] ?? ''))) . wp_unslash((string) ($_SERVER['REQUEST_URI'] ?? '')));
-        $html = '<p class="taxmod-shell-title">' . esc_html__('Logistik', 'taxmod-stock') . '</p><ul>';
+        $html = '<ul>';
 
         foreach ($navigation->areas() as $area) {
             $here  = $area['key'] === $active['area'];
@@ -388,10 +391,13 @@ final class LogisticsShell
         // His word 2026-11-09: «das genaze menü etwas breiter machen 1,5 mal so viel» — 300 px. Inline because the module has
         // no stylesheet of its own yet (G3, noted for the architecture thread).
         return '<style>'
-            . '.taxmod-shell{display:grid;grid-template-columns:300px minmax(0,1fr);gap:20px;margin-top:10px}'
+            . '.taxmod-shell{display:grid;grid-template-columns:300px minmax(0,1fr);gap:20px;margin:10px 20px 0 0;box-sizing:border-box;max-width:calc(100% - 20px)}'
             . '.taxmod-shell-column{align-self:start;position:sticky;top:42px;display:flex;flex-direction:column;gap:12px;min-width:0}'
             . '.taxmod-shell-nav{background:#fff;border:1px solid #c3c4c7;padding:8px 0;flex:none}'
             . '.taxmod-shell-title{margin:0 12px 6px;font-weight:600;font-size:14px}'
+            // D-1521: the box above the menu and the page head (ListPage::head, or a page's first title) share one height.
+            . '.taxmod-shell-head,.taxmod-shell-main>h2:first-child{display:flex;align-items:center;min-height:var(--taxmod-head-height,44px);box-sizing:border-box;margin:0 0 12px;padding:4px 12px;background:#fff;border:1px solid #c3c4c7;font-weight:600;font-size:14px}'
+            . '.taxmod-shell-main>h2:first-child{font-size:1.3em}'
             . '.taxmod-shell-nav ul{margin:0;list-style:none}.taxmod-shell-nav li{margin:0}'
             . '.taxmod-shell-nav a{display:block;padding:5px 12px;text-decoration:none;border-left:3px solid transparent}'
             . '.taxmod-shell-area>a{font-weight:600;color:#1d2327}'

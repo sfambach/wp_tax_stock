@@ -78,8 +78,8 @@ final class SettingsPage
     {
         $own = self::ownSingleHit();
 
-        return ListPage::page(__('Benutzereinstellungen', 'taxmod-stock'), [], [['html' => Notice::take()
-            . '<p>' . esc_html(sprintf(/* translators: %s: the user's display name */ __('Gilt nur für %s.', 'taxmod-stock'), wp_get_current_user()->display_name)) . '</p>'
+        // Stefan 20.11. 18:16: «Benutzereinstellungen für S-Fambach … dann kann dieser kleine Text da wegbleiben».
+        return ListPage::page(sprintf(/* translators: %s: the user's display name */ __('Benutzereinstellungen für %s', 'taxmod-stock'), wp_get_current_user()->display_name), [], [['html' => Notice::take()
             . '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">'
             . wp_nonce_field(self::USER_ACTION, '_wpnonce', true, false) . '<input type="hidden" name="action" value="' . esc_attr(self::USER_ACTION) . '">'
             . ListPage::toolbar([[StockPage::saveButton()]])

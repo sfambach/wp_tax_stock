@@ -223,6 +223,8 @@ final class Plugin
             StockService::MATERIAL_LABEL_PROPERTY => ['label' => __('Standard-Etikett Material', 'taxmod-stock'), 'type' => 'id'],
             StockService::LOT_LABEL_PROPERTY      => ['label' => __('Standard-Etikett Posten', 'taxmod-stock'), 'type' => 'id'],
         ]);
+        // D-1519 R2: the preselections of Bauform, group and place type, offered to the labels module as print rules.
+        add_filter('taxmod_label_rule_proposals', static fn (mixed $proposals): array => array_merge(is_array($proposals) ? $proposals : [], (new StockService())->labelRuleProposals()));
         add_filter(self::BOOK_BUILD, [self::class, 'bookBuild'], 10, 2);
         add_filter(self::PLACES_OF, [self::class, 'placesOf'], 10, 2);
         // D-1387: the material search as a building block for other modules' dialogs.

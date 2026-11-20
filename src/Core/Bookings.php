@@ -388,7 +388,7 @@ final class Bookings
      * material where their strip lay (`rests[].place`).
      *
      * @param list<array{lot: int, place: int, take: int, thing: int, pieces: int, into: int, name: string, more?: list<array{lot: int, place: int, take: int}>, value?: array{amount: string, unit: string|null}|null, rests: list<array{thing: string, quantity: int, name: string, place?: int, value?: array{amount: string, unit: string|null}|null}>}> $rows
-     * Pin-Aufbereitung P2: a rest shorter than 2 pins (`scrap`) is not taken in this Vorgang; it goes in a second one of
+     * D-1535 (P2): a rest shorter than 2 pins (`scrap`) is not taken in this Vorgang; it goes in a second one of
      * the kind «Defekt/Ausschuss» (D-1297) with the same Bezug and `$scrapReason` as description — both in one act.
      *
      * @param list<array<string, mixed>> $prelude

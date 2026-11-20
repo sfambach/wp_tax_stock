@@ -71,7 +71,7 @@ final class StockService
     /** D-1259: the group properties the stock declares — tested after the goods receipt, and the group's usual place. */
     public const TEST_PROPERTY  = 'stock_test_after_inbound';
     private const MOVE_FAILURES = 'taxmod_stock_branch_move_failures';
-    /** Pin-Aufbereitung P2: a rest of fewer pins is scrap — «Einser braucht keiner mehr». */
+    /** D-1535 (P2): a rest of fewer pins is scrap — «Einser braucht keiner mehr». */
     private const MIN_REST_PINS = 2;
     public const PLACE_PROPERTY = 'stock_default_place';
 
@@ -4726,7 +4726,7 @@ final class StockService
     }
 
     /**
-     * Pin-Aufbereitung P1, for the staging's «Leisten zuschneiden»: at each place the one cut plan of all these pieces —
+     * D-1535 (P1), for the staging's «Leisten zuschneiden»: at each place the one cut plan of all these pieces —
      * per strip opened its pins, whether it was whole, the pieces cut from it, its rest and its scrap. A place they do
      * not fit is left out; empty for a material not counted in pins. Read only.
      *
@@ -4787,7 +4787,7 @@ final class StockService
         $thing = $line['thing'];
         $full  = $pack->content;
         $rows  = $this->stripFacts([$thing], $this->model->nodesOf([$thing]))['rows'][$thing] ?? 1;
-        // Pin-Aufbereitung P1: all piece lengths of this material in one plan; one length is the old line `pieces` × `piece`.
+        // D-1535 (P1): all piece lengths of this material in one plan; one length is the old line `pieces` × `piece`.
         $want  = $line['cuts'] ?? [(int) ($line['piece'] ?? 0) => (int) ($line['pieces'] ?? 0)];
         $demand = [];
 
@@ -4867,7 +4867,7 @@ final class StockService
     }
 
     /**
-     * Pin-Aufbereitung P3: the lots marked «Reste unsortiert» — loose old rests he counted roughly, which no cut plan
+     * D-1535 (P3): the lots marked «Reste unsortiert» — loose old rests he counted roughly, which no cut plan
      * takes from; he takes from them by hand. None while the model has no such field.
      *
      * @param list<int> $lots
@@ -4895,7 +4895,7 @@ final class StockService
         return $out;
     }
 
-    /** Pin-Aufbereitung P2: the shortest rest that goes back is 2 pins; a strip of R rows rests in whole columns. */
+    /** D-1535 (P2): the shortest rest that goes back is 2 pins; a strip of R rows rests in whole columns. */
     private static function minRestColumns(int $rows): int
     {
         return intdiv(self::MIN_REST_PINS + max(1, $rows) - 1, max(1, $rows));

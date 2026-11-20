@@ -516,7 +516,7 @@ final class BookingsTest extends TestCase
     #[Test]
     public function a_rest_under_two_pins_is_booked_as_scrap_in_a_second_vorgang(): void
     {
-        // Pin-Aufbereitung P2: 1 × 1×39 from a 1×40 — 39 pins into the box, the last pin is scrap, not a rest.
+        // D-1535 (P2): 1 × 1×39 from a 1×40 — 39 pins into the box, the last pin is scrap, not a rest.
         $s       = Fixture::structure();
         $changes = (new Bookings($s, '2026-11-20'))->cut([[
             'lot' => 501, 'place' => 7, 'take' => 40, 'thing' => 66, 'pieces' => 39, 'into' => 9, 'name' => '1×39',

@@ -78,7 +78,7 @@ final class Plugin
     /** D-1328 (D9): longer strips to cut from, and the cuts booked, for the manufacturing module. */
     public const CUT_SOURCES = 'taxmod_stock_cut_sources';
 
-    /** Pin-Aufbereitung P1: the one cut plan of all pieces of a strip counted in pins, per place — read only. */
+    /** D-1535 (P1): the one cut plan of all pieces of a strip counted in pins, per place — read only. */
     public const PIN_CUT_PLANS = 'taxmod_stock_pin_cut_plans';
     public const BOOK_CUT    = 'taxmod_stock_book_cut';
 
@@ -452,7 +452,7 @@ final class Plugin
     }
 
     /**
-     * Pin-Aufbereitung P1: `apply_filters('taxmod_stock_pin_cut_plans', null, ['thing' => id, 'places' => [place, …], 'cuts'
+     * D-1535 (P1): `apply_filters('taxmod_stock_pin_cut_plans', null, ['thing' => id, 'places' => [place, …], 'cuts'
      * => [pins per piece => pieces]])` answers place → ['opened' => whole strips opened, 'strips' => [['pins', 'whole',
      * 'cuts', 'rest', 'scrap'], …]] — read only, places the pieces do not fit are left out.
      *
@@ -1498,7 +1498,7 @@ final class Plugin
             if (is_array($line) && absint($line['thing'] ?? 0) > 0 && absint($line['from'] ?? 0) > 0 && is_numeric($line['qty'] ?? null) && (float) $line['qty'] > 0) {
                 // D-1398: «pieces» pieces of «piece» pins each, for a strip counted in pins.
                 $lines[] = ['thing' => absint($line['thing']), 'from' => absint($line['from']), 'quantity' => (float) $line['qty'], 'pieces' => absint($line['pieces'] ?? 0), 'piece' => absint($line['piece'] ?? 0)]
-                    // Pin-Aufbereitung P1: «cuts» = pins per piece → pieces, all lengths of the material in one plan.
+                    // D-1535 (P1): «cuts» = pins per piece → pieces, all lengths of the material in one plan.
                     + (is_array($line['cuts'] ?? null) && ($cuts = self::cutsOf($line['cuts'])) !== [] ? ['cuts' => $cuts] : []);
             }
         }

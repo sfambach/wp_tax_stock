@@ -44,7 +44,7 @@ final class StripCutTest extends TestCase
     #[Test]
     public function all_lengths_of_an_order_share_one_plan_longest_first(): void
     {
-        // Pin-Aufbereitung P1: 2 × 1×5, 1 × 1×6 and 3 × 1×2 from a rest 1×6 and two 1×40.
+        // D-1535 (P1): 2 × 1×5, 1 × 1×6 and 3 × 1×2 from a rest 1×6 and two 1×40.
         $plan = StripCut::mixed([5 => 2, 6 => 1, 2 => 3], ['r6' => 6, 'a' => 40, 'b' => 40], 0, 2);
 
         self::assertSame(0, $plan->missing);

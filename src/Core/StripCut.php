@@ -5,7 +5,7 @@ namespace TaxmodStock\Core;
 /**
  * D-1398: pieces of a pin header cut whole from single strips — every piece from one strip, never joined from two.
  *
- * One plan for all piece lengths of a material at once (Pin-Aufbereitung P1): the longest pieces first, each into the
+ * One plan for all piece lengths of a material at once (D-1535 (P1)): the longest pieces first, each into the
  * strip with the least room that still takes it, so rests and shorter strips are cut before a new 1×40 is opened and
  * long rests stay. A piece that would leave a rest shorter than the minimum (P2: no 1-pin rests) goes to another strip
  * where there is one; a rest shorter than the minimum at the end is scrap, not a rest.

@@ -540,7 +540,8 @@ $_GET     = ['page' => TaxmodStock\WordPress\Admin\CockpitPage::PAGE, 'span' => 
 $zeitraum = (new TaxmodStock\WordPress\Admin\CockpitPage())->render();
 $_GET     = [];
 $pruefe(! str_contains($zeitraum, 'notice-error') && str_contains($zeitraum, '<span class="taxmod-tile-label">Wareneingang</span>') && str_contains($zeitraum, 'class="taxmod-chart"'), 'Zeitraum: the day of the receipts has its tiles and its chart (D-1167)');
-$pruefe(substr_count($zeitraum, '<td>21.10.2026</td>') >= 2 && str_contains($zeitraum, 'aria-current="true">Day</a>'), 'Zeitraum: the Vorgänge of the day are listed, the span «Day» is marked');
+// D-1500: the day stands in the shared date cell (the site's date format, sortable by its moment).
+$pruefe(substr_count($zeitraum, '<td>' . ListPage::dateCell('2026-10-21') . '</td>') >= 2 && str_contains($zeitraum, 'aria-current="true">Day</a>'), 'Zeitraum: the Vorgänge of the day are listed, the span «Day» is marked');
 
 // D-1139, his word «projekt gebinde … haben die ja ein bom und auch evtl einen bestand … ob der übereinstimmt bzw was fehlt».
 $bom = wp_get_ability('taxmod/apply')->execute(['changes' => [
@@ -832,7 +833,8 @@ $pruefe($offenR !== null && count($s->table('transaction')->all($offenR, $r['v_p
 $_GET  = ['page' => TaxmodStock\WordPress\Admin\PurchasePage::PAGE, 'tab' => 'bedarf'];
 $bedarfSeite = (new TaxmodStock\WordPress\Admin\PurchasePage())->render();
 $_GET  = [];
-$pruefe(str_contains($bedarfSeite, '>Bestellen</a>') && ! str_contains($bedarfSeite, 'Nochmal bestellen') && ! str_contains((string) file_get_contents(__DIR__ . '/../../src/WordPress/Admin/PurchasePage.php'), "__('Übernehmen'"),
+// D-1500: «Bestellen» is the row's icon square; its word stands as the tooltip.
+$pruefe(str_contains($bedarfSeite, 'title="Bestellen"') && ! str_contains($bedarfSeite, 'Nochmal bestellen') && ! str_contains((string) file_get_contents(__DIR__ . '/../../src/WordPress/Admin/PurchasePage.php'), "__('Übernehmen'"),
     'D-1320: a demand offers «Bestellen», no «Nochmal bestellen»; choosing a merchant reads «Bestellen bei …»');
 
 // D-1183 for Einkauf, his word 2026-11-14 «ausserdem ist hier wieder die aufklapp logik»: no row opens; each links to a page
@@ -992,7 +994,8 @@ update_option(StockService::OPTION, $struktur);
 // D-1181, his word «verschmilzt es solange die daten gleich sind»: two lots of the same data at one place stand as one line.
 (new StockService())->bookInventory([new TaxmodStock\Core\InventoryRow($r['lm'], null, 'Zählung', '2', null, ''), new TaxmodStock\Core\InventoryRow($r['lm'], null, 'Zählung', '2', null, '')], '2026-11-05', 'Inventur');
 $html = (string) (new StockPage())->listDetails(null, StockPage::DETAILS_MATERIAL, ['thing' => (string) $r['lm']]);
-$pruefe(preg_match_all('/<li>2026-11-05 · Rest 4 · Inventur/', $html) === 1 && str_contains($html, 'name="lots" value="'), 'D-1181: two lots of the same data at one place are one line with one «Umbuchen» for both');
+// D-1500: the date as the site writes it (ListPage::date).
+$pruefe(preg_match_all('/<li>' . preg_quote(esc_html(ListPage::date('2026-11-05')), '/') . ' · Rest 4 · Inventur/', $html) === 1 && str_contains($html, 'name="lots" value="'), 'D-1181: two lots of the same data at one place are one line with one «Umbuchen» for both');
 preg_match('/name="lots" value="([0-9,]+)"><input type="hidden" name="from" value="(\d+)"/', $html, $paar);
 (new StockService())->moveLots(array_map('intval', explode(',', $paar[1] ?? '')), (int) ($paar[2] ?? 0), $r['platz'], '3', '2026-11-05', 'Umbuchung');
 $ledger = (new StockService())->ledger();

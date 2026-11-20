@@ -1071,7 +1071,8 @@ final class StockPage
             $purchase = $lots->first($lot, $s->field('lot_purchase'));
             $origin   = ($amount === null ? '' : ' · ' . esc_html($amount) . ' ' . esc_html__('je Stück', 'taxmod-stock'))
                 . ($purchase === null ? ' · ' . esc_html__('Inventur', 'taxmod-stock') : ' · ' . esc_html__('Kauf', 'taxmod-stock') . ' #' . esc_html($purchase));
-            $date     = ListPage::dateCell(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10));
+            // A list item is no table cell: the date as the site writes it, without the sort span.
+            $date     = esc_html(ListPage::date(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10)));
             $at       = array_filter($ledger->placesOf($lot), static fn (float $q): bool => $q > 0.0);
 
             if ($at === []) {

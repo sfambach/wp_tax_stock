@@ -4,6 +4,7 @@ namespace TaxmodStock\WordPress;
 
 use Taxmod\Core\Renderer\DecimalText;
 use Taxmod\WordPress\Admin\ListPage;
+use TaxmodStock\Core\LabelQuestion;
 use TaxmodStock\Core\Contacts;
 use TaxmodStock\Core\CutPlan;
 use TaxmodStock\Core\CutSources;
@@ -2124,6 +2125,74 @@ final class StockService
         return $this->locationTree = LocationTree::from($s, $places, $this->recordLabels(LocationTree::projectIds($s, $places)), $this->placeTypes())
             // D-1267: a place deleted while old bookings still name it.
             ->withUnknownName(static fn (int $id): string => sprintf(/* translators: %d: record id of the deleted place */ __('gelöschter Ort #%d', 'taxmod-stock'), $id));
+    }
+
+    /**
+     * D-1519: the print rule that holds for this label — of a material (`material`), of a lot of it (`lot`), of a place (`location`,
+     * `$record` its place type) — or null: no rule holds, or the labels module asks none (an older one answers no rules at all).
+     *
+     * @return array{id: int, name: string, label: int, copies: int|null, printer: int}|null
+     */
+    public function labelRule(string $kind, int $record): ?array
+    {
+        $labels = $this->labelTemplates();
+        if (! method_exists($labels, 'ruleFor')) {
+            return null;
+        }
+        $s = $this->structure();
+        if ($kind === 'location') {
+            return $labels->ruleFor(LabelQuestion::forPlace($s->node('location'), $record));
+        }
+        $this->rememberForms([$record]);
+        $group = (int) ($this->things()->nodeOf($record) ?? 0);
+        $form  = $this->forms[$record] ?? 0;
+
+        return $labels->ruleFor($kind === 'lot'
+            ? LabelQuestion::forLot($s->node('lot'), $this->tree(), $group, $this->formTree(), $form)
+            : LabelQuestion::forMaterial($this->tree(), $group, $this->formTree(), $form));
+    }
+
+    /**
+     * D-1519 R2: today's preselections as print rules for the labels module to take over (filter `taxmod_label_rule_proposals`) —
+     * Bauform before group, as the way of today decides, the deeper node before the one above it, then the place types. Read
+     * once each: the trees, the own properties of all their nodes, the place types (CD-7).
+     *
+     * @return list<array{name: string, for: int, form?: int, group?: int, place_type?: int, label: int, copies?: int|null}>
+     */
+    public function labelRuleProposals(): array
+    {
+        $s      = $this->structure();
+        $out    = [];
+        $kinds  = [];
+        if ($s->hasNode('material_root')) {
+            $kinds[] = [self::MATERIAL_LABEL_PROPERTY, $s->node('material_root'), __('Material', 'taxmod-stock')];
+        }
+        $kinds[] = [self::LOT_LABEL_PROPERTY, $s->node('lot'), __('Posten', 'taxmod-stock')];
+        foreach ([['form', $this->formTree(), __('Bauform', 'taxmod-stock')], ['group', $this->tree(), __('Gruppe', 'taxmod-stock')]] as [$condition, $tree, $word]) {
+            $deepFirst = array_keys($tree);
+            usort($deepFirst, static fn (int $a, int $b): int => count(LabelQuestion::path($tree, $b)) <=> count(LabelQuestion::path($tree, $a)) ?: $a <=> $b);
+            foreach ($kinds as [$key, $for, $kind]) {
+                $own = $deepFirst === [] ? [] : $this->model->ownProperties($deepFirst, $key);
+                foreach ($deepFirst as $node) {
+                    $label = $own[$node] ?? null;
+                    if (is_int($label) && $label > 0) {
+                        $out[] = ['name' => sprintf('%s · %s %s', $kind, $word, (string) ($tree[$node]['name'] ?? '#' . $node)), 'for' => $for, $condition => $node, 'label' => $label];
+                    }
+                }
+            }
+        }
+        if ($s->hasField('location_place_type')) {
+            $types = $this->placeTypes();
+            foreach ($types->names() as $type => $name) {
+                $label = $types->labelTemplateOf($type);
+                if ($label > 0) {
+                    $copies = $types->labelCopiesOf($type);
+                    $out[]  = ['name' => sprintf('%s · %s', __('Platzart', 'taxmod-stock'), $name), 'for' => $s->node('location'), 'place_type' => $type, 'label' => $label, 'copies' => $copies > 0 ? $copies : null];
+                }
+            }
+        }
+
+        return $out;
     }
 
     /**

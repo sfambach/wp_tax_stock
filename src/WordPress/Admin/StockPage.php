@@ -1201,14 +1201,41 @@ final class StockPage
 
     private function lotLabel(int $thing, int $lot, string $label, string $charge): string
     {
-        $s         = $this->stock->structure();
-        $templates = $this->stock->labelTemplates();
-        $first     = $s->hasNode('label_materials') ? $templates->preferredIn($s->node('label_materials'), $this->stock->groupLabelOf($thing, StockService::LOT_LABEL_PROPERTY)) : 0;
-        $origin    = $this->labelOrigin($thing, StockService::LOT_LABEL_PROPERTY, $first);
-        $chosen    = $first > 0 ? $templates->get($first) : null;
-        $template  = $chosen === null ? [] : $templates->dialog($first, $origin + ['record' => $thing, 'values' => [self::CHARGE_FIELD => sprintf(/* translators: %s: batch number */ __('Charge: %s', 'taxmod-stock'), $charge)]]);
+        [$templates, $first, $origin, $copies] = $this->thingLabel($thing, 'lot', StockService::LOT_LABEL_PROPERTY);
+        $chosen   = $first > 0 ? $templates->get($first) : null;
+        $template = $chosen === null ? [] : $templates->dialog($first, $origin + ['record' => $thing, 'values' => [self::CHARGE_FIELD => sprintf(/* translators: %s: batch number */ __('Charge: %s', 'taxmod-stock'), $charge)]]);
 
-        return (string) apply_filters('taxmod_label_button', '', 'P', $lot, $label === '' ? '#' . $thing : $label, '', $chosen['copies'] ?? 1, $template);
+        return (string) apply_filters('taxmod_label_button', '', 'P', $lot, $label === '' ? '#' . $thing : $label, '', $copies ?? $chosen['copies'] ?? 1, $template);
+    }
+
+    /**
+     * D-1519: the label a material or a lot starts with — the first print rule that holds, on its printer and with its count;
+     * where none holds, the way of today: the Bauform's, else the group's, else the first of «Materialetiketten».
+     *
+     * @return array{0: \TaxmodLabel\Core\LabelCatalog|\TaxmodStock\WordPress\NoLabels, 1: int, 2: array<string, mixed>, 3: int|null} labels, label, origin, copies
+     */
+    private function thingLabel(int $thing, string $kind, string $key): array
+    {
+        $templates = $this->stock->labelTemplates();
+        $rule      = $this->stock->labelRule($kind, $thing);
+        if ($rule !== null) {
+            return [$templates->preferring($rule['printer']), $rule['label'], self::ruleOrigin($rule), $rule['copies']];
+        }
+        $s     = $this->stock->structure();
+        $first = $s->hasNode('label_materials') ? $templates->preferredIn($s->node('label_materials'), $this->stock->groupLabelOf($thing, $key)) : 0;
+
+        return [$templates, $first, $this->labelOrigin($thing, $key, $first), null];
+    }
+
+    /**
+     * D-1519: the dialog names the rule that chose, and links to it (the labels module knows where its rules are).
+     *
+     * @param array{id: int, name: string} $rule
+     * @return array{origin: string, rule: int}
+     */
+    private static function ruleOrigin(array $rule): array
+    {
+        return ['origin' => sprintf(/* translators: %s: the print rule */ __('Vorgewählt nach Regel: %s', 'taxmod-stock'), $rule['name'] === '' ? '#' . $rule['id'] : $rule['name']), 'rule' => $rule['id']];
     }
 
     /**
@@ -1310,14 +1337,11 @@ final class StockPage
      */
     private function materialLabel(int $thing, string $label): string
     {
-        $s         = $this->stock->structure();
-        $templates = $this->stock->labelTemplates();
-        $first     = $s->hasNode('label_materials') ? $templates->preferredIn($s->node('label_materials'), $this->stock->groupLabelOf($thing, StockService::MATERIAL_LABEL_PROPERTY)) : 0;
-        $origin    = $this->labelOrigin($thing, StockService::MATERIAL_LABEL_PROPERTY, $first);
-        $chosen    = $first > 0 ? $templates->get($first) : null;
-        $template  = $chosen === null ? [] : $templates->dialog($first, $origin + ['record' => $thing]);
+        [$templates, $first, $origin, $copies] = $this->thingLabel($thing, 'material', StockService::MATERIAL_LABEL_PROPERTY);
+        $chosen   = $first > 0 ? $templates->get($first) : null;
+        $template = $chosen === null ? [] : $templates->dialog($first, $origin + ['record' => $thing]);
 
-        return (string) apply_filters('taxmod_label_button', '', 'M', $thing, $label === '' ? '#' . $thing : $label, '', $chosen['copies'] ?? 1, $template);
+        return (string) apply_filters('taxmod_label_button', '', 'M', $thing, $label === '' ? '#' . $thing : $label, '', $copies ?? $chosen['copies'] ?? 1, $template);
     }
 
     private function thingView(int $thing): string
@@ -3829,12 +3853,24 @@ final class StockPage
         $type   = $s->hasField('location_place_type') ? (int) $this->stock->table('location')->first($place, $s->field('location_place_type')) : 0;
         $parent = ! $movable && $tree->parentOf($place) > 0 ? $tree->pathOf($tree->parentOf($place)) : '';
         [$template, $copies] = $this->stock->labelForPlace($type, $movable);
+        $labels = $this->stock->labelTemplates();
+        $chosen = $instead > 0 ? $instead : $this->stock->placeTypes()->labelTemplateOf($type);
+        $origin = [];
+        // D-1519: a print rule for the place type goes first; the type's own label stays the way where none holds.
+        $rule = $instead > 0 ? null : $this->stock->labelRule('location', $type);
+        if ($rule !== null && $labels->get($rule['label']) !== null) {
+            $labels   = $labels->preferring($rule['printer']);
+            $chosen   = $rule['label'];
+            $template = $labels->get($chosen);
+            $copies   = $rule['copies'] ?? (int) ($template['copies'] ?? ($movable ? 2 : 1));
+            $origin   = self::ruleOrigin($rule);
+        }
 
         return [$movable ? 'K' : 'O', $place, $tree->titleOf($place), implode(' · ', array_filter([
             $tree->shortOf($place),
             $project === '' ? '' : __('Projekt', 'taxmod-stock') . ': ' . $project,
             $parent,
-        ])), $copies, $template === null && $instead === 0 ? [] : $this->stock->labelTemplates()->dialog($instead > 0 ? $instead : $this->stock->placeTypes()->labelTemplateOf($type), [
+        ])), $copies, $template === null && $instead === 0 ? [] : $labels->dialog($chosen, $origin + [
             // D-1160: the modeller reads the fields the layout names from the place itself; these fill what it has no field for.
             'record' => $place,
             'values' => ['bezeichnung' => $tree->titleOf($place), 'kurzzeichen' => $tree->shortOf($place), 'projekt' => $project, 'ort' => $parent],

@@ -51,4 +51,20 @@ final class NoLabels
     {
         return [];
     }
+
+    /**
+     * D-1519: no rules without the module.
+     *
+     * @param array<string, mixed> $asked
+     * @return array{id: int, name: string, label: int, copies: int|null, printer: int}|null
+     */
+    public function ruleFor(array $asked): ?array
+    {
+        return null;
+    }
+
+    public function preferring(int $printer): self
+    {
+        return $this;
+    }
 }

@@ -68,6 +68,21 @@ final class CountStornoTest extends TestCase
     }
 
     #[Test]
+    public function a_correction_taking_some_away_comes_back_although_the_lot_came_in_before(): void
+    {
+        // His report 2026-11-20 22:47: «Inventur · … · −30» — «Stornieren» did nothing. Line 70 is the lot's receipt, before the count.
+        $s     = Fixture::structure();
+        $lines = $this->lines([70 => [60, '40', null], 83 => [60, '-30', null]]);
+        $deals = $this->deals([95 => [203, [83]], 96 => [201, [70]]]);
+        $rows  = (new Storno($s))->countRows(95, 83, $deals, $lines);
+
+        self::assertSame([['lot' => 60, 'place' => null, 'quantity' => '30', 'reverses' => 83]], $rows);
+        // A «+» line still waits for what was booked on its lot after it.
+        $this->expectException(StockError::class);
+        (new Storno($s))->countRows(90, 81, $this->deals([95 => [203, [83]]]), $lines);
+    }
+
+    #[Test]
     public function only_a_count_and_only_its_own_lines(): void
     {
         $s = Fixture::structure();

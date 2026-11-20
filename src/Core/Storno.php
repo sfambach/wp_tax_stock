@@ -135,6 +135,10 @@ final class Storno
      * The rows of the Storno of a count (D-1036): every line «+Menge» of the Inventur — or only `$line` — goes out again.
      * A lot with any booking since the count that is not itself cancelled keeps its count: that booking is taken back first.
      *
+     * His report 2026-11-20 22:47 («Stornieren» on «Inventur · … · −30» did nothing): a correction (D-1382) also books «−Menge»
+     * on a lot that came in long before. Such a line comes back as «+Menge» at its place — taking back a removal needs nothing
+     * to be left. And «since the count» means lines booked after it, not the lot's receipt before it.
+     *
      * @return list<array{lot: int, place: int|null, quantity: string, reverses: int}>
      */
     public function countRows(int $deal, ?int $line, Table $transactions, Table $lines): array
@@ -166,10 +170,11 @@ final class Storno
         }
 
         $own   = array_flip($mine);
+        $first = min($mine);
         $later = [];
 
         foreach ($lines->ids() as $other) {
-            if (! isset($own[$other]) && ! isset($paired[$other])) {
+            if ($other > $first && ! isset($own[$other]) && ! isset($paired[$other])) {
                 $later[(int) $lines->first($other, $s->field('line_lot'))] = true;
             }
         }
@@ -182,15 +187,18 @@ final class Storno
             $quantity = trim((string) $lines->first($id, $s->field('line_quantity')));
             $place    = $where === null ? 0 : (int) $lines->first($id, $where);
 
-            if ($lot <= 0 || str_starts_with($quantity, '-') || (float) $quantity <= 0.0) {
+            $out = ! str_starts_with($quantity, '-');
+            $abs = ltrim($quantity, '-');
+
+            if ($lot <= 0 || (float) $abs <= 0.0) {
                 throw StockError::notCancellable($deal);
             }
 
-            if (isset($later[$lot])) {
+            if ($out && isset($later[$lot])) {
                 throw StockError::lotBookedSinceCount($lot);
             }
 
-            $rows[] = ['lot' => $lot, 'place' => $place > 0 ? $place : null, 'quantity' => '-' . $quantity, 'reverses' => $id];
+            $rows[] = ['lot' => $lot, 'place' => $place > 0 ? $place : null, 'quantity' => ($out ? '-' : '') . $abs, 'reverses' => $id];
         }
 
         return $rows;

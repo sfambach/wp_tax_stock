@@ -1786,6 +1786,24 @@ $pruefe($ability !== null && $ohne instanceof WP_Error && $falsch instanceof WP_
     && is_array($gebucht) && abs($s->ledger()->restOf($korrLos) - ($vorher + 1)) < 1e-9 && count($s->ledger()->lotsOf($r['t1'])) === $vorAnz + 1,
     'D-1382: taxmod-stock/book-correction books +1 on a lot and a new lot through the inventory booking; without a note or with an unknown place nothing is booked, the error names the row' . ($gebucht instanceof WP_Error ? ': ' . $gebucht->get_error_message() : ''));
 
+// Prüftor 2026-11-20 (Stefan's THT box): an Umbuchung over MCP is the Lager's own Vorgang «Umbuchung» (D-1233) — all rows checked
+// first, all or nothing, the error naming the row; empty quantity moves all that lies there.
+$s       = new StockService();
+$nach    = (int) array_key_first(array_diff_key($s->places(), [$korrOrt => true]));
+$daVor   = $s->ledger()->restAt($korrLos, $korrOrt);
+$umbuch  = wp_get_ability(TaxmodStock\WordPress\TransferAbility::NAME);
+$zuviel  = $umbuch?->execute(['note' => 'Prüfung', 'rows' => [['lot' => $korrLos, 'from' => $korrOrt, 'to' => $nach, 'quantity' => '1'], ['lot' => $korrLos, 'from' => $korrOrt, 'to' => $nach, 'quantity' => (string) ($daVor + 5)]]]);
+$s       = new StockService();
+$still   = abs($s->ledger()->restAt($korrLos, $korrOrt) - $daVor) < 1e-9;
+$eins    = $umbuch?->execute(['note' => 'Prüfung', 'date' => '2026-11-20', 'rows' => [['lot' => $korrLos, 'from' => $korrOrt, 'to' => $nach, 'quantity' => '1']]]);
+$s       = new StockService();
+$einsOk  = abs($s->ledger()->restAt($korrLos, $korrOrt) - ($daVor - 1)) < 1e-9;
+$rest    = $umbuch?->execute(['note' => 'Prüfung zurück', 'date' => '2026-11-20', 'rows' => [['lot' => $korrLos, 'from' => $nach, 'to' => $korrOrt]]]);
+$s       = new StockService();
+$pruefe($umbuch !== null && $zuviel instanceof WP_Error && str_contains($zuviel->get_error_message(), 'row 2') && $still && is_array($eins) && $einsOk
+    && is_array($rest) && abs($s->ledger()->restAt($korrLos, $korrOrt) - $daVor) < 1e-9 && $s->ledger()->restAt($korrLos, $nach) < 1e-9 && $umbuch->execute(['note' => ' ', 'rows' => [['lot' => $korrLos, 'from' => $korrOrt, 'to' => $nach]]]) instanceof WP_Error,
+    'taxmod-stock/book-transfer moves 1 there and, without a quantity, all of it back, as Vorgang «Umbuchung»; too much in row 2 books nothing and names the row; no note, no booking' . ($eins instanceof WP_Error ? ': ' . $eins->get_error_message() : ''));
+
 // D-1385, his wish 2026-11-15 «im menü bestand unten suchmaske für material»: the search under «Bestand» finds «µ» and «u»
 // alike, the number from the label opens the material, each hit with its stock — and it stands in the navigation.
 $s       = new StockService();

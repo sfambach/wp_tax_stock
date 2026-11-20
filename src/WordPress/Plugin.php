@@ -163,6 +163,7 @@ final class Plugin
         // D-1209: the stock for a reader over MCP, in the modeller's category (registered by the modeller beforehand).
         add_action('wp_abilities_api_init', static fn () => (new StockAbility())->register());
         add_action('wp_abilities_api_init', static fn () => (new CorrectionAbility())->register());
+        add_action('wp_abilities_api_init', static fn () => (new TransferAbility())->register());
         // Only where a setting is saved (options.php) or read over REST: naming the options compiled the 100 KB stock service on every page view (D-1187).
         if (($GLOBALS['pagenow'] ?? '') === 'options.php') {
             add_action('admin_init', [$this, 'registerSettings']);

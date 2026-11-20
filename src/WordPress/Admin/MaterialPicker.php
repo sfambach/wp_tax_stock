@@ -2,6 +2,8 @@
 
 namespace TaxmodStock\WordPress\Admin;
 
+use TaxmodStock\Core\StockList;
+
 /**
  * The material search of the stock (D-1385): on the page «Bestand» opens it jumps to a material's stock; as a building block
  * in another module's dialog (D-1387) it picks a material, then a place and a quantity, and hands them on as fields and as
@@ -30,10 +32,13 @@ final class MaterialPicker
     private static bool $assets = false;
 
     /** D-1385: the search on the page of «Bestand», below its tiles; a hit opens that material's stock. */
-    public static function page(): string
+    public static function page(bool $stock = false): string
     {
+        // His word 2026-11-20 20:23: «die Suche im Bestand soll im Bestand bleiben» — from «Bestand» the list keeps to what is in
+        // stock and shows the lots ({@see StockPage::asksStock()}); from «Stammdaten» it stays the material list.
         return '<form class="taxmod-material-search is-page" role="search" method="get" action="' . esc_url(admin_url('admin.php')) . '" data-mode="jump"' . self::data([]) . '>'
             . '<input type="hidden" name="page" value="' . esc_attr(Pages::STOCK) . '"><input type="hidden" name="tab" value="material">'
+            . ($stock ? '<input type="hidden" name="filter" value="' . esc_attr(StockList::IN_STOCK) . '"><input type="hidden" name="' . esc_attr(StockPage::ASKS_STOCK) . '" value="1">' : '')
             . self::field('taxmod-material-search', 's', '', __('Material suchen', 'taxmod-stock'), true)
             . self::hint() . '</form>' . self::assets();
     }

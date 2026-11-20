@@ -84,12 +84,12 @@ final class SettingsPage
             . wp_nonce_field(self::USER_ACTION, '_wpnonce', true, false) . '<input type="hidden" name="action" value="' . esc_attr(self::USER_ACTION) . '">'
             . ListPage::toolbar([[StockPage::saveButton()]])
             . '<table class="form-table" role="presentation"><tbody>'
-            . '<tr><th scope="row">' . esc_html__('Vollbild', 'taxmod-stock') . '</th><td><label><input type="checkbox" name="fullscreen" value="1"' . checked(LogisticsShell::isFullscreen(), true, false) . '> '
+            . '<tr><th scope="row">' . esc_html__('Vollbild', 'taxmod-stock') . '</th><td><label>' . ListPage::field(InputKind::Tick, 'fullscreen', '1', ['checked' => (string) (LogisticsShell::isFullscreen()) === '1']) . ' '
             . esc_html__('Logistik ohne WordPress-Leisten zeigen', 'taxmod-stock') . '</label></td></tr>'
-            . '<tr><th scope="row">' . esc_html__('Spalten der Listen', 'taxmod-stock') . '</th><td><label><input type="checkbox" name="reset_columns" value="1"> '
+            . '<tr><th scope="row">' . esc_html__('Spalten der Listen', 'taxmod-stock') . '</th><td><label>' . ListPage::field(InputKind::Tick, 'reset_columns', '1') . ' '
                 . esc_html__('Eigene Spaltenwahl aller Listen zurücksetzen', 'taxmod-stock') . '</label></td></tr>'
             // His wish 2026-11-09: the trees on the left open as he left them; this forgets it.
-            . '<tr><th scope="row">' . esc_html__('Bäume links', 'taxmod-stock') . '</th><td><label><input type="checkbox" name="reset_trees" value="1"> '
+            . '<tr><th scope="row">' . esc_html__('Bäume links', 'taxmod-stock') . '</th><td><label>' . ListPage::field(InputKind::Tick, 'reset_trees', '1') . ' '
                 . esc_html__('Gemerkten Ast und offene Äste aller Bäume vergessen', 'taxmod-stock') . '</label></td></tr>'
             // D-1468: the person's own choice wins over the Grundeinstellung.
             . '<tr><th scope="row"><label for="taxmod-stock-single">' . esc_html__('Bei genau einem Treffer', 'taxmod-stock') . '</label></th><td><select id="taxmod-stock-single" name="single_hit">'
@@ -179,11 +179,10 @@ final class SettingsPage
             . '<input type="hidden" name="taxmod_stock_views_sent" value="1"><table class="form-table" role="presentation"><tbody>';
 
         foreach ($titles as $tab => [$title, $explain]) {
-            $html .= '<tr><th scope="row">' . esc_html($title) . '</th><td><label><input type="checkbox" name="taxmod_stock_views[' . esc_attr($tab) . ']" value="1"'
-                . checked($views->expanded($tab), true, false) . '> ' . esc_html__('Gleich aufgeklappt', 'taxmod-stock') . '</label>'
+            $html .= '<tr><th scope="row">' . esc_html($title) . '</th><td><label>' . ListPage::field(InputKind::Tick, 'taxmod_stock_views[' . $tab . ']', '1', ['checked' => (string) ($views->expanded($tab)) === '1']) . ' ' . esc_html__('Gleich aufgeklappt', 'taxmod-stock') . '</label>'
                 . '<p class="description">' . esc_html($explain) . '</p>'
                 // D-1468: off unless set — the list shows its one row and the person opens it.
-                . '<p><label><input type="checkbox" name="taxmod_stock_single[' . esc_attr($tab) . ']" value="1"' . checked($views->opensSingleHit($tab), true, false) . '> '
+                . '<p><label>' . ListPage::field(InputKind::Tick, 'taxmod_stock_single[' . $tab . ']', '1', ['checked' => (string) ($views->opensSingleHit($tab)) === '1']) . ' '
                 . esc_html__('Bei genau einem Treffer gleich öffnen', 'taxmod-stock') . '</label></p>'
                 . '<p class="description">' . esc_html__('Sonst bleibt die Liste mit der einen Zeile stehen. Jede Person kann das in den Benutzereinstellungen für sich anders wählen.', 'taxmod-stock') . '</p></td></tr>';
         }
@@ -221,7 +220,7 @@ final class SettingsPage
         $cells = [];
 
         foreach ([...$rows, null, null, null] as $i => $node) {
-            $cells[] = ['<input type="number" min="1" name="taxmod_stock_not_material[' . $i . ']" value="' . esc_attr((string) ($node ?? '')) . '" style="width:12em">',
+            $cells[] = [ListPage::field(InputKind::Number, 'taxmod_stock_not_material[' . $i . ']', (string) ($node ?? ''), ['min' => '1']),
                 esc_html($node === null ? '' : ($names[$node] ?? ''))];
         }
 

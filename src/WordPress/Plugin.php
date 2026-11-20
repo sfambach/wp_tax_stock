@@ -737,7 +737,11 @@ final class Plugin
             default    => null,
         };
 
-        return $key === null ? [] : self::reading()->placeFunctions()->with($key);
+        try {
+            return $key === null ? [] : self::reading()->placeFunctions()->with($key);
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
     }
 
     /**

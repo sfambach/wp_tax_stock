@@ -160,6 +160,9 @@ $pruefe(array_column($fertigung, 'key') === ['project-boxes', 'module-__navcheck
 $_GET = ['page' => ModulePage::PAGE, 'module' => '__navcheck-deep'];
 $tief = LogisticsShell::wrap(ModulePage::PAGE, '<p>x</p>');
 $pruefe(substr_count($tief, 'taxmod-shell-group is-open') === 2 && str_contains($tief, '>Ebene B</a><ul><li><a') && str_contains($tief, 'aria-current="page">Tief</a>'), 'a page with a path of two groups stands three levels deep, its groups open (n levels)');
+// D-1521, his word 2026-11-20 «die Box rechts, die verschwindet ein bisschen aus dem Bild raus»: the shell keeps WordPress's right margin.
+$pruefe((bool) preg_match('~\.taxmod-shell\{[^}]*margin:10px 20px 0 0~', $tief), 'D-1521: the shell keeps a right margin, a box on the right stays inside the screen');
+$pruefe(str_contains($tief, '<div class="taxmod-shell-column"><div class="taxmod-shell-head">Tax Logistik</div><nav') && ! str_contains($tief, 'taxmod-shell-title">Logistik') && (bool) preg_match('~\.taxmod-shell-head,\.taxmod-shell-main>h2:first-child\{[^}]*min-height:var\(--taxmod-head-height~', $tief), 'D-1521: a box as high as the page head stands above the menu, so menu and content start on one line');
 // D-1128, his word «auf dem hauptknoten eine übersicht zu bekommen mit abstprung»: an area and a group open an overview of tiles.
 $_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'stock'];
 $uebersicht = LogisticsShell::wrap(CockpitPage::PAGE, (new CockpitPage())->render());

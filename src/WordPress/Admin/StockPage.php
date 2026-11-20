@@ -2008,7 +2008,7 @@ final class StockPage
             . (count($merged) > 1 ? '<input type="hidden" name="lots" value="' . esc_attr(implode(',', array_map('intval', $merged))) . '">' : '')
             . '<input type="hidden" name="from" value="' . esc_attr((string) $from) . '">'
             . self::actForm([
-                ['label' => __('Menge', 'taxmod-stock'), 'control' => '<input type="text" inputmode="decimal" name="quantity" style="width:7em" value="' . esc_attr(DecimalText::stored($quantity, 3)) . '">',
+                ['label' => __('Menge', 'taxmod-stock'), 'control' => ListPage::quantity('quantity', $this->stock->unitWords([$thing])[$thing] ?? '', DecimalText::stored($quantity, 3)),
                     'hint' => __('Weniger als alles teilt den Posten auf zwei Orte.', 'taxmod-stock')],
                 ['label' => __('Nach', 'taxmod-stock'), 'control' => $this->stock->placeChooser('location', 0, '', [$from]),
                     'hint' => __('Bucht die Menge vom bisherigen Ort ab und am neuen zu, als Vorgang «Umbuchung»; «Stornieren» bei den Vorgängen nimmt es zurück.', 'taxmod-stock')],
@@ -2743,9 +2743,9 @@ final class StockPage
         $controls = $this->bookOutControls ??= $this->stock->consumptionControls();
         $unit     = $this->rowFacts['unit'][$thing];
         $rows     = [
-            ['label' => __('Menge', 'taxmod-stock'), 'control' => ($controls['quantity'] !== '' ? $controls['quantity']
-                : '<input type="text" inputmode="decimal" name="quantity" required style="width:6em">')
-                . ($unit === '' ? '' : ' <span class="taxmod-stock-unit">' . esc_html($unit) . '</span>'),
+            ['label' => __('Menge', 'taxmod-stock'), 'control' => $controls['quantity'] !== ''
+                ? $controls['quantity'] . ($unit === '' ? '' : ' <span class="taxmod-stock-unit">' . esc_html($unit) . '</span>')
+                : ListPage::quantity('quantity', $unit, '', ['required' => 'required']),
                 /* translators: %s: quantity at this place */
                 'hint' => sprintf(__('An diesem Ort liegen %s.', 'taxmod-stock'), ListPage::number($quantity))],
             $this->purposeRow($place, $switch),
@@ -4652,9 +4652,9 @@ final class StockPage
                 ['label' => __('Pins je Stück', 'taxmod-stock'), 'for' => 'taxmod-stock-piece-pins', 'control' => '<input type="number" id="taxmod-stock-piece-pins" name="piece_pins" min="1" max="' . esc_attr((string) $pack->content) . '" step="1" required value="' . esc_attr((string) $pack->content) . '" style="width:6em">',
                     'hint' => __('Jedes Stück ganz aus einer Leiste; was übrig bleibt, kommt als eigener Posten zurück.', 'taxmod-stock')],
             ] : [
-                ['label' => __('Menge', 'taxmod-stock'), 'control' => ($controls['quantity'] !== '' ? $controls['quantity']
-                    : '<input type="text" inputmode="decimal" name="quantity" required style="width:6em">')
-                    . ($unit === '' ? '' : ' <span class="taxmod-stock-unit">' . esc_html($unit) . '</span>')],
+                ['label' => __('Menge', 'taxmod-stock'), 'control' => $controls['quantity'] !== ''
+                    ? $controls['quantity'] . ($unit === '' ? '' : ' <span class="taxmod-stock-unit">' . esc_html($unit) . '</span>')
+                    : ListPage::quantity('quantity', $unit, '', ['required' => 'required'])],
             ]),
             $this->purposeRow($presetPlace),
         ];

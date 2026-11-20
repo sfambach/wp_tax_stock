@@ -351,17 +351,13 @@ final class InboundPage
             . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"><input type="hidden" name="op" value="test">'
             . '<input type="hidden" name="lot" value="' . esc_attr((string) $lot) . '"><input type="hidden" name="tab" value="' . esc_attr(self::TEST) . '">'
             . wp_nonce_field(self::ACTION, '_wpnonce', true, false);
-        $radios = '';
-
-        foreach ($choices as $value => $label) {
-            $radios .= '<label style="margin-right:1.5em"><input type="radio" name="result" value="' . esc_attr($value) . '" required> ' . esc_html($label) . '</label>';
-        }
+        $radios = ListPage::field(InputKind::Choice, 'result', '', ['choices' => $choices, 'required' => true]);
 
         // D-1396: the revision's test steps to tick off while testing; the ticks guide, the result is what is stored.
         $list = '';
 
         foreach ($steps as $n => $step) {
-            $list .= '<li><label><input type="checkbox" name="steps[]" value="' . esc_attr((string) ($n + 1)) . '"> ' . esc_html($step['instruction']) . '</label>'
+            $list .= '<li><label>' . ListPage::field(InputKind::Tick, 'steps[]', (string) ($n + 1)) . ' ' . esc_html($step['instruction']) . '</label>'
                 . ($step['firmware'] === '' ? '' : ' <span class="description">' . esc_html(sprintf(/* translators: %s: firmware name and version */ __('Firmware: %s', 'taxmod-stock'), $step['firmware'])) . '</span>') . '</li>';
         }
 

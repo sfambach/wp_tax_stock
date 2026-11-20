@@ -448,7 +448,7 @@ final class PurchasePage
             . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
             . ListPage::dialogAction('taxmod-stock-add-' . $order, __('Position hinzufügen', 'taxmod-stock'), __('Position hinzufügen', 'taxmod-stock'),
                 '<span style="display:block">' . esc_html__('Material', 'taxmod-stock') . '</span>' . (new StockPage($this->stock))->materialPicker('thing')
-                . '<label style="display:block;margin-top:.5em">' . esc_html__('Menge', 'taxmod-stock') . '<br><input type="text" inputmode="decimal" name="quantity" style="width:8em"></label>',
+                . '<label style="display:block;margin-top:.5em">' . esc_html__('Menge', 'taxmod-stock') . '<br>' . ListPage::quantity('quantity', '') . '</label>',
                 'op', 'add', __('Hinzufügen', 'taxmod-stock'))
             . '</form>';
     }
@@ -492,7 +492,7 @@ final class PurchasePage
         $p    = $this->stock->purchasing();
         $edit = in_array($tab, ['bedarf', 'bestellen'], true);
         // C5: on the demand's own page each position carries a tick for «Verschieben nach …», in that form.
-        $tick = static fn (int $line): string => $pick === '' ? '' : '<td><input type="checkbox" name="positions[]" value="' . esc_attr((string) $line) . '" form="' . esc_attr($pick) . '"></td>';
+        $tick = static fn (int $line): string => $pick === '' ? '' : '<td>' . ListPage::field(InputKind::Tick, 'positions[]', (string) $line, ['form' => $pick]) . '</td>';
         $html = '<table class="widefat striped" style="margin-top:8px"><thead><tr>' . ($pick === '' ? '' : '<td class="check-column"></td>') . '<th>' . esc_html__('Position', 'taxmod-stock') . '</th><th>' . esc_html__('Art.-Nr.', 'taxmod-stock') . '</th><th>'
             . esc_html__('Menge', 'taxmod-stock') . '</th><th>' . ($tab === 'bedarf' ? esc_html__('Bezugsquelle', 'taxmod-stock') : '') . '</th><th></th></tr></thead><tbody>';
 
@@ -535,7 +535,7 @@ final class PurchasePage
     {
         return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="white-space:nowrap">' . $this->hidden('quantity', $tab)
             . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '"><input type="hidden" name="purchase" value="' . esc_attr((string) $purchase) . '">'
-            . '<input type="number" min="1" step="1" name="quantity" style="width:6em" value="' . esc_attr($quantity) . '"> '
+            . ListPage::field(InputKind::Number, 'quantity', $quantity, ['min' => '1', 'step' => '1']) . ' '
             . StockPage::saveButton(__('Menge speichern', 'taxmod-stock')) . '</form>';
     }
 

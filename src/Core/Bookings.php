@@ -388,10 +388,13 @@ final class Bookings
      * material where their strip lay (`rests[].place`).
      *
      * @param list<array{lot: int, place: int, take: int, thing: int, pieces: int, into: int, name: string, more?: list<array{lot: int, place: int, take: int}>, value?: array{amount: string, unit: string|null}|null, rests: list<array{thing: string, quantity: int, name: string, place?: int, value?: array{amount: string, unit: string|null}|null}>}> $rows
+     * D-1535 (P2): a rest shorter than 2 pins (`scrap`) is not taken in this Vorgang; it goes in a second one of
+     * the kind «Defekt/Ausschuss» (D-1297) with the same Bezug and `$scrapReason` as description — both in one act.
+     *
      * @param list<array<string, mixed>> $prelude
      * @return list<array<string, mixed>>
      */
-    public function cut(array $rows, int $reference, string $title, array $prelude = []): array
+    public function cut(array $rows, int $reference, string $title, array $prelude = [], string $scrapReason = ''): array
     {
         $s = $this->structure;
 
@@ -401,9 +404,22 @@ final class Bookings
 
         $this->start();
         $this->changes = $prelude;
+        $scrap         = [];
+
+        foreach ($rows as $row) {
+            foreach ($row['scrap'] ?? [] as $bit) {
+                $scrap[] = $bit;
+            }
+        }
 
         foreach ($rows as $row) {
             foreach ([['lot' => $row['lot'], 'place' => $row['place'], 'take' => $row['take']], ...($row['more'] ?? [])] as $take) {
+                foreach ($row['scrap'] ?? [] as $bit) {
+                    if ($bit['lot'] === $take['lot'] && $bit['place'] === $take['place']) {
+                        $take['take'] -= $bit['pins'];
+                    }
+                }
+
                 if ($take['take'] > 0) {
                     $this->line($title, (string) $take['lot'], self::signed(-$take['take']), null, $take['place']);
                 }
@@ -420,7 +436,25 @@ final class Bookings
             }
         }
 
-        return $this->finish($title, 'kind_consumption', [(string) $s->field('transaction_reference') => (string) $reference]);
+        $cut = $this->finish($title, 'kind_consumption', [(string) $s->field('transaction_reference') => (string) $reference]);
+
+        if ($scrap === []) {
+            return $cut;
+        }
+
+        $this->start();
+
+        foreach ($scrap as $bit) {
+            $this->line($title, (string) $bit['lot'], self::signed(-$bit['pins']), null, $bit['place']);
+        }
+
+        $extra = [(string) $s->field('transaction_reference') => (string) $reference];
+
+        if (trim($scrapReason) !== '' && $s->hasField('description')) {
+            $extra[(string) $s->field('description')] = trim($scrapReason);
+        }
+
+        return [...$cut, ...$this->finish($title, $s->hasValue('kind_scrap') ? 'kind_scrap' : 'kind_consumption', $extra)];
     }
 
     /**

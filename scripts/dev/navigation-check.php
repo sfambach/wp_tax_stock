@@ -129,7 +129,8 @@ $einstellungen = array_values(array_filter($areas, static fn (array $area): bool
 $druck = array_values(array_filter($einstellungen, static fn (array $item): bool => ($item['module'] ?? '') === '__navcheck-print'))[0] ?? null;
 // D-1502 Stufe 3, his word 2026-11-20 «ein Arbeitsplatz ist ein Stammdatum»: a module page with area «masterdata» stands under Stammdaten, after Lagerstruktur.
 $stamm = array_column(array_values(array_filter($areas, static fn (array $area): bool => $area['key'] === 'masterdata'))[0]['items'] ?? [], 'key');
-$pruefe(($i = array_search('module-__navcheck-master', $stamm, true)) !== false && $i === array_search('place-types', $stamm, true) + 1 && ! in_array('module-__navcheck-master', array_column($einstellungen, 'key'), true), 'D-1502: a master-data page of a module stands under Stammdaten after Lagerstruktur (' . implode(', ', $stamm) . ')');
+$kontakt = array_values(array_filter(array_keys($stamm), static fn (int $k): bool => str_starts_with((string) $stamm[$k], 'contact')))[0] ?? count($stamm);
+$pruefe(($i = array_search('module-__navcheck-master', $stamm, true)) !== false && $i > array_search('place-types', $stamm, true) && $i < $kontakt && ! in_array('module-__navcheck-master', array_column($einstellungen, 'key'), true), 'D-1518: a master-data page of a module stands under Stammdaten between Lagerstruktur and Kontakte (' . implode(', ', $stamm) . ')');
 $pruefe($druck !== null && ($druck['path'] ?? []) === ['Druck'] && ! in_array('print', array_column($areas, 'key'), true), 'a page announced with area «print» stands under Einstellungen › Druck, not in an area of its own');
 // D-1296, his report 2026-11-18 «etiketten gibts jetzt zweimal als menüpunkt», «drucker auch»: labels, printers and rolls are the
 // labels module's; the stock keeps «Etiketten je Bauform» (replaces D-1165's «Druck › Etiketten» check, PR-9).

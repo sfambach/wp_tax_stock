@@ -131,10 +131,10 @@ final class Plugin
         // *The one door into the model and the shared confirm dialog (D-1186) came with the modeller 0.1.175; the Ausbuchen form needs the narrowed choosers of 0.2.64 (D-1298), every form the toolbar of 0.2.67 (D-1308), the view dialog of 0.2.68 and its script of 0.2.69 (D-1309; the 0.2.69 release still says 0.2.68 in its header, so the gate asks 0.2.68); ListPage::grid of 0.2.120 (D-1409); ListPage::number of 0.2.130 (D-1423); ModelDoor::remembering of 0.2.132 (D-1186, G5); DialogNumber at the edge of 0.2.133 (D-1431); number columns, the complete answer and the searched texts of a row of 0.2.146 (D-1462); listBar, iconButton, date, dateCell, money of 0.2.172 (D-1500); an older one is named
         // rather than failing on a page.*
         // Asked by version, not by loading the classes: method_exists() compiled the 43 KB list page on every page view (D-1187).
-        // D-1501: the fields go through ListPage::field, which the modeller has from 0.2.173 on.
-        if (! class_exists(\Taxmod\WordPress\Plugin::class, false) || version_compare(\Taxmod\WordPress\Plugin::VERSION, '0.2.173', '<')) {
+        // D-1501: the fields go through ListPage::field, which the modeller has from 0.2.174 on.
+        if (! class_exists(\Taxmod\WordPress\Plugin::class, false) || version_compare(\Taxmod\WordPress\Plugin::VERSION, '0.2.174', '<')) {
             add_action('admin_notices', static function (): void {
-                echo '<div class="notice notice-error"><p>' . esc_html__('Taxmod Stock braucht den aktiven Taxonomy Modeller ab 0.2.173.', 'taxmod-stock') . '</p></div>';
+                echo '<div class="notice notice-error"><p>' . esc_html__('Taxmod Stock braucht den aktiven Taxonomy Modeller ab 0.2.174.', 'taxmod-stock') . '</p></div>';
             });
 
             return;

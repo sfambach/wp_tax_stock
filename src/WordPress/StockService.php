@@ -6237,6 +6237,70 @@ final class StockService
     }
 
     /**
+     * The Umbuchung asked for over MCP (Prüftor 2026-11-20, Stefan's THT box 20:31): the same Vorgang «Umbuchung» as the screens,
+     * every row a lot, the place it lies at, where it goes and how much (empty: all that lies there). All rows are checked first,
+     * all or nothing, one write — D-1233: a lot's place changes only so.
+     *
+     * @param list<array{lot?: int, from?: int, to?: int, quantity?: string}> $rows
+     * @return array<string, mixed>
+     */
+    public function bookTransfers(array $rows, string $note, string $today): array
+    {
+        $note = trim($note);
+
+        if ($note === '') {
+            throw new \InvalidArgumentException('An Umbuchung needs a note saying why.');
+        }
+
+        $lots   = $this->table('lot');
+        $places = $this->table('location');
+        $ledger = $this->ledger();
+        $moves  = [];
+        $taken  = [];
+
+        foreach (array_values($rows) as $i => $row) {
+            $step = sprintf('row %d', $i + 1);
+            $lot  = (int) ($row['lot'] ?? 0);
+            $from = (int) ($row['from'] ?? 0);
+            $to   = (int) ($row['to'] ?? 0);
+
+            if (! $lots->has($lot)) {
+                throw new \InvalidArgumentException($step . ': lot ' . $lot . ' does not exist.');
+            }
+
+            foreach ([$from, $to] as $place) {
+                if (! $places->has($place)) {
+                    throw new \InvalidArgumentException($step . ': place ' . $place . ' is no storage place.');
+                }
+            }
+
+            if ($from === $to) {
+                throw new \InvalidArgumentException($step . ': from and to are the same place.');
+            }
+
+            $key  = $lot . ':' . $from;
+            $rest = $ledger->restAt($lot, $from) - ($taken[$key] ?? 0.0);
+            $text = trim((string) ($row['quantity'] ?? ''));
+            $want = $text === '' ? $rest : (float) str_replace(',', '.', $text);
+
+            if ($want <= 0.0 || $want > $rest + 1e-9) {
+                throw new \InvalidArgumentException($step . ': lot ' . $lot . ' has ' . DecimalText::stored(max($rest, 0.0)) . ' at place ' . $from . ', not ' . ($text === '' ? 'anything' : $text) . '.');
+            }
+
+            $taken[$key] = ($taken[$key] ?? 0.0) + $want;
+            $moves[]     = new TransferRow($lot, $from, $to, DecimalText::stored($want));
+        }
+
+        if ($moves === []) {
+            throw StockError::nothingToBook();
+        }
+
+        $this->guardUnblocked(array_map(static fn (TransferRow $move): int => $move->lot, $moves));
+
+        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($moves, 'Umbuchung: ' . $note, $ledger, '', $this->reservedPlaces(), $this->boundLots()));
+    }
+
+    /**
      * «Umbuchen nach …» for several materials at once (his wish 2026-11-03: «3 material wählen alle umbuchen nach»): all
      * of each one, every lot from every place it lies at, to one place — one Vorgang «Umbuchung», one write.
      *

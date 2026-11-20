@@ -215,7 +215,7 @@ final class ContactsPage
         $form   = (string) apply_filters('taxmod_record_editor', '', $contact, $back, $undo);
         $word   = (string) ($this->stock->contactTree()[$node]['name'] ?? __('Kontakt', 'taxmod-stock'));
 
-        return ListPage::head($word, $list, __('Zur Liste', 'taxmod-stock'))
+        return ListPage::recordHead(__('Kontakt', 'taxmod-stock'), $word, $list, __('Zur Liste', 'taxmod-stock'))
             . ($form === '' ? ListPage::toolbar([[StockPage::editorMissing()], ...$undo]) : $form);
     }
 

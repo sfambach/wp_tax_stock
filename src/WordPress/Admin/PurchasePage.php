@@ -151,7 +151,7 @@ final class PurchasePage
         $form   = (string) apply_filters('taxmod_record_editor', '', $purchase, self::url(['kauf' => (string) $purchase]), []);
 
         // D-1521: the way back stands before the title in the one head.
-        return ListPage::head(sprintf(/* translators: %s: the purchase's word */ __('Kauf – %s', 'taxmod-stock'), $word), self::url(), __('Zum Einkauf', 'taxmod-stock'))
+        return ListPage::recordHead(__('Kauf', 'taxmod-stock'), $word, self::url(), __('Zum Einkauf', 'taxmod-stock'))
             . ($form === '' ? StockPage::editorMissing() : $form);
     }
 
@@ -185,7 +185,7 @@ final class PurchasePage
         $passed = $into === [] ? '' : '<p>' . esc_html__('Übergegangen in:', 'taxmod-stock') . ' ' . implode(', ', array_map(fn (int $o): string => '<a href="' . esc_url($this->orderLink($o, $orders)) . '">'
             . esc_html((string) $orders->first($o, $s->field('label')) ?: '#' . $o) . '</a>', $into)) . '</p>';
 
-        return ListPage::head(sprintf(/* translators: %s: the demand's name */ __('Bedarf – %s', 'taxmod-stock'), $label === '' ? '#' . $demand : $label), self::url(['tab' => 'bedarf']), __('Zum Bedarf', 'taxmod-stock')) . $passed
+        return ListPage::recordHead(__('Bedarf', 'taxmod-stock'), $label === '' ? '#' . $demand : $label, self::url(['tab' => 'bedarf']), __('Zum Bedarf', 'taxmod-stock')) . $passed
             . '<form method="post" id="' . esc_attr($form) . '" action="' . esc_url(admin_url('admin-post.php')) . '">' . $this->hidden('move', 'bedarf')
             . '<input type="hidden" name="order" value="' . esc_attr((string) $demand) . '"></form>'
             . ListPage::toolbar([[...($ended ? [$this->button('again', $demand, 0, __('Als neuen Bedarf kopieren', 'taxmod-stock'), 'beendet', true)] : []), $this->addDialog($demand, 'bedarf'), $move]])
@@ -475,7 +475,7 @@ final class PurchasePage
         $names = ['bestellen' => __('Bestellen', 'taxmod-stock'), 'bestellt' => __('Bestellt', 'taxmod-stock'), 'verworfen' => __('Verworfen', 'taxmod-stock')];
         $lines = array_map('intval', $orders->all($order, $s->field('order_lines')));
 
-        return ListPage::head(($label === '' ? '#' . $order : $label) . ' · #' . $order, self::url(['tab' => $tab]), sprintf(/* translators: %s: tab */ __('Zurück zu «%s»', 'taxmod-stock'), $names[$tab]))
+        return ListPage::recordHead(__('Bestellung', 'taxmod-stock'), ($label === '' ? '#' . $order : $label) . ' · #' . $order, self::url(['tab' => $tab]), sprintf(/* translators: %s: tab */ __('Zurück zu «%s»', 'taxmod-stock'), $names[$tab]))
             . ListPage::toolbar([[...($tab === 'bestellen' ? [$this->addDialog($order, $tab)] : []), $this->rowButtons($tab, $order)]])
             . $this->details($tab, $order, $lines, [], $orders, $purchases);
     }

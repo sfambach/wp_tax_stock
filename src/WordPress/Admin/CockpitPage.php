@@ -52,7 +52,7 @@ final class CockpitPage
                 : $this->processBar($found['key'], $group) . $this->tiles($this->overviewTiles($found, $group))
                     // D-1385, his correction 2026-11-15: the material search on the page «Bestand» opens, below its tiles;
                     // D-1472: «Stammdaten» holds the material now, so its page carries the same search.
-                    . (in_array($found['key'], ['stock', 'masterdata'], true) && $group === '' ? MaterialPicker::page() : '');
+                    . (in_array($found['key'], ['stock', 'masterdata'], true) && $group === '' ? MaterialPicker::page($found['key'] === 'stock') : '');
         } catch (StockError $e) {
             $html .= '<div class="notice notice-error"><p>' . esc_html(Messages::of($e)) . '</p></div>';
         }

@@ -138,6 +138,10 @@ final class Structure
         'connector_poles', 'connector_rows', 'connector_pitch', 'connector_orientation',
         // D-1303: the stage of a lot on the production's receipt line.
         'lot_stage',
+        // D-1535 (P4): a strip's «Kontaktart» (D-1390); Rundkontakt is a value of its choice.
+        'connector_contact',
+        // D-1535 (P3): a lot of loose old rests of a strip counted in pins, which no cut plan takes from.
+        'lot_loose_rests',
         // D-1381: a bought set — the set material's wanted content (material and quantity per line), and the set lot a lot came from.
         'lager_set_content', 'set_content_thing', 'set_content_quantity', 'lot_from_set',
         // D-1425: the calculation at the receipt of a completion.
@@ -171,6 +175,8 @@ final class Structure
         'fit_volume', 'fit_sides', 'fit_none', 'level_info', 'level_warning', 'level_error',
         // D-1425: where a part's price came from, and the unit the calculation's times are kept in.
         'price_source_lot', 'price_source_last_purchase', 'unit_second',
+        // D-1535 (P4): «Rundkontakt» in «Kontaktarten».
+        'contact_round',
     ];
 
     /**

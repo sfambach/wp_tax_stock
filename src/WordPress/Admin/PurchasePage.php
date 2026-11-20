@@ -2,6 +2,7 @@
 
 namespace TaxmodStock\WordPress\Admin;
 
+use Taxmod\Core\Description\InputKind;
 use Taxmod\Core\Renderer\GridMarkup;
 use Taxmod\WordPress\Admin\ListPage;
 use TaxmodStock\Core\Purchasing;
@@ -173,7 +174,7 @@ final class PurchasePage
         }
 
         $body  = '<label style="display:block">' . esc_html__('In den Bedarf', 'taxmod-stock') . '<br><select name="demand" form="' . esc_attr($form) . '" style="width:100%">' . $this->select($targets, '') . '</select></label>'
-            . '<label style="display:block;margin-top:.5em">' . esc_html__('Name des neuen Bedarfs', 'taxmod-stock') . '<br><input type="text" name="name" form="' . esc_attr($form) . '" style="width:100%"></label>'
+            . '<label style="display:block;margin-top:.5em">' . esc_html__('Name des neuen Bedarfs', 'taxmod-stock') . '<br>' . ListPage::field(InputKind::Line, 'name', '', ['form' => $form, 'size' => 40]) . '</label>'
             . '<p class="description">' . esc_html__('Die angehakten Positionen wandern mit ihren Werten; der Name gilt nur für «neuer Bedarf».', 'taxmod-stock') . '</p>';
         $move  = ListPage::dialogAction('taxmod-stock-demand-move-dialog', __('Verschieben nach …', 'taxmod-stock'), __('Positionen verschieben', 'taxmod-stock'), $body, 'op', 'move', __('Verschieben', 'taxmod-stock'), $form);
         $back  = [ListPage::back(self::url(['tab' => 'bedarf']), __('Zum Bedarf', 'taxmod-stock'))];
@@ -400,7 +401,7 @@ final class PurchasePage
             [__('Unterwegs / gewünscht', 'taxmod-stock'), GridMarkup::NUMBER], [__('Menge', 'taxmod-stock')]], $rows);
 
         return $html . '<p><label>' . esc_html__('In Bedarf', 'taxmod-stock') . ' <select name="demand">' . $this->select($choices, (string) ($demands === [] ? '0' : end($demands))) . '</select></label> '
-            . '<label>' . esc_html__('Name des neuen Bedarfs', 'taxmod-stock') . ' <input type="text" class="regular-text" name="name" placeholder="' . esc_attr__('z. B. Projekt oder «Lager auffüllen»', 'taxmod-stock') . '"></label></p></form>';
+            . '<label>' . esc_html__('Name des neuen Bedarfs', 'taxmod-stock') . ' ' . ListPage::field(InputKind::Line, 'name', '', ['size' => 40, 'placeholder' => __('z. B. Projekt oder «Lager auffüllen»', 'taxmod-stock')]) . '</label></p></form>';
     }
 
     private function orderRow(string $tab, int $order, Table $orders, Table $purchases, bool $open): string
@@ -523,7 +524,7 @@ final class PurchasePage
             $html .= '<p><label><strong>' . esc_html__('Warenkorb-Liste', 'taxmod-stock') . '</strong> <span class="description">' . esc_html__('(Art.-Nr. Menge, für die Schnellbestellung des Shops)', 'taxmod-stock') . '</span><br>'
                 . '<textarea readonly rows="' . esc_attr((string) max(2, count($lines))) . '" style="width:100%;max-width:480px;font-family:monospace">' . esc_textarea($cart) . '</textarea></label></p>'
                 . '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">' . $this->hidden('ordered', $tab) . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '">'
-                . '<label>' . esc_html__('Bestellnummer des Händlers', 'taxmod-stock') . ' <input type="text" name="number" class="regular-text"></label> '
+                . '<label>' . esc_html__('Bestellnummer des Händlers', 'taxmod-stock') . ' ' . ListPage::field(InputKind::Line, 'number', '', ['size' => 30]) . '</label> '
                 . get_submit_button(__('Als bestellt markieren', 'taxmod-stock'), 'primary', '', false) . '</form>';
         }
 
@@ -598,9 +599,9 @@ final class PurchasePage
         return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">' . $this->hidden('source', 'bedarf')
             . '<input type="hidden" name="order" value="' . esc_attr((string) $demand) . '"><input type="hidden" name="purchase" value="' . esc_attr((string) $purchase) . '">'
             . FirmChoice::field('firm', $this->stock->firmTree(), $first?->firm)
-            . '<input type="text" name="merchant" placeholder="' . esc_attr__('oder Händler', 'taxmod-stock') . '" style="width:8em">'
-            . '<input type="text" name="number" placeholder="' . esc_attr__('Art.-Nr.', 'taxmod-stock') . '" style="width:8em" value="' . esc_attr($first->number ?? '') . '">'
-            . '<input type="text" inputmode="decimal" name="price" placeholder="' . esc_attr__('€/Stück', 'taxmod-stock') . '" style="width:6em">'
+            . ListPage::field(InputKind::Line, 'merchant', '', ['size' => 10, 'placeholder' => __('oder Händler', 'taxmod-stock')])
+            . ListPage::field(InputKind::Line, 'number', (string) ($first->number ?? ''), ['size' => 10, 'placeholder' => __('Art.-Nr.', 'taxmod-stock')])
+            . ListPage::field(InputKind::Decimal, 'price', '', ['size' => 6, 'placeholder' => __('€/Stück', 'taxmod-stock')])
             . get_submit_button(__('Bestellen bei …', 'taxmod-stock'), 'small', '', false) . '</form>';
     }
 

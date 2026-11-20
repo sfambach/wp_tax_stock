@@ -759,7 +759,7 @@ $picSetup = wp_get_ability('taxmod/apply')->execute(['changes' => [
 ]]);
 $picOrder  = is_array($picSetup) ? (int) ($picSetup['refs']['po'] ?? 0) : 0;
 $picBefore = (new StockService())->picturesOf([$bc])[$bc]['pictures'];
-do_action('taxmod_stock_event', $picOrder, 'shipped', '2026-11-13', 'mail', 'x2');
+\Taxmod\Core\Event\SharedListeners::dispatcher()->dispatch(new \Taxmod\Core\Event\OrderReported($picOrder, 'shipped', '2026-11-13', 'mail', 'x2'));
 // The order's lines as parts (composition) take no refs in one act; the aggregation run proves it.
 if ($kind !== 'composition') {
     $pruefe($picOrder > 0 && ! in_array('media:424242', $picBefore, true) && in_array('media:424242', (new StockService())->picturesOf([$bc])[$bc]['pictures'], true), 'D-1317: on the order\'s event the material without a picture takes its purchase\'s, as media:<id>');
@@ -793,12 +793,12 @@ $pruefe($sharedRead && $readingOf() === null, 'read filters share one StockServi
 
 // D-1038 (E1): the inbox's event sets the order status forward, once; a closed order keeps its status.
 $evOrder = (int) (wp_get_ability('taxmod/apply')->execute(['changes' => [['op' => 'create_record', 'ref' => 'evo', 'node' => (string) $r['ord'], 'values' => [(string) $r['o_stat'] => (string) $r['s_best']]]]])['refs']['evo'] ?? 0);
-do_action('taxmod_stock_event', $evOrder, 'shipped', '2026-11-12', 'mail', 'x1');
+\Taxmod\Core\Event\SharedListeners::dispatcher()->dispatch(new \Taxmod\Core\Event\OrderReported($evOrder, 'shipped', '2026-11-12', 'mail', 'x1'));
 $afterShipped = (new StockService())->table('order')->first($evOrder, $r['o_stat']);
-do_action('taxmod_stock_event', $evOrder, 'shipped', '2026-11-12', 'mail', 'x1');
-do_action('taxmod_stock_event', $evOrder, 'delivered', '2026-11-13', 'mail', 'x1');
+\Taxmod\Core\Event\SharedListeners::dispatcher()->dispatch(new \Taxmod\Core\Event\OrderReported($evOrder, 'shipped', '2026-11-12', 'mail', 'x1'));
+\Taxmod\Core\Event\SharedListeners::dispatcher()->dispatch(new \Taxmod\Core\Event\OrderReported($evOrder, 'delivered', '2026-11-13', 'mail', 'x1'));
 $afterDelivered = (new StockService())->table('order')->first($evOrder, $r['o_stat']);
-do_action('taxmod_stock_event', $evOrder, 'shipped', '2026-11-13', 'mail', 'x1');
+\Taxmod\Core\Event\SharedListeners::dispatcher()->dispatch(new \Taxmod\Core\Event\OrderReported($evOrder, 'shipped', '2026-11-13', 'mail', 'x1'));
 $pruefe($afterShipped === (string) $r['s_vers'] && $afterDelivered === (string) $r['s_zug'] && (new StockService())->table('order')->first($evOrder, $r['o_stat']) === (string) $r['s_zug'], 'E1: «versendet» then «zugestellt» set the order status, never back (D-1038)');
 (new StockService())->removePosition($bedarf, $nachT1);
 $s = new StockService();

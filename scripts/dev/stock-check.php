@@ -541,7 +541,7 @@ try {
 }
 
 // D-1134, his word «plätze im layoout zuletzt erstellten 3 plätze ? … od er5»: the Layout tile counts the places and names the newest.
-$_GET  = ['page' => TaxmodStock\WordPress\Admin\CockpitPage::PAGE, TaxmodStock\WordPress\Admin\CockpitPage::AREA => 'settings', TaxmodStock\WordPress\Admin\CockpitPage::GROUP => 'Lagerstruktur'];
+$_GET  = ['page' => TaxmodStock\WordPress\Admin\CockpitPage::PAGE, TaxmodStock\WordPress\Admin\CockpitPage::AREA => 'masterdata', TaxmodStock\WordPress\Admin\CockpitPage::GROUP => 'Lagerstruktur'];
 $kachel = (new TaxmodStock\WordPress\Admin\CockpitPage())->render();
 $_GET  = [];
 $pruefe(str_contains($kachel, '<span class="taxmod-tile-label">Layout</span><span class="taxmod-tile-figure">' . count((new StockService())->places()) . '</span>') && str_contains($kachel, '<span class="taxmod-tile-line">Zuletzt angelegt:</span><span class="taxmod-tile-line">Lager › __Schrank › __Schublade 2 › __Kiste</span><span class="taxmod-tile-line">Lager › __Schrank › __Schublade 2</span>'), 'the Layout tile counts the places and names the newest first');

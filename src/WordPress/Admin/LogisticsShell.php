@@ -110,6 +110,10 @@ final class LogisticsShell
                 $item('material', __('Material', 'taxmod-stock'), Pages::STOCK, 'material'),
                 // D-1474, his word 2026-11-19: «die Konstanten … Dass ich die auf eine gute Art pflegen kann, zum Beispiel eine Farbe hinzufügen».
                 $item('choice-lists', __('Auswahllisten', 'taxmod-stock'), Pages::CHOICES),
+                // D-1512, his word 2026-11-20: «lagerstruktur ist auch stammdaten oder» — the places and their kinds are what there is;
+                // they leave Einstellungen (D-1129 named the group), the Platzbestand stays under Bestand, every address stays.
+                ['path' => [__('Lagerstruktur', 'taxmod-stock')]] + $item('structure', __('Layout', 'taxmod-stock'), Pages::STOCK, 'lagerstruktur'),
+                ['path' => [__('Lagerstruktur', 'taxmod-stock')]] + $item('place-types', __('Platzarten', 'taxmod-stock'), Pages::STOCK, 'platzarten'),
                 ...self::contactItems(),
             ]],
             // D-1184, his word 2026-11-05: «kontakt ast in logistik menü einbauen» — firms, suppliers, manufacturers, persons.
@@ -119,9 +123,6 @@ final class LogisticsShell
             ['key' => 'settings', 'label' => __('Einstellungen', 'taxmod-stock'), 'items' => [
                 // D-1085: the business settings inside the navigation; the technical structure stays on the modeller's Configuration.
                 $item('basics', __('Grundeinstellungen', 'taxmod-stock'), Pages::SETTINGS),
-                // His words 2026-11-03 (D-1129): «sollte eigener punkt in einstellungen sein vielleicht lagerstrukut platzarten, layout».
-                ['path' => [__('Lagerstruktur', 'taxmod-stock')]] + $item('structure', __('Layout', 'taxmod-stock'), Pages::STOCK, 'lagerstruktur'),
-                ['path' => [__('Lagerstruktur', 'taxmod-stock')]] + $item('place-types', __('Platzarten', 'taxmod-stock'), Pages::STOCK, 'platzarten'),
                 ...self::modules('settings'),
                 // His words 2026-11-03: «pack mal das menü drucken unter einstellungen», «warum hat das nur zwei ebenen», «kannst du
                 // das so bauen das es n ebenen zulässt» — an item's `path` puts it any depth below its area (D-1121).

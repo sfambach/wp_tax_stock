@@ -3032,8 +3032,11 @@ final class StockPage
             $first     = $preferred === [] ? [] : array_map(static fn (array $hit): array => $hit + ['preferred' => true], $this->stock->thingHits($preferred));
             $hits      = [...$first, ...array_values(array_filter($hits, static fn (array $hit): bool => ! in_array($hit['id'], $preferred, true)))];
 
+            // D-1500: a hit with stock says its quantity in the material's own unit — shown only; bookings take the unit of the material.
+            $units = empty($_GET['stock']) ? [] : $this->stock->unitWords(array_map(static fn (array $hit): int => (int) $hit['id'], $hits));
+
             wp_send_json_success(empty($_GET['stock']) ? $hits
-                : array_map(static fn (array $hit): array => $hit + ['url' => self::thingUrl($hit['id'], 'bestand')], [...$this->stock->withStock(array_values(array_filter($hits, static fn (array $hit): bool => ! isset($hit['quantity'])))), ...array_values(array_filter($hits, static fn (array $hit): bool => isset($hit['quantity'])))]));
+                : array_map(static fn (array $hit): array => $hit + ['url' => self::thingUrl($hit['id'], 'bestand'), 'unit' => $units[(int) $hit['id']] ?? ''], [...$this->stock->withStock(array_values(array_filter($hits, static fn (array $hit): bool => ! isset($hit['quantity'])))), ...array_values(array_filter($hits, static fn (array $hit): bool => isset($hit['quantity'])))]));
         } catch (StockError $e) {
             wp_send_json_error(['message' => Messages::of($e)]);
         }

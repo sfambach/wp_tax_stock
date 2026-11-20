@@ -69,7 +69,7 @@ final class MaterialPicker
             . self::hint()
             . '<div class="taxmod-material-search-pick" hidden><p class="taxmod-material-search-chosen"></p>'
             . '<fieldset class="taxmod-material-search-places"><legend>' . esc_html__('Lagerort', 'taxmod-stock') . '</legend><ul></ul></fieldset>'
-            . '<p><label><span class="taxmod-material-search-qty-label">' . esc_html__('Menge', 'taxmod-stock') . '</span> <input type="number" class="small-text taxmod-material-search-qty" min="0" step="any"></label> '
+            . '<p><label><span class="taxmod-material-search-qty-label">' . esc_html__('Menge', 'taxmod-stock') . '</span> <input type="number" class="small-text taxmod-material-search-qty" min="0" step="any"> <span class="taxmod-material-search-qty-unit"></span></label> '
             . '<button type="button" class="button button-primary taxmod-material-search-take">' . esc_html__('Übernehmen', 'taxmod-stock') . '</button></p>'
             . '<p class="taxmod-material-search-msg" role="alert"></p></div>'
             . '<input type="hidden" class="taxmod-material-search-out" data-part="thing" name="' . esc_attr($name . '[thing]') . '">'
@@ -119,9 +119,12 @@ final class MaterialPicker
         $pieces = absint($_GET['pieces'] ?? 0);
         $strips = $pieces > 0 ? $stock->stripsToOpen($thing, array_keys($free), $pieces, absint($_GET['piece'] ?? 0)) : [];
         $cut    = $pieces > 0 && $stock->packsOf([$thing]) !== [];
+        // D-1500, Prüftor 20.11.: the unit is shown beside the quantity; the server books in the material's unit, never in this word.
+        $unit   = $stock->unitWords([$thing])[$thing] ?? '';
 
         wp_send_json_success(array_map(static fn (int $place, float $quantity): array => [
             'place'    => $place,
+            'unit'     => $unit,
             'path'     => (string) ($places[$place] ?? '#' . $place),
             'quantity' => ListPage::number($quantity),
         ] + ($cut ? ['strips' => $strips[$place] ?? 0] : []), array_keys($free), array_values($free)));
@@ -193,16 +196,16 @@ final class MaterialPicker
             . 'function choose(h){if(d.mode!=="pick"){window.location.href=h.url;return;}show(false);chosen=h;f.value=h.word;places(h);}'
             . 'function draw(hits){rows=hits;list.innerHTML="";at=-1;if(!hits.length){list.appendChild(el("li","is-empty",d.none));show(true);return;}var group=null;'
             . 'hits.forEach(function(h,n){if(h.preferred&&group===null){group=1;list.appendChild(el("li","is-group",d.preferredLabel));}else if(!h.preferred&&group===1){group=2;list.appendChild(el("li","is-group",""));}'
-            . 'var li=el("li"),a=el("a"),q=el("span","q"+(num(h.quantity)>0?"":" is-zero"),h.quantity+" "+d.unit);li.id=f.id+"-hit-"+n;li.setAttribute("role","option");a.href=h.url||"#";'
+            . 'var li=el("li"),a=el("a"),q=el("span","q"+(num(h.quantity)>0?"":" is-zero"),h.quantity+" "+(h.unit||d.unit));li.id=f.id+"-hit-"+n;li.setAttribute("role","option");a.href=h.url||"#";'
             . 'a.appendChild(el("span","w",h.word));a.appendChild(q);a.appendChild(el("span","m",h.node));a.addEventListener("click",function(e){if(d.mode==="pick"){e.preventDefault();choose(h);}});'
             . 'li.appendChild(a);li.addEventListener("mouseenter",function(){mark(n);});list.appendChild(li);});show(true);}'
             . 'function search(){var t=f.value.trim();if(t.length<2&&!/^\d/.test(t)){show(false);return;}var me=++ask;'
             . 'fetch(d.hits+"&term="+encodeURIComponent(t),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(r){if(me===ask&&r&&r.success){draw(r.data||[]);}}).catch(function(){});}'
             . 'function places(h){var ul=pick.querySelector("ul"),qty=pick.querySelector(".taxmod-material-search-qty");pick.hidden=false;pick.querySelector(".taxmod-material-search-chosen").textContent=h.word;ul.innerHTML="";'
             . 'fetch(d.places+"&thing="+encodeURIComponent(h.id),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(r){var rows=r&&r.success?r.data:[];'
-            . 'if(!rows.length){ul.appendChild(el("li","",d.noPlace));return;}var cut=rows[0].strips!==undefined;pick.dataset.cut=cut?"1":"";pick.querySelector(".taxmod-material-search-qty-label").textContent=cut?d.piecesLabel:pick.dataset.qtyLabel;'
+            . 'if(!rows.length){ul.appendChild(el("li","",d.noPlace));return;}var cut=rows[0].strips!==undefined;pick.dataset.cut=cut?"1":"";pick.querySelector(".taxmod-material-search-qty-label").textContent=cut?d.piecesLabel:pick.dataset.qtyLabel;pick.querySelector(".taxmod-material-search-qty-unit").textContent=cut?"":(rows[0].unit||d.unit);'
             . 'rows.forEach(function(p,i){var li=el("li"),l=el("label"),c=document.createElement("input");c.type="radio";c.name=root.id+"-place";c.value=p.place;c.dataset.path=p.path;c.dataset.free=p.quantity;'
-            . 'if(i===0){c.checked=true;}c.addEventListener("change",function(){if(!cut&&num(qty.value)>num(p.quantity)){qty.value=p.quantity;}});l.appendChild(c);l.appendChild(document.createTextNode(" "+p.path));l.appendChild(el("span","n",p.quantity+" "+d.unit));if(cut){l.appendChild(el("span","n",p.strips>0?d.strips.replace("%d",p.strips):d.noFit));}li.appendChild(l);ul.appendChild(li);});'
+            . 'if(i===0){c.checked=true;}c.addEventListener("change",function(){if(!cut&&num(qty.value)>num(p.quantity)){qty.value=p.quantity;}});l.appendChild(c);l.appendChild(document.createTextNode(" "+p.path));l.appendChild(el("span","n",p.quantity+" "+(p.unit||d.unit)));if(cut){l.appendChild(el("span","n",p.strips>0?d.strips.replace("%d",p.strips):d.noFit));}li.appendChild(l);ul.appendChild(li);});'
             . 'qty.value=cut?num(d.pieces):(d.wanted&&num(d.wanted)>0?Math.min(num(d.wanted),num(rows[0].quantity)):rows[0].quantity);}).catch(function(){});}'
             . 'if(pick){pick.querySelector(".taxmod-material-search-take").addEventListener("click",function(){var c=pick.querySelector("input[type=radio]:checked"),q=num(pick.querySelector(".taxmod-material-search-qty").value);'
             . 'var msg=pick.querySelector(".taxmod-material-search-msg");msg.textContent="";if(!chosen||!c||q<=0){msg.textContent=d.askPlace;return;}var cut=pick.dataset.cut==="1",v={thing:chosen.id,place:+c.value,quantity:cut?q*num(d.piece):q,pieces:cut?q:"",piece:cut?num(d.piece):""};root.querySelectorAll(".taxmod-material-search-out").forEach(function(o){o.value=v[o.dataset.part];});'

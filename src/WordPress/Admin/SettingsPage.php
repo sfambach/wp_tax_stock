@@ -25,6 +25,13 @@ final class SettingsPage
     public const USER_TAB = 'benutzer';
     public const USER_ACTION = 'taxmod_stock_user_settings';
 
+    /**
+     * D-1502: a module adds its own lines to Benutzereinstellungen —
+     * `apply_filters(USER_SETTINGS_FILTER, [])` → list<array{label: string, control: string, save: callable(): void}>.
+     * `control` is the module's escaped HTML inside this form; `save` reads its own fields after the stock checked the nonce.
+     */
+    public const USER_SETTINGS_FILTER = 'taxmod_user_settings';
+
     public static function url(): string
     {
         return add_query_arg(['page' => self::PAGE], admin_url('admin.php'));
@@ -89,7 +96,25 @@ final class SettingsPage
             . self::singleOption('0', __('In der Liste bleiben', 'taxmod-stock'), $own)
             . self::singleOption('1', __('Gleich öffnen', 'taxmod-stock'), $own) . '</select>'
             . '<p class="description">' . esc_html__('Gilt für die Suche nach Material.', 'taxmod-stock') . '</p></td></tr>'
+            . implode('', array_map(static fn (array $line): string => '<tr><th scope="row">' . esc_html($line['label']) . '</th><td>' . $line['control'] . '</td></tr>', self::moduleSettings()))
             . '</tbody></table>' . '</form>']], (string) TAXMOD_STOCK_VERSION);
+    }
+
+    /**
+     * D-1502: the modules' own lines, each checked for its shape; a line that lacks one part stays out.
+     *
+     * @return list<array{label: string, control: string, save: callable}>
+     */
+    public static function moduleSettings(): array
+    {
+        $lines = [];
+        foreach ((array) apply_filters(self::USER_SETTINGS_FILTER, []) as $line) {
+            if (is_array($line) && is_string($line['label'] ?? null) && is_string($line['control'] ?? null) && is_callable($line['save'] ?? null)) {
+                $lines[] = ['label' => $line['label'], 'control' => $line['control'], 'save' => $line['save']];
+            }
+        }
+
+        return $lines;
     }
 
     /** The user meta of D-1468: '' follows the site, '0' stays in the list, '1' opens the one hit. */
@@ -121,6 +146,9 @@ final class SettingsPage
         $this->saveUser(! empty($_POST['fullscreen']), ! empty($_POST['reset_columns']), ! empty($_POST['reset_trees']));
         $single = sanitize_key((string) wp_unslash($_POST['single_hit'] ?? ''));
         update_user_meta(get_current_user_id(), self::SINGLE_HIT_META, in_array($single, ['0', '1'], true) ? $single : '');
+        foreach (self::moduleSettings() as $line) {
+            ($line['save'])();
+        }
         Notice::remember('success', __('Gespeichert.', 'taxmod-stock'));
         wp_safe_redirect(add_query_arg('tab', self::USER_TAB, self::url()));
         exit;

@@ -5038,6 +5038,12 @@ final class StockPage
         return $this->recordPicker($name, null, '') . $this->modellerAssets(false);
     }
 
+    /** The material chooser alone, for a page that already drew {@see self::materialPicker()} once. */
+    public function materialChooser(string $name): string
+    {
+        return $this->recordPicker($name, null, '');
+    }
+
     /**
      * The modeller's stylesheet and script for {@see self::recordPicker()}, and the one element its script reads the material
      * endpoints from: search, the tree's groups and a group's things.

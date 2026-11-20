@@ -1805,6 +1805,12 @@ $pruefe(str_contains($pk1, 'value="BC327"') && str_contains($pk1, 'name="wahl[1]
     && str_contains($pk1, 'preferred=' . $r['t1']) && str_contains($pk1, 'action=' . TaxmodStock\WordPress\Admin\MaterialPicker::PLACES)
     && str_contains($pk2, 'id="taxmod-material-pick-pos2"') && substr_count($pk1 . $pk2, 'window.taxmodMaterialSearch') <= 1 && count($pkHt) === 1 && $pkHt[0]['id'] === $r['t1'],
     'D-1387: the picker filter draws a prefilled search with the preferred materials first, place and quantity as fields, several on one page');
+// Stefan 20.11. 20:39 («Aus Bestand wählen» soll den Material-Baum zeigen): each picker carries the stock's standard material
+// chooser with its tree (RecordPick::remote), the endpoints once per page; its choice goes on to the places like a search hit.
+$pruefe(str_contains($pk1, 'class="taxmod-material-search-tree"') && str_contains($pk2, 'class="taxmod-material-search-tree"')
+    && str_contains($pk1, 'taxmod-material-pick-pos1-tree') && str_contains($pk2, 'taxmod-material-pick-pos2-tree')
+    && substr_count($pk1 . $pk2, 'id="taxmod-words"') === 1 && str_contains($pk1, 'data-record-branch=') && str_contains((string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Admin/MaterialPicker.php'), 'root.addEventListener("taxmod-record-picked",fromTree)'),
+    'Aus Bestand wählen: every picker has the material tree of the standard chooser, its endpoints drawn once, its choice heard');
 
 // D-1139 (CD-7), asked by the manufacturing 2026-11-15: presentInEach reads once for many boxes and says for each what presentIn says.
 $s      = new StockService();

@@ -108,10 +108,12 @@ $stammdaten = array_values(array_filter($navigation->areas(), static fn (array $
 // D-1472 (replaces the place of D-1193): Einstellungen holds no contact item any more.
 $pruefe(array_filter($settings, static fn (array $item): bool => str_starts_with((string) $item['key'], 'contact')) === [], 'D-1472: Einstellungen holds no Kontakte');
 // Grenzlauf 2026-11-17 (modeller D-1427, PR-9): «Drucker» (D-1192) and «Benutzereinstellungen» (D-1232) stand there since; the list names them.
-$pruefe(array_slice(array_column($settings, 'key'), 0, 4) === ['basics', 'structure', 'place-types', 'module-__navcheck-dhl'] && array_filter(array_slice(array_column($settings, 'key'), 4), static fn (string $key): bool => ! str_starts_with($key, 'module-') && ! in_array($key, ['form-labels', 'user'], true)) === [], 'Einstellungen: Grundeinstellungen, Lagerstruktur › Layout and Platzarten (D-1129), then the module (' . implode(', ', array_column($settings, 'key')) . ')');
-$pruefe(($settings[1]['path'] ?? []) === ['Lagerstruktur'] && ($settings[2]['path'] ?? []) === ['Lagerstruktur'] && ($settings[2]['tab'] ?? '') === 'platzarten', 'Layout and Platzarten stand in the group «Lagerstruktur»');
+// D-1512 (replaces the place D-1129 gave it, PR-9): Lagerstruktur left Einstellungen for Stammdaten.
+$pruefe(array_slice(array_column($settings, 'key'), 0, 2) === ['basics', 'module-__navcheck-dhl'] && array_filter(array_slice(array_column($settings, 'key'), 2), static fn (string $key): bool => ! str_starts_with($key, 'module-') && ! in_array($key, ['form-labels', 'user'], true)) === [], 'Einstellungen: Grundeinstellungen, then the module — no Lagerstruktur any more (D-1512) (' . implode(', ', array_column($settings, 'key')) . ')');
+$lagerstruktur = array_values(array_filter($stammdaten, static fn (array $item): bool => ($item['path'] ?? []) === ['Lagerstruktur']));
+$pruefe(array_column($lagerstruktur, 'key') === ['structure', 'place-types'] && ($lagerstruktur[1]['tab'] ?? '') === 'platzarten' && ($stammdaten[2]['key'] ?? '') === 'structure', 'D-1512: Layout and Platzarten stand in the group «Lagerstruktur» under Stammdaten, after Auswahllisten');
 $pruefe(($settings[0]['page'] ?? '') === SettingsPage::PAGE, 'Grundeinstellungen is a page of the stock interface, not the modeller\'s Configuration');
-$pruefe(($settings[3]['label'] ?? '') === 'DHL 2', 'the module keeps its menu label, without markup');
+$pruefe(($settings[1]['label'] ?? '') === 'DHL 2', 'the module keeps its menu label, without markup');
 $outbound = array_values(array_filter($navigation->areas(), static fn (array $area): bool => $area['key'] === 'outbound'))[0]['items'] ?? [];
 $pruefe(array_column($outbound, 'module') === ['taxebay-shipping'], 'Warenausgang holds the eBay shipping page');
 // His words 2026-11-03 (D-1121): «pack mal das menü drucken unter einstellungen», «kannst du das so bauen das es n ebenen zulässt».
@@ -160,14 +162,14 @@ $pruefe(str_contains($uebersicht, 'taxmod-shell-area is-open"><a href="' . esc_u
 $_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'masterdata'];
 $uebersicht = (new CockpitPage())->render();
 $pruefe(str_contains($uebersicht, '<span class="taxmod-tile-label">Material</span>') && str_contains($uebersicht, 'taxmod-material-search'), 'D-1472: Stammdaten opens an overview with a Material tile and the material search');
-$_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'settings'];
+$_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'masterdata'];
 $uebersicht = (new CockpitPage())->render();
-$pruefe(str_contains($uebersicht, esc_attr(CockpitPage::overviewUrl('settings', 'Lagerstruktur'))) && substr_count($uebersicht, '>Lagerstruktur</span>') === 1, 'a group (Lagerstruktur) is one tile that opens its own overview');
-$_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'settings', CockpitPage::GROUP => 'Lagerstruktur'];
+$pruefe(str_contains($uebersicht, esc_attr(CockpitPage::overviewUrl('masterdata', 'Lagerstruktur'))) && substr_count($uebersicht, '>Lagerstruktur</span>') === 1, 'a group (Lagerstruktur) is one tile that opens its own overview');
+$_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'masterdata', CockpitPage::GROUP => 'Lagerstruktur'];
 $uebersicht = (new CockpitPage())->render();
 $pruefe(str_contains($uebersicht, '>Layout</span>') && str_contains($uebersicht, '>Platzarten</span>') && ! str_contains($uebersicht, '>Grundeinstellungen</span>'), 'the group overview shows only its own items');
 $nav = LogisticsShell::wrap(CockpitPage::PAGE, $uebersicht);
-$pruefe(str_contains($nav, 'taxmod-shell-group is-open"><a href="' . esc_url(add_query_arg(LogisticsShell::VIA_MENU, '1', CockpitPage::overviewUrl('settings', 'Lagerstruktur'))) . '" style="padding-left:24px" class="is-current"'), 'D-1134: the group\'s overview opens the group in the navigation, its sub-items shown');
+$pruefe(str_contains($nav, 'taxmod-shell-group is-open"><a href="' . esc_url(add_query_arg(LogisticsShell::VIA_MENU, '1', CockpitPage::overviewUrl('masterdata', 'Lagerstruktur'))) . '" style="padding-left:24px" class="is-current"'), 'D-1134: the group\'s overview opens the group in the navigation, its sub-items shown');
 $pruefe(substr_count($uebersicht, 'class="taxmod-tile-figure"') === 2, 'D-1134: Layout and Platzarten show how many there are');
 // D-1258, his word «auf den hauptseiten mit den tiles sollte als erstes die prozess kette stehen also für we und für wa».
 $_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'inbound'];

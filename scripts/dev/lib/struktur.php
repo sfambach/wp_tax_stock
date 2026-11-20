@@ -167,3 +167,8 @@ $struktur = [
     ],
 ];
 update_option(StockService::OPTION, $struktur);
+// D-1296: the labels are the labels module's — point it at the same label node and fields, else it reads the live ids.
+update_option('taxmod_label_structure', [
+    'nodes'  => ['label_template' => $r['etk']],
+    'fields' => array_intersect_key($struktur['fields'], array_flip(['label', 'template_key', 'template_width', 'template_height', 'template_layout', 'money_amount'])),
+]);

@@ -31,6 +31,7 @@ use TaxmodStock\Core\Pack;
 use TaxmodStock\Core\TitlePicture;
 use TaxmodStock\Core\FitLevel;
 use TaxmodStock\Core\PlaceFit;
+use TaxmodStock\Core\PlaceFunctions;
 use TaxmodStock\Core\PlaceTypes;
 use TaxmodStock\Core\ProjectBill;
 use TaxmodStock\Core\NotStocked;
@@ -151,6 +152,8 @@ final class StockService
     private ?array $received = null;
 
     private ?ReservedPlaces $reservedPlaces = null;
+
+    private ?PlaceFunctions $placeFunctions = null;
 
     /** @var array{0: Ledger, 1: Reservations}|null the reservations with the book they were read against */
     private ?array $reservations = null;
@@ -1502,6 +1505,13 @@ final class StockService
     /** D-1440: «Lagerort Wareneingang», 0 while none is set — a place is never guessed. */
     public function receiptInbound(): int
     {
+        // D-1528 (W6): a place whose type is «Wareneingang» comes first; the setting stays as the fallback until it is emptied.
+        $inbound = $this->placeFunctions()->with(PlaceFunctions::INBOUND);
+
+        if ($inbound !== []) {
+            return $inbound[0];
+        }
+
         $place = absint(get_option(self::RECEIPT_INBOUND, 0));
 
         return $place > 0 && $this->table('location')->has($place) ? $place : 0;
@@ -3069,13 +3079,60 @@ final class StockService
      */
     public function reservedByThing(): array
     {
-        $out = $this->reservations()->reservedByThing();
+        $out    = $this->reservations()->reservedByThing();
+        $ledger = $this->ledger();
 
-        foreach ($this->reservedPlaces()->reservedByThing($this->ledger()) as $thing => $quantity) {
+        foreach ($this->reservedPlaces()->reservedByThing($ledger) as $thing => $quantity) {
+            $out[$thing] = ($out[$thing] ?? 0.0) + $quantity;
+        }
+
+        // D-1528 (W6): what is provided on a Warenausgang place belongs to a sale — not available any more.
+        foreach ($this->placeFunctions()->providedByThing($ledger->stockByPlace(), $ledger->thingOf(...)) as $thing => $quantity) {
             $out[$thing] = ($out[$thing] ?? 0.0) + $quantity;
         }
 
         return $out;
+    }
+
+    /**
+     * D-1528 (W6): what each place is for, from its place type — the places and their types read once per service (CD-7).
+     */
+    public function placeFunctions(): PlaceFunctions
+    {
+        if ($this->placeFunctions !== null) {
+            return $this->placeFunctions;
+        }
+
+        $s = $this->structure();
+
+        if (! $s->hasField('place_function') || ! $s->hasField('location_place_type') || ! $s->hasNode('location_type')) {
+            return $this->placeFunctions = PlaceFunctions::none();
+        }
+
+        $keyOf = [];
+
+        foreach (['function_storage', 'function_inbound', 'function_outbound'] as $key) {
+            if ($s->hasValue($key)) {
+                $keyOf[$s->value($key)] = $key;
+            }
+        }
+
+        $places     = $this->table('location');
+        $types      = $this->table('location_type');
+        $typeOf     = [];
+        $functionOf = [];
+
+        foreach ($places->ids() as $place) {
+            $typeOf[$place] = (int) $places->first($place, $s->field('location_place_type'));
+        }
+
+        foreach ($types->ids() as $type) {
+            $functionOf[$type] = (int) $types->first($type, $s->field('place_function'));
+        }
+
+        $tree = $this->locationTree();
+
+        return $this->placeFunctions = PlaceFunctions::from($typeOf, $functionOf, $keyOf, $tree->withAllBelow(...));
     }
 
     /**
@@ -4587,7 +4644,8 @@ final class StockService
     public function freeStockByPlace(array $things, int $except = 0): array
     {
         $wanted   = array_flip($things);
-        $skip     = $except > 0 ? array_flip($this->locationTree()->withAllBelow($except)) : [];
+        // D-1528 (W6): what lies on a Warenausgang place is provided for a sale, not free to pick.
+        $skip     = ($except > 0 ? array_flip($this->locationTree()->withAllBelow($except)) : []) + array_flip($this->placeFunctions()->with(PlaceFunctions::OUTBOUND));
         $ledger   = $this->ledger();
         $reserved = $this->reservedPlaces();
         $bound    = $this->boundLots();
@@ -4852,6 +4910,114 @@ final class StockService
         }
 
         return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), [], $reference)));
+    }
+
+    /**
+     * D-1528: takes back what a subject's picks brought into `$box` and still lies there — each lot to the place it was taken
+     * from, one Umbuchung naming the subject. Other subjects' goods in the same box stay (unlike {@see self::bookReturn()}).
+     *
+     * @return int the Vorgang
+     */
+    public function bookUnpick(int $box, int $reference, string $today, string $title): int
+    {
+        if (! $this->table('location')->has($box)) {
+            throw StockError::notALocation($box);
+        }
+
+        if ($reference <= 0) {
+            throw StockError::noSubject();
+        }
+
+        $ledger = $this->ledger();
+        $inBox  = array_flip($this->locationTree()->withAllBelow($box)) + [$box => true];
+        $picked = $this->pickedInto($reference, $inBox);
+        $rows   = [];
+
+        foreach ($picked as $lot => $byPlace) {
+            foreach ($byPlace as $place => $origins) {
+                $left = min(array_sum($origins), $ledger->restAt($lot, $place));
+
+                foreach ($origins as $origin => $quantity) {
+                    $part = min($quantity, $left);
+
+                    if ($part > 0.000001) {
+                        $rows[] = new TransferRow($lot, $place, $origin, DecimalText::stored($part));
+                        $left  -= $part;
+                    }
+                }
+            }
+        }
+
+        if ($rows === []) {
+            throw StockError::nothingToBook();
+        }
+
+        return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', null, [], $reference)));
+    }
+
+    /**
+     * What the Umbuchungen naming `$reference` brought into these places, net of what they took out again.
+     *
+     * @param array<int, true> $into
+     * @return array<int, array<int, array<int, float>>> lot → place in the box → origin → pieces
+     */
+    private function pickedInto(int $reference, array $into): array
+    {
+        $s = $this->structureWithKinds();
+
+        if (! $s->hasField('transaction_reference') || ! $s->hasValue('kind_transfer')) {
+            return [];
+        }
+
+        $deals = $this->table('transaction');
+        $lines = $this->table('line');
+        $out   = [];
+
+        foreach ($deals->ids() as $deal) {
+            if ((int) $deals->first($deal, $s->field('transaction_reference')) !== $reference || (int) $deals->first($deal, $s->field('transaction_kind')) !== $s->value('kind_transfer')) {
+                continue;
+            }
+
+            $in   = [];
+            $from = [];
+
+            foreach ($deals->all($deal, $s->field('transaction_lines')) as $line) {
+                $lot      = (int) $lines->first((int) $line, $s->field('line_lot'));
+                $place    = (int) $lines->first((int) $line, $s->field('line_location'));
+                $quantity = (float) ($lines->first((int) $line, $s->field('line_quantity')) ?? 0);
+
+                if ($quantity > 0.0) {
+                    $in[$lot][$place] = ($in[$lot][$place] ?? 0.0) + $quantity;
+                } else {
+                    $from[$lot][$place] = ($from[$lot][$place] ?? 0.0) - $quantity;
+                }
+            }
+
+            foreach ($in as $lot => $places) {
+                foreach ($places as $place => $quantity) {
+                    $source = array_key_first(array_diff_key($from[$lot] ?? [], $into)) ?? array_key_first($from[$lot] ?? []);
+
+                    if ($source === null) {
+                        continue;
+                    }
+
+                    if (isset($into[$place]) && ! isset($into[$source])) {
+                        $out[$lot][$place][$source] = ($out[$lot][$place][$source] ?? 0.0) + $quantity;
+                    } elseif (! isset($into[$place]) && isset($into[$source])) {
+                        // A pick taken back earlier: it leaves the box again.
+                        $out[$lot][$source][$place] = ($out[$lot][$source][$place] ?? 0.0) - $quantity;
+                    }
+                }
+            }
+        }
+
+        foreach ($out as $lot => $places) {
+            foreach ($places as $place => $origins) {
+                $out[$lot][$place] = array_filter($origins, static fn (float $q): bool => $q > 0.000001);
+            }
+        }
+
+        return $out;
     }
 
     /** @return array<int, int> lot → the place the order's latest Umbuchung took it from */

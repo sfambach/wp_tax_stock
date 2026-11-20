@@ -4,6 +4,7 @@ namespace TaxmodStock\WordPress;
 
 use TaxmodStock\Core\Calculation;
 use TaxmodStock\Core\ReservationRow;
+use TaxmodStock\Core\PlaceFunctions;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\TestResult;
 use TaxmodStock\Core\Structure;
@@ -44,6 +45,12 @@ final class Plugin
 
     /** D-1146: the ticked lines of a pick list go into the box. */
     public const BOOK_PICK = 'taxmod_stock_book_pick';
+
+    /** D-1528: what a subject's picks brought into a box goes back where it came from; others' goods there stay. */
+    public const CANCEL_PICK = 'taxmod_stock_cancel_pick';
+
+    /** D-1528 (W6): the places with a function (Wareneingang, Warenausgang), those inside them included. */
+    public const PLACES_WITH_FUNCTION = 'taxmod_stock_places_with_function';
 
     /** D-1143: the finished things of a build order go into stock. */
     public const BOOK_OUTPUT = 'taxmod_stock_book_output';
@@ -214,6 +221,8 @@ final class Plugin
         // D-1387: the material search as a building block for other modules' dialogs.
         add_filter(MaterialPicker::FILTER, [MaterialPicker::class, 'filter'], 10, 2);
         add_filter(self::BOOK_PICK, [self::class, 'bookPick'], 10, 2);
+        add_filter(self::CANCEL_PICK, [self::class, 'cancelPick'], 10, 2);
+        add_filter(self::PLACES_WITH_FUNCTION, [self::class, 'placesWithFunction'], 10, 2);
         add_filter(self::BOOK_OUTPUT, [self::class, 'bookOutput'], 10, 2);
         add_filter(self::CREATE_THING, [self::class, 'createThing'], 10, 2);
         add_filter(self::LOSS_LOTS, [self::class, 'lossLots']);
@@ -588,6 +597,64 @@ final class Plugin
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
+    }
+
+    /**
+     * D-1528: `apply_filters('taxmod_stock_cancel_pick', null, ['box' => place, 'reference' => subject, 'title' => …, 'date' =>
+     * Y-m-d])` → the Vorgang's id: what the subject's picks brought into the box and still lies there goes back.
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     `mixed`: checked here
+     */
+    public static function cancelPick(mixed $previous, mixed $args): int|\WP_Error
+    {
+        if (is_int($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args = is_array($args) ? $args : [];
+        $date = sanitize_text_field((string) ($args['date'] ?? current_time('Y-m-d')));
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+            return new \WP_Error('taxmod_stock_not_a_date', Messages::of(StockError::notADate($date)));
+        }
+
+        try {
+            return self::writing()->bookUnpick(absint($args['box'] ?? 0), absint($args['reference'] ?? 0), $date, sanitize_text_field((string) ($args['title'] ?? __('Bereitstellung zurück', 'taxmod-stock'))));
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1528 (W6): `apply_filters('taxmod_stock_places_with_function', null, ['function' => 'outbound'|'inbound'])` → the place
+     * ids with that function, those inside them included. «Test» and «Klärung» are not answered until D-1503 is decided.
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     `mixed`: checked here
+     * @return list<int>|\WP_Error
+     */
+    public static function placesWithFunction(mixed $previous, mixed $args): array|\WP_Error
+    {
+        if (is_array($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $key = match (sanitize_key((string) (is_array($args) ? ($args['function'] ?? '') : ''))) {
+            'outbound' => PlaceFunctions::OUTBOUND,
+            'inbound'  => PlaceFunctions::INBOUND,
+            default    => null,
+        };
+
+        return $key === null ? [] : self::reading()->placeFunctions()->with($key);
     }
 
     /**

@@ -114,6 +114,8 @@ final class LogisticsShell
                 // they leave Einstellungen (D-1129 named the group), the Platzbestand stays under Bestand, every address stays.
                 ['path' => [__('Lagerstruktur', 'taxmod-stock')]] + $item('structure', __('Layout', 'taxmod-stock'), Pages::STOCK, 'lagerstruktur'),
                 ['path' => [__('Lagerstruktur', 'taxmod-stock')]] + $item('place-types', __('Platzarten', 'taxmod-stock'), Pages::STOCK, 'platzarten'),
+                // D-1502 Stufe 3, his word 2026-11-20: «ein Arbeitsplatz ist ein Stammdatum» — the modules' master data (the labels module's workplaces).
+                ...self::modules('masterdata'),
                 ...self::contactItems(),
             ]],
             // D-1184, his word 2026-11-05: «kontakt ast in logistik menü einbauen» — firms, suppliers, manufacturers, persons.

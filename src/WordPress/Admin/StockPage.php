@@ -2359,7 +2359,7 @@ final class StockPage
                 : '<label style="display:block">' . esc_html__('Bezug', 'taxmod-stock') . '<br>' . SelectMarkup::of('subject', $choices, attributes: ['style' => 'width:100%', 'required' => 'required'], nothingWord: '—') . '</label>')
             . ($thing > 0 ? '<input type="hidden" name="thing" value="' . esc_attr((string) $thing) . '">'
                 : '<span style="display:block;margin-top:.5em">' . esc_html__('Material', 'taxmod-stock') . '<br>' . $this->thingField('thing', $id . '-thing', null) . '</span>')
-            . '<label style="display:block;margin-top:.5em">' . esc_html__('Menge', 'taxmod-stock') . '<br><input type="text" inputmode="decimal" name="quantity" style="width:7em" required></label>'
+            . '<label style="display:block;margin-top:.5em">' . esc_html__('Menge', 'taxmod-stock') . '<br>' . ListPage::quantity('quantity', $thing > 0 ? ($this->stock->unitWords([$thing])[$thing] ?? '') : '', '', ['required' => 'required']) . '</label>'
             . ($thing > 0 ? '<label style="display:block;margin-top:.5em">' . esc_html__('Bestandsposten', 'taxmod-stock') . '<br>' . SelectMarkup::of('lot', $lotChoice, attributes: ['style' => 'width:100%'], nothingWord: __('— kein bestimmter Posten —', 'taxmod-stock')) . '</label>'
                 : '<label style="display:block;margin-top:.5em">' . esc_html__('Bestandsposten (Nr., optional)', 'taxmod-stock') . '<br>' . ListPage::field(InputKind::Number, 'lot', '', ['min' => 1]) . '</label>')
             . ($this->stock->structure()->hasField('transaction_deadline') ? '<label style="display:block;margin-top:.5em">' . esc_html__('Frist (optional)', 'taxmod-stock') . '<br>' . ListPage::field(InputKind::Moment, 'deadline', '', ['note' => 'date']) . '</label>' : '')
@@ -3033,9 +3033,9 @@ final class StockPage
             $hits      = [...$first, ...array_values(array_filter($hits, static fn (array $hit): bool => ! in_array($hit['id'], $preferred, true)))];
 
             // D-1500: a hit with stock says its quantity in the material's own unit — shown only; bookings take the unit of the material.
-            $units = empty($_GET['stock']) ? [] : $this->stock->unitWords(array_map(static fn (array $hit): int => (int) $hit['id'], $hits));
+            $units = $this->stock->unitWords(array_map(static fn (array $hit): int => (int) $hit['id'], $hits));
 
-            wp_send_json_success(empty($_GET['stock']) ? $hits
+            wp_send_json_success(empty($_GET['stock']) ? array_map(static fn (array $hit): array => $hit + ['unit' => $units[(int) $hit['id']] ?? ''], $hits)
                 : array_map(static fn (array $hit): array => $hit + ['url' => self::thingUrl($hit['id'], 'bestand'), 'unit' => $units[(int) $hit['id']] ?? ''], [...$this->stock->withStock(array_values(array_filter($hits, static fn (array $hit): bool => ! isset($hit['quantity'])))), ...array_values(array_filter($hits, static fn (array $hit): bool => isset($hit['quantity'])))]));
         } catch (StockError $e) {
             wp_send_json_error(['message' => Messages::of($e)]);
@@ -5091,8 +5091,9 @@ final class StockPage
             . 'root.querySelectorAll(".taxmod-stock-filter").forEach(function(f){if(!once(f)){return;}var s=document.getElementById(f.dataset.for);if(!s){return;}var o=Array.prototype.slice.call(s.options);'
             . 'f.addEventListener("input",function(){var q=f.value.toLowerCase(),first=null;o.forEach(function(x){var fix=x.value===""||x.value==="new"||x.value==="keep"||x.value==="search";x.hidden=q!==""&&!fix&&x.text.toLowerCase().indexOf(q)<0;if(!fix&&!x.hidden&&!first){first=x;}});if(q!==""&&first){s.value=first.value;}});});'
             . 'root.querySelectorAll(".taxmod-stock-thing-search").forEach(function(f){if(!once(f)){return;}var t=document.getElementById(f.dataset.for),l=document.getElementById(f.getAttribute("list")),w;'
-            . 'f.addEventListener("input",function(){var m=f.value.match(/^#(\\d+)/);if(m){t.value=m[1];return;}t.value="";clearTimeout(w);if(f.value.trim().length<2){return;}'
-            . 'w=setTimeout(function(){fetch(url+"&term="+encodeURIComponent(f.value),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){l.innerHTML="";(j.data||[]).forEach(function(h){var x=document.createElement("option");x.value="#"+h.id+" · "+h.word+(h.node?" ("+h.node+")":"");l.appendChild(x);});});},250);});});'
+            . 'var un={},q=function(v){var p=f.closest(".taxmod-dialog-panel,form"),u=p&&p.querySelector(".taxmod-quantity-unit");if(u){u.textContent=v;}};'
+            . 'f.addEventListener("input",function(){var m=f.value.match(/^#(\\d+)/);if(m){t.value=m[1];q(un[m[1]]||"");return;}t.value="";q("");clearTimeout(w);if(f.value.trim().length<2){return;}'
+            . 'w=setTimeout(function(){fetch(url+"&term="+encodeURIComponent(f.value),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){l.innerHTML="";(j.data||[]).forEach(function(h){un[h.id]=h.unit||"";var x=document.createElement("option");x.value="#"+h.id+" · "+h.word+(h.node?" ("+h.node+")":"");l.appendChild(x);});});},250);});});'
             // INF-116: an order not yet arrived keeps its choice without a reload; the form comes back drawn anew.
             . 'root.querySelectorAll("form.taxmod-stock-assign").forEach(function(f){if(!once(f)){return;}f.addEventListener("submit",function(e){var b=e.submitter;if(b&&b.name==="booking"&&b.value!=="zuordnen"){return;}e.preventDefault();var fd=new FormData(f);fd.set("action",' . wp_json_encode(self::ASSIGN) . ');fd.set("booking","zuordnen");'
             . 'var box=f.closest(".taxmod-stock-positions")||f.parentNode;fetch(post,{method:"POST",body:fd,credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){var d=j.data||{};if(j.success&&d.html){box.innerHTML=d.html;bind(box);}say(d.message||' . wp_json_encode($failed) . ',!!j.success);})'

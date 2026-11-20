@@ -2,6 +2,7 @@
 
 namespace TaxmodStock\WordPress\Admin;
 
+use Taxmod\Core\Description\InputKind;
 use Taxmod\WordPress\Admin\ListPage;
 use TaxmodStock\Core\LocationSettings;
 use TaxmodStock\Core\StockError;
@@ -207,14 +208,14 @@ final class SettingsPage
 
         $html = '<h2>' . esc_html__('Test nach dem Wareneingang', 'taxmod-stock') . '</h2>'
             . '<p>' . esc_html__('Gebrauchte Bestandsposten aus Gruppen mit «Nach Wareneingang testen» (gesetzt in der Lager-Ansicht der Gruppe, vererbt nach unten) stehen nach dem Wareneingang unter Logistik › Wareneingang › Zu testen; Neuware nicht.', 'taxmod-stock') . '</p>'
-            . '<p><label>' . esc_html__('Wareneingang ab', 'taxmod-stock') . ' <input type="date" name="taxmod_stock_inbound_since" value="' . esc_attr($stock->inboundSince()) . '"></label> '
+            . '<p><label>' . esc_html__('Wareneingang ab', 'taxmod-stock') . ' ' . ListPage::field(InputKind::Moment, 'taxmod_stock_inbound_since', (string) $stock->inboundSince(), ['note' => 'date']) . '</label> '
             . '<span class="description">' . esc_html__('Ältere Bestellungen gelten als Kaufhistorie und stehen gleich unter «Archiviert».', 'taxmod-stock') . '</span></p>'
-            . '<p><label>' . esc_html__('Archivieren nach', 'taxmod-stock') . ' <input type="number" min="1" name="taxmod_stock_inbound_archive_days" value="' . esc_attr((string) $stock->inboundArchiveDays()) . '" style="width:6em"> ' . esc_html__('Tagen', 'taxmod-stock') . '</label> '
+            . '<p><label>' . esc_html__('Archivieren nach', 'taxmod-stock') . ' ' . ListPage::field(InputKind::Number, 'taxmod_stock_inbound_archive_days', (string) $stock->inboundArchiveDays(), ['min' => 1]) . ' ' . esc_html__('Tagen', 'taxmod-stock') . '</label> '
             . '<span class="description">' . esc_html__('Eingebuchte Bestellungen wandern so viele Tage nach «Eingegangen am» unter «Archiviert».', 'taxmod-stock') . '</span></p>'
-            . '<p><label>' . esc_html__('Beendeten Bedarf archivieren nach', 'taxmod-stock') . ' <input type="number" min="1" name="taxmod_stock_demand_archive_days" value="' . esc_attr((string) $stock->demandArchiveDays()) . '" style="width:6em"> ' . esc_html__('Tagen', 'taxmod-stock') . '</label> '
+            . '<p><label>' . esc_html__('Beendeten Bedarf archivieren nach', 'taxmod-stock') . ' ' . ListPage::field(InputKind::Number, 'taxmod_stock_demand_archive_days', (string) $stock->demandArchiveDays(), ['min' => 1]) . ' ' . esc_html__('Tagen', 'taxmod-stock') . '</label> '
             . '<span class="description">' . esc_html__('Ein Bedarf, der ganz in Bestellungen übergegangen ist, steht unter «Beendet» und so viele Tage nach seiner letzten Bestellung unter «Archiviert».', 'taxmod-stock') . '</span></p>'
             // D-1375, his wish 2026-11-15: «prozentsatz in den einstellungen festlegbar ist default 20%».
-            . '<p><label>' . esc_html__('Preiswarnung ab', 'taxmod-stock') . ' <input type="number" min="1" name="taxmod_stock_price_warn_percent" value="' . esc_attr((string) $stock->priceWarnPercent()) . '" style="width:6em"> ' . esc_html__('% über dem letzten Kauf', 'taxmod-stock') . '</label> '
+            . '<p><label>' . esc_html__('Preiswarnung ab', 'taxmod-stock') . ' ' . ListPage::field(InputKind::Number, 'taxmod_stock_price_warn_percent', (string) $stock->priceWarnPercent(), ['min' => 1]) . ' ' . esc_html__('% über dem letzten Kauf', 'taxmod-stock') . '</label> '
             . '<span class="description">' . esc_html__('Der Wareneingang warnt, wenn der Stückpreis so viel über dem letzten Kauf desselben Materials liegt.', 'taxmod-stock') . '</span></p>'
             // D-1111: an ordinary place the setting names, never a name in code.
             . '<p><label>' . esc_html__('Lagerort für Test', 'taxmod-stock') . ' ' . $stock->placeChooser('taxmod_stock_test_place', (int) $settings->place) . '</label> '

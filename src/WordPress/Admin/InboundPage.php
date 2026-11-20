@@ -2,6 +2,7 @@
 
 namespace TaxmodStock\WordPress\Admin;
 
+use Taxmod\Core\Description\InputKind;
 use Taxmod\Core\Listing\Wildcard;
 use Taxmod\WordPress\Admin\ListPage;
 use TaxmodStock\Core\InboundOrder;
@@ -344,7 +345,7 @@ final class InboundPage
         return $html . StockPage::actForm([
             ...($list === '' ? [] : [['label' => __('Prüfschritte', 'taxmod-stock'), 'control' => '<ol style="margin:0 0 0 1.5em">' . $list . '</ol>']]),
             ['label' => __('Ergebnis', 'taxmod-stock'), 'control' => $radios],
-            ['label' => __('Begründung', 'taxmod-stock'), 'for' => 'taxmod-stock-test-reason-' . $lot, 'control' => '<textarea id="taxmod-stock-test-reason-' . esc_attr((string) $lot) . '" name="reason" rows="2" class="large-text"></textarea>',
+            ['label' => __('Begründung', 'taxmod-stock'), 'for' => 'taxmod-stock-test-reason-' . $lot, 'control' => ListPage::field(InputKind::LongText, 'reason', '', ['id' => 'taxmod-stock-test-reason-' . $lot, 'rows' => 2, 'columns' => 60]),
                 'hint' => __('Bei «Teilweise OK» und «Wartung nötig» Pflicht, z. B. «Kondensatoren tauschen».', 'taxmod-stock')],
         ], StockPage::saveButton(__('Ergebnis speichern', 'taxmod-stock'))) . '</form>';
     }
@@ -544,7 +545,7 @@ final class InboundPage
 
     private function trackingButton(int $order, string $tab): string
     {
-        $field = StockPage::actForm([['label' => __('Sendungsnummer', 'taxmod-stock'), 'control' => '<input type="text" name="number" style="width:100%">']]);
+        $field = StockPage::actForm([['label' => __('Sendungsnummer', 'taxmod-stock'), 'control' => ListPage::field(InputKind::Line, 'number', '', ['size' => 40])]]);
         $form  = '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'
             . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
             . '<input type="hidden" name="order" value="' . esc_attr((string) $order) . '"><input type="hidden" name="tab" value="' . esc_attr($tab) . '">' . $this->stay()

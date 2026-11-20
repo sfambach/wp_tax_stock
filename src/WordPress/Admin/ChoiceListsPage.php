@@ -2,6 +2,7 @@
 
 namespace TaxmodStock\WordPress\Admin;
 
+use Taxmod\Core\Description\InputKind;
 use Taxmod\WordPress\Admin\ListPage;
 use Taxmod\WordPress\Admin\Tiles;
 use TaxmodStock\Core\StockError;
@@ -201,7 +202,7 @@ final class ChoiceListsPage
             __('+ Wert', 'taxmod-stock'),
             /* translators: %s: list */
             sprintf(__('Neuer Wert in «%s»', 'taxmod-stock'), $name),
-            '<label style="display:block">' . esc_html__('Name', 'taxmod-stock') . '<br><input type="text" name="name" style="width:100%" required></label>',
+            '<label style="display:block">' . esc_html__('Name', 'taxmod-stock') . '<br>' . ListPage::field(InputKind::Line, 'name', '', ['required' => true, 'size' => 40]) . '</label>',
             'booking',
             'neu',
             __('Anlegen', 'taxmod-stock')
@@ -215,7 +216,7 @@ final class ChoiceListsPage
             __('Umbenennen', 'taxmod-stock'),
             /* translators: %s: value */
             sprintf(__('«%s» umbenennen', 'taxmod-stock'), $name),
-            '<label style="display:block">' . esc_html__('Neuer Name', 'taxmod-stock') . '<br><input type="text" name="name" value="' . esc_attr($name) . '" style="width:100%" required></label>',
+            '<label style="display:block">' . esc_html__('Neuer Name', 'taxmod-stock') . '<br>' . ListPage::field(InputKind::Line, 'name', $name, ['required' => true, 'size' => 40]) . '</label>',
             'booking',
             'umbenennen',
             __('Umbenennen', 'taxmod-stock'),

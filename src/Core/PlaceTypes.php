@@ -102,6 +102,22 @@ final class PlaceTypes
         return $this->labels[$type][1] ?? 0;
     }
 
+    /**
+     * The label a place of this type gets and how many: the type's own number, else its template's, else 2 for a box and 1
+     * otherwise (D-1152). Without a template the fixed layout and format choice stand. `$template` looks a label up by id, as
+     * the labels module answers it (D-1296).
+     *
+     * @param \Closure(int): (array<string, mixed>|null) $template
+     * @return array{0: array<string, mixed>|null, 1: int}
+     */
+    public function labelFor(int $type, bool $movable, \Closure $template): array
+    {
+        $chosen = $type > 0 ? $template($this->labelTemplateOf($type)) : null;
+        $copies = $type > 0 ? $this->labelCopiesOf($type) : 0;
+
+        return [$chosen, $copies > 0 ? $copies : (int) ($chosen['copies'] ?? ($movable ? 2 : 1))];
+    }
+
     /** @return list<array{0: int, 1: int, 2?: string}> [part type, count, unit name where one is set] */
     public function partsOf(int $type): array
     {

@@ -233,6 +233,40 @@ $pruefe(LogisticsShell::isFullscreen(), 'D-1232: «Vollbild» set there is the s
 $pruefe(! LogisticsShell::isFullscreen(), 'D-1232: and it can be switched off again');
 $pruefe(! method_exists(ListPage::class, 'resetTreeStates') || str_contains($html, 'name="reset_trees"'), 'his wish 2026-11-09: the kept trees can be forgotten there');
 
+// D-1502: a module adds its own line (the labels module: «Arbeitsplatz»); a line without its parts stays out.
+$gespeichert = 0;
+$zeile       = static function (array $lines) use (&$gespeichert): array {
+    return array_merge($lines, [
+        ['label' => '__nc Platz', 'control' => '<select name="__nc_platz"></select>', 'save' => static function () use (&$gespeichert): void { $gespeichert++; }],
+        ['label' => '__nc kaputt', 'control' => '<b>x</b>'],
+    ]);
+};
+add_filter(SettingsPage::USER_SETTINGS_FILTER, $zeile);
+$html = (new SettingsPage())->render();
+$pruefe(str_contains($html, '__nc Platz</th><td><select name="__nc_platz">') && ! str_contains($html, '__nc kaputt'), 'D-1502: a module\'s line stands in Benutzereinstellungen, a broken one stays out');
+foreach (SettingsPage::moduleSettings() as $line) {
+    ($line['save'])();
+}
+$pruefe($gespeichert === 1, 'D-1502: saving the form asks the module to keep its own field');
+remove_filter(SettingsPage::USER_SETTINGS_FILTER, $zeile);
+if (class_exists(\TaxmodLabel\WordPress\Admin\WorkplacesPage::class)) {
+    // Prüftor 2026-11-20: the role «Arbeitsplätze» points at a node this database does not have — the page stands, no line, no workplace.
+    $datei = (string) file_get_contents(dirname((string) (new \ReflectionClass(\TaxmodLabel\WordPress\LabelService::class))->getFileName(), 3) . '/structure-live.json');
+    $tot   = static function () use ($datei): array {
+        $struktur                             = (array) json_decode($datei, true);
+        $struktur['nodes']['label_workplace'] = 999999999990;
+
+        return $struktur;
+    };
+    add_filter('pre_option_' . \TaxmodLabel\WordPress\LabelService::STRUCTURE, $tot);
+    $html = (new SettingsPage())->render();
+    $pruefe(str_contains($html, 'name="_wpnonce"') && ! str_contains($html, 'name="' . \TaxmodLabel\WordPress\LabelService::WORKPLACE_META . '"'), 'D-1502: a role pointing at a missing node leaves Benutzereinstellungen standing, without the line');
+    $pruefe((new \TaxmodLabel\WordPress\LabelService())->workplace() === null && \TaxmodLabel\WordPress\Admin\WorkplacesPage::userSetting([]) === [], 'D-1502: and it is «kein Arbeitsplatz», not an error');
+    remove_filter('pre_option_' . \TaxmodLabel\WordPress\LabelService::STRUCTURE, $tot);
+} else {
+    echo "  (Etikettenmodul nicht aktiv: Fall «toter Verweis Arbeitsplätze» übersprungen)\n";
+}
+
 echo "Baum links\n";
 // His wish 2026-11-09: «hier fange ich immer neu an … button wie collapse all usw fehlen» — the modeller's one side tree.
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'gruppenbestand'];

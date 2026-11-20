@@ -368,6 +368,7 @@ final class PurchasePage
         $lager   = $this->stock->table('lager');
         $open    = $this->stock->purchasing()->openQuantities($orders, $purchases);
         $held    = $this->stock->reservedByThing();
+        $units   = $this->stock->unitWords($things);
         $choices = ['0' => __('— Neuer Bedarf —', 'taxmod-stock')];
 
         if ($things === []) {
@@ -391,8 +392,8 @@ final class PurchasePage
             $stock   = $ledger->stockOf($thing) - ($held[$thing] ?? 0.0);
             $come    = $open[$thing] ?? 0.0;
             $rows[]  = [esc_html(($labels[$thing] ?? '') . ' (Nr. ' . $thing . ')'), esc_html($this->number($stock)), esc_html($minimum === null ? '—' : $minimum), esc_html($this->number($come)),
-                '<input type="number" min="1" step="1" style="width:7em" name="quantity[' . esc_attr((string) $thing) . ']" value="'
-                . esc_attr((string) Purchasing::proposedQuantity($minimum === null ? null : (float) $minimum, $stock, $come)) . '">'];
+                // D-1436/D-1500: the quantity with the unit the Lager counts this material in.
+                ListPage::quantity('quantity[' . $thing . ']', $units[$thing] ?? '', (string) Purchasing::proposedQuantity($minimum === null ? null : (float) $minimum, $stock, $come))];
         }
 
         $html .= ListPage::grid([[__('Material', 'taxmod-stock')], [__('Verfügbar', 'taxmod-stock'), GridMarkup::NUMBER], [__('Mindestbestand', 'taxmod-stock'), GridMarkup::NUMBER],

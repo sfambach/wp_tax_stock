@@ -347,7 +347,13 @@ if (class_exists(TaxmodLabel\WordPress\LabelButton::class)) {
     $vorlagen = (new StockService())->labelTemplates();
     $dialog   = array_diff_key($vorlagen->dialog($r['etk40'], ['record' => $r['lm']]), ['choices' => 1, 'chosen' => 1, 'printers' => 1]);
     $gefuellt = TaxmodLabel\WordPress\LabelButton::filled(new TaxmodLabel\Core\LabelContent('M-' . $r['lm'], 'LM2930T-5.0'), $dialog);
-    $pruefe($gefuellt !== null && ($gefuellt->values['Bezeichnung'] ?? '') === 'LM2930T-5.0' && $gefuellt->format->widthMm === 40.0, 'D-1202: a ticked material\'s label reads its own «Bezeichnung», on the 40×30 label');
+    $gut = $gefuellt !== null && ($gefuellt->values['Bezeichnung'] ?? '') === 'LM2930T-5.0' && $gefuellt->format->widthMm === 40.0;
+    $pruefe($gut, 'D-1202: a ticked material\'s label reads its own «Bezeichnung», on the 40×30 label');
+    if (! $gut) {
+        // What the labels module answered, so a red line says where it broke: the catalog, the record's fields or the format.
+        echo '       catalog: ', get_class($vorlagen), ', dialog keys: ', implode(',', array_keys($dialog)), ', filled: ', $gefuellt === null ? 'null' : json_encode(['values' => $gefuellt->values, 'width' => $gefuellt->format->widthMm], JSON_UNESCAPED_UNICODE), "\n";
+        echo '       record fields: ', json_encode(TaxmodLabel\WordPress\LabelButton::recordValues($r['lm'], ['Bezeichnung']), JSON_UNESCAPED_UNICODE), "\n";
+    }
     $pdf = apply_filters('taxmod_label_render', null, [['code' => 'M-' . $r['lm'], 'title' => 'LM2930T-5.0', 'copies' => 2, 'template' => $dialog]], 'pdf');
     $pruefe(is_array($pdf) && str_starts_with((string) ($pdf['pdf'] ?? ''), '%PDF') && ($pdf['labels'] ?? 0) === 2, 'D-1439: the material labels go through taxmod_label_render, one PDF for the list');
 } else {

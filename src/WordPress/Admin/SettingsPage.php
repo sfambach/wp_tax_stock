@@ -50,7 +50,7 @@ final class SettingsPage
             . wp_nonce_field(self::ACTION, '_wpnonce', true, false) . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
             // D-1308: «Speichern» in the toolbar above the form.
             . ListPage::toolbar([[StockPage::saveButton()]])
-            . $this->notMaterialSection() . $this->placesSection() . $this->testsSection() . $this->viewsSection()
+            . $this->materialInSection() . $this->placesSection() . $this->testsSection() . $this->viewsSection()
             . '</form>']], (string) TAXMOD_STOCK_VERSION);
     }
 
@@ -202,29 +202,30 @@ final class SettingsPage
             . '<input type="hidden" name="taxmod_stock_places_sent" value="1">';
     }
 
-    /** The branches under `Model` that hold no material: left out of the material search, the tree and the groups. */
-    private function notMaterialSection(): string
+    /**
+     * D-1522, his word 2026-11-20 17:52: «Material steht in» — the branches under `Model` that hold material, each chosen in the
+     * modeller's node chooser, «+» for one more, the bin for one less; every other branch is left out of the material search,
+     * the tree and the groups. No node id is typed.
+     */
+    private function materialInSection(): string
     {
         $stock = new StockService();
-        $rows  = $stock->notMaterial();
+        $in    = $stock->materialIn() ?? [];
+        $rows  = [];
 
-        try {
-            $names = $stock->modelNames();
-        } catch (StockError) {
-            $names = [];
+        foreach ($in as $i => $node) {
+            $rows[] = '<div style="margin:.5em 0">' . $stock->branchChooser('taxmod_stock_material_in[' . $i . ']', $node) . ' '
+                . ListPage::iconButton('trash', __('Entfernen', 'taxmod-stock'), '', 'taxmod_stock_material_in_remove', (string) $i) . '</div>';
         }
 
-        $html = '<h2>' . esc_html__('Kein Material', 'taxmod-stock') . '</h2>'
-            . '<p>' . esc_html__('Diese Zweige unter Model (mit allem darunter) enthalten kein Material, etwa das Quellenverzeichnis. Materialsuche, Baum und Materialgruppen lassen sie aus. Eine leere Zeile fügt einen Zweig hinzu, eine geleerte entfernt ihn.', 'taxmod-stock') . '</p>'
-            . '<input type="hidden" name="taxmod_stock_not_material_sent" value="1">';
-        $cells = [];
+        $rows[] = '<div style="margin:.5em 0">' . $stock->branchChooser('taxmod_stock_material_in[' . count($in) . ']') . ' '
+            . ListPage::iconButton('plus', __('Hinzufügen', 'taxmod-stock'), '', 'taxmod_stock_material_in_add', '1') . '</div>';
 
-        foreach ([...$rows, null, null, null] as $i => $node) {
-            $cells[] = [ListPage::field(InputKind::Number, 'taxmod_stock_not_material[' . $i . ']', (string) ($node ?? ''), ['min' => '1']),
-                esc_html($node === null ? '' : ($names[$node] ?? ''))];
-        }
-
-        return $html . ListPage::grid([[__('Zweig (Knoten-Id)', 'taxmod-stock')], [__('Name', 'taxmod-stock')]], $cells);
+        return '<h2>' . esc_html__('Material steht in', 'taxmod-stock') . '</h2>'
+            . '<p>' . esc_html__('Nur diese Zweige unter Model (mit allem darunter) enthalten Material. Materialsuche, Baum und Materialgruppen lassen alle anderen aus, etwa das Quellenverzeichnis.', 'taxmod-stock') . '</p>'
+            . ($stock->materialIn() === null && $stock->notMaterial() !== [] ? '<p class="description">' . esc_html__('Noch nicht gesetzt: es gilt die ältere Liste «Kein Material».', 'taxmod-stock') . '</p>' : '')
+            . implode('', $rows)
+            . '<input type="hidden" name="taxmod_stock_material_in_sent" value="1">';
     }
 
     /** D-1002, D-1111: the goods receipt's test place and its archive; which groups are tested is a group property (D-1259). */
@@ -278,9 +279,15 @@ final class SettingsPage
             update_option(StockService::LOCATIONS, ['unreferenced' => $settings->unreferenced], false);
         }
 
-        if (! empty($post['taxmod_stock_not_material_sent'])) {
-            $nodes = array_map('absint', is_array($post['taxmod_stock_not_material'] ?? null) ? $post['taxmod_stock_not_material'] : []);
-            update_option(StockService::NOT_MATERIAL, array_values(array_unique(array_filter($nodes))), false);
+        if (! empty($post['taxmod_stock_material_in_sent'])) {
+            $nodes  = is_array($post['taxmod_stock_material_in'] ?? null) ? $post['taxmod_stock_material_in'] : [];
+            $remove = isset($post['taxmod_stock_material_in_remove']) ? (string) $post['taxmod_stock_material_in_remove'] : null;
+
+            if ($remove !== null) {
+                unset($nodes[$remove]);
+            }
+
+            update_option(StockService::MATERIAL_IN, array_values(array_unique(array_filter(array_map('absint', $nodes)))), false);
         }
 
         if (! empty($post['taxmod_stock_tests_sent'])) {

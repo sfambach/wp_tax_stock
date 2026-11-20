@@ -1474,6 +1474,13 @@ final class Plugin
             'show_in_rest'      => ['schema' => ['type' => 'array', 'items' => ['type' => 'integer']]],
         ]);
 
+        // D-1522: «Material steht in»; no default, so «never set» stays apart from «none» and the older list holds until then.
+        register_setting('taxmod_stock', StockService::MATERIAL_IN, [
+            'type'              => 'array',
+            'sanitize_callback' => static fn ($value): array => array_values(array_unique(array_filter(array_map('absint', is_array($value) ? $value : [])))),
+            'show_in_rest'      => ['schema' => ['type' => 'array', 'items' => ['type' => 'integer']]],
+        ]);
+
         // D-1440: «Lagerort Wareneingang», like D-1303.
         register_setting('taxmod_stock', StockService::RECEIPT_INBOUND, [
             'type'              => 'integer',

@@ -86,6 +86,13 @@ final class StockService
      */
     public const NOT_MATERIAL = 'taxmod_stock_not_material';
 
+    /**
+     * D-1522, his word 2026-11-20 17:52: the setting the other way round — «Material steht in», the branches under `Model` that
+     * hold material (3 of 11 live), every other branch is none. Unset, the older {@see self::NOT_MATERIAL} still holds, so
+     * deleting this option undoes the switch.
+     */
+    public const MATERIAL_IN = 'taxmod_stock_material_in';
+
     /** D-1303: «Lagerort Wareneingang Produktion», where finished boards come in (like D-1111). */
     public const PRODUCTION_INBOUND = 'taxmod_stock_production_inbound';
 
@@ -1236,12 +1243,75 @@ final class StockService
         return $root > 0 ? array_map(static fn (array $node): string => (string) $node['name'], $this->model->tree($root)) : [];
     }
 
-    /** @return list<int> the branches named as holding no material */
+    /**
+     * D-1522: the branches that hold no material — with «Material steht in» set, every branch right under the root that is not
+     * named and holds no named branch; an empty list leaves nothing out; without it the older list.
+     *
+     * @return list<int>
+     */
     public function notMaterial(): array
     {
-        $raw = get_option(self::NOT_MATERIAL, []);
+        $in = $this->materialIn();
 
-        return array_values(array_filter(array_map('absint', is_array($raw) ? $raw : [])));
+        if ($in === null) {
+            $raw = get_option(self::NOT_MATERIAL, []);
+
+            return array_values(array_filter(array_map('absint', is_array($raw) ? $raw : [])));
+        }
+
+        $s    = $this->structure();
+        $root = $this->model->fields($s->node('lager'))[$s->field('lager_thing')]['target'] ?? 0;
+
+        if ($root === 0 || $in === []) {
+            return [];
+        }
+
+        $all  = $this->groupTrees[$root] ??= $this->model->tree($root);
+        $keep = [];
+
+        foreach ($in as $node) {
+            for ($n = $node, $guard = 0; isset($all[$n]) && $guard < 64; $n = $all[$n]['parent'], $guard++) {
+                if ($all[$n]['parent'] === $root) {
+                    $keep[$n] = true;
+                    break;
+                }
+            }
+        }
+
+        return array_values(array_filter(array_keys($all), static fn (int $id): bool => $all[$id]['parent'] === $root && ! isset($keep[$id])));
+    }
+
+    /** @return list<int>|null the branches named as holding material (D-1522), null while the setting was never made */
+    public function materialIn(): ?array
+    {
+        $raw = get_option(self::MATERIAL_IN, null);
+
+        return is_array($raw) ? array_values(array_unique(array_filter(array_map('absint', $raw)))) : null;
+    }
+
+    /**
+     * D-1522: the modeller's node chooser over everything under the root, for «Material steht in» — the Lager's own branch left
+     * out, the root not pickable.
+     */
+    public function branchChooser(string $name, int $preselected = 0): string
+    {
+        $s    = $this->structure();
+        $root = $this->model->fields($s->node('lager'))[$s->field('lager_thing')]['target'] ?? 0;
+
+        if ($root === 0) {
+            return '';
+        }
+
+        $all = $this->groupTrees[$root] ??= $this->model->tree($root);
+        $own = $all[$s->node('lager')]['parent'] ?? 0;
+
+        return (string) apply_filters('taxmod_node_chooser', '', array_filter([
+            'name'        => $name,
+            'root'        => $root,
+            'exclude'     => $own > 0 && $own !== $root ? [$own] : [],
+            'unpickable'  => [$root],
+            'preselected' => $preselected,
+        ], static fn (mixed $v): bool => $v !== '' && $v !== 0 && $v !== []) + ['name' => $name, 'root' => $root]);
     }
 
     /** The names from the root down to a node, «Bauteile ▸ Aktiv ▸ Transistor». */

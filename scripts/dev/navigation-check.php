@@ -115,7 +115,8 @@ $pruefe(array_column($lagerstruktur, 'key') === ['structure', 'place-types'] && 
 $pruefe(($settings[0]['page'] ?? '') === SettingsPage::PAGE, 'Grundeinstellungen is a page of the stock interface, not the modeller\'s Configuration');
 $pruefe(($settings[1]['label'] ?? '') === 'DHL 2', 'the module keeps its menu label, without markup');
 $outbound = array_values(array_filter($navigation->areas(), static fn (array $area): bool => $area['key'] === 'outbound'))[0]['items'] ?? [];
-$pruefe(array_column($outbound, 'module') === ['taxebay-shipping'], 'Warenausgang holds the eBay shipping page');
+// D-1528 (PR-9, visible change): the sales module adds its stage pages to Warenausgang, so the eBay page is one of them, not the only one.
+$pruefe(in_array('taxebay-shipping', array_column($outbound, 'module'), true), 'Warenausgang holds the eBay shipping page');
 // His words 2026-11-03 (D-1121): «pack mal das menü drucken unter einstellungen», «kannst du das so bauen das es n ebenen zulässt».
 add_filter(ModulePage::FILTER, static fn (array $pages): array => [...$pages,
     ['slug' => '__navcheck-print', 'label' => 'Aufträge', 'area' => 'print', 'render' => static fn (): string => ''],

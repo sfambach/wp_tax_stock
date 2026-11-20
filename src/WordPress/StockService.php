@@ -49,6 +49,7 @@ use TaxmodStock\Core\SplitRow;
 use TaxmodStock\Core\StockError;
 use TaxmodStock\Core\PurchasePictures;
 use TaxmodStock\Core\Storno;
+use TaxmodStock\Core\TransferRequest;
 use TaxmodStock\Core\TransferRow;
 use TaxmodStock\Core\Structure;
 use TaxmodStock\Core\Table;
@@ -6421,41 +6422,7 @@ final class StockService
         $lots   = $this->table('lot');
         $places = $this->table('location');
         $ledger = $this->ledger();
-        $moves  = [];
-        $taken  = [];
-
-        foreach (array_values($rows) as $i => $row) {
-            $step = sprintf('row %d', $i + 1);
-            $lot  = (int) ($row['lot'] ?? 0);
-            $from = (int) ($row['from'] ?? 0);
-            $to   = (int) ($row['to'] ?? 0);
-
-            if (! $lots->has($lot)) {
-                throw new \InvalidArgumentException($step . ': lot ' . $lot . ' does not exist.');
-            }
-
-            foreach ([$from, $to] as $place) {
-                if (! $places->has($place)) {
-                    throw new \InvalidArgumentException($step . ': place ' . $place . ' is no storage place.');
-                }
-            }
-
-            if ($from === $to) {
-                throw new \InvalidArgumentException($step . ': from and to are the same place.');
-            }
-
-            $key  = $lot . ':' . $from;
-            $rest = $ledger->restAt($lot, $from) - ($taken[$key] ?? 0.0);
-            $text = trim((string) ($row['quantity'] ?? ''));
-            $want = $text === '' ? $rest : (float) str_replace(',', '.', $text);
-
-            if ($want <= 0.0 || $want > $rest + 1e-9) {
-                throw new \InvalidArgumentException($step . ': lot ' . $lot . ' has ' . DecimalText::stored(max($rest, 0.0)) . ' at place ' . $from . ', not ' . ($text === '' ? 'anything' : $text) . '.');
-            }
-
-            $taken[$key] = ($taken[$key] ?? 0.0) + $want;
-            $moves[]     = new TransferRow($lot, $from, $to, DecimalText::stored($want));
-        }
+        $moves  = TransferRequest::rows($rows, $lots->has(...), $places->has(...), $ledger->restAt(...));
 
         if ($moves === []) {
             throw StockError::nothingToBook();

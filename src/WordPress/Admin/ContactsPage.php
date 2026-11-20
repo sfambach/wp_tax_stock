@@ -210,12 +210,12 @@ final class ContactsPage
     {
         $back   = self::url(['tab' => (string) $node, 'kontakt' => (string) $contact]);
         $list   = self::url(['tab' => (string) $node]);
-        // D-1316: the way back to the list is the toolbar's first group; D-1308: «Anlegen zurücknehmen» joins it.
-        $return = [[ListPage::back($list, __('Zur Liste', 'taxmod-stock'))]];
-        $undo   = [...$return, [$this->undoForm($contact, $node)]];
+        // D-1521: the way back stands before the title in the one head; D-1308: «Anlegen zurücknehmen» in the toolbar.
+        $undo   = [[$this->undoForm($contact, $node)]];
         $form   = (string) apply_filters('taxmod_record_editor', '', $contact, $back, $undo);
+        $word   = (string) ($this->stock->contactTree()[$node]['name'] ?? __('Kontakt', 'taxmod-stock'));
 
-        return ($return === [] ? '<p><a href="' . esc_url($list) . '">' . esc_html__('← zur Liste', 'taxmod-stock') . '</a></p>' : '')
+        return ListPage::head($word, $list, __('Zur Liste', 'taxmod-stock'))
             . ($form === '' ? ListPage::toolbar([[StockPage::editorMissing()], ...$undo]) : $form);
     }
 

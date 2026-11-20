@@ -148,11 +148,11 @@ final class PurchasePage
     private function purchaseView(int $purchase): string
     {
         $word   = (string) ($this->stock->recordsOf('purchase', [$purchase])->first($purchase, $this->stock->structure()->field('label')) ?? '#' . $purchase);
-        $return = [[ListPage::back(self::url(), __('Zum Einkauf', 'taxmod-stock'))]];
-        $form   = (string) apply_filters('taxmod_record_editor', '', $purchase, self::url(['kauf' => (string) $purchase]), $return);
+        $form   = (string) apply_filters('taxmod_record_editor', '', $purchase, self::url(['kauf' => (string) $purchase]), []);
 
-        return '<h2>' . esc_html(sprintf(/* translators: %s: the purchase's word */ __('Kauf – %s', 'taxmod-stock'), $word)) . '</h2>'
-            . ($form === '' ? ListPage::toolbar($return) . StockPage::editorMissing() : $form);
+        // D-1521: the way back stands before the title in the one head.
+        return ListPage::head(sprintf(/* translators: %s: the purchase's word */ __('Kauf – %s', 'taxmod-stock'), $word), self::url(), __('Zum Einkauf', 'taxmod-stock'))
+            . ($form === '' ? StockPage::editorMissing() : $form);
     }
 
     /**
@@ -177,7 +177,6 @@ final class PurchasePage
             . '<label style="display:block;margin-top:.5em">' . esc_html__('Name des neuen Bedarfs', 'taxmod-stock') . '<br>' . ListPage::field(InputKind::Line, 'name', '', ['form' => $form, 'size' => 40]) . '</label>'
             . '<p class="description">' . esc_html__('Die angehakten Positionen wandern mit ihren Werten; der Name gilt nur für «neuer Bedarf».', 'taxmod-stock') . '</p>';
         $move  = ListPage::dialogAction('taxmod-stock-demand-move-dialog', __('Verschieben nach …', 'taxmod-stock'), __('Positionen verschieben', 'taxmod-stock'), $body, 'op', 'move', __('Verschieben', 'taxmod-stock'), $form);
-        $back  = [ListPage::back(self::url(['tab' => 'bedarf']), __('Zum Bedarf', 'taxmod-stock'))];
         $lines = array_map('intval', $orders->all($demand, $s->field('order_lines')));
 
         // D-1320 ergänzt: a demand that passed on names the orders it went into and offers its copy.
@@ -186,10 +185,10 @@ final class PurchasePage
         $passed = $into === [] ? '' : '<p>' . esc_html__('Übergegangen in:', 'taxmod-stock') . ' ' . implode(', ', array_map(fn (int $o): string => '<a href="' . esc_url($this->orderLink($o, $orders)) . '">'
             . esc_html((string) $orders->first($o, $s->field('label')) ?: '#' . $o) . '</a>', $into)) . '</p>';
 
-        return '<h2>' . esc_html(sprintf(/* translators: %s: the demand's name */ __('Bedarf – %s', 'taxmod-stock'), $label === '' ? '#' . $demand : $label)) . '</h2>' . $passed
+        return ListPage::head(sprintf(/* translators: %s: the demand's name */ __('Bedarf – %s', 'taxmod-stock'), $label === '' ? '#' . $demand : $label), self::url(['tab' => 'bedarf']), __('Zum Bedarf', 'taxmod-stock')) . $passed
             . '<form method="post" id="' . esc_attr($form) . '" action="' . esc_url(admin_url('admin-post.php')) . '">' . $this->hidden('move', 'bedarf')
             . '<input type="hidden" name="order" value="' . esc_attr((string) $demand) . '"></form>'
-            . ListPage::toolbar([...($back === [] ? [] : [$back]), [...($ended ? [$this->button('again', $demand, 0, __('Als neuen Bedarf kopieren', 'taxmod-stock'), 'beendet', true)] : []), $this->addDialog($demand, 'bedarf'), $move]])
+            . ListPage::toolbar([[...($ended ? [$this->button('again', $demand, 0, __('Als neuen Bedarf kopieren', 'taxmod-stock'), 'beendet', true)] : []), $this->addDialog($demand, 'bedarf'), $move]])
             . $this->details('bedarf', $demand, $lines, $this->sourcedFrom($demand, $purchases), $orders, $purchases, $form);
     }
 
@@ -474,11 +473,10 @@ final class PurchasePage
         $s     = $this->stock->structure();
         $label = (string) $orders->first($order, $s->field('label'));
         $names = ['bestellen' => __('Bestellen', 'taxmod-stock'), 'bestellt' => __('Bestellt', 'taxmod-stock'), 'verworfen' => __('Verworfen', 'taxmod-stock')];
-        $back  = [ListPage::back(self::url(['tab' => $tab]), sprintf(/* translators: %s: tab */ __('Zurück zu «%s»', 'taxmod-stock'), $names[$tab]))];
         $lines = array_map('intval', $orders->all($order, $s->field('order_lines')));
 
-        return '<h2>' . esc_html($label === '' ? '#' . $order : $label) . ' <span class="description">#' . esc_html((string) $order) . '</span></h2>'
-            . ListPage::toolbar([...($back === [] ? [] : [$back]), [...($tab === 'bestellen' ? [$this->addDialog($order, $tab)] : []), $this->rowButtons($tab, $order)]])
+        return ListPage::head(($label === '' ? '#' . $order : $label) . ' · #' . $order, self::url(['tab' => $tab]), sprintf(/* translators: %s: tab */ __('Zurück zu «%s»', 'taxmod-stock'), $names[$tab]))
+            . ListPage::toolbar([[...($tab === 'bestellen' ? [$this->addDialog($order, $tab)] : []), $this->rowButtons($tab, $order)]])
             . $this->details($tab, $order, $lines, [], $orders, $purchases);
     }
 

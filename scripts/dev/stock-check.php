@@ -152,6 +152,30 @@ update_option(StockService::NOT_MATERIAL, [$r['teile']]);
 $ohne = new StockService();
 $pruefe(! in_array($r['t1'], array_column($ohne->searchThings('BC640'), 'id'), true) && ! isset(array_column($ohne->treeRows(), 'name', 'id')[$r['teile']]), 'a branch without material is neither searched nor in the tree');
 delete_option(StockService::NOT_MATERIAL);
+// D-1522, his word 2026-11-20 17:52: «Material steht in» turns the setting round — only the named branches hold material.
+update_option(StockService::NOT_MATERIAL, [$r['teile']]);
+update_option(StockService::MATERIAL_IN, [$r['teile']]);
+$mit = new StockService();
+$pruefe(in_array($r['t1'], array_column($mit->searchThings('BC640'), 'id'), true) && ! in_array($r['teile'], $mit->notMaterial(), true), 'D-1522: a branch named in «Material steht in» is searched, and the older list no longer counts once it is set');
+update_option(StockService::MATERIAL_IN, [999999999]);
+$ohne = new StockService();
+$pruefe(! in_array($r['t1'], array_column($ohne->searchThings('BC640'), 'id'), true) && in_array($r['teile'], $ohne->notMaterial(), true), 'D-1522: a branch not named drops out of the search');
+update_option(StockService::MATERIAL_IN, []);
+$pruefe((new StockService())->notMaterial() === [], 'D-1522: an empty «Material steht in» leaves nothing out');
+delete_option(StockService::MATERIAL_IN);
+$pruefe((new StockService())->notMaterial() === [$r['teile']], 'D-1522: without the setting the older list still holds — deleting the option is the undo');
+delete_option(StockService::NOT_MATERIAL);
+$einst = new \TaxmodStock\WordPress\Admin\SettingsPage();
+$einst->save(['taxmod_stock_material_in_sent' => '1', 'taxmod_stock_material_in' => ['0' => (string) $r['teile'], '1' => '77', '2' => '', '3' => (string) $r['teile']]]);
+$pruefe(get_option(StockService::MATERIAL_IN) === [$r['teile'], 77], 'D-1522: the chosen branches are saved, empty and twice dropped (' . wp_json_encode(get_option(StockService::MATERIAL_IN)) . ')');
+$einst->save(['taxmod_stock_material_in_sent' => '1', 'taxmod_stock_material_in' => ['0' => (string) $r['teile'], '1' => '77'], 'taxmod_stock_material_in_remove' => '1']);
+$pruefe(get_option(StockService::MATERIAL_IN) === [$r['teile']], 'D-1522: the bin of a row takes that branch out');
+$_GET = ['page' => \TaxmodStock\WordPress\Admin\SettingsPage::PAGE];
+$einstHtml = $einst->render();
+$pruefe(str_contains($einstHtml, 'name="taxmod_stock_material_in[0]"') && str_contains($einstHtml, 'name="taxmod_stock_material_in[1]"') && str_contains($einstHtml, 'name="taxmod_stock_material_in_add"') && str_contains($einstHtml, 'name="taxmod_stock_material_in_remove" value="0"'), 'D-1522: one chooser per branch with its bin, and an empty one with «+»');
+$einstQuelle = (string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Admin/SettingsPage.php');
+$pruefe(! str_contains($einstQuelle, 'Knoten-Id') && preg_match('/InputKind::Number,\s*\'taxmod_stock_(not_material|material_in)/', $einstQuelle) === 0, 'D-1522: no node id is typed in the Grundeinstellungen');
+delete_option(StockService::MATERIAL_IN);
 // His word 2026-10-28: «eigentlich haben wir doch den tax chooser» — the row holds the modeller's chooser, no «neu anlegen».
 // D-1111: the chosen material's word is a link to the row's «Material» dialog now, no longer a plain span; D-1488: drawn by the modeller.
 $pruefe(str_contains($html, 'name="thing[' . $r['kaufC'] . ']" value="' . $r['t1'] . '" checked') && preg_match('/class="[^"]*taxmod-record-opens[^"]*" for="taxmod-stock-material-' . $r['kaufC'] . '">BC640<\/label>/', $html) === 1
@@ -1433,7 +1457,7 @@ $pruefe(str_contains($quelle, "ListPage::viewDialog('taxmod-stock-material-'") &
 // in the toolbar above the fields, and no submit row below.
 $oben = static fn (string $html, string $vor): bool => ($t = strpos($html, 'taxmod-toolbar')) !== false && ($f = strpos($html, $vor)) !== false && $t < $f && ! str_contains($html, '<p class="submit"');
 $_GET = ['page' => TaxmodStock\WordPress\Admin\SettingsPage::PAGE];
-$pruefe($oben((new TaxmodStock\WordPress\Admin\SettingsPage())->render(), 'form-table'), 'D-1308: Grundeinstellungen save in the toolbar above the form');
+$pruefe($oben((new TaxmodStock\WordPress\Admin\SettingsPage())->render(), 'taxmod-form-settings'), 'D-1308: Grundeinstellungen save in the toolbar above the form (D-1521: the form is ListPage::settings now, no form-table)');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'inventur'];
 $pruefe($oben((new StockPage())->render(), 'rows[0][quantity]'), 'D-1308: «Inventur buchen» in the toolbar above the rows');
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'verbrauch'];

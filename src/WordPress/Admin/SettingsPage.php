@@ -50,7 +50,7 @@ final class SettingsPage
             . wp_nonce_field(self::ACTION, '_wpnonce', true, false) . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
             // D-1308: «Speichern» in the toolbar above the form.
             . ListPage::toolbar([[StockPage::saveButton()]])
-            . $this->notMaterialSection() . $this->placesSection() . $this->testsSection() . $this->viewsSection()
+            . $this->materialInSection() . $this->placesSection() . $this->testsSection() . $this->viewsSection()
             . '</form>']], (string) TAXMOD_STOCK_VERSION);
     }
 
@@ -175,20 +175,19 @@ final class SettingsPage
         $titles = [
             'material'     => [__('Material', 'taxmod-stock'), __('Unter jedem Material stehen seine Bestandsposten (Datum, Rest, Preis, Lagerort) gleich offen da.', 'taxmod-stock')],
         ];
-        $html   = '<h2>' . esc_html__('Ansicht der Reiter', 'taxmod-stock') . '</h2>'
-            . '<input type="hidden" name="taxmod_stock_views_sent" value="1"><table class="form-table" role="presentation"><tbody>';
+        $rows   = [];
 
         foreach ($titles as $tab => [$title, $explain]) {
-            $html .= '<tr><th scope="row">' . esc_html($title) . '</th><td><label>' . ListPage::field(InputKind::Tick, 'taxmod_stock_views[' . $tab . ']', '1', ['checked' => (string) ($views->expanded($tab)) === '1']) . ' ' . esc_html__('Gleich aufgeklappt', 'taxmod-stock') . '</label>'
-                . '<p class="description">' . esc_html($explain) . '</p>'
-                // D-1468: off unless set — the list shows its one row and the person opens it.
-                . '<p><label>' . ListPage::field(InputKind::Tick, 'taxmod_stock_single[' . $tab . ']', '1', ['checked' => (string) ($views->opensSingleHit($tab)) === '1']) . ' '
-                . esc_html__('Bei genau einem Treffer gleich öffnen', 'taxmod-stock') . '</label></p>'
-                . '<p class="description">' . esc_html__('Sonst bleibt die Liste mit der einen Zeile stehen. Jede Person kann das in den Benutzereinstellungen für sich anders wählen.', 'taxmod-stock') . '</p></td></tr>';
+            $rows[] = ['label' => $title, 'control' => '<label>' . ListPage::field(InputKind::Tick, 'taxmod_stock_views[' . $tab . ']', '1', ['checked' => (string) ($views->expanded($tab)) === '1']) . ' ' . esc_html__('Gleich aufgeklappt', 'taxmod-stock') . '</label>', 'hint' => $explain];
+            // D-1468: off unless set — the list shows its one row and the person opens it.
+            $rows[] = ['label' => '', 'control' => '<label>' . ListPage::field(InputKind::Tick, 'taxmod_stock_single[' . $tab . ']', '1', ['checked' => (string) ($views->opensSingleHit($tab)) === '1']) . ' '
+                . esc_html__('Bei genau einem Treffer gleich öffnen', 'taxmod-stock') . '</label>', 'hint' => __('Sonst bleibt die Liste mit der einen Zeile stehen. Jede Person kann das in den Benutzereinstellungen für sich anders wählen.', 'taxmod-stock')];
         }
 
-        return $html . '<tr><th scope="row">' . esc_html__('Inventur, Verbrauch', 'taxmod-stock') . '</th><td><p class="description">'
-            . esc_html__('Diese Reiter haben keine Zeilen zum Aufklappen.', 'taxmod-stock') . '</p></td></tr></tbody></table>';
+        $rows[] = ['label' => __('Inventur, Verbrauch', 'taxmod-stock'), 'control' => '', 'hint' => __('Diese Reiter haben keine Zeilen zum Aufklappen.', 'taxmod-stock')];
+
+        // D-1521: name | field | explanation in three columns.
+        return '<h2>' . esc_html__('Ansicht der Reiter', 'taxmod-stock') . '</h2><input type="hidden" name="taxmod_stock_views_sent" value="1">' . ListPage::settings($rows);
     }
 
     /** D-972: the place for a purchase without material; the place of a group is set in its Lager view (D-1259). */
@@ -196,35 +195,33 @@ final class SettingsPage
     {
         $stock = new StockService();
 
-        return '<h2>' . esc_html__('Einlagerung', 'taxmod-stock') . '</h2>'
-            . '<p>' . esc_html__('Der Wareneingang schlägt den Lagerort des Materials vor, sonst den Standard-Lagerort seiner Gruppe (gesetzt in der Lager-Ansicht der Gruppe, vererbt nach unten), sonst den Standard-Ort der Struktur.', 'taxmod-stock') . '</p>'
-            . '<div style="margin:1em 0"><span>' . esc_html__('Lagerort für Käufe ohne Material', 'taxmod-stock') . '</span> ' . $stock->placeChooser('taxmod_stock_unreferenced', (int) $stock->locationSettings()->unreferenced) . '</div>'
-            . '<input type="hidden" name="taxmod_stock_places_sent" value="1">';
+        return '<h2>' . esc_html__('Einlagerung', 'taxmod-stock') . '</h2><input type="hidden" name="taxmod_stock_places_sent" value="1">'
+            . ListPage::settings([['label' => __('Lagerort für Käufe ohne Material', 'taxmod-stock'), 'control' => $stock->placeChooser('taxmod_stock_unreferenced', (int) $stock->locationSettings()->unreferenced),
+                'hint' => __('Der Wareneingang schlägt den Lagerort des Materials vor, sonst den Standard-Lagerort seiner Gruppe (gesetzt in der Lager-Ansicht der Gruppe, vererbt nach unten), sonst den Standard-Ort der Struktur, sonst diesen.', 'taxmod-stock')]]);
     }
 
-    /** The branches under `Model` that hold no material: left out of the material search, the tree and the groups. */
-    private function notMaterialSection(): string
+    /**
+     * D-1522, his word 2026-11-20 17:52: «Material steht in» — the branches under `Model` that hold material, each chosen in the
+     * modeller's node chooser, «+» for one more, the bin for one less; every other branch is left out of the material search,
+     * the tree and the groups. No node id is typed.
+     */
+    private function materialInSection(): string
     {
         $stock = new StockService();
-        $rows  = $stock->notMaterial();
+        $in    = $stock->materialIn() ?? [];
+        $rows  = [];
+        $hint  = __('Nur diese Zweige unter Model (mit allem darunter) enthalten Material. Materialsuche, Baum und Materialgruppen lassen alle anderen aus, etwa das Quellenverzeichnis.', 'taxmod-stock')
+            . ($stock->materialIn() === null && $stock->notMaterial() !== [] ? ' ' . __('Noch nicht gesetzt: es gilt die ältere Liste «Kein Material».', 'taxmod-stock') : '');
 
-        try {
-            $names = $stock->modelNames();
-        } catch (StockError) {
-            $names = [];
+        foreach ($in as $i => $node) {
+            $rows[] = ['label' => $i === 0 ? __('Material steht in', 'taxmod-stock') : '', 'hint' => $i === 0 ? $hint : '',
+                'control' => $stock->branchChooser('taxmod_stock_material_in[' . $i . ']', $node) . ' ' . ListPage::iconButton('trash', __('Entfernen', 'taxmod-stock'), '', 'taxmod_stock_material_in_remove', (string) $i)];
         }
 
-        $html = '<h2>' . esc_html__('Kein Material', 'taxmod-stock') . '</h2>'
-            . '<p>' . esc_html__('Diese Zweige unter Model (mit allem darunter) enthalten kein Material, etwa das Quellenverzeichnis. Materialsuche, Baum und Materialgruppen lassen sie aus. Eine leere Zeile fügt einen Zweig hinzu, eine geleerte entfernt ihn.', 'taxmod-stock') . '</p>'
-            . '<input type="hidden" name="taxmod_stock_not_material_sent" value="1">';
-        $cells = [];
+        $rows[] = ['label' => $in === [] ? __('Material steht in', 'taxmod-stock') : '', 'hint' => $in === [] ? $hint : '',
+            'control' => $stock->branchChooser('taxmod_stock_material_in[' . count($in) . ']') . ' ' . ListPage::iconButton('plus', __('Hinzufügen', 'taxmod-stock'), '', 'taxmod_stock_material_in_add', '1')];
 
-        foreach ([...$rows, null, null, null] as $i => $node) {
-            $cells[] = [ListPage::field(InputKind::Number, 'taxmod_stock_not_material[' . $i . ']', (string) ($node ?? ''), ['min' => '1']),
-                esc_html($node === null ? '' : ($names[$node] ?? ''))];
-        }
-
-        return $html . ListPage::grid([[__('Zweig (Knoten-Id)', 'taxmod-stock')], [__('Name', 'taxmod-stock')]], $cells);
+        return '<h2>' . esc_html__('Material', 'taxmod-stock') . '</h2><input type="hidden" name="taxmod_stock_material_in_sent" value="1">' . ListPage::settings($rows);
     }
 
     /** D-1002, D-1111: the goods receipt's test place and its archive; which groups are tested is a group property (D-1259). */
@@ -233,29 +230,29 @@ final class SettingsPage
         $stock    = new StockService();
         $settings = $stock->testSettings();
 
-        $html = '<h2>' . esc_html__('Test nach dem Wareneingang', 'taxmod-stock') . '</h2>'
+        // D-1521: name | field | explanation in three columns.
+        return '<h2>' . esc_html__('Test nach dem Wareneingang', 'taxmod-stock') . '</h2><input type="hidden" name="taxmod_stock_tests_sent" value="1">'
             . '<p>' . esc_html__('Gebrauchte Bestandsposten aus Gruppen mit «Nach Wareneingang testen» (gesetzt in der Lager-Ansicht der Gruppe, vererbt nach unten) stehen nach dem Wareneingang unter Logistik › Wareneingang › Test; Neuware nicht.', 'taxmod-stock') . '</p>'
-            . '<p><label>' . esc_html__('Wareneingang ab', 'taxmod-stock') . ' ' . ListPage::field(InputKind::Moment, 'taxmod_stock_inbound_since', (string) $stock->inboundSince(), ['note' => 'date']) . '</label> '
-            . '<span class="description">' . esc_html__('Ältere Bestellungen gelten als Kaufhistorie und stehen gleich unter «Archiviert».', 'taxmod-stock') . '</span></p>'
-            . '<p><label>' . esc_html__('Archivieren nach', 'taxmod-stock') . ' ' . ListPage::field(InputKind::Number, 'taxmod_stock_inbound_archive_days', (string) $stock->inboundArchiveDays(), ['min' => 1]) . ' ' . esc_html__('Tagen', 'taxmod-stock') . '</label> '
-            . '<span class="description">' . esc_html__('Eingebuchte Bestellungen wandern so viele Tage nach «Eingegangen am» unter «Archiviert».', 'taxmod-stock') . '</span></p>'
-            . '<p><label>' . esc_html__('Beendeten Bedarf archivieren nach', 'taxmod-stock') . ' ' . ListPage::field(InputKind::Number, 'taxmod_stock_demand_archive_days', (string) $stock->demandArchiveDays(), ['min' => 1]) . ' ' . esc_html__('Tagen', 'taxmod-stock') . '</label> '
-            . '<span class="description">' . esc_html__('Ein Bedarf, der ganz in Bestellungen übergegangen ist, steht unter «Beendet» und so viele Tage nach seiner letzten Bestellung unter «Archiviert».', 'taxmod-stock') . '</span></p>'
-            // D-1375, his wish 2026-11-15: «prozentsatz in den einstellungen festlegbar ist default 20%».
-            . '<p><label>' . esc_html__('Preiswarnung ab', 'taxmod-stock') . ' ' . ListPage::field(InputKind::Number, 'taxmod_stock_price_warn_percent', (string) $stock->priceWarnPercent(), ['min' => 1]) . ' ' . esc_html__('% über dem letzten Kauf', 'taxmod-stock') . '</label> '
-            . '<span class="description">' . esc_html__('Der Wareneingang warnt, wenn der Stückpreis so viel über dem letzten Kauf desselben Materials liegt.', 'taxmod-stock') . '</span></p>'
-            // D-1111: an ordinary place the setting names, never a name in code.
-            . '<div style="margin:1em 0"><span>' . esc_html__('Lagerort für Test', 'taxmod-stock') . '</span> ' . $stock->placeChooser('taxmod_stock_test_place', (int) $settings->place) . ' '
-            . '<span class="description">' . esc_html__('Der Wareneingang schlägt diesen Ort für Gebrauchtware aus diesen Gruppen vor (nicht für Neuware); leer: der übliche Vorschlag.', 'taxmod-stock') . '</span></div>'
-            // D-1440: where «Einlagern» puts a purchase without a place.
-            . '<div style="margin:1em 0"><span>' . esc_html__('Lagerort Wareneingang', 'taxmod-stock') . '</span> ' . $stock->placeChooser('taxmod_stock_receipt_inbound', $stock->receiptInbound()) . ' '
-            . '<span class="description">' . esc_html__('Hierhin legt «Einlagern» einen Kauf ohne Lagerort; von dort geht er per Umbuchen an seinen Platz. Leer: «Einlagern» braucht einen Lagerort in der Zeile.', 'taxmod-stock') . '</span></div>'
-            // D-1303: where finished boards come in, an ordinary place the setting names.
-            . '<div style="margin:1em 0"><span>' . esc_html__('Lagerort Wareneingang Produktion', 'taxmod-stock') . '</span> ' . $stock->placeChooser('taxmod_stock_production_inbound', $stock->productionInbound()) . ' '
-            . '<span class="description">' . esc_html__('Hier kommen fertige Platinen aus der Fertigung an.', 'taxmod-stock') . '</span></div>'
-            . '<input type="hidden" name="taxmod_stock_tests_sent" value="1">';
-
-        return $html;
+            . ListPage::settings([
+                ['label' => __('Wareneingang ab', 'taxmod-stock'), 'control' => ListPage::field(InputKind::Moment, 'taxmod_stock_inbound_since', (string) $stock->inboundSince(), ['note' => 'date']),
+                    'hint' => __('Ältere Bestellungen gelten als Kaufhistorie und stehen gleich unter «Archiviert».', 'taxmod-stock')],
+                ['label' => __('Archivieren nach', 'taxmod-stock'), 'control' => ListPage::field(InputKind::Number, 'taxmod_stock_inbound_archive_days', (string) $stock->inboundArchiveDays(), ['min' => 1]) . ' ' . esc_html__('Tagen', 'taxmod-stock'),
+                    'hint' => __('Eingebuchte Bestellungen wandern so viele Tage nach «Eingegangen am» unter «Archiviert».', 'taxmod-stock')],
+                ['label' => __('Beendeten Bedarf archivieren nach', 'taxmod-stock'), 'control' => ListPage::field(InputKind::Number, 'taxmod_stock_demand_archive_days', (string) $stock->demandArchiveDays(), ['min' => 1]) . ' ' . esc_html__('Tagen', 'taxmod-stock'),
+                    'hint' => __('Ein Bedarf, der ganz in Bestellungen übergegangen ist, steht unter «Beendet» und so viele Tage nach seiner letzten Bestellung unter «Archiviert».', 'taxmod-stock')],
+                // D-1375, his wish 2026-11-15: «prozentsatz in den einstellungen festlegbar ist default 20%».
+                ['label' => __('Preiswarnung ab', 'taxmod-stock'), 'control' => ListPage::field(InputKind::Number, 'taxmod_stock_price_warn_percent', (string) $stock->priceWarnPercent(), ['min' => 1]) . ' ' . esc_html__('% über dem letzten Kauf', 'taxmod-stock'),
+                    'hint' => __('Der Wareneingang warnt, wenn der Stückpreis so viel über dem letzten Kauf desselben Materials liegt.', 'taxmod-stock')],
+                // D-1111: an ordinary place the setting names, never a name in code.
+                ['label' => __('Lagerort für Test', 'taxmod-stock'), 'control' => $stock->placeChooser('taxmod_stock_test_place', (int) $settings->place),
+                    'hint' => __('Der Wareneingang schlägt diesen Ort für Gebrauchtware aus diesen Gruppen vor (nicht für Neuware); leer: der übliche Vorschlag.', 'taxmod-stock')],
+                // D-1440: where «Einlagern» puts a purchase without a place.
+                ['label' => __('Lagerort Wareneingang', 'taxmod-stock'), 'control' => $stock->placeChooser('taxmod_stock_receipt_inbound', $stock->receiptInbound()),
+                    'hint' => __('Hierhin legt «Einlagern» einen Kauf ohne Lagerort; von dort geht er per Umbuchen an seinen Platz. Leer: «Einlagern» braucht einen Lagerort in der Zeile.', 'taxmod-stock')],
+                // D-1303: where finished boards come in, an ordinary place the setting names.
+                ['label' => __('Lagerort Wareneingang Produktion', 'taxmod-stock'), 'control' => $stock->placeChooser('taxmod_stock_production_inbound', $stock->productionInbound()),
+                    'hint' => __('Hier kommen fertige Platinen aus der Fertigung an.', 'taxmod-stock')],
+            ]);
     }
 
     /** @param array<string, mixed> $post already unslashed */
@@ -278,9 +275,15 @@ final class SettingsPage
             update_option(StockService::LOCATIONS, ['unreferenced' => $settings->unreferenced], false);
         }
 
-        if (! empty($post['taxmod_stock_not_material_sent'])) {
-            $nodes = array_map('absint', is_array($post['taxmod_stock_not_material'] ?? null) ? $post['taxmod_stock_not_material'] : []);
-            update_option(StockService::NOT_MATERIAL, array_values(array_unique(array_filter($nodes))), false);
+        if (! empty($post['taxmod_stock_material_in_sent'])) {
+            $nodes  = is_array($post['taxmod_stock_material_in'] ?? null) ? $post['taxmod_stock_material_in'] : [];
+            $remove = isset($post['taxmod_stock_material_in_remove']) ? (string) $post['taxmod_stock_material_in_remove'] : null;
+
+            if ($remove !== null) {
+                unset($nodes[$remove]);
+            }
+
+            update_option(StockService::MATERIAL_IN, array_values(array_unique(array_filter(array_map('absint', $nodes)))), false);
         }
 
         if (! empty($post['taxmod_stock_tests_sent'])) {

@@ -71,6 +71,8 @@ final class StockService
     /** D-1259: the group properties the stock declares — tested after the goods receipt, and the group's usual place. */
     public const TEST_PROPERTY  = 'stock_test_after_inbound';
     private const MOVE_FAILURES = 'taxmod_stock_branch_move_failures';
+    /** Pin-Aufbereitung P2: a rest of fewer pins is scrap — «Einser braucht keiner mehr». */
+    private const MIN_REST_PINS = 2;
     public const PLACE_PROPERTY = 'stock_default_place';
 
     /** D-1266: the label a group's materials are printed on by default. */
@@ -4221,7 +4223,7 @@ final class StockService
             $strips['r'] = intdiv($left, $rows);
         }
 
-        $plan = StripCut::plan($pieces, intdiv($piecePins, $rows), $strips, $pack->lossPerCut);
+        $plan = StripCut::plan($pieces, intdiv($piecePins, $rows), $strips, $pack->lossPerCut, self::minRestColumns($rows));
 
         if ($plan->missing > 0) {
             throw StockError::cutTooShort($lot, $pieces);
@@ -4613,7 +4615,7 @@ final class StockService
     /**
      * D-1146: the picked lines go into the box, one Umbuchung naming the order; at each place the oldest free lot first.
      *
-     * @param list<array{thing: int, from: int, quantity: float, pieces?: int, piece?: int}> $lines D-1398: `pieces` × `piece` pins cut whole from strips
+     * @param list<array{thing: int, from: int, quantity: float, pieces?: int, piece?: int, cuts?: array<int, int>}> $lines D-1398: `pieces` × `piece` pins cut whole from strips; P1: `cuts` = pins per piece → pieces, all in one plan
      * @return int the Vorgang
      */
     public function bookPick(int $reference, int $box, array $lines, string $today, string $title): int
@@ -4633,11 +4635,12 @@ final class StockService
         $rows   = [];
         $moved  = [];
         $cuts   = [];
-        $packs  = $this->packsOf(array_values(array_unique(array_column(array_filter($lines, static fn (array $l): bool => ($l['pieces'] ?? 0) > 0), 'thing'))));
+        $cutLine = static fn (array $l): bool => ($l['cuts'] ?? []) !== [] || (($l['pieces'] ?? 0) > 0 && ($l['piece'] ?? 0) > 0);
+        $packs  = $this->packsOf(array_values(array_unique(array_column(array_filter($lines, $cutLine), 'thing'))));
 
         foreach ($lines as $line) {
             // D-1398: a strip counted in pins is picked as pieces, each cut whole from one strip lying at that place.
-            if (($line['pieces'] ?? 0) > 0 && ($line['piece'] ?? 0) > 0 && isset($packs[$line['thing']])) {
+            if ($cutLine($line) && isset($packs[$line['thing']])) {
                 $cuts[] = $this->pickCut($line, $box, $packs[$line['thing']], $ledger, $bound, $own);
 
                 foreach ([['lot' => $cuts[array_key_last($cuts)]['lot'], 'take' => $cuts[array_key_last($cuts)]['take']], ...$cuts[array_key_last($cuts)]['more']] as $take) {
@@ -4667,7 +4670,7 @@ final class StockService
             }
         }
 
-        $deal = $cuts === [] ? 0 : $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->cut($cuts, $reference, $title)));
+        $deal = $cuts === [] ? 0 : $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->cut($cuts, $reference, $title, [], __('Schnittrest unter 2 Pins', 'taxmod-stock'))));
 
         if ($rows !== []) {
             $deal = $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $bound, $reference)));
@@ -4723,32 +4726,95 @@ final class StockService
     }
 
     /**
+     * Pin-Aufbereitung P1, for the staging's «Leisten zuschneiden»: at each place the one cut plan of all these pieces —
+     * per strip opened its pins, whether it was whole, the pieces cut from it, its rest and its scrap. A place they do
+     * not fit is left out; empty for a material not counted in pins. Read only.
+     *
+     * @param list<int>       $places
+     * @param array<int, int> $cuts pins per piece → pieces
+     * @return array<int, array{opened: int, strips: list<array{pins: int, whole: bool, cuts: array<int, int>, rest: int, scrap: int}>}>
+     */
+    public function pinCutPlans(int $thing, array $places, array $cuts): array
+    {
+        $pack = $this->packsOf([$thing])[$thing] ?? null;
+
+        if ($pack === null || array_sum($cuts) < 1) {
+            return [];
+        }
+
+        $ledger = $this->ledger();
+        $bound  = $this->boundLots();
+        $out    = [];
+
+        foreach ($places as $place) {
+            try {
+                $cut = $this->pickCut(['thing' => $thing, 'from' => $place, 'quantity' => 0.0, 'cuts' => $cuts], 0, $pack, $ledger, $bound, []);
+            } catch (StockError) {
+                continue;
+            }
+
+            $rows   = $cut['rows'];
+            $strips = [];
+
+            foreach ($cut['plan'] as $use) {
+                $pieces = [];
+
+                foreach ($use['cuts'] as $columns => $count) {
+                    $pieces[$columns * $rows] = $count;
+                }
+
+                $strips[] = ['pins' => $use['columns'] * $rows, 'whole' => $use['columns'] * $rows >= $pack->content, 'cuts' => $pieces, 'rest' => $use['rest'] * $rows, 'scrap' => $use['scrap'] * $rows];
+            }
+
+            $out[$place] = ['opened' => $cut['opened'], 'strips' => $strips];
+        }
+
+        return $out;
+    }
+
+    /**
      * D-1398: one pick line in pieces — the strips of this material lying free at its place (each lot's whole strips, its
      * pins beyond them as one rest strip), cut shortest first; the pieces' pins go into the box as one lot, what the strips
      * leave comes back where they lay, the loss per cut is used up.
      *
-     * @param array{thing: int, from: int, quantity: float, pieces?: int, piece?: int} $line
+     * @param array{thing: int, from: int, quantity: float, pieces?: int, piece?: int, cuts?: array<int, int>} $line `cuts` = pins per piece → pieces (P1)
      * @param array<int, true> $bound
      * @param array<int, true> $own
-     * @return array{lot: int, place: int, take: int, thing: int, pieces: int, into: int, name: string, value: array{amount: string, unit: string|null}|null, more: list<array{lot: int, place: int, take: int}>, rests: list<array{thing: string, quantity: int, name: string, place: int, value: array{amount: string, unit: string|null}|null}>, opened: int}
+     * @return array{lot: int, place: int, take: int, thing: int, pieces: int, into: int, name: string, value: array{amount: string, unit: string|null}|null, more: list<array{lot: int, place: int, take: int}>, rests: list<array{thing: string, quantity: int, name: string, place: int, value: array{amount: string, unit: string|null}|null}>, scrap: list<array{lot: int, place: int, pins: int}>, opened: int, plan: list<array<string, mixed>>, rows: int}
      */
     private function pickCut(array $line, int $box, Pack $pack, Ledger $ledger, array $bound, array $own): array
     {
         $thing = $line['thing'];
-        $piece = (int) $line['piece'];
         $full  = $pack->content;
         $rows  = $this->stripFacts([$thing], $this->model->nodesOf([$thing]))['rows'][$thing] ?? 1;
+        // Pin-Aufbereitung P1: all piece lengths of this material in one plan; one length is the old line `pieces` × `piece`.
+        $want  = $line['cuts'] ?? [(int) ($line['piece'] ?? 0) => (int) ($line['pieces'] ?? 0)];
+        $demand = [];
 
-        if ($piece > $full || $piece % $rows !== 0 || $full % $rows !== 0) {
-            throw StockError::cutNotPossible($piece, $full);
+        foreach ($want as $piece => $count) {
+            if ($count < 1) {
+                continue;
+            }
+
+            if ($piece < 1 || $piece > $full || $piece % $rows !== 0 || $full % $rows !== 0) {
+                throw StockError::cutNotPossible((int) $piece, $full);
+            }
+
+            $demand[intdiv((int) $piece, $rows)] = (int) $count;
+        }
+
+        if ($demand === []) {
+            throw StockError::cutNotPossible(0, $full);
         }
 
         $lots = $ledger->lotsOf($thing);
         usort($lots, static fn (int $a, int $b): int => (int) isset($own[$b]) <=> (int) isset($own[$a]));
+        $loose  = $this->looseRestLots($lots);
         $strips = [];
 
         foreach ($lots as $lot) {
-            $pins = isset($bound[$lot]) ? 0.0 : $ledger->restAt($lot, $line['from']);
+            // P3: a lot of loose rests is not cut by plan; he takes from it by hand.
+            $pins = isset($bound[$lot]) || isset($loose[$lot]) ? 0.0 : $ledger->restAt($lot, $line['from']);
             $whole = (int) floor($pins / $full + 1e-9);
 
             for ($n = 0; $n < $whole; $n++) {
@@ -4762,7 +4828,7 @@ final class StockService
             }
         }
 
-        $plan = StripCut::plan((int) $line['pieces'], intdiv($piece, $rows), $strips, $pack->lossPerCut);
+        $plan = StripCut::mixed($demand, $strips, $pack->lossPerCut, self::minRestColumns($rows));
 
         if ($plan->missing > 0 || $plan->uses === []) {
             throw StockError::notEnoughToPick($thing, $line['from']);
@@ -4772,6 +4838,7 @@ final class StockService
         $label  = $this->recordLabels([$thing])[$thing] ?? '#' . $thing;
         $takes  = [];
         $rests  = [];
+        $scrap  = [];
 
         foreach ($plan->uses as $use) {
             $lot         = (int) explode(':', (string) $use['strip'])[0];
@@ -4780,12 +4847,58 @@ final class StockService
             if ($use['rest'] > 0) {
                 $rests[] = ['thing' => (string) $thing, 'quantity' => $use['rest'] * $rows, 'name' => sprintf('%s · Rest %d polig', $label, $use['rest'] * $rows), 'place' => $line['from'], 'value' => self::scaled($values[$lot] ?? null, 1.0)];
             }
+
+            if ($use['scrap'] > 0) {
+                $scrap[] = ['lot' => $lot, 'place' => $line['from'], 'pins' => $use['scrap'] * $rows];
+            }
         }
 
-        $first = array_shift($takes);
+        $first  = array_shift($takes);
+        $pins   = 0;
+        $shapes = [];
 
-        return ['lot' => $first['lot'], 'place' => $first['place'], 'take' => $first['take'], 'thing' => $thing, 'pieces' => (int) $line['pieces'] * $piece, 'into' => $box,
-            'name' => sprintf('%s · %d × %d polig', $label, (int) $line['pieces'], $piece), 'value' => self::scaled($values[$first['lot']] ?? null, 1.0), 'more' => array_values($takes), 'rests' => $rests, 'opened' => count($plan->uses)];
+        foreach ($demand as $columns => $count) {
+            $pins    += $count * $columns * $rows;
+            $shapes[] = sprintf('%d × %d polig', $count, $columns * $rows);
+        }
+
+        return ['lot' => $first['lot'], 'place' => $first['place'], 'take' => $first['take'], 'thing' => $thing, 'pieces' => $pins, 'into' => $box,
+            'name' => sprintf('%s · %s', $label, implode(', ', $shapes)), 'value' => self::scaled($values[$first['lot']] ?? null, 1.0), 'more' => array_values($takes), 'rests' => $rests, 'scrap' => $scrap, 'opened' => $plan->opened(intdiv($full, $rows)), 'plan' => $plan->uses, 'rows' => $rows];
+    }
+
+    /**
+     * Pin-Aufbereitung P3: the lots marked «Reste unsortiert» — loose old rests he counted roughly, which no cut plan
+     * takes from; he takes from them by hand. None while the model has no such field.
+     *
+     * @param list<int> $lots
+     * @return array<int, true>
+     */
+    private function looseRestLots(array $lots): array
+    {
+        $s = $this->structure();
+
+        if ($lots === [] || ! $s->hasField('lot_loose_rests')) {
+            return [];
+        }
+
+        // One read of the lot table, held for the request (CD-7).
+        $table = $this->table('lot');
+        $field = $s->field('lot_loose_rests');
+        $out   = [];
+
+        foreach ($lots as $lot) {
+            if ((int) $table->first($lot, $field) === 1) {
+                $out[$lot] = true;
+            }
+        }
+
+        return $out;
+    }
+
+    /** Pin-Aufbereitung P2: the shortest rest that goes back is 2 pins; a strip of R rows rests in whole columns. */
+    private static function minRestColumns(int $rows): int
+    {
+        return intdiv(self::MIN_REST_PINS + max(1, $rows) - 1, max(1, $rows));
     }
 
     /**
@@ -5396,7 +5509,7 @@ final class StockService
             $rows[] = ['lot' => $cut['from'], 'place' => $place, 'take' => $plan->strips, 'thing' => $cut['thing'], 'pieces' => $cut['pieces'], 'into' => $into, 'name' => $label($cut['thing']), 'value' => self::scaled($perPin, (float) $facts['poles'][$cut['thing']]), 'rests' => $rests];
         }
 
-        return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->cut($rows, $reference, $title, $prelude)));
+        return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->cut($rows, $reference, $title, $prelude, __('Schnittrest unter 2 Pins', 'taxmod-stock'))));
     }
 
     /**
@@ -5440,8 +5553,10 @@ final class StockService
             }
         }
 
+        $loose = $this->looseRestLots($ledger->lotsOf($source));
+
         foreach ($ledger->lotsOf($source) as $lot) {
-            if ($lot === $cut['from']) {
+            if ($lot === $cut['from'] || isset($loose[$lot])) {
                 continue;
             }
 
@@ -5452,7 +5567,7 @@ final class StockService
             }
         }
 
-        $plan = StripCut::plan($cut['pieces'], intdiv($piece, $rows), $strips, $loss);
+        $plan = StripCut::plan($cut['pieces'], intdiv($piece, $rows), $strips, $loss, self::minRestColumns($rows));
 
         if ($plan->missing > 0) {
             throw StockError::cutTooShort($cut['from'], $cut['pieces']);
@@ -5460,6 +5575,7 @@ final class StockService
 
         $takes  = [];
         $rests  = [];
+        $scrap  = [];
         $values = $this->valuesPerPiece(array_values(array_unique(array_map(static fn (array $u): int => (int) explode(':', (string) $u['strip'])[0], $plan->uses))));
 
         foreach ($plan->uses as $use) {
@@ -5470,12 +5586,16 @@ final class StockService
             if ($use['rest'] > 0) {
                 $rests[] = ['thing' => (string) $source, 'quantity' => $use['rest'] * $rows, 'name' => sprintf('%s · Rest %d polig', $label($source), $use['rest'] * $rows), 'place' => $place, 'value' => self::scaled($values[$lot] ?? null, 1.0)];
             }
+
+            if ($use['scrap'] > 0) {
+                $scrap[] = ['lot' => $lot, 'place' => $place, 'pins' => $use['scrap'] * $rows];
+            }
         }
 
         $first = array_shift($takes);
 
         return ['lot' => $first['lot'], 'place' => $first['place'], 'take' => $first['take'], 'thing' => $cut['thing'], 'pieces' => $cut['pieces'], 'into' => $into, 'name' => $label($cut['thing']),
-            'value' => self::scaled($values[$first['lot']] ?? null, (float) $piece), 'more' => array_values($takes), 'rests' => $rests];
+            'value' => self::scaled($values[$first['lot']] ?? null, (float) $piece), 'more' => array_values($takes), 'rests' => $rests, 'scrap' => $scrap];
     }
 
     /**

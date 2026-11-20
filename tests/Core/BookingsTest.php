@@ -513,6 +513,35 @@ final class BookingsTest extends TestCase
         self::assertContains(['16', '8'], array_map(static fn (array $l): array => [$l[1], $l[2]], $lines));
     }
 
+    #[Test]
+    public function a_rest_under_two_pins_is_booked_as_scrap_in_a_second_vorgang(): void
+    {
+        // D-1535 (P2): 1 × 1×39 from a 1×40 — 39 pins into the box, the last pin is scrap, not a rest.
+        $s       = Fixture::structure();
+        $changes = (new Bookings($s, '2026-11-20'))->cut([[
+            'lot' => 501, 'place' => 7, 'take' => 40, 'thing' => 66, 'pieces' => 39, 'into' => 9, 'name' => '1×39',
+            'rests' => [], 'scrap' => [['lot' => 501, 'place' => 7, 'pins' => 1]],
+        ]], 3001, 'Zuschnitt', [], 'Schnittrest unter 2 Pins');
+        $taken = [];
+        $kinds = [];
+
+        foreach ($changes as $c) {
+            $v = $c['values'] ?? [];
+
+            if ($c['op'] === 'set_values' && (string) ($v[(string) $s->field('line_lot')] ?? '') === '501') {
+                $taken[] = $v[(string) $s->field('line_quantity')];
+            }
+
+            if ($c['op'] === 'set_values' && isset($v[(string) $s->field('transaction_kind')])) {
+                $kinds[] = $v[(string) $s->field('transaction_kind')];
+            }
+        }
+
+        self::assertSame(['-39', '-1'], $taken, 'the strip gives 39 to the cut and 1 to the scrap');
+        self::assertCount(2, $kinds, 'two Vorgänge in one act');
+        self::assertSame((string) ($s->hasValue('kind_scrap') ? $s->value('kind_scrap') : $s->value('kind_consumption')), $kinds[1]);
+    }
+
     /** @param list<array<string, mixed>> $changes */
     private function purchaseModel(array $changes, int $purchase): ?string
     {

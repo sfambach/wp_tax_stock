@@ -77,6 +77,12 @@ final class Plugin
 
     /** D-1328 (D9): longer strips to cut from, and the cuts booked, for the manufacturing module. */
     public const CUT_SOURCES = 'taxmod_stock_cut_sources';
+
+    /** D-1535 (P1): the one cut plan of all pieces of a strip counted in pins, per place — read only. */
+    public const PIN_CUT_PLANS = 'taxmod_stock_pin_cut_plans';
+
+    /** D-1535 (P4): plain strip → its round-contact counterpart — read only. */
+    public const ROUND_COUNTERPARTS = 'taxmod_stock_round_counterparts';
     public const BOOK_CUT    = 'taxmod_stock_book_cut';
 
     /** D-1301: the project boxes with their project, path and pieces, for the manufacturing module. */
@@ -232,6 +238,8 @@ final class Plugin
             add_action(self::ORDER_EVENT, [self::class, 'orderEvent'], 10, 2);
         }
         add_filter(self::CUT_SOURCES, [self::class, 'cutSources'], 10, 2);
+        add_filter(self::PIN_CUT_PLANS, [self::class, 'pinCutPlans'], 10, 2);
+        add_filter(self::ROUND_COUNTERPARTS, [self::class, 'roundCounterparts'], 10, 2);
         add_filter(self::BOOK_CUT, [self::class, 'bookCut'], 10, 2);
         add_filter(self::PROJECT_BOXES, [self::class, 'projectBoxes'], 10, 2);
         add_filter(self::RESERVE, [self::class, 'reserve'], 10, 2);
@@ -445,6 +453,81 @@ final class Plugin
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
+    }
+
+    /**
+     * D-1535 (P1): `apply_filters('taxmod_stock_pin_cut_plans', null, ['thing' => id, 'places' => [place, …], 'cuts'
+     * => [pins per piece => pieces]])` answers place → ['opened' => whole strips opened, 'strips' => [['pins', 'whole',
+     * 'cuts', 'rest', 'scrap'], …]] — read only, places the pieces do not fit are left out.
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     `mixed`: checked here
+     */
+    public static function pinCutPlans(mixed $previous, mixed $args): array|\WP_Error
+    {
+        if (is_array($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args   = is_array($args) ? $args : [];
+        $places = array_values(array_filter(array_map('absint', is_array($args['places'] ?? null) ? $args['places'] : [])));
+        $cuts   = self::cutsOf(is_array($args['cuts'] ?? null) ? $args['cuts'] : []);
+
+        try {
+            return self::reading()->pinCutPlans(absint($args['thing'] ?? 0), $places, $cuts);
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * D-1535 (P4): `apply_filters('taxmod_stock_round_counterparts', null, ['things' => [id, …]])` answers plain strip →
+     * its round-contact counterpart, only where there is one — read only, one call.
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     `mixed`: checked here
+     */
+    public static function roundCounterparts(mixed $previous, mixed $args): array|\WP_Error
+    {
+        if (is_array($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args   = is_array($args) ? $args : [];
+        $things = array_values(array_unique(array_filter(array_map('absint', is_array($args['things'] ?? null) ? $args['things'] : []))));
+
+        try {
+            return self::reading()->roundCounterparts($things);
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
+        }
+    }
+
+    /**
+     * Pins per piece → pieces, both whole numbers above 0.
+     *
+     * @param array<mixed> $cuts `mixed`: as the caller sends it
+     * @return array<int, int>
+     */
+    private static function cutsOf(array $cuts): array
+    {
+        $out = [];
+
+        foreach ($cuts as $pins => $pieces) {
+            if (absint($pins) > 0 && is_numeric($pieces) && (int) $pieces > 0) {
+                $out[absint($pins)] = (int) $pieces;
+            }
+        }
+
+        return $out;
     }
 
     /**
@@ -1445,7 +1528,9 @@ final class Plugin
         foreach (is_array($args['lines'] ?? null) ? $args['lines'] : [] as $line) {
             if (is_array($line) && absint($line['thing'] ?? 0) > 0 && absint($line['from'] ?? 0) > 0 && is_numeric($line['qty'] ?? null) && (float) $line['qty'] > 0) {
                 // D-1398: «pieces» pieces of «piece» pins each, for a strip counted in pins.
-                $lines[] = ['thing' => absint($line['thing']), 'from' => absint($line['from']), 'quantity' => (float) $line['qty'], 'pieces' => absint($line['pieces'] ?? 0), 'piece' => absint($line['piece'] ?? 0)];
+                $lines[] = ['thing' => absint($line['thing']), 'from' => absint($line['from']), 'quantity' => (float) $line['qty'], 'pieces' => absint($line['pieces'] ?? 0), 'piece' => absint($line['piece'] ?? 0)]
+                    // D-1535 (P1): «cuts» = pins per piece → pieces, all lengths of the material in one plan.
+                    + (is_array($line['cuts'] ?? null) && ($cuts = self::cutsOf($line['cuts'])) !== [] ? ['cuts' => $cuts] : []);
             }
         }
 

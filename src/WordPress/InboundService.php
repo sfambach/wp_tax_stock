@@ -585,6 +585,27 @@ final class InboundService
     }
 
     /**
+     * Stefan 2026-11-20 «massen aktionen fehlen im zu testen»: one result for every ticked lot, as one act. A result that needs a
+     * reason is not given in bulk — each lot has its own.
+     *
+     * @param list<int> $lots
+     * @return array<string, mixed>
+     */
+    public function recordTests(array $lots, TestResult $result, string $today): array
+    {
+        $table = $this->stock->table('lot');
+        $lots  = array_values(array_filter($lots, static fn (int $lot): bool => $table->has($lot)));
+
+        if ($lots === []) {
+            throw StockError::nothingToBook();
+        }
+
+        $tests = $this->tests();
+
+        return $this->stock->write(array_merge(...array_map(static fn (int $lot): array => $tests->record($lot, $result, '', $today), $lots)));
+    }
+
+    /**
      * @param list<int> $ids
      * @return list<InboundOrder>
      */

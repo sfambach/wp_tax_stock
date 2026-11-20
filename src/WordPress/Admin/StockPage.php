@@ -895,7 +895,7 @@ final class StockPage
         $rows = [
             ['label' => __('Nach Wareneingang testen', 'taxmod-stock'), 'for' => 'taxmod-stock-group-test', 'control' => SelectMarkup::of('test', ['1' => __('Ja', 'taxmod-stock'), '0' => __('Nein', 'taxmod-stock')], $test === null ? null : ($test ? '1' : '0'),
                     attributes: ['id' => 'taxmod-stock-group-test'], nothingWord: sprintf(/* translators: %s: Ja or Nein, from the group above */ __('wie darüber (%s)', 'taxmod-stock'), $label($tested[$parent] ?? null))),
-                'hint' => __('Gebrauchte Ware dieser Gruppe und aller Gruppen darunter steht nach dem Wareneingang unter «Zu testen».', 'taxmod-stock')],
+                'hint' => __('Gebrauchte Ware dieser Gruppe und aller Gruppen darunter steht nach dem Wareneingang unter «Test».', 'taxmod-stock')],
             ['label' => __('Standard-Lagerort', 'taxmod-stock'), 'control' => $this->stock->placeChooser('place', is_int($place) ? $place : 0),
                 'hint' => is_int($above) && isset($names[$above])
                     ? sprintf(/* translators: %s: the place of the group above */ __('Leer: wie darüber, %s. Ein Lagerort am Material geht vor.', 'taxmod-stock'), $names[$above])

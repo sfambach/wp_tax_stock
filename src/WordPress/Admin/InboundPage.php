@@ -136,6 +136,8 @@ final class InboundPage
                     sanitize_textarea_field(wp_unslash((string) ($_POST['reason'] ?? ''))),
                     $today
                 )),
+                TestResult::Ok->value     => $this->applied($this->inbound->recordTests(array_values($ids), TestResult::Ok, $today)),
+                TestResult::Defect->value => $this->applied($this->inbound->recordTests(array_values($ids), TestResult::Defect, $today)),
                 'refresh' => sprintf(
                     /* translators: %d: number of tracking numbers a carrier answered for */
                     _n('Für %d Sendungsnummer kam eine Antwort.', 'Für %d Sendungsnummern kam eine Antwort.', $n = $this->inbound->refreshTracking(array_values($ids)), 'taxmod-stock'),
@@ -287,7 +289,7 @@ final class InboundPage
         $inbound   = $this->inbound->orders();
         $places    = $stock->places();
         $steps     = $stock->testStepsOf($lots);
-        // D-1461, his wish 2026-11-18 18:41: the lot's label from «Zu testen» too, read once for all lots.
+        // D-1461, his wish 2026-11-18 18:41: the lot's label from «Test» too, read once for all lots.
         $labels    = (new StockPage($stock))->lotLabelButtons(array_map('intval', $lots));
         $rows      = '';
 
@@ -296,7 +298,12 @@ final class InboundPage
             $purchase = (int) $table->first($lot, $s->field('lot_purchase'));
             $order    = $orderOf[$purchase] ?? 0;
             $rows    .= ListPage::row(self::BULK_FORM, (string) $lot, [
-                '<strong>' . esc_html($thing === null ? '#' . $lot : $things->word($thing)) . '</strong> <span class="description">' . esc_html(sprintf(/* translators: %d: material number */ __('Nr. %d', 'taxmod-stock'), (int) $thing)) . '</span>',
+                // His words 2026-11-20 «link zum bestand fehlt bei test auch», «link zum material um umstellen das test nicht nötig ist»:
+                // the material opens its page, «Bestand» its lot, the group the setting «Nach Wareneingang testen».
+                '<strong>' . ($thing === null ? esc_html('#' . $lot) : '<a href="' . esc_url(StockPage::thingUrl($thing, '')) . '">' . esc_html($things->word($thing)) . '</a>') . '</strong> <span class="description">' . esc_html(sprintf(/* translators: %d: material number */ __('Nr. %d', 'taxmod-stock'), (int) $thing)) . '</span>'
+                    . ($thing === null ? '' : '<br><span class="description"><a href="' . esc_url(StockPage::lotUrl($thing, $lot)) . '">' . esc_html__('Bestand', 'taxmod-stock') . '</a>'
+                    . (($group = $things->nodeOf($thing)) === null ? '' : ' · <a href="' . esc_url(add_query_arg(['page' => StockPage::PAGE, 'tab' => 'material', 'group' => $group], admin_url('admin.php'))) . '" title="' . esc_attr__('Dort steht «Nach Wareneingang testen».', 'taxmod-stock') . '">' . esc_html($stock->path($group)) . '</a>')
+                    . '</span>'),
                 // D-1452: the order named as on «Angekommen» — platform, number with its link, tracking.
                 $order > 0 && isset($inbound[$order]) ? $this->orderCell($inbound[$order], $orders[$order] ?? '#' . $order) : esc_html($order > 0 ? ($orders[$order] ?? '#' . $order) : '—'),
                 ListPage::dateCell(substr((string) $table->first($lot, $s->field('lot_date')), 0, 10)),
@@ -308,10 +315,26 @@ final class InboundPage
         $rows = $rows !== '' ? $rows : '<tr class="no-items"><td class="colspanchange" colspan="7">' . esc_html__('Nichts zu testen.', 'taxmod-stock') . '</td></tr>';
 
         return '<p>' . esc_html__('Bestandsposten aus Warengruppen mit Test (Configuration › Lager), noch ohne Ergebnis. Neuware geht ohne Test durch. Ungetestet wird nicht verkauft.', 'taxmod-stock') . '</p>'
-            // D-1500: the one bar over every list.
-            . ListPage::listBar(sprintf(/* translators: %d: number of lots */ _n('%d Posten', '%d Posten', count($lots), 'taxmod-stock'), count($lots)), '', '', true)
+            // His word 2026-11-20 «massen aktionen fehlen»: the ticked lots get one result together (D-1403: in the bulk choice).
+            . $this->testBulkBar(count($lots))
             . ListPage::table([[__('Material', 'taxmod-stock'), ''], [__('Bestellung', 'taxmod-stock'), ''], [__('Eingegangen am', 'taxmod-stock'), '9em'],
                 [__('Lagerort', 'taxmod-stock'), '10em'], [__('Menge', 'taxmod-stock'), '6em']], $rows);
+    }
+
+    /** The bulk bar of «Test»: the results that need no reason, for every ticked lot (Stefan 2026-11-20). */
+    private function testBulkBar(int $count): string
+    {
+        $bar = ListPage::bulkBar(self::BULK_FORM, self::ACTION, [
+            TestResult::Ok->value     => __('Ergebnis: OK', 'taxmod-stock'),
+            TestResult::Defect->value => __('Ergebnis: Defekt', 'taxmod-stock'),
+        ], sprintf(/* translators: %d: number of lots */ _n('%d Posten', '%d Posten', $count, 'taxmod-stock'), $count));
+
+        // As {@see bulkBar()}: admin-post routes on «action», the choice travels as «bulk».
+        return str_replace(
+            ['name="action" id="' . self::BULK_FORM . '-action"', '</form>'],
+            ['name="bulk" id="' . self::BULK_FORM . '-action"', '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"><input type="hidden" name="tab" value="' . esc_attr(self::TEST) . '"></form>'],
+            $bar
+        );
     }
 
     /** @param list<array{instruction: string, firmware: string}> $steps D-1396: the revision's test steps, in order */
@@ -492,7 +515,7 @@ final class InboundPage
 
         return match (true) {
             $tab === self::ALL  => __('Alle', 'taxmod-stock'),
-            $tab === self::TEST => __('Zu testen', 'taxmod-stock'),
+            $tab === self::TEST => __('Test', 'taxmod-stock'),
             $stage !== null     => self::stageName($stage),
             default             => __('Wareneingang', 'taxmod-stock'),
         };
@@ -939,7 +962,7 @@ final class InboundPage
         $tabs = array_map(static fn (InboundStage $stage): array => [$stage->value, self::stageName($stage), $counts[$stage->value] ?? 0], InboundStage::tabs());
 
         if ($toTest !== null) {
-            $tabs[] = [self::TEST, __('Zu testen', 'taxmod-stock'), $toTest];
+            $tabs[] = [self::TEST, __('Test', 'taxmod-stock'), $toTest];
         }
 
         // D-1008: «Archiviert» after the working stages.

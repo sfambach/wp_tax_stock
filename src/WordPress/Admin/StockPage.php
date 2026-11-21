@@ -55,6 +55,9 @@ final class StockPage
     /** D-1567: the Bezug choice that names a Bestandsposten. */
     private const PURPOSE_LOT = 'bestand';
 
+    /** The actions column of the material list: four icon squares (Lager 0.64.201). */
+    private const MATERIAL_ACTIONS = '13em';
+
     /** Whether this page drew the lot-mode words already ({@see self::lotWords()}). */
     private bool $lotWordsDrawn = false;
 
@@ -570,9 +573,10 @@ final class StockPage
         // D-1462: a picture has nothing to filter by; stock and minimum filter by number (2, >2, <2, 2-10).
         $columns   = [...($images ? [new ListColumn('image', __('Bild', 'taxmod-stock'), fixed: true, width: '56px', filterable: false)] : []),
             new ListColumn('nr', __('Nr.', 'taxmod-stock'), fixed: true, width: '6em'), new ListColumn('name', __('Material', 'taxmod-stock'), fixed: true),
-            new ListColumn('group', __('Gruppe', 'taxmod-stock'))];
+            new ListColumn('group', __('Gruppe', 'taxmod-stock'), width: '15%')];
         // D-1030: where it lies, by path and project — so a search for a project finds the parts in its box.
-        $columns[] = new ListColumn('places', __('Lagerort', 'taxmod-stock'));
+        // His screenshot 2026-11-21 17:14: group and place a share each, the name takes the rest.
+        $columns[] = new ListColumn('places', __('Lagerort', 'taxmod-stock'), width: '15%');
         $position  = 0;
 
         foreach ($technical as $relation => $name) {
@@ -581,7 +585,7 @@ final class StockPage
         }
 
         $columns[] = new ListColumn('stock', __('Bestand', 'taxmod-stock'), width: '7em', number: true);
-        $columns[] = new ListColumn('min', __('Mindestbestand', 'taxmod-stock'), width: '9em', number: true);
+        $columns[] = new ListColumn('min', __('Mindestbestand', 'taxmod-stock'), width: '10.5em', number: true);
         $listId    = ($branch ? 'stock-groupstock' : 'stock-material') . ($group > 0 ? '-' . $group : '');
         $view      = ListPage::view($listId, $columns, 'name');
         $groups    = [];
@@ -711,7 +715,12 @@ final class StockPage
             // His wish 2026-11-03: «vielleicht könnte man den button umbuchen schon hier anzeigen» — one lot at one place
             // moves straight from the row; with more, each lies in the details below with its own «Umbuchen».
             $held  = $ledger === null ? [] : $this->heldAt($id, $ledger);
-            $move  = count($held) === 1 ? $this->transferDialog($id, $held[0][0], $held[0][1], $held[0][2], $places, 0, true) . ' ' : '';
+            // His screenshot 2026-11-21 17:14: with more lots the square stays, locked, so every row's actions line up (D-1511 rule 3).
+            $move  = match (true) {
+                count($held) === 1 => $this->transferDialog($id, $held[0][0], $held[0][1], $held[0][2], $places, 0, true) . ' ',
+                count($held) > 1 && self::icon('ICON_TRANSFER') !== '' => ListPage::iconButton(self::icon('ICON_TRANSFER'), __('Umbuchen', 'taxmod-stock'), disabled: __('Mehrere Posten: unten je Posten umbuchen', 'taxmod-stock')) . ' ',
+                default => '',
+            };
             // D-1147: the lots are drawn when the row opens, not with the list.
             // His wish 2026-11-06: «druck button pro positon» — the material label from the row; the modeller reads the
             // material's own words when it prints, so the rows cost no query each.
@@ -721,7 +730,8 @@ final class StockPage
         }
 
         // D-1462: every hit on this page — the head narrows and sorts it without asking again.
-        return $html . ListPage::table(ListPage::heads($view, $url), $body, ListPage::filterRow(self::FILTER_FORM, $view), ! $waits && ListView::onePage(count($units), self::PER_PAGE))
+        // His screenshot 2026-11-21 17:14: four icon squares at most (open details, Umbuchen, print, open), not the 21em default.
+        return $html . ListPage::table(ListPage::heads($view, $url), $body, ListPage::filterRow(self::FILTER_FORM, $view), ! $waits && ListView::onePage(count($units), self::PER_PAGE), self::MATERIAL_ACTIONS)
             . ListPage::pagination(count($units), $paged, self::PER_PAGE, $url);
     }
 

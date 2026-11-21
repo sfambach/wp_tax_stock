@@ -36,5 +36,7 @@ final class LabelQuestionTest extends TestCase
         self::assertSame([900], $lot['nodes']);
         self::assertSame($material['groups'], $lot['groups']);
         self::assertSame(['nodes' => [400], 'place_type' => 48122], LabelQuestion::forPlace(400, 48122));
+        // D-1563 (2): with the place, the filters read its values.
+        self::assertSame(['nodes' => [400], 'place_type' => 48122, 'record' => 9001], LabelQuestion::forPlace(400, 48122, 9001));
     }
 }

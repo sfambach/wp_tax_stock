@@ -3875,7 +3875,7 @@ final class StockPage
         $chosen = $instead > 0 ? $instead : $this->stock->placeTypes()->labelTemplateOf($type);
         $origin = [];
         // D-1519: a print rule for the place type goes first; the type's own label stays the way where none holds.
-        $rule = $instead > 0 ? null : $this->stock->labelRule('location', $type);
+        $rule = $instead > 0 ? null : $this->stock->labelRule('location', $place, $type);
         if ($rule !== null && $labels->get($rule['label']) !== null) {
             $labels   = $labels->preferring($rule['printer']);
             $chosen   = $rule['label'];

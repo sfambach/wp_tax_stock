@@ -42,10 +42,11 @@ final class LabelQuestion
         return ['nodes' => [$lotNode]] + self::forMaterial($groups, $group, $forms, $form);
     }
 
-    /** @return array{nodes: list<int>, place_type: int} */
-    public static function forPlace(int $locationNode, int $type): array
+    /** @return array{nodes: list<int>, place_type: int, record?: int} */
+    public static function forPlace(int $locationNode, int $type, int $place = 0): array
     {
-        return ['nodes' => [$locationNode], 'place_type' => $type];
+        // D-1563 (2): the place rides along as the record, so a rule's field filters read the place's own values.
+        return ['nodes' => [$locationNode], 'place_type' => $type] + ($place > 0 ? ['record' => $place] : []);
     }
 
     /**

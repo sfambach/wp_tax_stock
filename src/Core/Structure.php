@@ -134,7 +134,7 @@ final class Structure
         'type_outer', 'type_inner', 'dimension_length', 'dimension_width', 'dimension_height',
         // D-1169: a place type chooses its fit calculation and its message.
         'type_fit_rule', 'type_fit_level',
-        // D-1528 (W6): what a place type is for — Lager, Wareneingang, Warenausgang, Test, Klärung.
+        // D-1528 (W6), D-1544: what a place is for (on the place, not its type) — Lager, Wareneingang, Warenausgang, Test, Klärung.
         'place_function',
         // D-1541: a test rule's position, node and filters; a filter's field, operator and value.
         'test_rule_position', 'test_rule_node', 'test_rule_filters', 'test_filter_field', 'test_filter_operator', 'test_filter_value',
@@ -179,8 +179,8 @@ final class Structure
         ...self::STAGES,
         // D-1169: a place type's fit calculation and how loudly a misfit is said.
         'fit_volume', 'fit_sides', 'fit_none', 'level_info', 'level_warning', 'level_error',
-        // D-1528 (W6): the place functions; «Test» and «Klärung» are read since D-1503.
-        'function_storage', 'function_inbound', 'function_outbound', 'function_test', 'function_clarify',
+        // D-1528 (W6), D-1544: the place functions, «Packplatz» too; «Test» and «Klärung» are read since D-1503.
+        'function_storage', 'function_inbound', 'function_outbound', 'function_test', 'function_clarify', 'function_pack',
         // D-1541: the one operator of a test filter built so far, «gleich».
         'operator_equals',
         // D-1425: where a part's price came from, and the unit the calculation's times are kept in.

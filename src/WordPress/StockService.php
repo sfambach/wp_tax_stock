@@ -1513,7 +1513,7 @@ final class StockService
     /** D-1440: «Lagerort Wareneingang», 0 while none is set — a place is never guessed. */
     public function receiptInbound(): int
     {
-        // D-1528 (W6): a place whose type is «Wareneingang» comes first; the setting stays as the fallback until it is emptied.
+        // D-1528 (W6): a place with the function «Wareneingang» (D-1544: the place's own) comes first; the setting stays as the fallback until it is emptied.
         $inbound = $this->placeFunctions()->with(PlaceFunctions::INBOUND);
 
         if ($inbound !== []) {
@@ -3347,7 +3347,7 @@ final class StockService
     }
 
     /**
-     * D-1528 (W6): what each place is for, from its place type — the places and their types read once per service (CD-7).
+     * D-1528 (W6): what each place is for, from the place's own field (D-1544), flags — the places read once per service (CD-7).
      */
     public function placeFunctions(): PlaceFunctions
     {
@@ -3357,7 +3357,7 @@ final class StockService
 
         $s = $this->structure();
 
-        if (! $s->hasField('place_function') || ! $s->hasField('location_place_type') || ! $s->hasNode('location_type')) {
+        if (! $s->hasField('place_function')) {
             return $this->placeFunctions = PlaceFunctions::none();
         }
 
@@ -3370,21 +3370,13 @@ final class StockService
         }
 
         $places     = $this->table('location');
-        $types      = $this->table('location_type');
-        $typeOf     = [];
         $functionOf = [];
 
         foreach ($places->ids() as $place) {
-            $typeOf[$place] = (int) $places->first($place, $s->field('location_place_type'));
+            $functionOf[$place] = array_map('intval', $places->all($place, $s->field('place_function')));
         }
 
-        foreach ($types->ids() as $type) {
-            $functionOf[$type] = (int) $types->first($type, $s->field('place_function'));
-        }
-
-        $tree = $this->locationTree();
-
-        return $this->placeFunctions = PlaceFunctions::from($typeOf, $functionOf, $keyOf, $tree->withAllBelow(...));
+        return $this->placeFunctions = PlaceFunctions::from($functionOf, $keyOf, $this->locationTree()->withAllBelow(...));
     }
 
     /**

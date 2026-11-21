@@ -1150,7 +1150,7 @@ final class StockPage
     {
         [$templates, $first, $origin, $copies] = $this->thingLabel($thing, 'lot');
         $chosen   = $first > 0 ? $templates->get($first) : null;
-        $template = $chosen === null ? [] : $templates->dialog($first, $origin + ['record' => $thing, 'values' => [self::CHARGE_FIELD => sprintf(/* translators: %s: batch number */ __('Charge: %s', 'taxmod-stock'), $charge)]]);
+        $template = $chosen === null ? ['no_rule' => true] : $templates->dialog($first, $origin + ['record' => $thing, 'values' => [self::CHARGE_FIELD => sprintf(/* translators: %s: batch number */ __('Charge: %s', 'taxmod-stock'), $charge)]]);
 
         return (string) apply_filters('taxmod_label_button', '', 'P', $lot, $label === '' ? '#' . $thing : $label, '', $copies ?? $chosen['copies'] ?? 1, $template);
     }
@@ -1285,7 +1285,7 @@ final class StockPage
     {
         [$templates, $first, $origin, $copies] = $this->thingLabel($thing, 'material');
         $chosen   = $first > 0 ? $templates->get($first) : null;
-        $template = $chosen === null ? [] : $templates->dialog($first, $origin + ['record' => $thing]);
+        $template = $chosen === null ? ['no_rule' => true] : $templates->dialog($first, $origin + ['record' => $thing]);
 
         return (string) apply_filters('taxmod_label_button', '', 'M', $thing, $label === '' ? '#' . $thing : $label, '', $copies ?? $chosen['copies'] ?? 1, $template);
     }
@@ -3826,7 +3826,7 @@ final class StockPage
             $tree->shortOf($place),
             $project === '' ? '' : __('Projekt', 'taxmod-stock') . ': ' . $project,
             $parent,
-        ])), $copies, $template === null && $instead === 0 ? [] : $labels->dialog($chosen, $origin + [
+        ])), $copies, $template === null && $instead === 0 ? ['no_rule' => true] : $labels->dialog($chosen, $origin + [
             // D-1160: the modeller reads the fields the layout names from the place itself; these fill what it has no field for.
             'record' => $place,
             'values' => ['bezeichnung' => $tree->titleOf($place), 'kurzzeichen' => $tree->shortOf($place), 'projekt' => $project, 'ort' => $parent],

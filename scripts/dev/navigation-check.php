@@ -134,6 +134,7 @@ if ($roots !== []) {
     unset($_GET['taxmod_collapsed']);
     $pruefe(str_contains($seite, 'id="taxmod-node-' . $roots[0] . '"') && str_contains($seite, 'page=' . \TaxmodStock\WordPress\Admin\Pages::MATERIAL_GROUPS),
         'D-1574, Live-Check 15: the page draws the modeller\'s tree of the first material branch, and its links come back to this page');
+    $pruefe(in_array(\TaxmodStock\WordPress\Admin\Pages::MATERIAL_GROUPS, (array) apply_filters('taxmod_node_screen_hosts', []), true), 'D-1574: the page is registered as a host of the node page, so the modeller takes it as the way back');
 }
 // D-1558 (replaces D-1541's place, PR-9, visible change): Einstellungen › Regeln holds one item per rule type, each opening the one
 // rules page with that type; Stammdaten › Test › Testregeln opens the same page at the test rules.

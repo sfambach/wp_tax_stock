@@ -227,6 +227,8 @@ final class Plugin
         // D-1558: the Lager registers the one rules page and says its own rule type.
         RulesSetup::boot();
         // D-1235, D-1238: the print thread asks for one material, lot or place label, as the dialog would build it.
+        // D-1574, Prüftor zu Live-Check 15: the Materialgruppen page is a host of the modeller's node page — its acts come back here, also from admin-post.
+        add_filter('taxmod_node_screen_hosts', static fn (mixed $hosts): array => [...(is_array($hosts) ? $hosts : []), Pages::MATERIAL_GROUPS]);
         add_filter('taxmod_label_for', static fn (?array $found, string $prefix, int $id, int $template, int $printer): ?array => $found ?? (in_array($prefix, StockPage::LABEL_PREFIXES, true) ? (new StockPage())->labelFor($prefix, $id, $template, $printer) : null), 10, 5);
         // D-1259: what a group of material carries for the stock, inherited down the tree and set in its Lager view.
         add_filter('taxmod_node_properties', static fn (array $properties): array => $properties + [

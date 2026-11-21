@@ -2290,7 +2290,17 @@ final class StockService
                 $above[] = $at;
             }
 
-            return $labels->ruleFor(LabelQuestion::forPlace($s->node('location'), $placeType, $record, $above));
+            $from  = [];
+            if ($placeType > 0) {
+                $types = $this->placeTypes();
+                foreach (['type_label_template' => $types->labelTemplateOf($placeType), 'type_label_copies' => $types->labelCopiesOf($placeType)] as $field => $value) {
+                    if ($s->hasField($field)) {
+                        $from[$s->field($field)] = $value;
+                    }
+                }
+            }
+
+            return $labels->ruleFor(LabelQuestion::forPlace($s->node('location'), $placeType, $record, $above, $from));
         }
         $this->rememberForms([$record]);
         $group = (int) ($this->things()->nodeOf($record) ?? 0);

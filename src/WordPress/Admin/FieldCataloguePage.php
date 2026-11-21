@@ -34,6 +34,8 @@ final class FieldCataloguePage
         $base    = $entries === [] ? 0 : min(array_column($entries, 'depth'));
 
         return ListPage::page(__('Feldkatalog', 'taxmod-stock'), [], [['html' => ListPage::listHead(__('Feldkatalog', 'taxmod-stock'), count($entries), $explain)
+            // D-1500/D-1526: the one bar row — grouping and search join it, the count stays in the head.
+            . ListPage::listBar('')
             . ListPage::table([[__('Name', 'taxmod-stock'), ''], [__('Rolle', 'taxmod-stock'), '12em'], [__('Verwendungen', 'taxmod-stock'), '8em']], $this->rows($entries, $base))]], (string) TAXMOD_STOCK_VERSION);
     }
 

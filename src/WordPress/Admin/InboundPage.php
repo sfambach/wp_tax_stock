@@ -46,6 +46,8 @@ final class InboundPage
     private const OVERDUE     = 'overdue';
     private const FILTER_FORM = 'taxmod-stock-inbound-filter';
     private const BULK_FORM   = 'taxmod-stock-inbound-bulk';
+    /** D-1503: the list of tested lots on «Wareneingang › Test» has its own ticks. */
+    private const STORE_FORM  = 'taxmod-stock-inbound-store';
 
     /** Carrier events shown in a row's details, newest first. */
     private const EVENTS = 5;
@@ -137,6 +139,8 @@ final class InboundPage
                     sanitize_textarea_field(wp_unslash((string) ($_POST['reason'] ?? ''))),
                     $today
                 )),
+                // D-1503: tested lots from «Wareneingang › Test» to where their material is stored.
+                'store'   => $this->applied($this->inbound->stock()->storeTested(array_values($ids), $today, __('Einlagern nach Test', 'taxmod-stock'))),
                 TestResult::Ok->value     => $this->applied($this->inbound->recordTests(array_values($ids), TestResult::Ok, $today)),
                 TestResult::Defect->value => $this->applied($this->inbound->recordTests(array_values($ids), TestResult::Defect, $today)),
                 'refresh' => sprintf(
@@ -188,7 +192,7 @@ final class InboundPage
         $bar = self::processBar($counts, $testing ? count($toTest) : null, $tab);
 
         if ($tab === self::TEST) {
-            return $bar . $this->testList($toTest);
+            return $bar . $this->testList($toTest, absint($_GET['ort'] ?? 0), $search) . $this->storeList();
         }
 
         // His word 2026-11-05: «man klickt auf das item und bekommt eine teilview des listeneintrags mit den postionen».
@@ -277,8 +281,10 @@ final class InboundPage
      * D-1002: one row per lot that waits for its test; its details hold the form for the result.
      *
      * @param list<int> $lots
+     * @param int       $place  D-1503: only what lies on this test place or inside it, 0 for all
+     * @param string    $search words the material's name must hold, each of them (D-1536)
      */
-    private function testList(array $lots): string
+    private function testList(array $lots, int $place = 0, string $search = ''): string
     {
         $stock     = $this->inbound->stock();
         $s         = $stock->structure();
@@ -291,6 +297,18 @@ final class InboundPage
         $places    = $stock->places();
         $steps     = $stock->testStepsOf($lots);
         // D-1461, his wish 2026-11-18 18:41: the lot's label from «Test» too, read once for all lots.
+        $choices   = $stock->testPlaces();
+        $place     = in_array($place, $choices, true) ? $place : 0;
+        $tree      = $stock->locationTree();
+        $within    = $place > 0 ? array_flip($tree->withAllBelow($place)) + [$place => true] : [];
+        $lots      = $within === [] ? $lots : array_values(array_filter($lots, static fn (int $lot): bool => array_intersect_key(array_filter($ledger->placesOf($lot), static fn (float $q): bool => $q > 0.0), $within) !== []));
+        $words     = array_filter(preg_split('/\s+/u', mb_strtolower(trim($search))) ?: []);
+        $lots      = $words === [] ? $lots : array_values(array_filter($lots, static function (int $lot) use ($ledger, $things, $words): bool {
+            $thing = $ledger->thingOf($lot);
+            $name  = $thing === null ? '' : mb_strtolower($things->word($thing));
+
+            return array_filter($words, static fn (string $w): bool => ! str_contains($name, $w)) === [];
+        }));
         $labels    = (new StockPage($stock))->lotLabelButtons(array_map('intval', $lots));
         $rows      = '';
 
@@ -308,7 +326,8 @@ final class InboundPage
                 // D-1452: the order named as on «Angekommen» — platform, number with its link, tracking.
                 $order > 0 && isset($inbound[$order]) ? $this->orderCell($inbound[$order], $orders[$order] ?? '#' . $order) : esc_html($order > 0 ? ($orders[$order] ?? '#' . $order) : '—'),
                 ListPage::dateCell(substr((string) $table->first($lot, $s->field('lot_date')), 0, 10)),
-                esc_html(($at = (int) $table->first($lot, $s->field('lot_location'))) > 0 ? ($places[$at] ?? $this->inbound->stock()->locationTree()->pathOf($at)) : ''),
+                // D-1503: where it lies now — the test place, not the place it came in at.
+                $this->placesCell($lot, $places),
                 esc_html(ListPage::number($ledger->restOf($lot))),
             ], '', $this->testForm($lot, $steps[$lot] ?? []) . (($labels[$lot] ?? '') === '' ? '' : ' <span class="taxmod-row-actions">' . $labels[$lot] . '</span>'), true);
         }
@@ -317,18 +336,28 @@ final class InboundPage
 
         return '<p>' . esc_html__('Bestandsposten aus Warengruppen mit Test (Configuration › Lager), noch ohne Ergebnis. Neuware geht ohne Test durch. Ungetestet wird nicht verkauft.', 'taxmod-stock') . '</p>'
             // His word 2026-11-20 «massen aktionen fehlen»: the ticked lots get one result together (D-1403: in the bulk choice).
-            . $this->testBulkBar(count($lots))
+            . $this->testBulkBar(count($lots), $choices, $place, $search)
             . ListPage::table([[__('Material', 'taxmod-stock'), ''], [__('Bestellung', 'taxmod-stock'), ''], [__('Eingegangen am', 'taxmod-stock'), '9em'],
                 [__('Lagerort', 'taxmod-stock'), '10em'], [__('Menge', 'taxmod-stock'), '6em']], $rows);
     }
 
     /** The bulk bar of «Test»: the results that need no reason, for every ticked lot (Stefan 2026-11-20). */
-    private function testBulkBar(int $count): string
+    /** @param list<int> $choices D-1503: the test places the list can be narrowed to */
+    private function testBulkBar(int $count, array $choices = [], int $place = 0, string $search = ''): string
     {
-        $bar = ListPage::bulkBar(self::BULK_FORM, self::ACTION, [
+        $tree    = $this->inbound->stock()->locationTree();
+        $options = ['' => __('Alle Testplätze', 'taxmod-stock')];
+
+        foreach ($choices as $one) {
+            $options[(string) $one] = $tree->pathOf($one);
+        }
+
+        $filters = count($choices) < 2 ? '' : ListPage::filters(self::FILTER_FORM, [['ort', $options, $place > 0 ? (string) $place : '', __('Testplatz', 'taxmod-stock')]]);
+        $search  = ListPage::searchBox(self::FILTER_FORM, $search, __('Material …', 'taxmod-stock'), ['page' => self::PAGE, 'tab' => self::TEST], __('Suchen', 'taxmod-stock'));
+        $bar     = ListPage::bulkBar(self::BULK_FORM, self::ACTION, [
             TestResult::Ok->value     => __('Ergebnis: OK', 'taxmod-stock'),
             TestResult::Defect->value => __('Ergebnis: Defekt', 'taxmod-stock'),
-        ], sprintf(/* translators: %d: number of lots */ _n('%d Posten', '%d Posten', $count, 'taxmod-stock'), $count));
+        ], sprintf(/* translators: %d: number of lots */ _n('%d Posten', '%d Posten', $count, 'taxmod-stock'), $count), $filters, true, [], $search);
 
         // As {@see bulkBar()}: admin-post routes on «action», the choice travels as «bulk».
         return str_replace(
@@ -336,6 +365,63 @@ final class InboundPage
             ['name="bulk" id="' . self::BULK_FORM . '-action"', '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"><input type="hidden" name="tab" value="' . esc_attr(self::TEST) . '"></form>'],
             $bar
         );
+    }
+
+    /** @param array<int, string> $places place → its label */
+    private function placesCell(int $lot, array $places): string
+    {
+        $tree = $this->inbound->stock()->locationTree();
+        $at   = array_keys(array_filter($this->inbound->stock()->ledger()->placesOf($lot), static fn (float $q): bool => $q > 0.0));
+
+        return esc_html(implode(', ', array_map(static fn (int $p): string => $places[$p] ?? $tree->pathOf($p), array_map('intval', $at))));
+    }
+
+    /**
+     * D-1503: what passed its test and still lies on «Wareneingang › Test»; «Einlagern» books it on to where its material is
+     * stored (Standard-Lagerort, else the group's) — read from what is stored, never a field of its own.
+     */
+    private function storeList(): string
+    {
+        $stock = $this->inbound->stock();
+        $lots  = $stock->lotsToStore();
+
+        if ($lots === []) {
+            return '';
+        }
+
+        $ledger = $stock->ledger();
+        $things = $stock->things();
+        $places = $stock->places();
+        $tree   = $stock->locationTree();
+        $usual  = $stock->usualPlaces(array_values(array_unique(array_filter(array_map(static fn (int $lot): ?int => $ledger->thingOf($lot), $lots)))));
+        $rows   = '';
+
+        foreach ($lots as $lot) {
+            $thing = $ledger->thingOf($lot);
+            $to    = $usual[$thing ?? 0] ?? 0;
+            $rows .= ListPage::row(self::STORE_FORM, (string) $lot, [
+                '<strong>' . ($thing === null ? esc_html('#' . $lot) : '<a href="' . esc_url(StockPage::lotUrl($thing, $lot)) . '">' . esc_html($things->word($thing)) . '</a>') . '</strong>',
+                $this->placesCell($lot, $places),
+                esc_html($to > 0 ? ($places[$to] ?? $tree->pathOf($to)) : '—'),
+                esc_html(ListPage::number($ledger->restOf($lot))),
+            ], $to <= 0 ? '' : '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'
+                . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"><input type="hidden" name="op" value="store">'
+                . '<input type="hidden" name="selected[]" value="' . esc_attr((string) $lot) . '"><input type="hidden" name="tab" value="' . esc_attr(self::TEST) . '">'
+                . wp_nonce_field(self::ACTION, '_wpnonce', true, false)
+                . '<button type="submit" class="button button-primary" title="' . esc_attr__('Einlagern', 'taxmod-stock') . '">' . esc_html__('Einlagern', 'taxmod-stock') . '</button></form>', '');
+        }
+
+        $bar = ListPage::bulkBar(self::STORE_FORM, self::ACTION, ['store' => __('Einlagern', 'taxmod-stock')], sprintf(/* translators: %d: number of lots */ _n('%d Posten', '%d Posten', count($lots), 'taxmod-stock'), count($lots)));
+        $bar = str_replace(
+            ['name="action" id="' . self::STORE_FORM . '-action"', '</form>'],
+            ['name="bulk" id="' . self::STORE_FORM . '-action"', '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"><input type="hidden" name="tab" value="' . esc_attr(self::TEST) . '"></form>'],
+            $bar
+        );
+
+        return '<h2>' . esc_html__('Getestet – einlagern', 'taxmod-stock') . '</h2>'
+            . '<p>' . esc_html__('Getestet und noch am Testplatz im Wareneingang. «Einlagern» bucht per Umbuchen an den Lagerort des Materials (sonst den seiner Warengruppe). Defekt und Teilweise OK gehen beim Ergebnis gleich zur Klärung.', 'taxmod-stock') . '</p>'
+            . $bar
+            . ListPage::table([[__('Material', 'taxmod-stock'), ''], [__('Liegt an', 'taxmod-stock'), '12em'], [__('Ziel', 'taxmod-stock'), '12em'], [__('Menge', 'taxmod-stock'), '6em']], $rows);
     }
 
     /** @param list<array{instruction: string, firmware: string}> $steps D-1396: the revision's test steps, in order */

@@ -581,7 +581,8 @@ final class InboundService
             throw StockError::nothingToBook();
         }
 
-        return $this->stock->write($this->tests()->record($lot, $result, $reason, $today));
+        // D-1503: «defekt» and «teilweise OK» go on to «Klärung» in the same act.
+        return $this->stock->recordTestsRouted([$lot], $result, $reason, $today, __('Test: zur Klärung', 'taxmod-stock'));
     }
 
     /**
@@ -600,9 +601,7 @@ final class InboundService
             throw StockError::nothingToBook();
         }
 
-        $tests = $this->tests();
-
-        return $this->stock->write(array_merge(...array_map(static fn (int $lot): array => $tests->record($lot, $result, '', $today), $lots)));
+        return $this->stock->recordTestsRouted($lots, $result, '', $today, __('Test: zur Klärung', 'taxmod-stock'));
     }
 
     /**

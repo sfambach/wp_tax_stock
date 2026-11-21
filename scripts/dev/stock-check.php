@@ -1866,6 +1866,57 @@ $quellen = implode('', array_map('file_get_contents', glob(dirname(__DIR__, 2) .
 $pruefe(! preg_match('/[.]submit\(\)/', $quellen) && substr_count($quellen, 'taxmod:replaced') >= 2 && ! str_contains($quellen, 'dataset.ready'),
     'D-1408: no form is sent past the background send, and the Lager scripts set up again (once per element) after a swap');
 
+// D-1503: testing has its own places, read from the place functions (D-1528) — the goods receipt's test place, the nearest
+// «Klärung» for «defekt», «Einlagern» after OK to where the material is stored; the «Test» tab narrows to one test place.
+$ptNode = (new StockService())->structure()->node('location_type');
+$pfRoh = wp_get_ability("taxmod/apply")->execute(["changes" => [
+    ['op' => 'create_node', 'ref' => 'pf', 'name' => '__Platzfunktionen', 'parent' => (string) $r['lo'], 'class' => 'Choice'],
+    ['op' => 'create_node', 'ref' => 'pf_we', 'name' => '__Wareneingang', 'parent' => '@pf', 'class' => 'Constant'],
+    ['op' => 'create_node', 'ref' => 'pf_te', 'name' => '__Test', 'parent' => '@pf', 'class' => 'Constant'],
+    ['op' => 'create_node', 'ref' => 'pf_kl', 'name' => '__Klärung', 'parent' => '@pf', 'class' => 'Constant'],
+    $field('pt_fn', (string) $ptNode, '__Platzfunktion', '@pf', 'aggregation', '0..1'),
+]]);
+$pf = is_array($pfRoh) ? (array) ($pfRoh['refs'] ?? []) : [];
+$opt = get_option('taxmod_stock_structure');
+if (is_array($opt) && isset($pf['pt_fn'])) {
+    $opt['fields'] += ['place_function' => (int) $pf['pt_fn']];
+    $opt['values'] += ['function_inbound' => (int) $pf['pf_we'], 'function_test' => (int) $pf['pf_te'], 'function_clarify' => (int) $pf['pf_kl']];
+    update_option('taxmod_stock_structure', $opt);
+}
+$pfArten = isset($pf['pt_fn']) ? (array) ($apply([
+    ['op' => 'create_record', 'ref' => 'a_we', 'node' => (string) $ptNode, 'values' => [$lbl => '__WE-Bereich', (string) $pf['pt_fn'] => (string) $pf['pf_we']]],
+    ['op' => 'create_record', 'ref' => 'a_te', 'node' => (string) $ptNode, 'values' => [$lbl => '__Testplatz', (string) $pf['pt_fn'] => (string) $pf['pf_te']]],
+    ['op' => 'create_record', 'ref' => 'a_kl', 'node' => (string) $ptNode, 'values' => [$lbl => '__Klärplatz', (string) $pf['pt_fn'] => (string) $pf['pf_kl']]],
+])['refs'] ?? []) : [];
+$platz  = static fn (string $name, int $parent, int $type): int => (int) ((new StockService())->createPlace($name, $parent, false, 0, false, $type)['refs']['ort'] ?? 0);
+$weB    = $platz('__WE-Bereich', 0, (int) ($pfArten['a_we'] ?? 0));
+$weT    = $platz('__WE-Test', $weB, (int) ($pfArten['a_te'] ?? 0));
+$weK    = $platz('__WE-Klärung', $weB, (int) ($pfArten['a_kl'] ?? 0));
+$prT    = $platz('__Prod-Test', 0, (int) ($pfArten['a_te'] ?? 0));
+$s      = new StockService();
+$pruefe($weT > 0 && $s->receiptTestPlace($s->testSettings([])) === $weT && in_array($weT, $s->testPlaces(), true) && in_array($prT, $s->testPlaces(), true),
+    'D-1503: the goods receipt proposes its own test place «Wareneingang › Test»; both test places are choices of the «Test» tab');
+apply_filters(TaxmodStock\WordPress\Plugin::BOOK_OUTPUT, null, ['reference' => $auftrag, 'place' => $weT, 'lines' => [$platine => 2], 'title' => 'D-1503 zwei', 'date' => '2026-11-20']);
+$s      = new StockService();
+$amTest = array_values(array_filter($s->ledger()->lotsOf($platine), static fn (int $l): bool => $s->ledger()->restAt($l, $weT) > 0.0));
+$_GET   = ['page' => InboundPage::PAGE, 'tab' => 'test', 'ort' => (string) $weT];
+$tab    = (new InboundPage())->render();
+$einsD  = (new TaxmodStock\WordPress\InboundService())->recordTest($amTest[0] ?? 0, TaxmodStock\Core\TestResult::Defect, 'kaputt', '2026-11-20');
+$zweiOk = (new TaxmodStock\WordPress\InboundService())->recordTests([$amTest[1] ?? 0], TaxmodStock\Core\TestResult::Ok, '2026-11-20');
+$s      = new StockService();
+$ziel   = (int) ($s->usualPlaces([$platine])[$platine] ?? 0);
+$lager  = $s->lotsToStore();
+$_GET   = ['page' => InboundPage::PAGE, 'tab' => 'test'];
+$tab2   = (new InboundPage())->render();
+$pruefe(count($amTest) === 2 && str_contains($tab, 'name="ort"') && str_contains($tab, 'value="' . $weT . '" selected')
+    && is_array($einsD) && $s->ledger()->restAt($amTest[0] ?? 0, $weK) > 0.0 && $s->ledger()->restAt($amTest[0] ?? 0, $weT) === 0.0
+    && is_array($zweiOk) && in_array($amTest[1] ?? 0, $lager, true) && ! in_array($amTest[0] ?? 0, $lager, true) && str_contains($tab2, 'Getestet – einlagern'),
+    'D-1503: «Defekt» moves the lot from the test place to the nearest «Klärung» in the same act; «OK» leaves it for «Einlagern»');
+$rein   = $ziel > 0 ? (new StockService())->storeTested([$amTest[1] ?? 0], '2026-11-20', 'Einlagern nach Test') : [];
+$s      = new StockService();
+$pruefe($ziel > 0 && is_array($rein) && $s->ledger()->restAt($amTest[1] ?? 0, $ziel) > 0.0 && $s->ledger()->restAt($amTest[1] ?? 0, $weT) === 0.0 && $s->lotsToStore() === [],
+    'D-1503: «Einlagern» books the tested lot by an Umbuchung to where its material is stored');
+
 if ($etikettUebersprung > 0) {
     echo "  skip Etikettenmodul nicht aktiv, {$etikettUebersprung} Etiketten-Zusagen übersprungen (D-1296)\n";
 }

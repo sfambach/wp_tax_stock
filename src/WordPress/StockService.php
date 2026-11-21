@@ -30,6 +30,8 @@ use TaxmodStock\Core\NamedCopy;
 use TaxmodStock\Core\LocationTree;
 use TaxmodStock\Core\OutputPlan;
 use TaxmodStock\Core\Pack;
+use TaxmodStock\Core\TakeOver;
+use TaxmodStock\Core\GroupStock;
 use TaxmodStock\Core\TitlePicture;
 use TaxmodStock\Core\FitLevel;
 use TaxmodStock\Core\PlaceFit;
@@ -770,6 +772,70 @@ final class StockService
 
             throw $e;
         }
+    }
+
+    /**
+     * D-1579: the materials right in the parent group the take-over's rule holds for — their values read in one go (CD-7), the
+     * rule book of the modeller deciding (D-1552); no filter holds for every material there.
+     *
+     * @return list<int>
+     */
+    public function takeOverMatches(TakeOver $take): array
+    {
+        if (! isset($this->tree()[$take->parent])) {
+            throw StockError::notAGroup($take->parent);
+        }
+
+        // Every record of the group, not only those the stock knows: a material without stock or Lager record belongs there too.
+        $inside = array_keys($this->model->recordsOf([$take->parent], PHP_INT_MAX));
+
+        if ($inside === [] || $take->filters === []) {
+            return $inside;
+        }
+
+        $values  = $this->model->records($inside);
+        $context = TestRules::context($take->parent, []);
+        $book    = $take->book();
+        $out     = [];
+
+        foreach ($inside as $thing) {
+            $own = [];
+
+            foreach ($take->fields() as $field) {
+                $own[$field] = array_map('strval', $values?->all($thing, $field) ?? []);
+            }
+
+            if ($this->model->firstRule($book, $context, $own) !== null) {
+                $out[] = $thing;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * D-1579: the take-over in one act — only into an empty group right below the parent, through {@see moveThingsToGroup()}
+     * with its check that no value falls (D-1073).
+     *
+     * @param list<int> $skipped left out in the preview ({@see TakeOver::skipped()})
+     * @return array<string, mixed>
+     */
+    public function takeOver(int $group, TakeOver $take, array $skipped): array
+    {
+        if (! $this->takeOverOffered($group) || ($this->groupParents()[$group] ?? 0) !== $take->parent) {
+            throw StockError::notAGroup($group);
+        }
+
+        return $this->moveThingsToGroup(TakeOver::chosen($this->takeOverMatches($take), $skipped), $group);
+    }
+
+    /** D-1579: whether the group may take materials over — no record in it or below it, asked in one read (CD-7). */
+    public function takeOverOffered(int $group): bool
+    {
+        $branch = array_keys(GroupStock::branch($this->groupParents(), $group));
+        $filled = $branch === [] ? [] : array_fill_keys(array_values($this->model->recordsOf($branch, 1)), true);
+
+        return TakeOver::offered($group, $this->groupParents(), $this->tree(), $filled);
     }
 
     /** D8, D-1331: whether «+ Neue Untergruppe» can be offered. */

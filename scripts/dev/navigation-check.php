@@ -126,8 +126,15 @@ $pruefe(array_column($lagerstruktur, 'key') === ['structure', 'place-types'] && 
 $gruppen = array_values(array_filter($stammdaten, static fn (array $item): bool => str_starts_with((string) $item['key'], 'material-groups')));
 $roots   = (new \TaxmodStock\WordPress\StockService())->materialRoots();
 $pruefe(count($gruppen) === count($roots) && array_search($gruppen[0]['key'] ?? '', array_column($stammdaten, 'key'), true) === ($roots === [] ? false : 1)
-    && array_filter($gruppen, static fn (array $item): bool => ! str_contains(\TaxmodStock\WordPress\Admin\LogisticsShell::url($item), 'page=taxmod&') || ! str_contains(\TaxmodStock\WordPress\Admin\LogisticsShell::url($item), 'taxmod_scope=')) === [],
-    'D-1574: one «Materialgruppen» item per material branch, after Material, each opening the modeller scoped to it (' . count($roots) . ' branches)');
+    && array_filter($gruppen, static fn (array $item): bool => $item['page'] !== \TaxmodStock\WordPress\Admin\Pages::MATERIAL_GROUPS || (count($roots) > 1 && ! in_array((int) $item['tab'], $roots, true))) === [],
+    'D-1574, Live-Check 15 (changes the claim «opens the modeller», PR-9): one «Materialgruppen» item per material branch, after Material, each a page of this template naming its branch (' . count($roots) . ' branches)');
+if ($roots !== []) {
+    $_GET['taxmod_collapsed'] = 'none';
+    $seite = (new \TaxmodStock\WordPress\Admin\MaterialGroupsPage())->render();
+    unset($_GET['taxmod_collapsed']);
+    $pruefe(str_contains($seite, 'id="taxmod-node-' . $roots[0] . '"') && str_contains($seite, 'page=' . \TaxmodStock\WordPress\Admin\Pages::MATERIAL_GROUPS),
+        'D-1574, Live-Check 15: the page draws the modeller\'s tree of the first material branch, and its links come back to this page');
+}
 // D-1558 (replaces D-1541's place, PR-9, visible change): Einstellungen › Regeln holds one item per rule type, each opening the one
 // rules page with that type; Stammdaten › Test › Testregeln opens the same page at the test rules.
 $regeln = array_values(array_filter($settings, static fn (array $item): bool => str_starts_with((string) $item['key'], 'rules-')));

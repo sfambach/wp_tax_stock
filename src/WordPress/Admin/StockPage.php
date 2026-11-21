@@ -1405,8 +1405,9 @@ final class StockPage
      */
     private function editView(int $thing, int $node): string
     {
-        // D-1308: «Abbrechen» joins the editor's toolbar, after «Speichern».
-        $form = (string) apply_filters('taxmod_record_editor', '', $thing, $this->thingUrl($thing, 'daten'),
+        // D-1308: «Abbrechen» joins the editor's toolbar, after «Speichern». Saving comes back to the editor, not the
+        // reading view — his report 2026-11-21 16:55 «speichert man material eigenschaften springt er aus dem editionsmodus raus».
+        $form = (string) apply_filters('taxmod_record_editor', '', $thing, $this->thingUrl($thing, 'bearbeiten'),
             [['<a class="button" href="' . esc_url($this->thingUrl($thing, 'daten')) . '">' . esc_html__('Abbrechen', 'taxmod-stock') . '</a>']]);
 
         if ($form === '') {

@@ -1701,6 +1701,10 @@ $quelle = static fn (string $datei): string => (string) file_get_contents(dirnam
 // dialog as a tree; the Lager asks for none itself, so a form outside a dialog keeps the field with its tree button.
 $pruefe(! preg_match('/inline:\s*true/', $quelle('WordPress/Admin/StockPage.php') . $quelle('WordPress/Admin/InboundPage.php')), 'D-1467: the Lager asks for no inline chooser; in a dialog the modeller stands it, outside the button stays');
 
+// His report 2026-11-21 16:55 «speichert man material eigenschaften springt er aus dem editionsmodus raus»: saving the
+// material's editor comes back to the editor.
+$pruefe(str_contains($quelle('WordPress/Admin/StockPage.php'), "apply_filters('taxmod_record_editor', '', \$thing, \$this->thingUrl(\$thing, 'bearbeiten'),"), 'saving a material\'s properties stays in edit mode');
+
 // Changed with D-1440: the old order list of «Einbuchen» and its search are gone; the material list keeps its own.
 $pruefe(substr_count($quelle('WordPress/Admin/StockPage.php'), 'Wildcard::matches(...)') >= 1 && str_contains($quelle('WordPress/Admin/ContactsPage.php'), 'Wildcard::matches(...)')
     && ! str_contains($quelle('Core/StockList.php'), 'mb_stripos') && ! str_contains($quelle('Core/Contacts.php'), 'str_contains'), 'D-1357: stock and contact search use «*» through Wildcard, the core holds no rule of its own');

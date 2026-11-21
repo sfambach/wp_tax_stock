@@ -408,7 +408,7 @@ final class LogisticsShell
     private static function fullscreenStyle(): string
     {
         return '<style>#wpadminbar,#adminmenumain,#wpfooter{display:none}html.wp-toolbar{padding-top:0}#wpcontent,#wpfooter{margin-left:0}'
-            . '#wpcontent{padding-left:20px}.taxmod-shell-column{top:10px}.taxmod-shell.has-side .taxmod-shell-column{height:calc(100vh - 20px)}</style>';
+            . '#wpcontent{padding-left:20px}.taxmod-shell-column{top:10px}.taxmod-shell.has-side .taxmod-shell-column{height:auto;min-height:calc(100vh - 20px)}</style>';
     }
 
     /**
@@ -461,11 +461,13 @@ final class LogisticsShell
      * D-1092: the page's box under the navigation runs to the bottom of the window and scrolls inside; in the modeller's
      * tree only the frame changes here — its rows, folding and highlight stay as the modeller draws them. In the frame of
      * another page (html.taxmod-in-frame) the navigation is hidden and the box stands above the content.
+     * Stefan 21.11.2026 «den auschnitt für den tree … bitte etwas länger nach unten»: the box is at least 70 % of the window
+     * high even under an open navigation; the column then grows past the window instead of squeezing the tree.
      */
     private static function sideStyle(): string
     {
-        $css = '.taxmod-shell.has-side .taxmod-shell-column{height:calc(100vh - 52px)}'
-            . '.taxmod-shell-side{flex:1 1 auto;min-height:16em;display:flex;flex-direction:column;background:#fff;border:1px solid #c3c4c7;padding:8px 0 0;overflow:hidden}'
+        $css = '.taxmod-shell.has-side .taxmod-shell-column{height:auto;min-height:calc(100vh - 52px)}'
+            . '.taxmod-shell-side{flex:1 1 auto;min-height:max(16em,70vh);display:flex;flex-direction:column;background:#fff;border:1px solid #c3c4c7;padding:8px 0 0;overflow:hidden}'
             . '.taxmod-shell-side>*{flex:none}'
             . '.taxmod-shell-side>.taxmod-stock-places{flex:1 1 auto;min-height:0;min-width:0;display:flex;flex-direction:column}'
             . '.taxmod-stock-places-head{display:flex;align-items:center;justify-content:space-between;gap:6px;margin:0 8px 6px 0}'

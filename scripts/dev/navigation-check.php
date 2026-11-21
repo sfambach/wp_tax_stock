@@ -76,6 +76,7 @@ $submenu[Plugin::PARENT]          = [
     ['Kontakte', 'manage_options', \TaxmodStock\WordPress\Admin\ContactsPage::PAGE],
     ['Auswahllisten', 'manage_options', \TaxmodStock\WordPress\Admin\ChoiceListsPage::PAGE],
     ['Grundeinstellungen', 'manage_options', SettingsPage::PAGE],
+    ['Testregeln', 'manage_options', \TaxmodStock\WordPress\Admin\Pages::TEST_RULES],
     ['Logistik', 'manage_options', ModulePage::PAGE],
     ['eBay-Versand', 'manage_options', 'taxebay-shipping'],
     ['DHL <span class="count">2</span>', 'manage_options', '__navcheck-dhl'],
@@ -120,6 +121,8 @@ $lagerstruktur = array_values(array_filter($stammdaten, static fn (array $item):
 $pruefe(array_column($lagerstruktur, 'key') === ['structure', 'place-types'] && ($lagerstruktur[1]['tab'] ?? '') === 'platzarten' && ($stammdaten[2]['key'] ?? '') === 'structure', 'D-1512: Layout and Platzarten stand in the group «Lagerstruktur» under Stammdaten, after Auswahllisten');
 // D-1541: Einstellungen › Testregeln, after the modules' settings.
 $pruefe(in_array('test-rules', array_column($settings, 'key'), true) && (array_values(array_filter($settings, static fn (array $item): bool => $item['key'] === 'test-rules'))[0]['page'] ?? '') === TaxmodStock\WordPress\Admin\Pages::TEST_RULES, 'D-1541: Einstellungen › Testregeln is a page of the stock interface');
+// His screenshot 2026-11-21: «Testregeln» stood twice — its submenu entry was read as a module too, and that copy drew the page in a frame.
+$pruefe(count(array_filter($settings, static fn (array $item): bool => $item['label'] === 'Testregeln')) === 1, 'D-1541: Testregeln stands once in Einstellungen, never again as a module');
 $pruefe(($settings[0]['page'] ?? '') === SettingsPage::PAGE, 'Grundeinstellungen is a page of the stock interface, not the modeller\'s Configuration');
 $pruefe(($settings[1]['label'] ?? '') === 'DHL 2', 'the module keeps its menu label, without markup');
 $outbound = array_values(array_filter($navigation->areas(), static fn (array $area): bool => $area['key'] === 'outbound'))[0]['items'] ?? [];

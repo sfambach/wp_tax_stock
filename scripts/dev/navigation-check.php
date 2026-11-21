@@ -118,7 +118,7 @@ $stammdaten = array_values(array_filter($navigation->areas(), static fn (array $
 $pruefe(array_filter($settings, static fn (array $item): bool => str_starts_with((string) $item['key'], 'contact')) === [], 'D-1472: Einstellungen holds no Kontakte');
 // Grenzlauf 2026-11-17 (modeller D-1427, PR-9): «Drucker» (D-1192) and «Benutzereinstellungen» (D-1232) stand there since; the list names them.
 // D-1512 (replaces the place D-1129 gave it, PR-9): Lagerstruktur left Einstellungen for Stammdaten.
-$pruefe(array_slice(array_column($settings, 'key'), 0, 2) === ['basics', 'module-__navcheck-dhl'] && array_filter(array_slice(array_column($settings, 'key'), 2), static fn (string $key): bool => ! str_starts_with($key, 'module-') && ! str_starts_with($key, 'rules-') && ! in_array($key, ['form-labels', 'user'], true)) === [], 'Einstellungen: Grundeinstellungen, then the module — no Lagerstruktur any more (D-1512) (' . implode(', ', array_column($settings, 'key')) . ')');
+$pruefe(array_slice(array_column($settings, 'key'), 0, 2) === ['basics', 'module-__navcheck-dhl'] && array_filter(array_slice(array_column($settings, 'key'), 2), static fn (string $key): bool => ! str_starts_with($key, 'module-') && ! str_starts_with($key, 'rules-') && ! in_array($key, ['field-catalogue', 'form-labels', 'user'], true)) === [], 'Einstellungen: Grundeinstellungen, then the module — no Lagerstruktur any more (D-1512) (' . implode(', ', array_column($settings, 'key')) . ')');
 $lagerstruktur = array_values(array_filter($stammdaten, static fn (array $item): bool => ($item['path'] ?? []) === ['Lagerstruktur']));
 $pruefe(array_column($lagerstruktur, 'key') === ['structure', 'place-types'] && ($lagerstruktur[1]['tab'] ?? '') === 'platzarten' && ($stammdaten[2]['key'] ?? '') === 'structure', 'D-1512: Layout and Platzarten stand in the group «Lagerstruktur» under Stammdaten, after Auswahllisten');
 // D-1558 (replaces D-1541's place, PR-9, visible change): Einstellungen › Regeln holds one item per rule type, each opening the one
@@ -130,6 +130,7 @@ $pruefe(! (new TaxmodStock\WordPress\StockService())->structure()->hasNode('rule
 $test = array_values(array_filter($stammdaten, static fn (array $item): bool => $item['key'] === 'test-rules'));
 $pruefe(count($test) === 1 && ($test[0]['path'] ?? []) === ['Test'] && $test[0]['page'] === TaxmodStock\WordPress\Admin\Pages::RULES && ! in_array('test-rules', array_column($settings, 'key'), true),
     'D-1558: Stammdaten › Test › Testregeln opens the one rules page; Einstellungen has no Testregeln item of its own');
+$pruefe(in_array('field-catalogue', array_column($settings, 'key'), true) && (array_values(array_filter($settings, static fn (array $item): bool => $item['key'] === 'field-catalogue'))[0]['page'] ?? '') === TaxmodStock\WordPress\Admin\Pages::FIELD_CATALOGUE, 'D-1555: Einstellungen › Feldkatalog is a page of the stock interface');
 $pruefe(($settings[0]['page'] ?? '') === SettingsPage::PAGE, 'Grundeinstellungen is a page of the stock interface, not the modeller\'s Configuration');
 $pruefe(($settings[1]['label'] ?? '') === 'DHL 2', 'the module keeps its menu label, without markup');
 $outbound = array_values(array_filter($navigation->areas(), static fn (array $area): bool => $area['key'] === 'outbound'))[0]['items'] ?? [];

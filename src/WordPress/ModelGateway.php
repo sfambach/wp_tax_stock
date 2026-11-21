@@ -26,6 +26,16 @@ final class ModelGateway
         return new Table($this->ask(fn (): array => $this->door->records($node)));
     }
 
+    /**
+     * D-1555: the Feldkatalog in tree order; empty on a modeller without it.
+     *
+     * @return list<array{id: int, name: string, parent: int, depth: int, role: string, uses: int}>
+     */
+    public function catalogue(): array
+    {
+        return method_exists($this->door, 'catalogue') ? $this->ask(fn (): array => $this->door->catalogue()) : [];
+    }
+
     /** @return array<int, array{name: string, target: int, type: string|null, kind: string, multiplicity: string}> relation id → field */
     public function fields(int $node): array
     {

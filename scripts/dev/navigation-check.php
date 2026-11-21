@@ -189,6 +189,9 @@ $pruefe(substr_count($tief, 'taxmod-shell-group is-open') === 2 && str_contains(
 // D-1521, his word 2026-11-20 «die Box rechts, die verschwindet ein bisschen aus dem Bild raus»: the shell keeps WordPress's right margin.
 $pruefe((bool) preg_match('~\.taxmod-shell\{[^}]*margin:10px 20px 0 0~', $tief), 'D-1521: the shell keeps a right margin, a box on the right stays inside the screen');
 $pruefe(str_contains($tief, '<div class="taxmod-shell-column"><div class="taxmod-shell-head">Tax Logistik</div><nav') && ! str_contains($tief, 'taxmod-shell-title">Logistik') && (bool) preg_match('~\.taxmod-shell-head,\.taxmod-shell-main>h2:first-child\{[^}]*min-height:var\(--taxmod-head-height~', $tief), 'D-1521: a box as high as the page head stands above the menu, so menu and content start on one line');
+$pruefe(str_contains($tief, '.taxmod-shell-main{overflow-x:auto;position:relative}'), 'Live-Check 16: what scrolls beside the menu is the frame of its absolute children, so none widens the page');
+$seite = (string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Admin/LogisticsShell.php');
+$pruefe(str_contains($seite, ".taxmod-shell-side .taxmod-record-tree{max-height:none;overflow:hidden;padding:0}") && str_contains($seite, '.taxmod-shell-side .taxmod-chooser-tree{flex:1 1 auto;min-height:0;max-height:none;overflow-x:hidden;overflow-y:auto') && str_contains($seite, '.taxmod-shell-side{flex:1 1 auto;min-height:max(16em,70vh);'), 'D-1575: the tree box beside the menu is at least 70vh high and has exactly one scroller, the tree list');
 // D-1128, his word «auf dem hauptknoten eine übersicht zu bekommen mit abstprung»: an area and a group open an overview of tiles.
 $_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'stock'];
 $uebersicht = LogisticsShell::wrap(CockpitPage::PAGE, (new CockpitPage())->render());

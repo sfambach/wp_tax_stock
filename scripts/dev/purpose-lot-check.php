@@ -18,6 +18,8 @@ foreach ([
     'the Bezug has no group «Bestand»'                       => str_contains($page, "__('Bestand', 'taxmod-stock') . ' · '"),
     'the Bestandsposten is not picked with the record chooser' => str_contains($page, "recordPicker('purpose_lot'"),
     'the Ausbuchen form does not offer «Bestand»'             => str_contains($page, '$this->purposeRow($presetPlace, \'\', true)'),
+    'the row dialog «Ausbuchen» does not offer «Bestand» (D-1511)' => str_contains($page, '$this->purposeRow($place, $switch, true)'),
+    'the lot words are drawn more than once per page'         => substr_count($page, 'modellerAssets(false, true)') === 1 && str_contains($page, '$this->lotWordsDrawn = true'),
     'the form does not send the picked lot as the Bezug'      => str_contains($page, "absint(\$_POST['purpose_lot'] ?? 0)"),
     'the service refuses a lot as the Bezug'                  => str_contains($service, '$ledger->thingOf($purpose->subject) === null'),
 ] as $what => $green) {

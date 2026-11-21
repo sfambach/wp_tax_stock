@@ -55,6 +55,9 @@ final class StockPage
     /** D-1567: the Bezug choice that names a Bestandsposten. */
     private const PURPOSE_LOT = 'bestand';
 
+    /** Whether this page drew the lot-mode words already ({@see self::lotWords()}). */
+    private bool $lotWordsDrawn = false;
+
     /** The codes «print-label» may ask this page for (D-1235, D-1238): material, lot, place, box. */
     public const LABEL_PREFIXES = ['M', 'P', 'O', 'K'];
 
@@ -2727,7 +2730,7 @@ final class StockPage
             ['label' => __('Menge', 'taxmod-stock'), 'control' => $this->consumptionQuantity($controls['quantity'], $unit),
                 /* translators: %s: quantity at this place */
                 'hint' => sprintf(__('An diesem Ort liegen %s.', 'taxmod-stock'), ListPage::number($quantity))],
-            $this->purposeRow($place, $switch),
+            $this->purposeRow($place, $switch, true),
         ];
 
         if ($controls['kind'] !== '') {
@@ -4587,7 +4590,7 @@ final class StockPage
         // D-1039: «Ausbuchen» on a row of the Bestand tab takes from that row's place.
         $at   = $presetPlace > 0 ? sprintf(/* translators: %s: the place, by its path */ __('Ausgebucht wird am Ort %s.', 'taxmod-stock'), $this->stock->places()[$presetPlace] ?? '#' . $presetPlace) : '';
         $rows = [
-            ['label' => __('Bestandsposten', 'taxmod-stock'), 'control' => $this->modellerAssets(false, true)
+            ['label' => __('Bestandsposten', 'taxmod-stock'), 'control' => $this->lotWords()
                 . $this->recordPicker('lot', $lot > 0 ? $lot : null, $word === '' ? '#' . $lot : $word, null, __('Material oder Posten suchen …', 'taxmod-stock'))
                 . ($presetPlace > 0 ? '<input type="hidden" name="place" value="' . esc_attr((string) $presetPlace) . '">' : ''), 'hint' => $at],
             // D-1298: the modeller's own number control; the unit is the material's, shown beside it by name.
@@ -4646,8 +4649,8 @@ final class StockPage
      * D-1088: the purpose of a consumption — a subject, «für Produktion», or none. Taken from a reserved place, its Bezug
      * is preselected: reserved goods go only for exactly that purpose. One row of the shared form block.
      *
-     * D-1567: where the page carries the lot chooser (`$lots`), the group «Bestand» names a Bestandsposten as the Bezug,
-     * picked with the record chooser (D-1488); Fertigung and Reparatur stay no Bezug.
+     * D-1567: with `$lots` the group «Bestand» names a Bestandsposten as the Bezug, picked with the record chooser (D-1488)
+     * in lot mode — the Ausbuchen form and the row dialog alike (D-1511); Fertigung and Reparatur stay no Bezug.
      *
      * @return array{label: string, control: string, hint: string, for: string}
      */
@@ -4669,7 +4672,7 @@ final class StockPage
         $control = SelectMarkup::of('purpose', $choices, $selected, attributes: ['id' => $field], nothingWord: __('— kein Bezug —', 'taxmod-stock'));
         if ($lots) {
             $box      = $field . '-lot';
-            $control .= '<span id="' . esc_attr($box) . '" hidden> ' . $this->recordPicker('purpose_lot', null, '', null, __('Bestandsposten suchen …', 'taxmod-stock')) . '</span>'
+            $control .= $this->lotWords() . '<span id="' . esc_attr($box) . '" hidden> ' . $this->recordPicker('purpose_lot', null, '', null, __('Bestandsposten suchen …', 'taxmod-stock')) . '</span>'
                 . '<script>(function(){var s=document.getElementById(' . wp_json_encode($field) . '),b=document.getElementById(' . wp_json_encode($box) . ');'
                 . 'if(!s||!b){return;}function f(){b.hidden=s.value!==' . wp_json_encode(self::PURPOSE_LOT) . ';}s.addEventListener("change",f);f();})();</script>';
         }
@@ -4984,6 +4987,17 @@ final class StockPage
      * The modeller's stylesheet and script for {@see self::recordPicker()}, and the one element its script reads the material
      * endpoints from: search, the tree's groups and a group's things.
      */
+    /** The lot-mode words of {@see self::modellerAssets()}, drawn once per page however many choosers ask (D-1567). */
+    private function lotWords(): string
+    {
+        if ($this->lotWordsDrawn) {
+            return '';
+        }
+        $this->lotWordsDrawn = true;
+
+        return $this->modellerAssets(false, true);
+    }
+
     private function modellerAssets(bool $groups, bool $lots = false): string
     {
         if (class_exists(\Taxmod\WordPress\Plugin::class)) {

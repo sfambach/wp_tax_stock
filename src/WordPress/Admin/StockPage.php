@@ -3967,7 +3967,7 @@ final class StockPage
         foreach ($children as $child) {
             $type = $types === null ? 0 : (int) $table->first($child, $s->field('location_place_type'));
             if ($templates !== null && ! array_key_exists($type, $rules)) {
-                $rules[$type] = $this->stock->labelRule('location', $type);
+                $rules[$type] = $this->stock->labelRule('location', $child, $type);
             }
             $rule  = $rules[$type] ?? null;
             $id    = $rule !== null && $templates?->get($rule['label']) !== null ? $rule['label'] : 0;

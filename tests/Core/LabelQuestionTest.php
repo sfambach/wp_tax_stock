@@ -40,5 +40,9 @@ final class LabelQuestionTest extends TestCase
         self::assertSame(['nodes' => [400], 'place_type' => 48122, 'record' => 9001, 'groups' => [9001, 400]], LabelQuestion::forPlace(400, 48122, 9001));
         // …and its branch, the place first, then the places above it, then «Lagerorte»: what a rule's node is asked against.
         self::assertSame([9001, 77, 70, 400], LabelQuestion::forPlace(400, 48122, 9001, [77, 70])['groups']);
+        // D-1570: the place type's label and count ride along for a rule that reads them; empty ones are not sent.
+        self::assertSame([350 => 62, 351 => 2], LabelQuestion::forPlace(400, 48122, 9001, [], [350 => 62, 351 => 2])['from']);
+        self::assertSame([350 => 62], LabelQuestion::forPlace(400, 48122, 9001, [], [350 => 62, 351 => 0])['from']);
+        self::assertArrayNotHasKey('from', LabelQuestion::forPlace(400, 48122, 9001, [], [350 => 0]));
     }
 }

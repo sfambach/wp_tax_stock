@@ -47,12 +47,18 @@ final class LabelQuestion
      * storage structure — the place, the places above it, then the node «Lagerorte» — is what a rule's node is asked against, as
      * a material's group path is (Prüftor 21.11.). The place type stays a filter's matter, never the node's.
      *
-     * @param list<int> $above the places above `$place`, nearest first
-     * @return array{nodes: list<int>, place_type: int, record?: int, groups?: list<int>}
+     * D-1570: the place type's own label and count ride along as `from` (field → value), so a rule that reads them from there
+     * needs no query per place; a value the type leaves empty is not sent.
+     *
+     * @param list<int>       $above the places above `$place`, nearest first
+     * @param array<int, int> $from  field → the place type's value
+     * @return array{nodes: list<int>, place_type: int, record?: int, groups?: list<int>, from?: array<int, int>}
      */
-    public static function forPlace(int $locationNode, int $type, int $place = 0, array $above = []): array
+    public static function forPlace(int $locationNode, int $type, int $place = 0, array $above = [], array $from = []): array
     {
-        $out = ['nodes' => [$locationNode], 'place_type' => $type];
+        $out  = ['nodes' => [$locationNode], 'place_type' => $type];
+        $from = array_filter($from, static fn (int $value, int $field): bool => $field > 0 && $value > 0, ARRAY_FILTER_USE_BOTH);
+        $out += $from === [] ? [] : ['from' => $from];
 
         return $place > 0 ? $out + ['record' => $place, 'groups' => [$place, ...$above, $locationNode]] : $out;
     }

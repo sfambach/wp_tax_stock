@@ -56,7 +56,7 @@ final class StockPage
     private const PURPOSE_LOT = 'bestand';
 
     /** The actions column of the material list: four icon squares (Lager 0.64.201). */
-    private const MATERIAL_ACTIONS = '13em';
+    private const MATERIAL_ACTIONS = '10.5em';
 
     /** Whether this page drew the lot-mode words already ({@see self::lotWords()}). */
     private bool $lotWordsDrawn = false;
@@ -573,12 +573,15 @@ final class StockPage
         // D-1204: a picture per row, unless the Configuration has pictures in lists off.
         $images    = ListPage::showsImages();
         // D-1462: a picture has nothing to filter by; stock and minimum filter by number (2, >2, <2, 2-10).
-        $columns   = [...($images ? [new ListColumn('image', __('Bild', 'taxmod-stock'), fixed: true, width: '56px', filterable: false)] : []),
-            new ListColumn('nr', __('Nr.', 'taxmod-stock'), fixed: true, width: '6em'), new ListColumn('name', __('Material', 'taxmod-stock'), fixed: true),
-            new ListColumn('group', __('Gruppe', 'taxmod-stock'), width: '15%')];
+        // Live-Check 7 (21.11.2026, 706 px beside the navigation): the picture gives way first where the list is narrow; under
+        // «Spalten» it can be kept. The flag exists from Modeller 0.2.226 on.
+        $narrow    = property_exists(ListColumn::class, 'secondary') ? ['secondary' => true] : [];
+        $columns   = [...($images ? [new ListColumn('image', __('Bild', 'taxmod-stock'), ...['width' => '56px', 'filterable' => false] + $narrow)] : []),
+            new ListColumn('nr', __('Nr.', 'taxmod-stock'), fixed: true, width: '5em'), new ListColumn('name', __('Material', 'taxmod-stock'), fixed: true),
+            new ListColumn('group', __('Gruppe', 'taxmod-stock'))];
         // D-1030: where it lies, by path and project — so a search for a project finds the parts in its box.
-        // His screenshot 2026-11-21 17:14: group and place a share each, the name takes the rest.
-        $columns[] = new ListColumn('places', __('Lagerort', 'taxmod-stock'), width: '15%');
+        // Live-Check 7: name, group and place share what the fixed columns leave — a share of their own overran 706 px.
+        $columns[] = new ListColumn('places', __('Lagerort', 'taxmod-stock'));
         $position  = 0;
 
         foreach ($technical as $relation => $name) {
@@ -586,8 +589,9 @@ final class StockPage
             $columns[] = new ListColumn('f' . $relation, $name, $position++ < 4);
         }
 
-        $columns[] = new ListColumn('stock', __('Bestand', 'taxmod-stock'), width: '7em', number: true);
-        $columns[] = new ListColumn('min', __('Mindestbestand', 'taxmod-stock'), width: '10.5em', number: true);
+        $columns[] = new ListColumn('stock', __('Bestand', 'taxmod-stock'), width: '5.5em', number: true);
+        // The head breaks «Mindest-bestand» at its syllables (modeller list style).
+        $columns[] = new ListColumn('min', __('Mindestbestand', 'taxmod-stock'), width: '6.5em', number: true);
         $listId    = ($branch ? 'stock-groupstock' : 'stock-material') . ($group > 0 ? '-' . $group : '');
         $view      = ListPage::view($listId, $columns, 'name');
         $groups    = [];
@@ -734,7 +738,8 @@ final class StockPage
         }
 
         // D-1462: every hit on this page — the head narrows and sorts it without asking again.
-        // His screenshot 2026-11-21 17:14: four icon squares at most (open details, Umbuchen, print, open), not the 21em default.
+        // His screenshot 2026-11-21 17:14: four icon squares at most (open details, Umbuchen, print, open), not the 21em default;
+        // Live-Check 7: all four are squares now, 10.5em holds them.
         return $html . ListPage::table(ListPage::heads($view, $url), $body, ListPage::filterRow(self::FILTER_FORM, $view), ! $waits && ListView::onePage(count($units), self::PER_PAGE), self::MATERIAL_ACTIONS)
             . ListPage::pagination(count($units), $paged, self::PER_PAGE, $url);
     }

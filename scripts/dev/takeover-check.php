@@ -59,8 +59,8 @@ $pruefe(isset($r['a'], $r['b'], $r['c'], $r['blau']), 'three displays in «__Dis
 [$m, $blau, $a, $b, $c, $farbe] = [(int) ($r['m'] ?? 0), (int) ($r['blau'] ?? 0), (int) ($r['a'] ?? 0), (int) ($r['b'] ?? 0), (int) ($r['c'] ?? 0), (int) ($r['farbe'] ?? 0)];
 
 $stock = new StockService();
-$pruefe(TakeOver::offered($blau, $stock->groupParents(), $stock->tree(), $stock->filledGroups()), 'the empty group is offered the take-over');
-$pruefe(! TakeOver::offered($m, $stock->groupParents(), $stock->tree(), $stock->filledGroups()), 'a group holding materials is not');
+$pruefe($stock->takeOverOffered($blau), 'the empty group is offered the take-over');
+$pruefe(! $stock->takeOverOffered($m), 'a group holding materials is not');
 
 $page = (new StockPage($stock))->groupMaterials($blau, ['page' => Pages::MATERIAL_GROUPS, 'taxmod_node' => (string) $blau]);
 $pruefe(str_contains($page, 'uebernehmen=1') && str_contains($page, '__Displays'), 'the empty group shows «Aus «__Displays» übernehmen …»');
@@ -79,8 +79,9 @@ try {
 try {
     $done = $stock->takeOver($blau, $take, TakeOver::skipped([], [$a, $c], [$a]));
     $after = new StockService();
-    $pruefe(! empty($done['act']) && $after->things()->nodeOf($a) === $blau && $after->things()->nodeOf($c) === $m && $after->things()->nodeOf($b) === $m, 'one act: the ticked blue one moved, the unticked and the white one stayed');
-    $pruefe(! TakeOver::offered($blau, $after->groupParents(), $after->tree(), $after->filledGroups()), 'afterwards the group is no longer empty — no button');
+    $at    = (new \TaxmodStock\WordPress\ModelGateway())->nodesOf([$a, $b, $c]) + [$a => 0, $b => 0, $c => 0];
+    $pruefe(! empty($done['act']) && $at[$a] === $blau && $at[$c] === $m && $at[$b] === $m, 'one act: the ticked blue one moved, the unticked and the white one stayed');
+    $pruefe(! $after->takeOverOffered($blau), 'afterwards the group is no longer empty — no button');
 } catch (\Throwable $e) {
     $pruefe(false, 'the take-over moves the ticked — ' . $e->getMessage());
 }

@@ -31,6 +31,7 @@ use TaxmodStock\Core\LocationTree;
 use TaxmodStock\Core\OutputPlan;
 use TaxmodStock\Core\Pack;
 use TaxmodStock\Core\TakeOver;
+use TaxmodStock\Core\GroupStock;
 use TaxmodStock\Core\TitlePicture;
 use TaxmodStock\Core\FitLevel;
 use TaxmodStock\Core\PlaceFit;
@@ -785,8 +786,8 @@ final class StockService
             throw StockError::notAGroup($take->parent);
         }
 
-        $things = $this->things();
-        $inside = array_values(array_filter(array_keys($things->all()), static fn (int $thing): bool => $things->nodeOf($thing) === $take->parent));
+        // Every record of the group, not only those the stock knows: a material without stock or Lager record belongs there too.
+        $inside = array_keys($this->model->recordsOf([$take->parent], PHP_INT_MAX));
 
         if ($inside === [] || $take->filters === []) {
             return $inside;
@@ -821,17 +822,20 @@ final class StockService
      */
     public function takeOver(int $group, TakeOver $take, array $skipped): array
     {
-        if (! TakeOver::offered($group, $this->groupParents(), $this->tree(), $this->filledGroups()) || ($this->groupParents()[$group] ?? 0) !== $take->parent) {
+        if (! $this->takeOverOffered($group) || ($this->groupParents()[$group] ?? 0) !== $take->parent) {
             throw StockError::notAGroup($group);
         }
 
         return $this->moveThingsToGroup(TakeOver::chosen($this->takeOverMatches($take), $skipped), $group);
     }
 
-    /** @return array<int, true> D-1579: the groups a material lives in */
-    public function filledGroups(): array
+    /** D-1579: whether the group may take materials over — no record in it or below it, asked in one read (CD-7). */
+    public function takeOverOffered(int $group): bool
     {
-        return array_fill_keys($this->things()->nodes(), true);
+        $branch = array_keys(GroupStock::branch($this->groupParents(), $group));
+        $filled = $branch === [] ? [] : array_fill_keys(array_values($this->model->recordsOf($branch, 1)), true);
+
+        return TakeOver::offered($group, $this->groupParents(), $this->tree(), $filled);
     }
 
     /** D8, D-1331: whether «+ Neue Untergruppe» can be offered. */

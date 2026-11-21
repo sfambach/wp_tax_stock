@@ -4701,7 +4701,7 @@ final class StockPage
         $parent     = $this->stock->groupParents()[$group] ?? 0;
 
         // D-1579: only an empty group with a group above it takes materials over from there.
-        if (! TakeOver::offered($group, $this->stock->groupParents(), $this->stock->tree(), $this->stock->filledGroups())) {
+        if (! $this->stock->takeOverOffered($group)) {
             return $page->materialList($page->listRequest(), true, $group);
         }
 
@@ -4771,7 +4771,7 @@ final class StockPage
         $pages   = (int) ceil(count($matched) / self::PER_PAGE);
         $paged   = min(max(1, absint($_GET['paged'] ?? 1)), $pages);
         $shown   = array_slice($matched, ($paged - 1) * self::PER_PAGE, self::PER_PAGE);
-        $things  = $this->stock->things();
+        $names   = $this->stock->recordLabels($shown);
         $carry   = $hidden . '<input type="hidden" name="vorschau" value="1"><input type="hidden" name="group" value="' . esc_attr((string) $group) . '"><input type="hidden" name="parent" value="' . esc_attr((string) $parent) . '">'
             . '<input type="hidden" name="' . self::HOST_RETURN . '" value="' . esc_attr(rawurlencode($back)) . '">';
 
@@ -4787,7 +4787,7 @@ final class StockPage
 
         foreach ($shown as $thing) {
             $carry .= '<input type="hidden" name="shown[]" value="' . esc_attr((string) $thing) . '">';
-            $body  .= '<tr><th scope="row" class="check-column">' . ListPage::field(InputKind::Tick, 'selected[]', (string) $thing, ['checked' => ! in_array($thing, $skipped, true), 'label' => $things->word($thing)]) . '</th><td>' . esc_html((string) $thing) . '</td><td>' . esc_html($things->word($thing)) . '</td></tr>';
+            $body  .= '<tr><th scope="row" class="check-column">' . ListPage::field(InputKind::Tick, 'selected[]', (string) $thing, ['checked' => ! in_array($thing, $skipped, true), 'label' => $names[$thing] ?? (string) $thing]) . '</th><td>' . esc_html((string) $thing) . '</td><td>' . esc_html($names[$thing] ?? '—') . '</td></tr>';
         }
 
         $turn = static fn (int $to, string $word): string => '<button type="submit" class="button" name="paged" value="' . esc_attr((string) $to) . '">' . esc_html($word) . '</button> ';

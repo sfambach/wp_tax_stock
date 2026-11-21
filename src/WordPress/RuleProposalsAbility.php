@@ -23,7 +23,7 @@ final class RuleProposalsAbility
 
     /**
      * `apply_filters(PRINT_FILTER, null, $proposals)`: the labels module's answer `{changes, open}` — the operations for the print
-     * proposals not yet a rule, and those left open with their reason (Prüftor 21.11.: «für» is not mapped, INF-142).
+     * proposals not yet a rule, and those left open with their reason (Prüftor 21.11.: «für» goes to the rule's «Wofür»).
      */
     public const PRINT_FILTER = 'taxmod_print_rule_takeover';
 

@@ -1931,12 +1931,18 @@ $trRoh = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'create_node', 'ref' => 'unter', 'name' => '__Unter der Platine', 'parent' => (string) $gruppe],
     $field('tr_pos', '@tr', '__Position', $int, 'composition', '0..1'),
     $field('tr_knoten', '@tr', '__Knoten', (string) $r['mat'], 'aggregation', '0..1'),
+    ['op' => 'create_node', 'ref' => 'trf', 'name' => '__Testregel-Filter', 'parent' => (string) $r['lo']],
+    $field('tr_filter', '@tr', '__Filter', '@trf', 'composition', '0..*'),
+    $field('trf_feld', '@trf', '__Feld', $int, 'composition', '0..1'),
+    $field('trf_wert', '@trf', '__Wert', 1175, 'composition', '0..1'),
+    $field('trf_op', '@trf', '__Operator', 1175, 'composition', '0..1'),
 ]]);
 $tr  = is_array($trRoh) ? (array) ($trRoh['refs'] ?? []) : [];
 $opt = get_option('taxmod_stock_structure');
 if (is_array($opt) && isset($tr['tr_knoten'])) {
-    $opt['nodes']  += ['test_rule' => (int) $tr['tr']];
-    $opt['fields'] += ['test_rule_position' => (int) $tr['tr_pos'], 'test_rule_node' => (int) $tr['tr_knoten']];
+    $opt['nodes']  += ['test_rule' => (int) $tr['tr'], 'test_rule_filter' => (int) $tr['trf']];
+    $opt['fields'] += ['test_rule_position' => (int) $tr['tr_pos'], 'test_rule_node' => (int) $tr['tr_knoten'], 'test_rule_filters' => (int) $tr['tr_filter'],
+        'test_filter_field' => (int) $tr['trf_feld'], 'test_filter_value' => (int) $tr['trf_wert'], 'test_filter_operator' => (int) $tr['trf_op']];
     update_option('taxmod_stock_structure', $opt);
 }
 $s       = new StockService();
@@ -1958,6 +1964,20 @@ $pruefe(in_array($gruppe, $vorschl, true) && str_contains($leer, 'Gruppen übern
     && $uebern === count($vorschl) && count($buch) === count($vorschl) && $regel > 0
     && ($nachher[$platine] ?? false) && ($nachher[$andere] ?? null) === ($gruppe === (int) ($s->nodesOf([$andere])[$andere] ?? 0)) && str_contains($liste, 'Test nötig') && ! str_contains($liste, 'Gruppen übernehmen'),
     'D-1541: «Gruppen übernehmen» shows each marked group with the groups below it and makes them rules in one act; then only the rules decide');
+// The board's own name field, as the rule book reads the material's values; the filter on every rule, so no other rule holds
+// for the board without it; a composition's parts are written with their values.
+$eigene  = (new Taxmod\WordPress\ModelDoor())->valuesOf([$platine])[$platine] ?? [];
+$lblFeld = (string) array_key_first($eigene);
+$name    = (string) (($eigene[(int) $lblFeld] ?? [''])[0] ?? '');
+$filter  = static fn (string $wert): mixed => wp_get_ability('taxmod/apply')->execute(['changes' => array_map(static fn (array $b, int $i): array => ['op' => 'set_values', 'record' => (string) $b['id'], 'values' => [
+    (string) $tr['tr_filter'] => ['f' . $i => [(string) $tr['trf_feld'] => $lblFeld, (string) $tr['trf_wert'] => $wert]],
+]], $buch, array_keys($buch))]);
+$fx      = $filter($name);
+$mit     = (new StockService())->testRequired([$platine]);
+$fy      = $filter('__passt nicht');
+$ohne    = (new StockService())->testRequired([$platine]);
+$pruefe($name !== '' && ! is_wp_error($fx) && ! is_wp_error($fy) && ($mit[$platine] ?? false) === true && ($ohne[$platine] ?? true) === false,
+    'D-1541: a filter «Feld · Wert» narrows the rule: its own value → «Test nötig»; a second filter with a value it lacks → «kein Test» (every filter must hold)');
 wp_get_ability('taxmod/apply')->execute(['changes' => array_map(static fn (array $b): array => ['op' => 'set_values', 'record' => (string) $b['id'], 'values' => [(string) $tr['tr_knoten'] => (string) $tr['unter']]], $buch)]);
 $weg     = (new StockService())->testRequired([$platine]);
 $pruefe(($weg[$platine] ?? true) === false, 'D-1541: rules exist but none holds for the board → «kein Test», the group property no longer counts');

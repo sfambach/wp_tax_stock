@@ -109,7 +109,7 @@ final class LogisticsShell
             ['key' => 'masterdata', 'label' => __('Stammdaten', 'taxmod-stock'), 'items' => [
                 $item('material', __('Material', 'taxmod-stock'), Pages::STOCK, 'material'),
                 // D-1574, his words 21.11.2026: «was ist mit der materialgruppen pflege», «im grunde haben wir das ja schon du musst das
-                // halt nur auf den/die materilast/äste einschränken» — the modeller's node page, scoped to each branch «Material steht in».
+                // halt nur auf den/die materilast/äste einschränken» — the modeller's node page, scoped to each branch «Material steht in», on a page of this template.
                 ...self::materialGroupItems(),
                 // D-1474, his word 2026-11-19: «die Konstanten … Dass ich die auf eine gute Art pflegen kann, zum Beispiel eine Farbe hinzufügen».
                 $item('choice-lists', __('Auswahllisten', 'taxmod-stock'), Pages::CHOICES),
@@ -200,14 +200,13 @@ final class LogisticsShell
             return [];
         }
 
-        $scoped = static fn (int $root): string => add_query_arg(['page' => 'taxmod', 'taxmod_scope' => $root], admin_url('admin.php'));
-
+        // Live-Check 15: the page of this template (MaterialGroupsPage), not the modeller's own — the navigation stays beside it.
         if (count($roots) === 1) {
-            return [['key' => 'material-groups', 'label' => $group, 'page' => '', 'tab' => '', 'url' => $scoped($roots[0])]];
+            return [['key' => 'material-groups', 'label' => $group, 'page' => Pages::MATERIAL_GROUPS, 'tab' => '']];
         }
 
         return array_map(static fn (int $root): array => ['key' => 'material-groups-' . $root, 'label' => (string) ($tree[$root]['name'] ?? '#' . $root),
-            'page' => '', 'tab' => '', 'url' => $scoped($root), 'path' => [$group]], $roots);
+            'page' => Pages::MATERIAL_GROUPS, 'tab' => (string) $root, 'path' => [$group]], $roots);
     }
 
     /**
@@ -414,15 +413,10 @@ final class LogisticsShell
     /**
      * The address of a navigation item: always a page of the stock interface (D-1085).
      *
-     * @param array{page: string, tab: string, module?: string, url?: string} $item
+     * @param array{page: string, tab: string, module?: string} $item
      */
     public static function url(array $item): string
     {
-        // D-1574: an item that is the modeller's own page names its address; every other item is a page of the stock interface.
-        if (($item['url'] ?? '') !== '') {
-            return $item['url'];
-        }
-
         return add_query_arg(array_filter(['page' => $item['page'], 'tab' => $item['tab'], 'module' => $item['module'] ?? '']), admin_url('admin.php'));
     }
 
@@ -463,12 +457,13 @@ final class LogisticsShell
      * tree only the frame changes here — its rows, folding and highlight stay as the modeller draws them. In the frame of
      * another page (html.taxmod-in-frame) the navigation is hidden and the box stands above the content.
      * Stefan 21.11.2026 «den auschnitt für den tree … bitte etwas länger nach unten»: the box is at least 70 % of the window
-     * high even under an open navigation; the column then grows past the window instead of squeezing the tree.
+     * high even under an open navigation, never higher than the window, and only the tree list in it scrolls (D-1575); the column
+     * then grows past the window instead of squeezing the tree.
      */
     private static function sideStyle(): string
     {
         $css = '.taxmod-shell.has-side .taxmod-shell-column{height:auto;min-height:calc(100vh - 52px)}'
-            . '.taxmod-shell-side{flex:1 1 auto;min-height:max(16em,70vh);display:flex;flex-direction:column;background:#fff;border:1px solid #c3c4c7;padding:8px 0 0;overflow:hidden}'
+            . '.taxmod-shell-side{flex:none;height:max(16em,70vh);max-height:max(16em,calc(100vh - 52px));display:flex;flex-direction:column;background:#fff;border:1px solid #c3c4c7;padding:8px 0 0;overflow:hidden}'
             . '.taxmod-shell-side>*{flex:none}'
             . '.taxmod-shell-side>.taxmod-stock-places{flex:1 1 auto;min-height:0;min-width:0;display:flex;flex-direction:column}'
             . '.taxmod-stock-places-head{display:flex;align-items:center;justify-content:space-between;gap:6px;margin:0 8px 6px 0}'

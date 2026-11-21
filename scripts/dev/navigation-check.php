@@ -126,8 +126,26 @@ $pruefe(array_column($lagerstruktur, 'key') === ['structure', 'place-types'] && 
 $gruppen = array_values(array_filter($stammdaten, static fn (array $item): bool => str_starts_with((string) $item['key'], 'material-groups')));
 $roots   = (new \TaxmodStock\WordPress\StockService())->materialRoots();
 $pruefe(count($gruppen) === count($roots) && array_search($gruppen[0]['key'] ?? '', array_column($stammdaten, 'key'), true) === ($roots === [] ? false : 1)
-    && array_filter($gruppen, static fn (array $item): bool => ! str_contains(\TaxmodStock\WordPress\Admin\LogisticsShell::url($item), 'page=taxmod&') || ! str_contains(\TaxmodStock\WordPress\Admin\LogisticsShell::url($item), 'taxmod_scope=')) === [],
-    'D-1574: one «Materialgruppen» item per material branch, after Material, each opening the modeller scoped to it (' . count($roots) . ' branches)');
+    && array_filter($gruppen, static fn (array $item): bool => $item['page'] !== \TaxmodStock\WordPress\Admin\Pages::MATERIAL_GROUPS || (count($roots) > 1 && ! in_array((int) $item['tab'], $roots, true))) === [],
+    'D-1574, Live-Check 15 (changes the claim «opens the modeller», PR-9): one «Materialgruppen» item per material branch, after Material, each a page of this template naming its branch (' . count($roots) . ' branches)');
+if ($roots !== []) {
+    $_GET['taxmod_collapsed'] = 'none';
+    $seite = (new \TaxmodStock\WordPress\Admin\MaterialGroupsPage())->render();
+    unset($_GET['taxmod_collapsed']);
+    $pruefe(str_contains($seite, 'id="taxmod-node-' . $roots[0] . '"') && str_contains($seite, 'page=' . \TaxmodStock\WordPress\Admin\Pages::MATERIAL_GROUPS),
+        'D-1574, Live-Check 15: the page draws the modeller\'s tree of the first material branch, and its links come back to this page');
+    $pruefe(in_array(\TaxmodStock\WordPress\Admin\Pages::MATERIAL_GROUPS, (array) apply_filters('taxmod_node_screen_hosts', []), true), 'D-1574: the page is registered as a host of the node page, so the modeller takes it as the way back');
+    $back  = add_query_arg(['page' => \TaxmodStock\WordPress\Admin\Pages::MATERIAL_GROUPS, 'taxmod_node' => (string) $roots[0], 'taxmod_scope' => (string) $roots[0], 'taxmod_collapsed' => 'none'], admin_url('admin.php'));
+    $_GET[\Taxmod\WordPress\Admin\ListPage::SHOW_ALL] = '1';
+    $reiter = (array) apply_filters('taxmod_scoped_tabs', [], $roots[0], $roots[0], $back);
+    unset($_GET[\Taxmod\WordPress\Admin\ListPage::SHOW_ALL]);
+    $mat    = array_values(array_filter($reiter, static fn (mixed $t): bool => is_array($t) && ($t['key'] ?? '') === 'materials'))[0] ?? [];
+    $pruefe(($mat['label'] ?? '') === 'Materialien' && str_contains((string) ($mat['html'] ?? ''), 'name="host_return"')
+        && ! str_contains((string) ($mat['html'] ?? ''), 'page=' . \TaxmodStock\WordPress\Admin\StockPage::PAGE . '&amp;tab=gruppenbestand'),
+        'D-1574 (Prüftor C): the scoped node page gets the tab «Materialien» — the group\'s list, its bulk form going back to Materialgruppen, no address on «Gruppenbestand»');
+    $pruefe(array_filter((array) apply_filters('taxmod_scoped_tabs', [], $roots[0], 999999999, $back), static fn (mixed $t): bool => is_array($t) && ($t['key'] ?? '') === 'materials') === [],
+        'D-1574: a branch that is no «Material steht in» gets no «Materialien»');
+}
 // D-1558 (replaces D-1541's place, PR-9, visible change): Einstellungen › Regeln holds one item per rule type, each opening the one
 // rules page with that type; Stammdaten › Test › Testregeln opens the same page at the test rules.
 $regeln = array_values(array_filter($settings, static fn (array $item): bool => str_starts_with((string) $item['key'], 'rules-')));
@@ -191,7 +209,7 @@ $pruefe((bool) preg_match('~\.taxmod-shell\{[^}]*margin:10px 20px 0 0~', $tief),
 $pruefe(str_contains($tief, '<div class="taxmod-shell-column"><div class="taxmod-shell-head">Tax Logistik</div><nav') && ! str_contains($tief, 'taxmod-shell-title">Logistik') && (bool) preg_match('~\.taxmod-shell-head,\.taxmod-shell-main>h2:first-child\{[^}]*min-height:var\(--taxmod-head-height~', $tief), 'D-1521: a box as high as the page head stands above the menu, so menu and content start on one line');
 $pruefe(str_contains($tief, '.taxmod-shell-main{overflow-x:auto;position:relative}'), 'Live-Check 16: what scrolls beside the menu is the frame of its absolute children, so none widens the page');
 $seite = (string) file_get_contents(dirname(__DIR__, 2) . '/src/WordPress/Admin/LogisticsShell.php');
-$pruefe(str_contains($seite, ".taxmod-shell-side .taxmod-record-tree{max-height:none;overflow:hidden;padding:0}") && str_contains($seite, '.taxmod-shell-side .taxmod-chooser-tree{flex:1 1 auto;min-height:0;max-height:none;overflow-x:hidden;overflow-y:auto') && str_contains($seite, '.taxmod-shell-side{flex:1 1 auto;min-height:max(16em,70vh);'), 'D-1575: the tree box beside the menu is at least 70vh high and has exactly one scroller, the tree list');
+$pruefe(str_contains($seite, ".taxmod-shell-side .taxmod-record-tree{max-height:none;overflow:hidden;padding:0}") && str_contains($seite, '.taxmod-shell-side .taxmod-chooser-tree{flex:1 1 auto;min-height:0;max-height:none;overflow-x:hidden;overflow-y:auto') && str_contains($seite, '.taxmod-shell-side{flex:none;height:max(16em,70vh);max-height:max(16em,calc(100vh - 52px));'), 'D-1575: the tree box beside the menu is 70vh high, never past the window, and has exactly one scroller, the tree list');
 // D-1128, his word «auf dem hauptknoten eine übersicht zu bekommen mit abstprung»: an area and a group open an overview of tiles.
 $_GET = ['page' => CockpitPage::PAGE, CockpitPage::AREA => 'stock'];
 $uebersicht = LogisticsShell::wrap(CockpitPage::PAGE, (new CockpitPage())->render());

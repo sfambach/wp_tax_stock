@@ -5,6 +5,7 @@ namespace TaxmodStock\Tests\Core;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use TaxmodStock\Core\LabelQuestion;
+use TaxmodStock\Core\LocationTree;
 
 final class LabelQuestionTest extends TestCase
 {
@@ -44,5 +45,18 @@ final class LabelQuestionTest extends TestCase
         self::assertSame([350 => 62, 351 => 2], LabelQuestion::forPlace(400, 48122, 9001, [], [350 => 62, 351 => 2])['from']);
         self::assertSame([350 => 62], LabelQuestion::forPlace(400, 48122, 9001, [], [350 => 62, 351 => 0])['from']);
         self::assertArrayNotHasKey('from', LabelQuestion::forPlace(400, 48122, 9001, [], [350 => 0]));
+    }
+
+    #[Test]
+    public function where_the_stock_lies_rides_along_with_every_place_above_it(): void
+    {
+        // D-1576: a box (2) in a cupboard (1) with a compartment (4); another shelf (5).
+        $tree = new LocationTree([1 => 'Schrank', 2 => 'SMD R&C', 4 => 'Fach', 5 => 'Regal'], [1 => 0, 2 => 1, 4 => 2, 5 => 0]);
+
+        self::assertSame(['stock' => [120 => ['4', '2', '1']]], LabelQuestion::lyingAt(120, [4], $tree), 'a lot in the compartment lies below the box');
+        self::assertSame(['stock' => [120 => ['2', '1', '5']]], LabelQuestion::lyingAt(120, [2, 5, 2], $tree), 'a material: every place of its lots, each once');
+        self::assertSame([], LabelQuestion::lyingAt(120, [], $tree), 'a material with nothing in stock sends nothing');
+        self::assertSame([], LabelQuestion::lyingAt(120, [0], $tree), 'a lot that names no place');
+        self::assertSame([], LabelQuestion::lyingAt(0, [4], $tree), 'no «Lagerort» field in this model');
     }
 }

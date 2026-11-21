@@ -24,5 +24,7 @@ final class Pages
     public const RULES = \Taxmod\WordPress\Admin\RulesPage::SLUG;
     /** D-1555: Einstellungen › Feldkatalog, the modeller's branch «Data Types» shown, no copy. */
     public const FIELD_CATALOGUE = 'taxmod-lager-feldkatalog';
+    /** D-1574: Stammdaten › Materialgruppen, the modeller's node page scoped to a material branch. */
+    public const MATERIAL_GROUPS = 'taxmod-lager-materialgruppen';
     public const MODULE   = 'taxmod-lager-modul';
 }

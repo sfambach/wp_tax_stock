@@ -1096,8 +1096,8 @@ final class StockPage
         $name    = $lines === [] ? '' : (string) ($this->stock->recordLabels([$thing])[$thing] ?? '');
 
         foreach ($lines as $line) {
-            $html .= '<li>' . esc_html(implode(', ', array_map(static fn (int $lot): string => '#' . $lot, $line['lots']))) . ' · '
-                . sprintf($line['text'], esc_html__('Rest', 'taxmod-stock') . ' ' . esc_html($this->number($line['quantity'])))
+            $html .= '<li>' . sprintf($line['text'], esc_html__('Rest', 'taxmod-stock') . ' ' . esc_html($this->number($line['quantity'])))
+                . ' · ' . esc_html(implode(', ', array_map(static fn (int $lot): string => '#' . $lot, $line['lots'])))
                 . ' · <a href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'lagerorte', 'ort' => $line['place']], admin_url('admin.php'))) . '">' . esc_html($places[$line['place']] ?? '#' . $line['place']) . '</a>'
                 . ($withTransfer ? ' ' . $this->transferDialog($thing, $line['lots'][0], $line['place'], $line['quantity'], $places, 0, true, $line['lots']) : '')
                 . implode('', array_map(fn (int $lot): string => ' ' . $this->lotLabel($thing, $lot, $name, $charges[$lot] ?? ''), $line['lots']))
@@ -1734,8 +1734,8 @@ final class StockPage
                 // D-1227: a lot's further places and its «Vorgänge» move with its first row when the list is sorted or grouped.
                 $rows .= '<tr' . ($first ? ' id="taxmod-stock-lot-' . esc_attr((string) $lot) . '"' : ' class="taxmod-list-more"') . '><th scope="row" class="check-column"></th><td>' . ($first ? '#' . esc_html((string) $lot) . (in_array($lot, $blocked, true) ? self::blockedMark() : '') . $this->fromSetMark($this->stock->setHeadOf($lot)) : '') . '</td>'
                     // His wish 2026-11-08: «Bitte auch das Material anzeigen hier in der Liste».
-                    // His word 2026-11-21: «kein absprung zum ort in item» — place and material open their own pages, as in the material list.
-                    . '<td>' . ($first ? '<a href="' . esc_url($this->thingUrl($thing, 'daten')) . '">' . esc_html($name) . '</a>' : '') . '</td><td>'
+                    // His word 2026-11-21: «kein absprung zum ort in item» — the place opens its own page, as in the material list.
+                    . '<td>' . ($first ? esc_html($name) : '') . '</td><td>'
                     . ($place > 0 && isset($places[$place]) ? '<a href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'lagerorte', 'ort' => $place], admin_url('admin.php'))) . '">' . esc_html($places[$place]) . '</a>' : esc_html($places[$place] ?? '—'))
                     . $this->reservedMark($place, $flags) . '</td><td>' . esc_html($this->number($quantity)) . '</td>'
                     . '<td>' . ($first ? esc_html($amount ?? '—') : '') . '</td>'

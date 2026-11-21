@@ -2346,7 +2346,13 @@ final class StockService
         }
         $s = $this->structure();
         if ($kind === 'location') {
-            return $labels->ruleFor(LabelQuestion::forPlace($s->node('location'), $placeType, $record));
+            $tree  = $this->locationTree();
+            $above = [];
+            for ($at = $tree->parentOf($record); $at > 0 && ! in_array($at, $above, true) && $at !== $record; $at = $tree->parentOf($at)) {
+                $above[] = $at;
+            }
+
+            return $labels->ruleFor(LabelQuestion::forPlace($s->node('location'), $placeType, $record, $above));
         }
         $this->rememberForms([$record]);
         $group = (int) ($this->things()->nodeOf($record) ?? 0);

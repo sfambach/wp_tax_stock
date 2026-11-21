@@ -1652,7 +1652,7 @@ final class StockService
             return $this->testRules = TestRules::none();
         }
 
-        return $this->testRules = TestRules::fromTables($s, $this->table('test_rule'), $s->hasNode('test_rule_filter') ? $this->table('test_rule_filter') : null);
+        return $this->testRules = TestRules::fromTable($s, $this->table('test_rule'));
     }
 
     /**
@@ -1693,23 +1693,14 @@ final class StockService
             return $out;
         }
 
-        $fields = $rules->fields();
-        $values = $fields === [] ? null : $this->model->records($things);
-
         foreach ($things as $thing) {
-            $own = [];
-
-            foreach ($fields as $field) {
-                $own[$field] = array_map('strval', $values?->all($thing, $field) ?? []);
-            }
-
-            $out[$thing] = $this->model->firstRule($rules->book, TestRules::context($nodes[$thing] ?? null, $parents), $own) !== null;
+            $out[$thing] = $this->model->firstRule($rules->book, TestRules::context($nodes[$thing] ?? null, $parents)) !== null;
         }
 
         return $out;
     }
 
-    /** D-1541 «Neue Regel»: a rule behind the others, without node or filter yet — the record editor fills it. */
+    /** D-1541 «Neue Regel»: a rule behind the others, without a node yet — the record editor fills it. */
     public function createTestRule(): int
     {
         $s = $this->structure();
@@ -1739,6 +1730,44 @@ final class StockService
         $taken  = array_map(static fn (array $rule): int => $rule['conditions'][TestRules::NODE] ?? 0, $this->testRules()->book);
 
         return array_values(array_filter($groups, static fn (int $g): bool => in_array($g, $own, true) && ! in_array($g, $taken, true)));
+    }
+
+    /**
+     * The names of the groups below each of these, in the order of the tree, at most `$limit` each — one read of the tree.
+     *
+     * @param list<int> $groups
+     * @return array<int, list<string>> group → the names below it
+     */
+    public function groupsBelow(array $groups, int $limit = 40): array
+    {
+        $tree     = $this->tree();
+        $children = [];
+
+        foreach ($tree as $node => $row) {
+            $children[(int) $row['parent']][] = (int) $node;
+        }
+
+        $out = [];
+
+        foreach ($groups as $group) {
+            $names = [];
+
+            for ($todo = $children[$group] ?? [], $seen = []; $todo !== [] && count($names) < $limit;) {
+                $node = array_shift($todo);
+
+                if (isset($seen[$node])) {
+                    continue;
+                }
+
+                $seen[$node] = true;
+                $names[]     = (string) $tree[$node]['name'];
+                $todo        = [...$todo, ...($children[$node] ?? [])];
+            }
+
+            $out[$group] = array_diff($todo, array_keys($seen)) === [] ? $names : [...$names, '…'];
+        }
+
+        return $out;
     }
 
     /** D-1541: every proposal becomes a rule behind the others, in one act (D-1410); the number written. */

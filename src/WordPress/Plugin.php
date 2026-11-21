@@ -23,6 +23,7 @@ use TaxmodStock\WordPress\Admin\Pages;
 use TaxmodStock\WordPress\Admin\PurchasePage;
 use TaxmodStock\WordPress\Admin\SettingsPage;
 use TaxmodStock\WordPress\Admin\RulesSetup;
+use TaxmodStock\WordPress\Admin\FieldCataloguePage;
 use TaxmodStock\WordPress\Admin\SettingsTab;
 use TaxmodStock\WordPress\Admin\StockPage;
 
@@ -36,7 +37,7 @@ final class Plugin
     public const MENU = Admin\Pages::INBOUND;
 
     /** The pages that draw the modeller's forms, choosers and dialogs — they get its stylesheet and scripts in the head. */
-    public const MODELLER_STYLED = [self::MENU, Pages::COCKPIT, Pages::STOCK, Pages::PURCHASE, Pages::SETTINGS, Pages::MODULE, Pages::INBOUND, Pages::CONTACTS, Pages::CHOICES, Pages::RULES];
+    public const MODELLER_STYLED = [self::MENU, Pages::COCKPIT, Pages::STOCK, Pages::PURCHASE, Pages::SETTINGS, Pages::MODULE, Pages::INBOUND, Pages::CONTACTS, Pages::CHOICES, Pages::RULES, Pages::FIELD_CATALOGUE];
 
     /** The modeller's menu, which every Taxmod module hangs its pages under (D-1028). */
     public const PARENT = 'taxmod';
@@ -1720,6 +1721,8 @@ final class Plugin
             // D-1558: the one rules page (the modeller's building block), Einstellungen › Regeln › one item per type.
             add_submenu_page(self::PARENT, __('Regeln', 'taxmod-stock'), __('Regeln', 'taxmod-stock'), 'manage_options', Pages::RULES, $page(Pages::RULES, static fn (): string => \Taxmod\WordPress\Admin\RulesPage::fromSetup()?->render()
                 ?? \Taxmod\WordPress\Admin\ListPage::page(__('Regeln', 'taxmod-stock'), [], [['html' => '<div class="notice notice-warning inline"><p>' . esc_html__('Im Modell ist noch kein Knoten «Regeln» eingerichtet.', 'taxmod-stock') . '</p></div>']], (string) TAXMOD_STOCK_VERSION))),
+            // D-1555: Logistik › Einstellungen › Feldkatalog.
+            add_submenu_page(self::PARENT, __('Feldkatalog', 'taxmod-stock'), __('Feldkatalog', 'taxmod-stock'), 'manage_options', Pages::FIELD_CATALOGUE, $page(Pages::FIELD_CATALOGUE, static fn (): string => (new FieldCataloguePage())->render())),
             // D-1085: Logistik › Einstellungen › Grundeinstellungen, inside the navigation.
             add_submenu_page(self::PARENT, __('Grundeinstellungen', 'taxmod-stock'), __('Grundeinstellungen', 'taxmod-stock'), 'manage_options', Pages::SETTINGS, $page(Pages::SETTINGS, static fn (): string => (new SettingsPage())->render())),
         ];

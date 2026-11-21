@@ -4610,9 +4610,7 @@ final class StockPage
             return ListPage::quantity('quantity', $unit, '', ['required' => 'required']);
         }
 
-        // The quantity frame's width and alignment for the modeller's input, which carries no class of its own.
-        $control = preg_replace('/<input (?![^>]*class=)/', '<input class="taxmod-quantity-value" ', $control, 1) ?? $control;
-
+        // The frame sizes the modeller's input as its first input (admin.css), so the markup stays as the record form drew it.
         return '<span class="taxmod-quantity">' . $control . '<span class="taxmod-quantity-unit taxmod-stock-unit">' . esc_html($unit) . '</span></span>';
     }
 

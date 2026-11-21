@@ -356,5 +356,11 @@ foreach (['order' => 'page=taxmod-logistik&order=', 'location' => 'tab=lagerstru
 $pruefe(apply_filters('taxmod_record_home', 'https://x.test/', 1, 0) === 'https://x.test/', 'D-1483: an address another module gave stays');
 $pruefe(apply_filters('taxmod_record_home', null, 2147483646, 0) === null, 'D-1483: a record no branch here keeps stays in the modeller');
 
+// His word 21.11.2026 08:52 «Das Löschen von Testregeln hast du wohl vergessen»: the page draws the modeller's scripts (confirm dialog,
+// D-1550 field refill) and offers «Löschen» in its bulk actions (D-1403).
+$pruefe(in_array(TaxmodStock\WordPress\Admin\Pages::TEST_RULES, TaxmodStock\WordPress\Plugin::MODELLER_STYLED, true), 'the test rules page loads the modeller\'s styles and scripts (confirm dialog, field refill)');
+$drawn = (new TaxmodStock\WordPress\Admin\TestRulesPage())->render();
+$pruefe(! TaxmodStock\Core\TestRules::isConfigured((new TaxmodStock\WordPress\StockService())->structure()) || (str_contains($drawn, 'value="remove"') && str_contains($drawn, 'name="bulk"')), 'test rules: «Löschen» stands in the bulk actions');
+
 printf("\n%s\n", $fehler === 0 ? 'navigation-check: green' : "navigation-check: {$fehler} FAIL");
 exit($fehler === 0 ? 0 : 1);

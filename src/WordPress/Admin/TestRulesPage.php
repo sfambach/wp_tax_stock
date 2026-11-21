@@ -26,6 +26,8 @@ final class TestRulesPage
     public const PAGE   = Pages::TEST_RULES;
     public const ACTION = 'taxmod_stock_test_rules';
 
+    private const BULK_FORM = 'taxmod-stock-test-rules-bulk';
+
     private const NOTICE = 'taxmod_stock_test_rules_notice_';
 
     public function __construct(private readonly StockService $stock = new StockService())
@@ -67,7 +69,7 @@ final class TestRulesPage
         }
 
         return $page(ListPage::listHead(__('Testregeln', 'taxmod-stock'), count($rules), $explain)
-            . ListPage::listBar('', buttons: $this->buttons())
+            . $this->bulkBar()
             . ListPage::table([[__('Nr.', 'taxmod-stock'), '4em'], [__('Regel', 'taxmod-stock'), '14em'], [__('Knoten', 'taxmod-stock'), ''], [__('Filter', 'taxmod-stock'), ''], [__('Ergebnis', 'taxmod-stock'), '8em']], $this->rows($rules)));
     }
 
@@ -92,12 +94,17 @@ final class TestRulesPage
         }
 
         Acts::nonce(self::ACTION);
-        $do   = sanitize_key((string) ($_POST['do'] ?? ''));
+        $do   = sanitize_key((string) ($_POST['do'] ?? '')) ?: sanitize_key((string) ($_POST['bulk'] ?? ''));
         $back = self::url();
 
         try {
             if ($do === 'create') {
                 $back = self::url(['satz' => $this->stock->createTestRule()]);
+            } elseif ($do === 'remove') {
+                $chosen = array_values(array_unique(array_map('absint', (array) wp_unslash($_POST['selected'] ?? []))));
+                $this->stock->removeTestRules($chosen);
+                $n = count($chosen);
+                Notice::remember('success', sprintf(/* translators: %d: number of rules */ _n('%d Testregel gelöscht.', '%d Testregeln gelöscht.', $n, 'taxmod-stock'), $n), self::NOTICE);
             } elseif ($do === 'takeover') {
                 $n = $this->stock->takeOverTestRules();
                 Notice::remember('success', sprintf(/* translators: %d: number of groups */ _n('%d Gruppe als Testregel übernommen.', '%d Gruppen als Testregeln übernommen.', $n, 'taxmod-stock'), $n), self::NOTICE);
@@ -125,7 +132,7 @@ final class TestRulesPage
             $url   = self::url(['satz' => $rule['id']]);
             $names = $this->fieldNames($rule['conditions'][TestRules::NODE] ?? 0);
             $when  = array_map(static fn (array $f): string => sprintf('%s %s %s', $names[$f['field']] ?? '#' . $f['field'], $f['operator'] === TestRules::EQUALS ? '=' : '?', $f['value']), $rule['filters']);
-            $body .= '<tr><th scope="row" class="check-column"></th><td>' . esc_html((string) $rule['position']) . '</td>'
+            $body .= '<tr><th scope="row" class="check-column"><input type="checkbox" name="selected[]" form="' . esc_attr(self::BULK_FORM) . '" value="' . esc_attr((string) $rule['id']) . '"></th><td>' . esc_html((string) $rule['position']) . '</td>'
                 . '<td><a href="' . esc_url($url) . '"><strong>' . esc_html($this->ruleWord($rule)) . '</strong></a></td>'
                 . '<td>' . esc_html($this->nodeWord($rule)) . '</td>'
                 . '<td>' . esc_html(implode(' · ', $when) ?: '—') . '</td>'
@@ -162,6 +169,20 @@ final class TestRulesPage
         } catch (StockError) {
             return [];
         }
+    }
+
+    /**
+     * D-1403: «Löschen» in the list's bulk actions, the page's own buttons beside it in the same row. The shared bar posts its
+     * choice as «action», which admin-post routes on: the handler's name goes in its place, the choice travels as «bulk».
+     */
+    private function bulkBar(): string
+    {
+        $bar = ListPage::bulkBar(self::BULK_FORM, self::ACTION, ['remove' => __('Löschen', 'taxmod-stock')], '', '<div class="alignleft actions">' . $this->buttons() . '</div>', false);
+
+        $bar = str_replace('name="action" id="' . self::BULK_FORM . '-action"', 'name="bulk" id="' . self::BULK_FORM . '-action"', $bar);
+
+        // Only the bar's own form — the buttons beside it carry forms of their own.
+        return (string) preg_replace('#</form>#', '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"></form>', $bar, 1);
     }
 
     /** «Neue Regel», and «Gruppen übernehmen» with the list of what it would write — the dry run is the dialog itself. */

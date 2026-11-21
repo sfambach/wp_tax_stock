@@ -1737,6 +1737,28 @@ final class StockService
     }
 
     /**
+     * His word 21.11.2026 08:52 «Das Löschen von Testregeln hast du wohl vergessen»: the ticked rules go, in one act of the modeller
+     * (undo by its number, D-1410). Only records of the test-rule node — any other id is refused before anything is written.
+     *
+     * @param list<int> $rules
+     * @return int the act
+     */
+    public function removeTestRules(array $rules): int
+    {
+        $known = array_column($this->testRules()->book, 'id');
+        $rules = array_values(array_unique(array_filter($rules, static fn (int $id): bool => $id > 0)));
+
+        if ($rules === [] || array_diff($rules, $known) !== []) {
+            throw StockError::nothingToBook();
+        }
+
+        $answer = $this->model->write(array_map(static fn (int $id): array => ['op' => 'remove_record', 'record' => $id], $rules));
+        $this->testRules = null;
+
+        return (int) ($answer['act'] ?? 0);
+    }
+
+    /**
      * D-1541: the groups marked «Nach Wareneingang testen» themselves (D-1259) that are no test rule's node yet — what the
      * carry-over writes, shown before it writes (his order of the print rules, D-1519 R2). Inherited marks need no rule of
      * their own: the group above holds for them.

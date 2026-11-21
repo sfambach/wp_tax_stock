@@ -35,6 +35,9 @@ final class Plugin
     /** The slug of the goods receipt cockpit; kept from the former menu «Logistik» so bookmarks and links still work (D-1028). */
     public const MENU = Admin\Pages::INBOUND;
 
+    /** The pages that draw the modeller's forms, choosers and dialogs — they get its stylesheet and scripts in the head. */
+    public const MODELLER_STYLED = [self::MENU, Pages::COCKPIT, Pages::STOCK, Pages::PURCHASE, Pages::SETTINGS, Pages::MODULE, Pages::INBOUND, Pages::CONTACTS, Pages::CHOICES, Pages::TEST_RULES];
+
     /** The modeller's menu, which every Taxmod module hangs its pages under (D-1028). */
     public const PARENT = 'taxmod';
 
@@ -1749,7 +1752,7 @@ final class Plugin
         // The modeller's forms (record editor, choosers, dialogs) on a logistics page need its stylesheet in the head: enqueued late,
         // from inside the filter, it came too late, and a chosen project showed its hidden search field beside it (2026-11-03).
         add_action('admin_enqueue_scripts', static function (): void {
-            if (in_array(sanitize_key((string) ($_GET['page'] ?? '')), [self::MENU, Pages::COCKPIT, Pages::STOCK, Pages::PURCHASE, Pages::SETTINGS, Pages::MODULE, Pages::INBOUND, Pages::CONTACTS, Pages::CHOICES], true)) {
+            if (in_array(sanitize_key((string) ($_GET['page'] ?? '')), self::MODELLER_STYLED, true)) {
                 do_action('taxmod_enqueue_admin_style');
             }
         });

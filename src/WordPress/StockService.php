@@ -100,6 +100,9 @@ final class StockService
      */
     public const MATERIAL_IN = 'taxmod_stock_material_in';
 
+    /** `apply_filters(MATERIAL_ROOTS, [])`: the nodes material lies under (D-1522), for a rule's node choice (D-1546, D-1548). */
+    public const MATERIAL_ROOTS = 'taxmod_material_roots';
+
     /** D-1303: «Lagerort Wareneingang Produktion», where finished boards come in (like D-1111). */
     public const PRODUCTION_INBOUND = 'taxmod_stock_production_inbound';
 
@@ -1300,6 +1303,14 @@ final class StockService
         return is_array($raw) ? array_values(array_unique(array_filter(array_map('absint', $raw)))) : null;
     }
 
+    /** @return list<int> «Material steht in», or the material root while the setting was never made */
+    public function materialRoots(): array
+    {
+        $s = $this->structure();
+
+        return $this->materialIn() ?? ($s->hasNode('material_root') ? [$s->node('material_root')] : []);
+    }
+
     /**
      * D-1522: the modeller's node chooser over everything under the root, for «Material steht in» — the Lager's own branch left
      * out, the root not pickable.
@@ -2340,9 +2351,10 @@ final class StockService
         $group = (int) ($this->things()->nodeOf($record) ?? 0);
         $form  = $this->forms[$record] ?? 0;
 
-        return $labels->ruleFor($kind === 'lot'
+        // D-1548: the material itself rides along, so the filters of a print rule read its values.
+        return $labels->ruleFor(['record' => $record] + ($kind === 'lot'
             ? LabelQuestion::forLot($s->node('lot'), $this->tree(), $group, $this->formTree(), $form)
-            : LabelQuestion::forMaterial($this->tree(), $group, $this->formTree(), $form));
+            : LabelQuestion::forMaterial($this->tree(), $group, $this->formTree(), $form)));
     }
 
     /**

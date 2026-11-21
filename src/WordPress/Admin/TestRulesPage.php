@@ -53,7 +53,10 @@ final class TestRulesPage
 
         foreach ($rules as $rule) {
             if ($rule['id'] === $chosen) {
-                return $page(ListPage::recordHead(__('Testregel', 'taxmod-stock'), $this->ruleWord($rule), self::url(), __('Testregeln', 'taxmod-stock'), $explain)
+                // His answer 21.11.2026 07:19: «Es muss ein Knoten ausgewählt werden» — the record editor saves it, so the error stands here until one is chosen.
+                $missing = ($rule['conditions'][TestRules::NODE] ?? 0) > 0 ? '' : '<div class="notice notice-error inline"><p>' . esc_html__('Es muss ein Knoten ausgewählt werden. Ohne Knoten greift die Regel nicht.', 'taxmod-stock') . '</p></div>';
+
+                return $page($missing . ListPage::recordHead(__('Testregel', 'taxmod-stock'), $this->ruleWord($rule), self::url(), __('Testregeln', 'taxmod-stock'), $explain)
                     . (string) apply_filters('taxmod_record_editor', '', $chosen, self::url(['satz' => $chosen]), [], $this->roots()));
             }
         }
@@ -75,7 +78,7 @@ final class TestRulesPage
     private function roots(): array
     {
         $s     = $this->stock->structure();
-        $roots = $this->stock->materialIn() ?? ($s->hasNode('material_root') ? [$s->node('material_root')] : []);
+        $roots = $this->stock->materialRoots();
 
         return $roots === [] || ! $s->hasField('test_rule_node') ? [] : [$s->field('test_rule_node') => $roots];
     }

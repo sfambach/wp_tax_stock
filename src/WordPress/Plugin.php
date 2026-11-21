@@ -228,6 +228,8 @@ final class Plugin
         ]);
         // D-1519 R2: the preselections of Bauform, group and place type, offered to the labels module as print rules.
         add_filter('taxmod_label_rule_proposals', static fn (mixed $proposals): array => array_merge(is_array($proposals) ? $proposals : [], (new StockService())->labelRuleProposals()));
+        // D-1546, D-1548: where material lies, as «Material steht in» says (D-1522) — the roots of a rule's node in other modules.
+        add_filter(StockService::MATERIAL_ROOTS, static fn (mixed $roots): array => (new StockService())->materialRoots());
         add_filter(self::BOOK_BUILD, [self::class, 'bookBuild'], 10, 2);
         add_filter(self::PLACES_OF, [self::class, 'placesOf'], 10, 2);
         // D-1387: the material search as a building block for other modules' dialogs.

@@ -1652,7 +1652,7 @@ final class StockService
             return $this->testRules = TestRules::none();
         }
 
-        return $this->testRules = TestRules::fromTables($s, $this->table('test_rule'), $s->hasNode('test_rule_filter') ? $this->table('test_rule_filter') : null);
+        return $this->testRules = TestRules::fromTable($s, $this->table('test_rule'));
     }
 
     /**
@@ -1693,23 +1693,14 @@ final class StockService
             return $out;
         }
 
-        $fields = $rules->fields();
-        $values = $fields === [] ? null : $this->model->records($things);
-
         foreach ($things as $thing) {
-            $own = [];
-
-            foreach ($fields as $field) {
-                $own[$field] = array_map('strval', $values?->all($thing, $field) ?? []);
-            }
-
-            $out[$thing] = $this->model->firstRule($rules->book, TestRules::context($nodes[$thing] ?? null, $parents), $own) !== null;
+            $out[$thing] = $this->model->firstRule($rules->book, TestRules::context($nodes[$thing] ?? null, $parents)) !== null;
         }
 
         return $out;
     }
 
-    /** D-1541 «Neue Regel»: a rule behind the others, without node or filter yet — the record editor fills it. */
+    /** D-1541 «Neue Regel»: a rule behind the others, without a node yet — the record editor fills it. */
     public function createTestRule(): int
     {
         $s = $this->structure();

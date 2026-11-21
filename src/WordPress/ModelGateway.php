@@ -257,13 +257,12 @@ final class ModelGateway
     /**
      * D-1541: the first rule that holds, decided by the modeller's rule book; null: none holds — the caller's default.
      *
-     * @param list<array{id: int, position: int, conditions: array<int, int>, filters: list<array{field: int, value: string, operator: string}>}> $rules
-     * @param array<int, list<int>>    $context
-     * @param array<int, list<string>> $values
+     * @param list<array{id: int, position: int, conditions: array<int, int>}> $rules
+     * @param array<int, list<int>> $context
      */
-    public function firstRule(array $rules, array $context, array $values): ?int
+    public function firstRule(array $rules, array $context): ?int
     {
-        return $this->door->firstRule($rules, $context, $values);
+        return $this->door->firstRule($rules, $context);
     }
 
     /** @param list<int> $records */

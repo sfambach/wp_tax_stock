@@ -164,7 +164,9 @@ final class StockPage
         $tab  = in_array($tab, self::TABS, true) ? $tab : self::TABS[0];
         $list = $this->listRequest();
         $html = Notice::take(self::NOTICE, true);
-        $html .= $this->sourceEmptyQuestion();
+        // His word 2026-11-21: «die null durchgangs abfrage dialog ist immer hinter dem umbuchen dialog» — the question is
+        // drawn after the page, so it stacks on top of every other dialog.
+        $question = $this->sourceEmptyQuestion();
 
         try {
             $thing = absint($_GET['thing'] ?? 0);
@@ -191,7 +193,7 @@ final class StockPage
         }
 
         // D-1373: the page in the modeller's template.
-        return ListPage::page(__('Lager', 'taxmod-stock'), [], [['html' => $html . $this->script($tab === 'wareneingang')]], (string) TAXMOD_STOCK_VERSION);
+        return ListPage::page(__('Lager', 'taxmod-stock'), [], [['html' => $html . $question . $this->script($tab === 'wareneingang')]], (string) TAXMOD_STOCK_VERSION);
     }
 
     /** admin-post handler: capability → nonce → validate → sanitize → act → back to the page with a notice. */
@@ -1988,7 +1990,12 @@ final class StockPage
                 __('Abbrechen', 'taxmod-stock'),
                 true
             )
-            . '</form>';
+            . '</form>'
+            // His word 2026-11-21: «evtl umbuche vorher verstecken» — a dialog still open (the browser keeps its tick) closes,
+            // the question stays alone.
+            . '<script>(function(){function only(){var me=document.getElementById(' . wp_json_encode($switch) . ');if(!me){return;}'
+            . 'document.querySelectorAll(".taxmod-dialog-switch:checked").forEach(function(sw){if(sw!==me){sw.checked=false;}});me.checked=true;}'
+            . 'document.addEventListener("DOMContentLoaded",only);window.addEventListener("pageshow",only);})();</script>';
     }
 
     /**
@@ -3960,7 +3967,7 @@ final class StockPage
         foreach ($children as $child) {
             $type = $types === null ? 0 : (int) $table->first($child, $s->field('location_place_type'));
             if ($templates !== null && ! array_key_exists($type, $rules)) {
-                $rules[$type] = $this->stock->labelRule('location', $type);
+                $rules[$type] = $this->stock->labelRule('location', $child, $type);
             }
             $rule  = $rules[$type] ?? null;
             $id    = $rule !== null && $templates?->get($rule['label']) !== null ? $rule['label'] : 0;

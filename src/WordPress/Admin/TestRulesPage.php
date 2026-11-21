@@ -54,7 +54,7 @@ final class TestRulesPage
         foreach ($rules as $rule) {
             if ($rule['id'] === $chosen) {
                 return $page(ListPage::recordHead(__('Testregel', 'taxmod-stock'), $this->ruleWord($rule), self::url(), __('Testregeln', 'taxmod-stock'), $explain)
-                    . (string) apply_filters('taxmod_record_editor', '', $chosen, self::url(['satz' => $chosen])));
+                    . (string) apply_filters('taxmod_record_editor', '', $chosen, self::url(['satz' => $chosen]), [], $this->roots()));
             }
         }
 
@@ -65,6 +65,19 @@ final class TestRulesPage
         return $page(ListPage::listHead(__('Testregeln', 'taxmod-stock'), count($rules), $explain)
             . ListPage::listBar('', buttons: $this->buttons())
             . ListPage::table([[__('Nr.', 'taxmod-stock'), '4em'], [__('Regel', 'taxmod-stock'), '14em'], [__('Knoten', 'taxmod-stock'), ''], [__('Filter', 'taxmod-stock'), ''], [__('Ergebnis', 'taxmod-stock'), '8em']], $this->rows($rules)));
+    }
+
+    /**
+     * D-1546: the rule's node is chosen under the branches «Material steht in» names (D-1522), never under a wired branch.
+     *
+     * @return array<int, list<int>> relation id → roots
+     */
+    private function roots(): array
+    {
+        $s     = $this->stock->structure();
+        $roots = $this->stock->materialIn() ?? ($s->hasNode('material_root') ? [$s->node('material_root')] : []);
+
+        return $roots === [] || ! $s->hasField('test_rule_node') ? [] : [$s->field('test_rule_node') => $roots];
     }
 
     /** admin-post «Neue Regel» and «Gruppen übernehmen»: capability → nonce → validate → act → back with a notice (CD-5). */

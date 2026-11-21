@@ -3,7 +3,11 @@
 /**
  * Plugin Name:       Taxmod Stock
  * Description:       Stock keeping for the Taxonomy Modeller: stock count, goods receipt, consumption, stock list.
+<<<<<<< HEAD
  * Version: 0.64.188
+=======
+ * Version: 0.64.187
+>>>>>>> origin/main
  * Requires at least: 6.4
  * Requires PHP:      8.2
  * Author:            Stefan Fambach (SteFam), Claude (Anthropic AI)
@@ -18,7 +22,11 @@ if (! defined('ABSPATH')) {
     exit;
 }
 
+<<<<<<< HEAD
 define('TAXMOD_STOCK_VERSION', '0.64.188');
+=======
+define('TAXMOD_STOCK_VERSION', '0.64.187');
+>>>>>>> origin/main
 
 $taxmodStockAutoloader = __DIR__ . '/vendor/autoload.php';
 

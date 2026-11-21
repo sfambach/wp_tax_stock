@@ -11,6 +11,7 @@ namespace TaxmodStock\Core;
  *   M["material"] -->|nodes = groups| Q["question"]
  *   L["lot"] -->|nodes = «Bestandsposten»| Q
  *   P["place"] -->|nodes = «Lagerorte», place type| Q
+ *   S["where its lots lie"] -->|stock, D-1576| Q
  *   Q --> R["labels module: the first rule that holds"]
  * ```
  *
@@ -61,6 +62,26 @@ final class LabelQuestion
         $out += $from === [] ? [] : ['from' => $from];
 
         return $place > 0 ? $out + ['record' => $place, 'groups' => [$place, ...$above, $locationNode]] : $out;
+    }
+
+    /**
+     * D-1576: where the stock lies, for a rule filter on the lot's «Lagerort» — each place a lot of it lies at (a lot label: that
+     * lot's places; a material label: those of every lot of it) and every place above it, so «liegt unter» a box holds for a lot
+     * in one of its compartments. A material with nothing in stock sends nothing: the filter does not hold.
+     *
+     * @param list<int> $places where it lies
+     * @return array{stock?: array<int, list<string>>}
+     */
+    public static function lyingAt(int $field, array $places, LocationTree $tree): array
+    {
+        $out = [];
+        foreach ($places as $place) {
+            for ($at = $place; $at > 0 && ! isset($out[$at]); $at = $tree->parentOf($at)) {
+                $out[$at] = (string) $at;
+            }
+        }
+
+        return $field > 0 && $out !== [] ? ['stock' => [$field => array_values($out)]] : [];
     }
 
     /**

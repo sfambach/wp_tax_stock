@@ -1923,7 +1923,8 @@ $pruefe($ziel > 0 && is_array($rein) && $s->ledger()->restAt($amTest[1] ?? 0, $z
 
 // D-1541: test rules — what needs a test is said by rules (a node; it holds for everything below), the modeller's one rule book
 // decides; none holds → «kein Test». Without the node or without a rule D-1259's group property decides (the transition the
-// Prüftor agreed 2026-11-21); «Gruppen übernehmen» makes its groups rules, listing the groups below each before it writes.
+// Prüftor agreed 2026-11-21). D-1558 (replaces «Gruppen übernehmen», PR-9, visible change): the rules live on the modeller's one
+// rules page, a tab per child of the rules root; the carry-over of the marked groups is a one-time data job, not a button.
 $s       = new StockService();
 $gruppe  = (int) ($s->nodesOf([$platine])[$platine] ?? 0);
 $andere  = (int) $r['t1'];
@@ -1931,7 +1932,8 @@ $vorher  = $s->testRequired([$platine]);
 $s->setGroupProperty($gruppe, StockService::TEST_PROPERTY, true);
 $ohneKnoten = (new StockService())->testRequired([$platine]);
 $trRoh = wp_get_ability('taxmod/apply')->execute(['changes' => [
-    ['op' => 'create_node', 'ref' => 'tr', 'name' => '__Testregeln', 'parent' => (string) $r['lo']],
+    ['op' => 'create_node', 'ref' => 'rr', 'name' => '__Regeln', 'parent' => (string) $r['lo']],
+    ['op' => 'create_node', 'ref' => 'tr', 'name' => '__Testregeln', 'parent' => '@rr'],
     ['op' => 'create_node', 'ref' => 'unter', 'name' => '__Unter der Platine', 'parent' => (string) $gruppe],
     $field('tr_pos', '@tr', '__Position', $int, 'composition', '0..1'),
     $field('tr_knoten', '@tr', '__Knoten', (string) $r['mat'], 'aggregation', '0..1'),
@@ -1948,7 +1950,7 @@ $trRoh = wp_get_ability('taxmod/apply')->execute(['changes' => [
 $tr  = is_array($trRoh) ? (array) ($trRoh['refs'] ?? []) : [];
 $opt = get_option('taxmod_stock_structure');
 if (is_array($opt) && isset($tr['tr_knoten'])) {
-    $opt['nodes']  += ['test_rule' => (int) $tr['tr'], 'test_rule_filter' => (int) $tr['trf']];
+    $opt['nodes']  += ['test_rule' => (int) $tr['tr'], 'test_rule_filter' => (int) $tr['trf'], 'rules_root' => (int) $tr['rr']];
     $opt['fields'] += ['test_rule_position' => (int) $tr['tr_pos'], 'test_rule_node' => (int) $tr['tr_knoten'], 'test_rule_filters' => (int) $tr['tr_filter'],
         'test_filter_field' => (int) $tr['trf_feld'], 'test_filter_value' => (int) $tr['trf_wert'], 'test_filter_operator' => (int) $tr['trf_op']];
     $opt['values'] += ['operator_equals' => (int) $tr['trop_eq']];
@@ -1956,23 +1958,22 @@ if (is_array($opt) && isset($tr['tr_knoten'])) {
 }
 $s       = new StockService();
 $ohneRegel = $s->testRequired([$platine]);
-$vorschl = $s->testRuleProposals();
-$_GET    = ['page' => TaxmodStock\WordPress\Admin\TestRulesPage::PAGE];
-$leer    = (new TaxmodStock\WordPress\Admin\TestRulesPage())->render();
+$_GET    = ['page' => TaxmodStock\WordPress\Admin\Pages::RULES, 'tab' => (string) ($tr['tr'] ?? '')];
+$leer    = Taxmod\WordPress\Admin\RulesPage::fromSetup()?->render() ?? '';
 $pruefe(isset($tr['tr_knoten']) && ($vorher[$platine] ?? null) === false && ($ohneKnoten[$platine] ?? false) && ($ohneRegel[$platine] ?? false),
     'D-1541: without the node «Testregeln» and without a rule the group property «Nach Wareneingang testen» still decides');
-$uebern  = (new StockService())->takeOverTestRules();
+$uebern  = wp_get_ability('taxmod/apply')->execute(['changes' => [['op' => 'create_record', 'ref' => 'regel', 'node' => (string) ($tr['tr'] ?? ''),
+    'values' => [(string) ($tr['tr_knoten'] ?? '') => (string) $gruppe, (string) ($tr['tr_pos'] ?? '') => '1']]]]);
 $s       = new StockService();
 $buch    = $s->testRules()->book;
 $regel   = (int) (array_values(array_filter($buch, static fn (array $b): bool => ($b['conditions'][TaxmodStock\Core\TestRules::NODE] ?? 0) === $gruppe))[0]['id'] ?? 0);
 (new StockService())->setGroupProperty($gruppe, StockService::TEST_PROPERTY, null);
 $s       = new StockService();
 $nachher = $s->testRequired([$platine, $andere]);
-$liste   = (new TaxmodStock\WordPress\Admin\TestRulesPage())->render();
-$pruefe(in_array($gruppe, $vorschl, true) && str_contains($leer, 'Gruppen übernehmen (' . count($vorschl) . ')') && str_contains($leer, 'Neue Regel') && str_contains($leer, 'darunter: ') && str_contains($leer, '__Unter der Platine')
-    && $uebern === count($vorschl) && count($buch) === count($vorschl) && $regel > 0
-    && ($nachher[$platine] ?? false) && ($nachher[$andere] ?? null) === ($gruppe === (int) ($s->nodesOf([$andere])[$andere] ?? 0)) && str_contains($liste, 'Test nötig') && ! str_contains($liste, 'Gruppen übernehmen'),
-    'D-1541: «Gruppen übernehmen» shows each marked group with the groups below it and makes them rules in one act; then only the rules decide');
+$liste   = Taxmod\WordPress\Admin\RulesPage::fromSetup()?->render() ?? '';
+$pruefe(str_contains($leer, 'nav-tab-active') && str_contains($leer, '__Testregeln') && ! str_contains($leer, 'Gruppen übernehmen') && ! is_wp_error($uebern) && count($buch) === 1 && $regel > 0
+    && ($nachher[$platine] ?? false) && ($nachher[$andere] ?? null) === ($gruppe === (int) ($s->nodesOf([$andere])[$andere] ?? 0)) && str_contains($liste, 'taxmod-rule-remove-' . $regel),
+    'D-1558: the one rules page shows the type «Testregeln» as a tab, its rule with a bin; once a rule exists only the rules decide');
 // The board's own name field, as the rule book reads the material's values; the filter on every rule, so no other rule holds
 // for the board without it; a composition's parts are written with their values.
 $eigene  = (new Taxmod\WordPress\ModelDoor())->valuesOf([$platine])[$platine] ?? [];

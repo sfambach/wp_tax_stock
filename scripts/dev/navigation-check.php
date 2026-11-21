@@ -76,6 +76,8 @@ $submenu[Plugin::PARENT]          = [
     ['Kontakte', 'manage_options', \TaxmodStock\WordPress\Admin\ContactsPage::PAGE],
     ['Auswahllisten', 'manage_options', \TaxmodStock\WordPress\Admin\ChoiceListsPage::PAGE],
     ['Grundeinstellungen', 'manage_options', SettingsPage::PAGE],
+    // D-1558: the one rules page, and the old test rules address that leads there.
+    ['Regeln', 'manage_options', \TaxmodStock\WordPress\Admin\Pages::RULES],
     ['Testregeln', 'manage_options', \TaxmodStock\WordPress\Admin\Pages::TEST_RULES],
     ['Logistik', 'manage_options', ModulePage::PAGE],
     ['eBay-Versand', 'manage_options', 'taxebay-shipping'],
@@ -116,13 +118,18 @@ $stammdaten = array_values(array_filter($navigation->areas(), static fn (array $
 $pruefe(array_filter($settings, static fn (array $item): bool => str_starts_with((string) $item['key'], 'contact')) === [], 'D-1472: Einstellungen holds no Kontakte');
 // Grenzlauf 2026-11-17 (modeller D-1427, PR-9): «Drucker» (D-1192) and «Benutzereinstellungen» (D-1232) stand there since; the list names them.
 // D-1512 (replaces the place D-1129 gave it, PR-9): Lagerstruktur left Einstellungen for Stammdaten.
-$pruefe(array_slice(array_column($settings, 'key'), 0, 2) === ['basics', 'module-__navcheck-dhl'] && array_filter(array_slice(array_column($settings, 'key'), 2), static fn (string $key): bool => ! str_starts_with($key, 'module-') && ! in_array($key, ['test-rules', 'form-labels', 'user'], true)) === [], 'Einstellungen: Grundeinstellungen, then the module — no Lagerstruktur any more (D-1512) (' . implode(', ', array_column($settings, 'key')) . ')');
+$pruefe(array_slice(array_column($settings, 'key'), 0, 2) === ['basics', 'module-__navcheck-dhl'] && array_filter(array_slice(array_column($settings, 'key'), 2), static fn (string $key): bool => ! str_starts_with($key, 'module-') && ! str_starts_with($key, 'rules-') && ! in_array($key, ['form-labels', 'user'], true)) === [], 'Einstellungen: Grundeinstellungen, then the module — no Lagerstruktur any more (D-1512) (' . implode(', ', array_column($settings, 'key')) . ')');
 $lagerstruktur = array_values(array_filter($stammdaten, static fn (array $item): bool => ($item['path'] ?? []) === ['Lagerstruktur']));
 $pruefe(array_column($lagerstruktur, 'key') === ['structure', 'place-types'] && ($lagerstruktur[1]['tab'] ?? '') === 'platzarten' && ($stammdaten[2]['key'] ?? '') === 'structure', 'D-1512: Layout and Platzarten stand in the group «Lagerstruktur» under Stammdaten, after Auswahllisten');
-// D-1541: Einstellungen › Testregeln, after the modules' settings.
-$pruefe(in_array('test-rules', array_column($settings, 'key'), true) && (array_values(array_filter($settings, static fn (array $item): bool => $item['key'] === 'test-rules'))[0]['page'] ?? '') === TaxmodStock\WordPress\Admin\Pages::TEST_RULES, 'D-1541: Einstellungen › Testregeln is a page of the stock interface');
-// His screenshot 2026-11-21: «Testregeln» stood twice — its submenu entry was read as a module too, and that copy drew the page in a frame.
-$pruefe(count(array_filter($settings, static fn (array $item): bool => $item['label'] === 'Testregeln')) === 1, 'D-1541: Testregeln stands once in Einstellungen, never again as a module');
+// D-1558 (replaces D-1541's place, PR-9, visible change): Einstellungen › Regeln holds one item per rule type, each opening the one
+// rules page with that type; Stammdaten › Test › Testregeln opens the same page at the test rules.
+$regeln = array_values(array_filter($settings, static fn (array $item): bool => str_starts_with((string) $item['key'], 'rules-')));
+$pruefe(! (new TaxmodStock\WordPress\StockService())->structure()->hasNode('rules_root')
+    || ($regeln !== [] && array_filter($regeln, static fn (array $item): bool => $item['page'] !== TaxmodStock\WordPress\Admin\Pages::RULES || ($item['path'] ?? []) !== ['Regeln'] || $item['tab'] === '') === []),
+    'D-1558: Einstellungen › Regeln › one item per type, each the one rules page with its type (' . implode(', ', array_column($regeln, 'label')) . ')');
+$test = array_values(array_filter($stammdaten, static fn (array $item): bool => $item['key'] === 'test-rules'));
+$pruefe(count($test) === 1 && ($test[0]['path'] ?? []) === ['Test'] && $test[0]['page'] === TaxmodStock\WordPress\Admin\Pages::RULES && ! in_array('test-rules', array_column($settings, 'key'), true),
+    'D-1558: Stammdaten › Test › Testregeln opens the one rules page; Einstellungen has no Testregeln item of its own');
 $pruefe(($settings[0]['page'] ?? '') === SettingsPage::PAGE, 'Grundeinstellungen is a page of the stock interface, not the modeller\'s Configuration');
 $pruefe(($settings[1]['label'] ?? '') === 'DHL 2', 'the module keeps its menu label, without markup');
 $outbound = array_values(array_filter($navigation->areas(), static fn (array $area): bool => $area['key'] === 'outbound'))[0]['items'] ?? [];
@@ -357,12 +364,15 @@ $pruefe(apply_filters('taxmod_record_home', 'https://x.test/', 1, 0) === 'https:
 $pruefe(apply_filters('taxmod_record_home', null, 2147483646, 0) === null, 'D-1483: a record no branch here keeps stays in the modeller');
 
 // His word 21.11.2026 08:52 «Das Löschen von Testregeln hast du wohl vergessen»: the page draws the modeller's scripts (confirm dialog,
-// D-1550 field refill) and offers «Löschen» in its bulk actions (D-1403).
-$pruefe(in_array(TaxmodStock\WordPress\Admin\Pages::TEST_RULES, TaxmodStock\WordPress\Plugin::MODELLER_STYLED, true), 'the test rules page loads the modeller\'s styles and scripts (confirm dialog, field refill)');
-$drawn = (new TaxmodStock\WordPress\Admin\TestRulesPage())->render();
-$pruefe(! TaxmodStock\Core\TestRules::isConfigured((new TaxmodStock\WordPress\StockService())->structure()) || (str_contains($drawn, 'value="remove"') && str_contains($drawn, 'name="bulk"')), 'test rules: «Löschen» stands in the bulk actions');
-// His words 09:02: a bin per row and in the open rule, asking first.
-$pruefe(! TaxmodStock\Core\TestRules::isConfigured((new TaxmodStock\WordPress\StockService())->structure()) || (new TaxmodStock\WordPress\StockService())->testRules()->book === [] || str_contains($drawn, 'taxmod-stock-test-rule-remove-'), 'test rules: each row has its bin with a dialog');
+// D-1550 field refill) and offers «Löschen» in its bulk actions (D-1403); D-1558: the page is the modeller's one rules page.
+$pruefe(in_array(TaxmodStock\WordPress\Admin\Pages::RULES, TaxmodStock\WordPress\Plugin::MODELLER_STYLED, true), 'the rules page loads the modeller\'s styles and scripts (confirm dialog, field refill)');
+$regelSeite = Taxmod\WordPress\Admin\RulesPage::fromSetup();
+$_GET       = ['page' => TaxmodStock\WordPress\Admin\Pages::RULES, 'tab' => TaxmodStock\WordPress\Admin\RulesSetup::testRulesTab()];
+$drawn      = $regelSeite?->render() ?? '';
+$pruefe($regelSeite === null || (str_contains($drawn, 'value="remove"') && str_contains($drawn, 'name="bulk"') && str_contains($drawn, 'value="' . Taxmod\WordPress\Admin\RulesPage::ACTION . '"')), 'rules: «Löschen» stands in the bulk actions, routed to the rules handler');
+// His words 09:02: a bin per row and in the open rule, asking first; his word 21.11.: the type switched at the top.
+$pruefe($regelSeite === null || (new TaxmodStock\WordPress\StockService())->testRules()->book === [] || str_contains($drawn, 'taxmod-rule-remove-'), 'rules: each row has its bin with a dialog');
+$pruefe($regelSeite === null || (substr_count($drawn, 'nav-tab ') + substr_count($drawn, 'nav-tab"') >= count($regelSeite->types()) && ! str_contains($drawn, 'Gruppen übernehmen')), 'D-1558: one tab per rule type; no «Gruppen übernehmen» any more');
 
 printf("\n%s\n", $fehler === 0 ? 'navigation-check: green' : "navigation-check: {$fehler} FAIL");
 exit($fehler === 0 ? 0 : 1);

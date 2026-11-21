@@ -36,7 +36,13 @@ wp_set_current_user(1);
 global $wpdb;
 $lagerKnoten = (int) ((get_option(StockService::OPTION, [])['nodes']['lager'] ?? 0));
 
-if ($lagerKnoten === 0 || (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}taxmod_nodes WHERE id = %d", $lagerKnoten)) === 0) {
+// Prüftor 2026-11-21: a stored structure left by an older run can name a «lager» node that still stands but lack the contact
+// branch (D-1185) or the material field (the business settings) — then the check builds its own too; the bracket rolls it back.
+$gespeichert = (array) get_option(StockService::OPTION, []);
+$unvollstaendig = empty($gespeichert['nodes']['contact']) || empty($gespeichert['fields']['lager_thing'])
+    || (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}taxmod_nodes WHERE id = %d", (int) ($gespeichert['nodes']['contact'] ?? 0))) === 0;
+
+if ($lagerKnoten === 0 || $unvollstaendig || (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}taxmod_nodes WHERE id = %d", $lagerKnoten)) === 0) {
     $kind = 'aggregation';
     require __DIR__ . '/lib/struktur.php';
 

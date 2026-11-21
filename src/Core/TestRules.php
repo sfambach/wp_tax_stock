@@ -3,14 +3,15 @@
 namespace TaxmodStock\Core;
 
 /**
- * The test rules as the modeller's one rule book reads them (D-1541): each rule a node — it holds for every material below —
- * plus filters «Feld · Operator · Wert». Which rule holds is decided by the rule book (`ModelDoor::firstRule`), never here;
- * this class only translates. A rule that holds means «Test nötig»; none holds → «kein Test».
+ * The test rules as the modeller's one rule book reads them (D-1541): each rule a node — it holds for every material below.
+ * Which rule holds is decided by the rule book (`ModelDoor::firstRule`), never here; this class only translates. A rule that
+ * holds means «Test nötig»; none holds → «kein Test». The filters «Feld · Operator · Wert» follow with the modeller's
+ * field reference (Prüftor 2026-11-21: 0.2.195, Lager 0.64.184).
  *
  * ```mermaid
  * flowchart LR
- *   R["Testregeln records + their filters"] -->|book| B["ModelDoor::firstRule"]
- *   M["material: its node with every node above, its values"] -->|context| B
+ *   R["Testregeln records"] -->|book| B["ModelDoor::firstRule"]
+ *   M["material: its node with every node above"] -->|context| B
  *   B -->|rule id| T["Test nötig"]
  *   B -->|null| N["kein Test"]
  * ```
@@ -22,11 +23,8 @@ final class TestRules
     /** The one condition key: the rule's node. */
     public const NODE = 1;
 
-    /** The rule book's word for the one operator built (D-1541); any other never holds. */
-    public const EQUALS = 'equals';
-
     /**
-     * @param list<array{id: int, position: int, conditions: array<int, int>, filters: list<array{field: int, value: string, operator: string}>}> $book
+     * @param list<array{id: int, position: int, conditions: array<int, int>}> $book
      */
     private function __construct(public readonly array $book)
     {
@@ -43,33 +41,14 @@ final class TestRules
         return $s->hasNode('test_rule') && $s->hasField('test_rule_node');
     }
 
-    /**
-     * One record of «Testregeln» each; its filters are records of their own, held by the rule (composition).
-     *
-     * @param Table|null $filters the filter records, null when the structure has none
-     */
-    public static function fromTables(Structure $s, Table $rules, ?Table $filters): self
+    /** One record of «Testregeln» each: its position and its node; a rule without a node holds for every material. */
+    public static function fromTable(Structure $s, Table $rules): self
     {
-        $equals  = $s->hasValue('operator_equals') ? (string) $s->value('operator_equals') : '';
-        $int     = static fn (Table $t, int $id, string $key): int => $s->hasField($key) ? (int) ($t->first($id, $s->field($key)) ?? 0) : 0;
-        $text    = static fn (Table $t, int $id, string $key): string => $s->hasField($key) ? trim((string) ($t->first($id, $s->field($key)) ?? '')) : '';
-        $book    = [];
+        $int  = static fn (int $id, string $key): int => $s->hasField($key) ? (int) ($rules->first($id, $s->field($key)) ?? 0) : 0;
+        $book = [];
 
         foreach ($rules->ids() as $id) {
-            $own = [];
-
-            foreach ($filters !== null && $s->hasField('test_rule_filters') ? $rules->all($id, $s->field('test_rule_filters')) : [] as $filter) {
-                $filter   = (int) $filter;
-                $field    = $int($filters, $filter, 'test_filter_field');
-                $operator = $text($filters, $filter, 'test_filter_operator');
-
-                if ($field > 0) {
-                    // An empty operator is «gleich»; one not built yet is passed on as it is and never holds (D-1541).
-                    $own[] = ['field' => $field, 'value' => $text($filters, $filter, 'test_filter_value'), 'operator' => $operator === '' || $operator === $equals ? self::EQUALS : $operator];
-                }
-            }
-
-            $book[] = ['id' => $id, 'position' => $int($rules, $id, 'test_rule_position'), 'conditions' => [self::NODE => $int($rules, $id, 'test_rule_node')], 'filters' => $own];
+            $book[] = ['id' => $id, 'position' => $int($id, 'test_rule_position'), 'conditions' => [self::NODE => $int($id, 'test_rule_node')]];
         }
 
         return new self($book);
@@ -78,20 +57,6 @@ final class TestRules
     public function isEmpty(): bool
     {
         return $this->book === [];
-    }
-
-    /** @return list<int> the fields the filters read, so the caller reads each material's values once (CD-7) */
-    public function fields(): array
-    {
-        $out = [];
-
-        foreach ($this->book as $rule) {
-            foreach ($rule['filters'] as $filter) {
-                $out[$filter['field']] = true;
-            }
-        }
-
-        return array_keys($out);
     }
 
     /**

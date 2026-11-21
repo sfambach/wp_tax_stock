@@ -361,6 +361,8 @@ $pruefe(apply_filters('taxmod_record_home', null, 2147483646, 0) === null, 'D-14
 $pruefe(in_array(TaxmodStock\WordPress\Admin\Pages::TEST_RULES, TaxmodStock\WordPress\Plugin::MODELLER_STYLED, true), 'the test rules page loads the modeller\'s styles and scripts (confirm dialog, field refill)');
 $drawn = (new TaxmodStock\WordPress\Admin\TestRulesPage())->render();
 $pruefe(! TaxmodStock\Core\TestRules::isConfigured((new TaxmodStock\WordPress\StockService())->structure()) || (str_contains($drawn, 'value="remove"') && str_contains($drawn, 'name="bulk"')), 'test rules: «Löschen» stands in the bulk actions');
+// His words 09:02: a bin per row and in the open rule, asking first.
+$pruefe(! TaxmodStock\Core\TestRules::isConfigured((new TaxmodStock\WordPress\StockService())->structure()) || (new TaxmodStock\WordPress\StockService())->testRules()->book === [] || str_contains($drawn, 'taxmod-stock-test-rule-remove-'), 'test rules: each row has its bin with a dialog');
 
 printf("\n%s\n", $fehler === 0 ? 'navigation-check: green' : "navigation-check: {$fehler} FAIL");
 exit($fehler === 0 ? 0 : 1);

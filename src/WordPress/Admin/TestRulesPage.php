@@ -59,8 +59,10 @@ final class TestRulesPage
                 // His word 08:21: not already when a rule is created — only once it was saved without a node.
                 $missing = ($rule['conditions'][TestRules::NODE] ?? 0) > 0 || empty($_GET['gespeichert']) ? '' : '<div class="notice notice-error inline"><p>' . esc_html__('Es muss ein Knoten ausgewählt werden. Ohne Knoten greift die Regel nicht.', 'taxmod-stock') . '</p></div>';
 
+                [$bin, $binForm] = $this->removeDialog($chosen, $this->ruleWord($rule), true);
+
                 return $page($missing . ListPage::recordHead(__('Testregel', 'taxmod-stock'), $this->ruleWord($rule), self::url(), __('Testregeln', 'taxmod-stock'), $explain)
-                    . (string) apply_filters('taxmod_record_editor', '', $chosen, self::url(['satz' => $chosen, 'gespeichert' => 1]), [], $this->roots()));
+                    . (string) apply_filters('taxmod_record_editor', '', $chosen, self::url(['satz' => $chosen, 'gespeichert' => 1]), [[$bin]], $this->roots()) . $binForm);
             }
         }
 
@@ -137,10 +139,31 @@ final class TestRulesPage
                 . '<td>' . esc_html($this->nodeWord($rule)) . '</td>'
                 . '<td>' . esc_html(implode(' · ', $when) ?: '—') . '</td>'
                 . '<td>' . esc_html(($rule['conditions'][TestRules::NODE] ?? 0) > 0 ? __('Test nötig', 'taxmod-stock') : '—') . '</td>'
-                . '<td style="text-align:right">' . ListPage::openButton($url) . '</td></tr>';
+                . '<td style="text-align:right">' . ListPage::openButton($url) . ' ' . $this->removeDialog($rule['id'], $this->ruleWord($rule))[0] . '</td></tr>';
         }
 
         return $body;
+    }
+
+    /**
+     * His words 21.11.2026 09:02 «Löschen-Button pro Zeile» and «das Löschen noch in der Regel selbst»: the bin, asking first —
+     * the same dialog as the labels' bin. In the open rule the bin stands in the editor's toolbar, inside the editor's form; forms
+     * do not nest, so its own form stands beside the editor and the dialog's button joins it by `form=`.
+     *
+     * @return array{0: string, 1: string} the bin with its dialog, and the form it submits (empty when the bin carries its own)
+     */
+    private function removeDialog(int $id, string $word, bool $besideForm = false): array
+    {
+        $formId = 'taxmod-stock-test-rule-remove-form-' . $id;
+        $body   = '<p>' . esc_html(sprintf(/* translators: %s: the rule */ __('Testregel «%s» löschen?', 'taxmod-stock'), $word)) . '</p>';
+        $fields = '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"><input type="hidden" name="selected[]" value="' . esc_attr((string) $id) . '">'
+            . wp_nonce_field(self::ACTION, '_wpnonce', false, false);
+        $dialog = ListPage::dialogAction('taxmod-stock-test-rule-remove-' . $id, __('Löschen', 'taxmod-stock'), __('Testregel löschen', 'taxmod-stock'), $body, 'do', 'remove', __('Löschen', 'taxmod-stock'), $besideForm ? $formId : '', ListPage::ICON_DELETE);
+        $form   = static fn (string $inner, string $extra = ''): string => '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '"' . $extra . '>' . $inner . '</form>';
+
+        return $besideForm
+            ? [$dialog, $form($fields, ' id="' . esc_attr($formId) . '" hidden')]
+            : [$form($fields . $dialog, ' style="display:inline"'), ''];
     }
 
     /** The name is optional (his word 21.11.2026): without one the rule is called by its node. @param array{name: string, conditions: array<int, int>} $rule */

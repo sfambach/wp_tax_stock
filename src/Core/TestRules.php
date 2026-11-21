@@ -26,7 +26,7 @@ final class TestRules
     public const EQUALS = 'equals';
 
     /**
-     * @param list<array{id: int, position: int, conditions: array<int, int>, filters: list<array{field: int, value: string, operator: string}>}> $book
+     * @param list<array{id: int, name: string, position: int, conditions: array<int, int>, filters: list<array{field: int, value: string, operator: string}>}> $book
      */
     private function __construct(public readonly array $book)
     {
@@ -69,10 +69,21 @@ final class TestRules
                 }
             }
 
-            $book[] = ['id' => $id, 'position' => $int($rules, $id, 'test_rule_position'), 'conditions' => [self::NODE => $int($rules, $id, 'test_rule_node')], 'filters' => $own];
+            $book[] = ['id' => $id, 'name' => $text($rules, $id, 'label'), 'position' => $int($rules, $id, 'test_rule_position'), 'conditions' => [self::NODE => $int($rules, $id, 'test_rule_node')], 'filters' => $own];
         }
 
         return new self($book);
+    }
+
+    /**
+     * The rules that may hold: a rule needs its node (his word 21.11.2026, «es muss ein Knoten ausgewählt werden») — one still
+     * without, such as a new one not yet saved, never holds, so it cannot send everything to the test.
+     *
+     * @return list<array{id: int, name: string, position: int, conditions: array<int, int>, filters: list<array{field: int, value: string, operator: string}>}>
+     */
+    public function holding(): array
+    {
+        return array_values(array_filter($this->book, static fn (array $rule): bool => ($rule['conditions'][self::NODE] ?? 0) > 0));
     }
 
     public function isEmpty(): bool

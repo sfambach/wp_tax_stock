@@ -457,12 +457,13 @@ final class LogisticsShell
      * tree only the frame changes here — its rows, folding and highlight stay as the modeller draws them. In the frame of
      * another page (html.taxmod-in-frame) the navigation is hidden and the box stands above the content.
      * Stefan 21.11.2026 «den auschnitt für den tree … bitte etwas länger nach unten»: the box is at least 70 % of the window
-     * high even under an open navigation; the column then grows past the window instead of squeezing the tree.
+     * high even under an open navigation, never higher than the window, and only the tree list in it scrolls (D-1575); the column
+     * then grows past the window instead of squeezing the tree.
      */
     private static function sideStyle(): string
     {
         $css = '.taxmod-shell.has-side .taxmod-shell-column{height:auto;min-height:calc(100vh - 52px)}'
-            . '.taxmod-shell-side{flex:1 1 auto;min-height:max(16em,70vh);display:flex;flex-direction:column;background:#fff;border:1px solid #c3c4c7;padding:8px 0 0;overflow:hidden}'
+            . '.taxmod-shell-side{flex:none;height:max(16em,70vh);max-height:max(16em,calc(100vh - 52px));display:flex;flex-direction:column;background:#fff;border:1px solid #c3c4c7;padding:8px 0 0;overflow:hidden}'
             . '.taxmod-shell-side>*{flex:none}'
             . '.taxmod-shell-side>.taxmod-stock-places{flex:1 1 auto;min-height:0;min-width:0;display:flex;flex-direction:column}'
             . '.taxmod-stock-places-head{display:flex;align-items:center;justify-content:space-between;gap:6px;margin:0 8px 6px 0}'

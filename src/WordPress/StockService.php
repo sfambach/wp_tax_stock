@@ -2273,10 +2273,11 @@ final class StockService
     /**
      * D-1519: the print rule that holds for this label — of a material (`material`), of a lot of it (`lot`), of a place (`location`,
      * `$record` the place, `$placeType` its type, D-1563) — or null: no rule holds, or the labels module asks none (an older one answers no rules at all).
+     * `$lot`: the lot a lot label is for (D-1576: where it lies).
      *
      * @return array{id: int, name: string, label: int, copies: int|null, printer: int}|null
      */
-    public function labelRule(string $kind, int $record, int $placeType = 0): ?array
+    public function labelRule(string $kind, int $record, int $placeType = 0, int $lot = 0): ?array
     {
         $labels = $this->labelTemplates();
         if (! method_exists($labels, 'ruleFor')) {
@@ -2306,8 +2307,16 @@ final class StockService
         $group = (int) ($this->things()->nodeOf($record) ?? 0);
         $form  = $this->forms[$record] ?? 0;
 
+        // D-1576: where it lies rides along too, for a filter on the lot's «Lagerort» — from the book, built once (CD-7).
+        $ledger = $this->ledger();
+        $places = [];
+        foreach ($kind === 'lot' && $lot > 0 ? [$lot] : $ledger->lotsOf($record) as $one) {
+            $places = [...$places, ...array_keys(array_filter($ledger->placesOf($one), static fn (float $q): bool => $q > 0.0))];
+        }
+        $lying = $s->hasField('lot_location') ? LabelQuestion::lyingAt($s->field('lot_location'), $places, $this->locationTree()) : [];
+
         // D-1548: the material itself rides along, so the filters of a print rule read its values.
-        return $labels->ruleFor(['record' => $record] + ($kind === 'lot'
+        return $labels->ruleFor(['record' => $record] + $lying + ($kind === 'lot'
             ? LabelQuestion::forLot($s->node('lot'), $this->tree(), $group, $this->formTree(), $form)
             : LabelQuestion::forMaterial($this->tree(), $group, $this->formTree(), $form)));
     }

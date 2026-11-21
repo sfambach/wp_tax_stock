@@ -1194,7 +1194,7 @@ final class StockPage
 
     private function lotLabel(int $thing, int $lot, string $label, string $charge): string
     {
-        [$templates, $first, $origin, $copies] = $this->thingLabel($thing, 'lot');
+        [$templates, $first, $origin, $copies] = $this->thingLabel($thing, 'lot', $lot);
         $chosen   = $first > 0 ? $templates->get($first) : null;
         $template = $chosen === null ? ['no_rule' => true] : $templates->dialog($first, $origin + ['record' => $thing, 'values' => [self::CHARGE_FIELD => sprintf(/* translators: %s: batch number */ __('Charge: %s', 'taxmod-stock'), $charge)]]);
 
@@ -1207,10 +1207,10 @@ final class StockPage
      *
      * @return array{0: \TaxmodLabel\Core\LabelCatalog|\TaxmodStock\WordPress\NoLabels, 1: int, 2: array<string, mixed>, 3: int|null} labels, label, origin, copies
      */
-    private function thingLabel(int $thing, string $kind): array
+    private function thingLabel(int $thing, string $kind, int $lot = 0): array
     {
         $templates = $this->stock->labelTemplates();
-        $rule      = $this->stock->labelRule($kind, $thing);
+        $rule      = $this->stock->labelRule($kind, $thing, 0, $lot);
         if ($rule !== null) {
             return [$templates->preferring($rule['printer']), $rule['label'], self::ruleOrigin($rule), $rule['copies']];
         }

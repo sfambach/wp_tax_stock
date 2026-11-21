@@ -45,7 +45,7 @@ final class ModulePage
     private const AREAS = ['settings', 'outbound', 'print', 'production', 'masterdata'];
 
     /** Pages of the Taxmod menu that are not modules: the modeller's (D-1085 level 1) and ours. */
-    private const NOT_MODULES = [Plugin::PARENT, 'taxmod-inbox', 'taxmod-cleanup', 'taxmod-backup', 'taxmod-settings', Pages::COCKPIT, Pages::INBOUND, Pages::STOCK, Pages::PURCHASE, Pages::SETTINGS, Pages::CONTACTS, Pages::CHOICES, Pages::MODULE];
+    private const NOT_MODULES = [Plugin::PARENT, 'taxmod-inbox', 'taxmod-cleanup', 'taxmod-backup', 'taxmod-settings', Pages::COCKPIT, Pages::INBOUND, Pages::STOCK, Pages::PURCHASE, Pages::SETTINGS, Pages::CONTACTS, Pages::CHOICES, Pages::TEST_RULES, Pages::MODULE];
 
     /** Kept from the D-1053 navigation: the eBay shipping page stands under «Warenausgang», the other modules under «Einstellungen». */
     private const OUTBOUND = ['taxebay-shipping'];

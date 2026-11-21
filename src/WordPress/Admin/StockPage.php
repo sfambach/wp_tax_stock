@@ -1707,7 +1707,7 @@ final class StockPage
             $html .= '<p class="description">' . esc_html__('Der erste ist der Vorschlag im Wareneingang und beim Einbuchen; leer lassen entfernt einen.', 'taxmod-stock') . '</p></td></tr>';
         }
 
-        $html .= '<tr><th>' . esc_html__('Mindestbestand', 'taxmod-stock') . '</th><td>' . ListPage::field(InputKind::Number, 'minimum', (string) $value('lager_min'), ['min' => 0]) . '</td></tr>'
+        $html .= '<tr><th>' . esc_html__('Mindestbestand', 'taxmod-stock') . '</th><td>' . ListPage::quantity('minimum', $this->stock->unitWords([$thing])[$thing] ?? '', (string) $value('lager_min'), ['pattern' => '[0-9]*']) . '</td></tr>'
             . '<tr><th>' . esc_html__('Einzelstück', 'taxmod-stock') . '</th><td>' . ListPage::field(InputKind::Tick, 'single', '1', ['checked' => (string) $value('lager_single') === '1']) . '</td></tr>';
 
         if ($s->hasField('lager_use') && $this->stock->uses() !== []) {
@@ -2781,9 +2781,7 @@ final class StockPage
         $controls = $this->bookOutControls ??= $this->stock->consumptionControls();
         $unit     = $this->rowFacts['unit'][$thing];
         $rows     = [
-            ['label' => __('Menge', 'taxmod-stock'), 'control' => $controls['quantity'] !== ''
-                ? $controls['quantity'] . ($unit === '' ? '' : ' <span class="taxmod-stock-unit">' . esc_html($unit) . '</span>')
-                : ListPage::quantity('quantity', $unit, '', ['required' => 'required']),
+            ['label' => __('Menge', 'taxmod-stock'), 'control' => $this->consumptionQuantity($controls['quantity'], $unit),
                 /* translators: %s: quantity at this place */
                 'hint' => sprintf(__('An diesem Ort liegen %s.', 'taxmod-stock'), ListPage::number($quantity))],
             $this->purposeRow($place, $switch),
@@ -3087,11 +3085,14 @@ final class StockPage
         }
 
         Acts::ajaxNonce(self::THING_UNIT);
-        $thing = absint($_GET['thing'] ?? 0);
+        $picked = absint($_GET['thing'] ?? 0);
 
-        if ($thing <= 0) {
+        if ($picked <= 0) {
             wp_send_json_error([], 400);
         }
+
+        // The Verbrauch chooser picks a lot (D-1299); its unit is its material's.
+        $thing = $this->stock->ledger()->thingOf($picked) ?? $picked;
 
         wp_send_json_success(['unit' => $this->stock->unitWords([$thing])[$thing] ?? '']);
     }
@@ -4700,6 +4701,22 @@ final class StockPage
         );
     }
 
+    /**
+     * D-1298 keeps the modeller's own control for «Menge»; D-1504 and his finding 21.11.2026 «Die Menge ist wieder nicht
+     * einheitswert»: it stands in the one quantity frame with the unit beside it, which the chooser's pick fills ({@see self::unitScript()}).
+     */
+    private function consumptionQuantity(string $control, string $unit): string
+    {
+        if ($control === '') {
+            return ListPage::quantity('quantity', $unit, '', ['required' => 'required']);
+        }
+
+        // The quantity frame's width and alignment for the modeller's input, which carries no class of its own.
+        $control = preg_replace('/<input (?![^>]*class=)/', '<input class="taxmod-quantity-value" ', $control, 1) ?? $control;
+
+        return '<span class="taxmod-quantity">' . $control . '<span class="taxmod-quantity-unit taxmod-stock-unit">' . esc_html($unit) . '</span></span>';
+    }
+
     private function consumptionForm(int $preset, int $presetLot, int $presetPlace = 0): string
     {
         $ledger = $this->stock->ledger();
@@ -4712,7 +4729,9 @@ final class StockPage
             $word = $hit['id'] === $lot ? $hit['word'] : $word;
         }
         $controls = $this->stock->consumptionControls('taxmod-stock-consumption');
-        $unit     = $thing > 0 ? ($this->stock->unitWords([$thing])[$thing] ?? '') : '';
+        // A material named without a lot still says its unit; the chooser's pick says it after.
+        $counted  = $thing > 0 ? $thing : $preset;
+        $unit     = $counted > 0 ? ($this->stock->unitWords([$counted])[$counted] ?? '') : '';
         $pack     = $thing > 0 ? ($this->stock->packsOf([$thing])[$thing] ?? null) : null;
 
         // D-1039: «Ausbuchen» on a row of the Bestand tab takes from that row's place.
@@ -4728,9 +4747,7 @@ final class StockPage
                 ['label' => __('Pins je Stück', 'taxmod-stock'), 'for' => 'taxmod-stock-piece-pins', 'control' => ListPage::field(InputKind::Number, 'piece_pins', (string) $pack->content, ['id' => 'taxmod-stock-piece-pins', 'min' => 1, 'max' => $pack->content, 'step' => 1, 'required' => true]),
                     'hint' => __('Jedes Stück ganz aus einer Leiste; was übrig bleibt, kommt als eigener Posten zurück.', 'taxmod-stock')],
             ] : [
-                ['label' => __('Menge', 'taxmod-stock'), 'control' => $controls['quantity'] !== ''
-                    ? $controls['quantity'] . ($unit === '' ? '' : ' <span class="taxmod-stock-unit">' . esc_html($unit) . '</span>')
-                    : ListPage::quantity('quantity', $unit, '', ['required' => 'required'])],
+                ['label' => __('Menge', 'taxmod-stock'), 'control' => $this->consumptionQuantity($controls['quantity'], $unit)],
             ]),
             $this->purposeRow($presetPlace),
         ];

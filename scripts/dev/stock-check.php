@@ -1917,6 +1917,63 @@ $s      = new StockService();
 $pruefe($ziel > 0 && is_array($rein) && $s->ledger()->restAt($amTest[1] ?? 0, $ziel) > 0.0 && $s->ledger()->restAt($amTest[1] ?? 0, $weT) === 0.0 && $s->lotsToStore() === [],
     'D-1503: «Einlagern» books the tested lot by an Umbuchung to where its material is stored');
 
+// D-1541: test rules — what needs a test is said by rules (node + filters «Feld · Wert»), the modeller's one rule book decides;
+// none holds → «kein Test». Until the first rule D-1259's group property decides; «Gruppen übernehmen» makes its groups rules.
+$trRoh = wp_get_ability('taxmod/apply')->execute(['changes' => [
+    ['op' => 'create_node', 'ref' => 'tr', 'name' => '__Testregeln', 'parent' => (string) $r['lo']],
+    ['op' => 'create_node', 'ref' => 'trf', 'name' => '__Testregel-Filter', 'parent' => (string) $r['lo']],
+    $field('tr_pos', '@tr', '__Position', $int, 'composition', '0..1'),
+    $field('tr_knoten', '@tr', '__Knoten', (string) $r['mat'], 'aggregation', '0..1'),
+    $field('tr_filter', '@tr', '__Filter', '@trf', 'composition', '0..*'),
+    $field('trf_feld', '@trf', '__Feld', $int, 'composition', '0..1'),
+    $field('trf_wert', '@trf', '__Wert', 1175, 'composition', '0..1'),
+    $field('trf_op', '@trf', '__Operator', 1175, 'composition', '0..1'),
+]]);
+$tr  = is_array($trRoh) ? (array) ($trRoh['refs'] ?? []) : [];
+$opt = get_option('taxmod_stock_structure');
+if (is_array($opt) && isset($tr['trf_op'])) {
+    $opt['nodes']  += ['test_rule' => (int) $tr['tr'], 'test_rule_filter' => (int) $tr['trf']];
+    $opt['fields'] += ['test_rule_position' => (int) $tr['tr_pos'], 'test_rule_node' => (int) $tr['tr_knoten'], 'test_rule_filters' => (int) $tr['tr_filter'],
+        'test_filter_field' => (int) $tr['trf_feld'], 'test_filter_value' => (int) $tr['trf_wert'], 'test_filter_operator' => (int) $tr['trf_op']];
+    update_option('taxmod_stock_structure', $opt);
+}
+$s       = new StockService();
+$gruppe  = (int) ($s->nodesOf([$platine])[$platine] ?? 0);
+$andere  = (int) $r['t1'];
+$vorher  = $s->testRequired([$platine, $andere]);
+$s->setGroupProperty($gruppe, StockService::TEST_PROPERTY, true);
+$s       = new StockService();
+$fallback = $s->testRequired([$platine]);
+$vorschl = $s->testRuleProposals();
+$_GET    = ['page' => TaxmodStock\WordPress\Admin\TestRulesPage::PAGE];
+$leer    = (new TaxmodStock\WordPress\Admin\TestRulesPage())->render();
+$uebern  = (new StockService())->takeOverTestRules();
+$s       = new StockService();
+$buch    = $s->testRules()->book;
+$regel   = (int) (array_values(array_filter($buch, static fn (array $b): bool => ($b['conditions'][TaxmodStock\Core\TestRules::NODE] ?? 0) === $gruppe))[0]['id'] ?? 0);
+(new StockService())->setGroupProperty($gruppe, StockService::TEST_PROPERTY, null);
+$s       = new StockService();
+$nachher = $s->testRequired([$platine, $andere]);
+$liste   = (new TaxmodStock\WordPress\Admin\TestRulesPage())->render();
+$pruefe(isset($tr['trf_op']) && ($vorher[$platine] ?? null) === false && ($fallback[$platine] ?? false) && in_array($gruppe, $vorschl, true) && str_contains($leer, 'Gruppen übernehmen (' . count($vorschl) . ')') && str_contains($leer, 'Neue Regel')
+    && $uebern === count($vorschl) && count($buch) === count($vorschl) && $regel > 0
+    && ($nachher[$platine] ?? false) && ($nachher[$andere] ?? null) === ($gruppe === (int) ($s->nodesOf([$andere])[$andere] ?? 0)) && str_contains($liste, 'Test nötig') && ! str_contains($liste, 'Gruppen übernehmen'),
+    'D-1541: until the first rule the group property decides; «Gruppen übernehmen» makes the marked group a rule in one act, then the rule decides');
+// The board's own name field, as the rule book reads the material's values.
+$eigene  = (new Taxmod\WordPress\ModelDoor())->valuesOf([$platine])[$platine] ?? [];
+$lblFeld = (string) array_key_first($eigene);
+$name    = (string) (($eigene[(int) $lblFeld] ?? [''])[0] ?? '');
+// The filter on every rule, so no other rule holds for the board without it; a composition's parts are written with their values.
+$filter  = static fn (string $wert): mixed => wp_get_ability('taxmod/apply')->execute(['changes' => array_map(static fn (array $b, int $i): array => ['op' => 'set_values', 'record' => (string) $b['id'], 'values' => [
+    (string) $tr['tr_filter'] => ['f' . $i => [(string) $tr['trf_feld'] => $lblFeld, (string) $tr['trf_wert'] => $wert]],
+]], $buch, array_keys($buch))]);
+$fx      = $filter($name);
+$mit     = (new StockService())->testRequired([$platine]);
+$fy      = $filter('__passt nicht');
+$ohne    = (new StockService())->testRequired([$platine]);
+$pruefe($regel > 0 && $name !== '' && ! is_wp_error($fx) && ! is_wp_error($fy) && ($mit[$platine] ?? false) === true && ($ohne[$platine] ?? true) === false,
+    'D-1541: a filter «Feld · Wert» narrows the rule: its own value → «Test nötig»; a second filter with a value it lacks → «kein Test» (every filter must hold)');
+
 if ($etikettUebersprung > 0) {
     echo "  skip Etikettenmodul nicht aktiv, {$etikettUebersprung} Etiketten-Zusagen übersprungen (D-1296)\n";
 }

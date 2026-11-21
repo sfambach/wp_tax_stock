@@ -126,6 +126,8 @@ final class LogisticsShell
                 // D-1085: the business settings inside the navigation; the technical structure stays on the modeller's Configuration.
                 $item('basics', __('Grundeinstellungen', 'taxmod-stock'), Pages::SETTINGS),
                 ...self::modules('settings'),
+                // D-1541: what needs a test after the goods receipt — the same rule technique as the print rules.
+                $item('test-rules', __('Testregeln', 'taxmod-stock'), Pages::TEST_RULES),
                 // His words 2026-11-03: «pack mal das menü drucken unter einstellungen», «warum hat das nur zwei ebenen», «kannst du
                 // das so bauen das es n ebenen zulässt» — an item's `path` puts it any depth below its area (D-1121).
                 // D-1296, his report 2026-11-18 «etiketten gibts jetzt zweimal als menüpunkt», «drucker auch»: labels, printers and

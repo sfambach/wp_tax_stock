@@ -232,7 +232,8 @@ final class SettingsPage
 
         // D-1521: name | field | explanation in three columns.
         return '<h2>' . esc_html__('Test nach dem Wareneingang', 'taxmod-stock') . '</h2><input type="hidden" name="taxmod_stock_tests_sent" value="1">'
-            . '<p>' . esc_html__('Gebrauchte Bestandsposten aus Gruppen mit «Nach Wareneingang testen» (gesetzt in der Lager-Ansicht der Gruppe, vererbt nach unten) stehen nach dem Wareneingang unter Logistik › Wareneingang › Test; Neuware nicht.', 'taxmod-stock') . '</p>'
+            // D-1541: what needs a test is said by the test rules; until the first rule, by the group property (D-1259).
+            . '<p>' . esc_html__('Gebrauchte Bestandsposten, für die eine Testregel passt (Einstellungen › Testregeln), stehen nach dem Wareneingang unter Logistik › Wareneingang › Test; Neuware nicht. Solange es keine Regel gibt, gilt noch «Nach Wareneingang testen» an der Gruppe.', 'taxmod-stock') . '</p>'
             . ListPage::settings([
                 ['label' => __('Wareneingang ab', 'taxmod-stock'), 'control' => ListPage::field(InputKind::Moment, 'taxmod_stock_inbound_since', (string) $stock->inboundSince(), ['note' => 'date']),
                     'hint' => __('Ältere Bestellungen gelten als Kaufhistorie und stehen gleich unter «Archiviert».', 'taxmod-stock')],

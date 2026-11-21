@@ -120,7 +120,14 @@ $pruefe(array_filter($settings, static fn (array $item): bool => str_starts_with
 // D-1512 (replaces the place D-1129 gave it, PR-9): Lagerstruktur left Einstellungen for Stammdaten.
 $pruefe(array_slice(array_column($settings, 'key'), 0, 2) === ['basics', 'module-__navcheck-dhl'] && array_filter(array_slice(array_column($settings, 'key'), 2), static fn (string $key): bool => ! str_starts_with($key, 'module-') && ! str_starts_with($key, 'rules-') && ! in_array($key, ['field-catalogue', 'user'], true)) === [], 'Einstellungen: Grundeinstellungen, then the module — no Lagerstruktur any more (D-1512) (' . implode(', ', array_column($settings, 'key')) . ')');
 $lagerstruktur = array_values(array_filter($stammdaten, static fn (array $item): bool => ($item['path'] ?? []) === ['Lagerstruktur']));
-$pruefe(array_column($lagerstruktur, 'key') === ['structure', 'place-types'] && ($lagerstruktur[1]['tab'] ?? '') === 'platzarten' && ($stammdaten[2]['key'] ?? '') === 'structure', 'D-1512: Layout and Platzarten stand in the group «Lagerstruktur» under Stammdaten, after Auswahllisten');
+$pruefe(array_column($lagerstruktur, 'key') === ['structure', 'place-types'] && ($lagerstruktur[1]['tab'] ?? '') === 'platzarten' && array_search('structure', array_column($stammdaten, 'key'), true) === array_search('choice-lists', array_column($stammdaten, 'key'), true) + 1, 'D-1512: Layout and Platzarten stand in the group «Lagerstruktur» under Stammdaten, after Auswahllisten');
+// D-1574 (changes the place check above from «third» to «after Auswahllisten», PR-9): Materialgruppen stand after Material, each the
+// modeller's node page scoped to one branch «Material steht in».
+$gruppen = array_values(array_filter($stammdaten, static fn (array $item): bool => str_starts_with((string) $item['key'], 'material-groups')));
+$roots   = (new \TaxmodStock\WordPress\StockService())->materialRoots();
+$pruefe(count($gruppen) === count($roots) && array_search($gruppen[0]['key'] ?? '', array_column($stammdaten, 'key'), true) === ($roots === [] ? false : 1)
+    && array_filter($gruppen, static fn (array $item): bool => ! str_contains(\TaxmodStock\WordPress\Admin\LogisticsShell::url($item), 'page=taxmod&') || ! str_contains(\TaxmodStock\WordPress\Admin\LogisticsShell::url($item), 'taxmod_scope=')) === [],
+    'D-1574: one «Materialgruppen» item per material branch, after Material, each opening the modeller scoped to it (' . count($roots) . ' branches)');
 // D-1558 (replaces D-1541's place, PR-9, visible change): Einstellungen › Regeln holds one item per rule type, each opening the one
 // rules page with that type; Stammdaten › Test › Testregeln opens the same page at the test rules.
 $regeln = array_values(array_filter($settings, static fn (array $item): bool => str_starts_with((string) $item['key'], 'rules-')));

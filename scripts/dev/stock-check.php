@@ -1935,7 +1935,11 @@ $trRoh = wp_get_ability('taxmod/apply')->execute(['changes' => [
     $field('tr_filter', '@tr', '__Filter', '@trf', 'composition', '0..*'),
     $field('trf_feld', '@trf', '__Feld', $int, 'composition', '0..1'),
     $field('trf_wert', '@trf', '__Wert', 1175, 'composition', '0..1'),
-    $field('trf_op', '@trf', '__Operator', 1175, 'composition', '0..1'),
+    // As live (act 600561): the operator is a reference to a constant of a choice, «gleich» = values.operator_equals.
+    ['op' => 'create_node', 'ref' => 'trop', 'name' => '__Testoperatoren', 'parent' => (string) $r['lo'], 'class' => 'Choice'],
+    ['op' => 'create_node', 'ref' => 'trop_eq', 'name' => '__gleich', 'parent' => '@trop', 'class' => 'Constant'],
+    ['op' => 'create_node', 'ref' => 'trop_ne', 'name' => '__ungleich', 'parent' => '@trop', 'class' => 'Constant'],
+    $field('trf_op', '@trf', '__Operator', '@trop', 'aggregation', '0..1'),
 ]]);
 $tr  = is_array($trRoh) ? (array) ($trRoh['refs'] ?? []) : [];
 $opt = get_option('taxmod_stock_structure');
@@ -1943,6 +1947,7 @@ if (is_array($opt) && isset($tr['tr_knoten'])) {
     $opt['nodes']  += ['test_rule' => (int) $tr['tr'], 'test_rule_filter' => (int) $tr['trf']];
     $opt['fields'] += ['test_rule_position' => (int) $tr['tr_pos'], 'test_rule_node' => (int) $tr['tr_knoten'], 'test_rule_filters' => (int) $tr['tr_filter'],
         'test_filter_field' => (int) $tr['trf_feld'], 'test_filter_value' => (int) $tr['trf_wert'], 'test_filter_operator' => (int) $tr['trf_op']];
+    $opt['values'] += ['operator_equals' => (int) $tr['trop_eq']];
     update_option('taxmod_stock_structure', $opt);
 }
 $s       = new StockService();
@@ -1969,15 +1974,22 @@ $pruefe(in_array($gruppe, $vorschl, true) && str_contains($leer, 'Gruppen übern
 $eigene  = (new Taxmod\WordPress\ModelDoor())->valuesOf([$platine])[$platine] ?? [];
 $lblFeld = (string) array_key_first($eigene);
 $name    = (string) (($eigene[(int) $lblFeld] ?? [''])[0] ?? '');
-$filter  = static fn (string $wert): mixed => wp_get_ability('taxmod/apply')->execute(['changes' => array_map(static fn (array $b, int $i): array => ['op' => 'set_values', 'record' => (string) $b['id'], 'values' => [
-    (string) $tr['tr_filter'] => ['f' . $i => [(string) $tr['trf_feld'] => $lblFeld, (string) $tr['trf_wert'] => $wert]],
+$filter  = static fn (string $wert, string $op): mixed => wp_get_ability('taxmod/apply')->execute(['changes' => array_map(static fn (array $b, int $i): array => ['op' => 'set_values', 'record' => (string) $b['id'], 'values' => [
+    (string) $tr['tr_filter'] => ['f' . $i => [(string) $tr['trf_feld'] => $lblFeld, (string) $tr['trf_wert'] => $wert, (string) $tr['trf_op'] => $op]],
 ]], $buch, array_keys($buch))]);
-$fx      = $filter($name);
+$fx      = $filter($name, (string) ($tr['trop_eq'] ?? ''));
 $mit     = (new StockService())->testRequired([$platine]);
-$fy      = $filter('__passt nicht');
+$gelesen = array_merge(...array_map(static fn (array $b): array => $b['filters'], (new StockService())->testRules()->book));
+$fy      = $filter('__passt nicht', (string) ($tr['trop_eq'] ?? ''));
 $ohne    = (new StockService())->testRequired([$platine]);
-$pruefe($name !== '' && ! is_wp_error($fx) && ! is_wp_error($fy) && ($mit[$platine] ?? false) === true && ($ohne[$platine] ?? true) === false,
-    'D-1541: a filter «Feld · Wert» narrows the rule: its own value → «Test nötig»; a second filter with a value it lacks → «kein Test» (every filter must hold)');
+$pruefe($name !== '' && ! is_wp_error($fx) && ! is_wp_error($fy) && ($mit[$platine] ?? false) === true && ($ohne[$platine] ?? true) === false
+    && $gelesen !== [] && array_unique(array_column($gelesen, 'operator')) === [TaxmodStock\Core\TestRules::EQUALS],
+    'D-1541: a filter «Feld · gleich · Wert» (operator a reference to the constant operator_equals) narrows the rule: its own value → «Test nötig»; a second filter with a value it lacks → «kein Test» (every filter must hold)');
+// Another constant of the operator choice is not built: it never holds, so the rule with it does not either.
+wp_get_ability('taxmod/apply')->execute(['changes' => array_map(static fn (array $b): array => ['op' => 'set_values', 'record' => (string) $b['id'], 'values' => [(string) $tr['tr_filter'] => []]], $buch)]);
+$fz      = $filter($name, (string) ($tr['trop_ne'] ?? ''));
+$anders  = (new StockService())->testRequired([$platine]);
+$pruefe(! is_wp_error($fz) && ($anders[$platine] ?? true) === false, 'D-1541: an operator other than «gleich» never holds');
 wp_get_ability('taxmod/apply')->execute(['changes' => array_map(static fn (array $b): array => ['op' => 'set_values', 'record' => (string) $b['id'], 'values' => [(string) $tr['tr_knoten'] => (string) $tr['unter']]], $buch)]);
 $weg     = (new StockService())->testRequired([$platine]);
 $pruefe(($weg[$platine] ?? true) === false, 'D-1541: rules exist but none holds for the board → «kein Test», the group property no longer counts');

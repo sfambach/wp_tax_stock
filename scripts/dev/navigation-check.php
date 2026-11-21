@@ -135,6 +135,16 @@ if ($roots !== []) {
     $pruefe(str_contains($seite, 'id="taxmod-node-' . $roots[0] . '"') && str_contains($seite, 'page=' . \TaxmodStock\WordPress\Admin\Pages::MATERIAL_GROUPS),
         'D-1574, Live-Check 15: the page draws the modeller\'s tree of the first material branch, and its links come back to this page');
     $pruefe(in_array(\TaxmodStock\WordPress\Admin\Pages::MATERIAL_GROUPS, (array) apply_filters('taxmod_node_screen_hosts', []), true), 'D-1574: the page is registered as a host of the node page, so the modeller takes it as the way back');
+    $back  = add_query_arg(['page' => \TaxmodStock\WordPress\Admin\Pages::MATERIAL_GROUPS, 'taxmod_node' => (string) $roots[0], 'taxmod_scope' => (string) $roots[0], 'taxmod_collapsed' => 'none'], admin_url('admin.php'));
+    $_GET[\Taxmod\WordPress\Admin\ListPage::SHOW_ALL] = '1';
+    $reiter = (array) apply_filters('taxmod_scoped_tabs', [], $roots[0], $roots[0], $back);
+    unset($_GET[\Taxmod\WordPress\Admin\ListPage::SHOW_ALL]);
+    $mat    = array_values(array_filter($reiter, static fn (mixed $t): bool => is_array($t) && ($t['key'] ?? '') === 'materials'))[0] ?? [];
+    $pruefe(($mat['label'] ?? '') === 'Materialien' && str_contains((string) ($mat['html'] ?? ''), 'name="host_return"')
+        && ! str_contains((string) ($mat['html'] ?? ''), 'page=' . \TaxmodStock\WordPress\Admin\StockPage::PAGE . '&amp;tab=gruppenbestand'),
+        'D-1574 (Prüftor C): the scoped node page gets the tab «Materialien» — the group\'s list, its bulk form going back to Materialgruppen, no address on «Gruppenbestand»');
+    $pruefe(array_filter((array) apply_filters('taxmod_scoped_tabs', [], $roots[0], 999999999, $back), static fn (mixed $t): bool => is_array($t) && ($t['key'] ?? '') === 'materials') === [],
+        'D-1574: a branch that is no «Material steht in» gets no «Materialien»');
 }
 // D-1558 (replaces D-1541's place, PR-9, visible change): Einstellungen › Regeln holds one item per rule type, each opening the one
 // rules page with that type; Stammdaten › Test › Testregeln opens the same page at the test rules.

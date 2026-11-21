@@ -229,6 +229,24 @@ final class Plugin
         // D-1235, D-1238: the print thread asks for one material, lot or place label, as the dialog would build it.
         // D-1574, Prüftor zu Live-Check 15: the Materialgruppen page is a host of the modeller's node page — its acts come back here, also from admin-post.
         add_filter('taxmod_node_screen_hosts', static fn (mixed $hosts): array => [...(is_array($hosts) ? $hosts : []), Pages::MATERIAL_GROUPS]);
+        // D-1574 (Prüftor C): on Stammdaten › Materialgruppen the chosen group's materials are the first tab — the «Gruppenbestand» list,
+        // its addresses those of the node page (the modeller's way back carries tree, node and scope).
+        add_filter('taxmod_scoped_tabs', static function (mixed $tabs, int $node = 0, int $scope = 0, string $back = ''): array {
+            $tabs = is_array($tabs) ? $tabs : [];
+
+            try {
+                if ($node <= 0 || ! in_array($scope, (new StockService())->materialRoots(), true)) {
+                    return $tabs;
+                }
+            } catch (\TaxmodStock\Core\StockError) {
+                return $tabs;
+            }
+
+            parse_str((string) parse_url($back, PHP_URL_QUERY), $query);
+            $host = ['page' => Pages::MATERIAL_GROUPS, 'taxmod_scoped_tab' => 'materials'] + array_map('strval', array_filter($query, 'is_scalar'));
+
+            return [...$tabs, ['key' => 'materials', 'label' => __('Materialien', 'taxmod-stock'), 'html' => (new StockPage())->groupMaterials($node, $host)]];
+        }, 10, 4);
         add_filter('taxmod_label_for', static fn (?array $found, string $prefix, int $id, int $template, int $printer): ?array => $found ?? (in_array($prefix, StockPage::LABEL_PREFIXES, true) ? (new StockPage())->labelFor($prefix, $id, $template, $printer) : null), 10, 5);
         // D-1259: what a group of material carries for the stock, inherited down the tree and set in its Lager view.
         add_filter('taxmod_node_properties', static fn (array $properties): array => $properties + [

@@ -61,6 +61,9 @@ final class StockPage
     /** Whether this page drew the lot-mode words already ({@see self::lotWords()}). */
     private bool $lotWordsDrawn = false;
 
+    /** @var array<string, string> D-1574: the query of the page this list is drawn on, when not this one ({@see groupMaterials()}) */
+    private array $host = [];
+
     /** The codes «print-label» may ask this page for (D-1235, D-1238): material, lot, place, box. */
     public const LABEL_PREFIXES = ['M', 'P', 'O', 'K'];
 
@@ -79,6 +82,8 @@ final class StockPage
     /** The notice after a booking; the goods receipt cockpit shows it too, when the booking came from there. */
     public const NOTICE     = 'taxmod_stock_notice';
     private const LAST_LIST = 'taxmod_stock_last_list_';
+    /** D-1574: the hosted list's way back, posted with its bulk form. */
+    private const HOST_RETURN = 'host_return';
     /** The address word of a search begun on the page «Bestand» ({@see self::asksStock()}). */
     public const ASKS_STOCK = 'bestand';
     /** D-1438: the Umbuchung held back by the question «Platz leer?», per user, until the page draws it. */
@@ -508,6 +513,12 @@ final class StockPage
                     ? ['material', ['thing' => $thing, 'view' => 'bestand']] : ['reservierungen', []],
                 default             => [$kind, []],
             };
+        }
+
+        // D-1574: a list drawn on Stammdaten › Materialgruppen goes back there — after success and refusal alike, the notice is kept.
+        if (($hosted = self::hostReturn((string) ($_POST[self::HOST_RETURN] ?? ''))) !== '') {
+            wp_safe_redirect($hosted);
+            exit;
         }
 
         // D-1377, his word 2026-11-15 «nach ausbuchen des verbrauch sollte der zurück springen woher er kam»: a booking goes back
@@ -4673,6 +4684,35 @@ final class StockPage
     }
 
     /** D-1377: a page of this admin to go back to, '' for anything else. */
+    /**
+     * D-1574: the materials of one group as the tab «Materialien» on Stammdaten › Materialgruppen — the «Gruppenbestand» list with
+     * its search, filters, paging and bulk «In Gruppe verschieben» (D-1073), every address on the host page.
+     *
+     * @param array<string, string> $host the host page's query: page, taxmod_node, taxmod_scope, taxmod_scoped_tab
+     */
+    public function groupMaterials(int $group, array $host): string
+    {
+        $page       = clone $this;
+        $page->host = array_filter($host, static fn (string $value): bool => $value !== '');
+
+        return $page->materialList($page->listRequest(), true, $group);
+    }
+
+    /** @return array<string, string> page and tab of a list's addresses: this page's tab, or the host page's own query (D-1574) */
+    private function hostQuery(string $tab): array
+    {
+        return $this->host === [] ? ['page' => self::PAGE, 'tab' => $tab] : $this->host;
+    }
+
+    /** D-1574: only an address on the Materialgruppen page is taken as the way back of a hosted list. */
+    private static function hostReturn(string $raw): string
+    {
+        $url = self::returnUrl($raw);
+        parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
+
+        return $url !== '' && ($query['page'] ?? '') === Pages::MATERIAL_GROUPS ? $url : '';
+    }
+
     private static function returnUrl(string $raw): string
     {
         $url = esc_url_raw(rawurldecode(wp_unslash($raw)));
@@ -5377,8 +5417,7 @@ final class StockPage
     private function listUrl(string $tab, StockList $list, array $change): string
     {
         $query = array_filter([
-            'page'    => self::PAGE,
-            'tab'     => $tab,
+            ...$this->hostQuery($tab),
             's'       => trim($list->search),
             'filter'  => $list->filter,
             'orderby' => $list->orderBy === 'name' ? '' : $list->orderBy,
@@ -5399,8 +5438,7 @@ final class StockPage
     private function tools(string $tab, StockList $list, array $filters, array $keep, string $placeholder, string $count, string $more = '', array $asking = []): string
     {
         $hidden = array_filter(array_merge([
-            'page'    => self::PAGE,
-            'tab'     => $tab,
+            ...$this->hostQuery($tab),
             'orderby' => $list->orderBy === 'name' ? '' : $list->orderBy,
             'order'   => $list->descending ? 'desc' : '',
         ], $keep));
@@ -5409,7 +5447,8 @@ final class StockPage
         // a dialog joining the bulk form (form=) reaches the handler with the rows ticked.
         $bar = str_replace(
             ['name="action" id="' . self::BULK_FORM . '-action"', '</form>'],
-            ['name="bulk" id="' . self::BULK_FORM . '-action"', '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"></form>'],
+            ['name="bulk" id="' . self::BULK_FORM . '-action"', '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
+                . ($this->host === [] ? '' : '<input type="hidden" name="' . self::HOST_RETURN . '" value="' . esc_attr(rawurlencode($this->listUrl($tab, $list, []))) . '">') . '</form>'],
             // D-1462: the search stands in the bar's row, on the right — put in after, so its GET form keeps no «action».
             ListPage::bulkBar(self::BULK_FORM, self::ACTION, [], $count, ListPage::filters(self::FILTER_FORM, $filters) . $more, true, $asking, self::SEARCH_SPOT)
         );

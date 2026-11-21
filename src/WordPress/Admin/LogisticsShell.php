@@ -448,7 +448,8 @@ final class LogisticsShell
             . '.taxmod-shell-nav a.is-current{font-weight:600;border-left-color:#2271b1;background:#f0f6fc}'
             . '.taxmod-shell-nav a:focus{box-shadow:0 0 0 2px #2271b1;outline:none}'
             . '.taxmod-shell-mode{margin:10px 12px 0;padding-top:8px;border-top:1px solid #dcdcde}.taxmod-shell-mode+.taxmod-shell-mode{border-top:0;padding-top:0;margin-top:4px}'
-            . '.taxmod-shell-main{overflow-x:auto}.taxmod-shell-main>.wrap{margin-top:0}'
+            // Live-Check 16: the frame of what scrolls here, or a clipped screen-reader text inside escapes to #wpbody and widens the page.
+            . '.taxmod-shell-main{overflow-x:auto;position:relative}.taxmod-shell-main>.wrap{margin-top:0}'
             . '.taxmod-shell-back{margin:0 0 6px}.taxmod-shell-back a{text-decoration:none;font-weight:600}'
             // The narrower column leaves fixed layout too little room for a header without a width.
             . '.taxmod-shell-main .wp-list-table{table-layout:auto}'
@@ -475,6 +476,8 @@ final class LogisticsShell
             . '.wp-core-ui .taxmod-stock-places-head .button-small{padding:0 6px;font-size:12px;white-space:nowrap}'
             . '.taxmod-stock-places-top{margin:0 8px 4px 12px;padding:3px 6px;border:1px dashed #c3c4c7;border-radius:3px;color:#50575e;font-size:12px}'
             . '.taxmod-shell-side .taxmod-record-tree,.taxmod-shell-side .taxmod-record-tree>.taxmod-chooser{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;width:100%;min-width:0}'
+            // Live-Check 15 (D-1575): the record tree's own dialog limit (60vh, overflow) would be a second scroller here; only the tree list scrolls.
+            . '.taxmod-shell-side .taxmod-record-tree{max-height:none;overflow:hidden;padding:0}'
             . '.taxmod-shell-side .taxmod-chooser-tree{flex:1 1 auto;min-height:0;max-height:none;overflow-x:hidden;overflow-y:auto;border:0;border-top:1px solid #dcdcde;border-radius:0;padding:0;margin:0}'
             . '.taxmod-shell-side .taxmod-tree-search{padding:6px 8px}.taxmod-shell-side .taxmod-tree-filter{min-width:0;width:100%}'
             . '.taxmod-shell-side .taxmod-tree-row{padding:1px 4px}'

@@ -11,8 +11,8 @@ final class PlaceFunctionsTest extends TestCase
     private static function functions(): PlaceFunctions
     {
         return PlaceFunctions::from(
-            [1 => 70, 2 => 0, 3 => 0, 4 => 71, 5 => 0],
-            [70 => PlaceFunctions::OUTBOUND, 71 => PlaceFunctions::INBOUND],
+            [1 => [70, 72], 2 => [], 3 => [], 4 => [71], 5 => []],
+            [70 => PlaceFunctions::OUTBOUND, 71 => PlaceFunctions::INBOUND, 72 => PlaceFunctions::PACK],
             static fn (int $place): array => $place === 1 ? [2] : [],
         );
     }
@@ -23,6 +23,7 @@ final class PlaceFunctionsTest extends TestCase
 
         self::assertSame([1, 2], $functions->with(PlaceFunctions::OUTBOUND));
         self::assertSame([4], $functions->with(PlaceFunctions::INBOUND));
+        self::assertSame([1, 2], $functions->with(PlaceFunctions::PACK), 'functions are flags: one place is Warenausgang and Packplatz');
         self::assertTrue($functions->is(2, PlaceFunctions::OUTBOUND));
         self::assertFalse($functions->is(3, PlaceFunctions::OUTBOUND), 'a place without a function is a storage place');
         self::assertSame([], PlaceFunctions::none()->with(PlaceFunctions::OUTBOUND));
@@ -49,7 +50,7 @@ final class PlaceFunctionsTest extends TestCase
         $below   = [20 => [21, 22, 23], 21 => [22]];
 
         return [PlaceFunctions::from(
-            [20 => 71, 21 => 72, 22 => 0, 23 => 73, 30 => 0, 31 => 72, 40 => 73],
+            [20 => [71], 21 => [72], 22 => [], 23 => [73], 30 => [], 31 => [72], 40 => [73]],
             [71 => PlaceFunctions::INBOUND, 72 => PlaceFunctions::TEST, 73 => PlaceFunctions::CLARIFY],
             static fn (int $place): array => $below[$place] ?? [],
         ), $parents];

@@ -3373,7 +3373,7 @@ final class StockService
         $functionOf = [];
 
         foreach ($places->ids() as $place) {
-            $functionOf[$place] = (int) $places->first($place, $s->field('place_function'));
+            $functionOf[$place] = array_map('intval', $places->all($place, $s->field('place_function')));
         }
 
         return $this->placeFunctions = PlaceFunctions::from($functionOf, $keyOf, $this->locationTree()->withAllBelow(...));

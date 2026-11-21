@@ -3,8 +3,8 @@
 namespace TaxmodStock\Core;
 
 /**
- * What a place is for (D-1528, W6): the place's own «Platzfunktion» — Lager, Wareneingang, Warenausgang, Test, Klärung. A place
- * without one is a storage place. A place inside a place with a function has that function. Stefan 21.11.: «eher eine funktion
+ * What a place is for (D-1528, W6): the place's own «Platzfunktionen», flags that can stand together — Lager, Wareneingang,
+ * Warenausgang, Test, Klärung, Packplatz (Stefan 21.11. «packplatz als flag»). A place without one is a storage place. A place inside a place with a function has that function. Stefan 21.11.: «eher eine funktion
  * des platzes als der platzart, sonst müssten wir für alle platzarten auch eingangs und ausgangs plätze anlegen».
  *
  * ```mermaid
@@ -21,9 +21,11 @@ final class PlaceFunctions
     /** D-1503: where a lot waits for its test, and where what failed it waits for a decision. */
     public const TEST = 'function_test';
     public const CLARIFY = 'function_clarify';
+    /** Stefan 21.11.: where a sale is packed; nothing reads it yet. */
+    public const PACK = 'function_pack';
 
     /** Every function key this class reads, in the order of the list «Platzfunktionen». */
-    public const KEYS = ['function_storage', self::INBOUND, self::OUTBOUND, self::TEST, self::CLARIFY];
+    public const KEYS = ['function_storage', self::INBOUND, self::OUTBOUND, self::TEST, self::CLARIFY, self::PACK];
 
     /** @param array<string, list<int>> $places function key → the places with it, those below included */
     private function __construct(private readonly array $places)
@@ -38,7 +40,7 @@ final class PlaceFunctions
     /**
      * One pass over the places (CD-7).
      *
-     * @param array<int, int>    $functionOf place → its function's constant id, 0 for none
+     * @param array<int, list<int>> $functionOf place → its functions' constant ids
      * @param array<int, string> $keyOf      constant id → function key
      * @param \Closure(int): list<int> $withAllBelow
      */
@@ -46,12 +48,14 @@ final class PlaceFunctions
     {
         $places = [];
 
-        foreach ($functionOf as $place => $function) {
-            $key = $keyOf[$function] ?? null;
+        foreach ($functionOf as $place => $functions) {
+            foreach ($functions as $function) {
+                $key = $keyOf[$function] ?? null;
 
-            if ($key !== null) {
-                foreach ([$place, ...$withAllBelow($place)] as $one) {
-                    $places[$key][$one] = true;
+                if ($key !== null) {
+                    foreach ([$place, ...$withAllBelow($place)] as $one) {
+                        $places[$key][$one] = true;
+                    }
                 }
             }
         }

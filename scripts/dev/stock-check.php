@@ -1875,7 +1875,7 @@ $pfRoh = wp_get_ability("taxmod/apply")->execute(["changes" => [
     ['op' => 'create_node', 'ref' => 'pf_we', 'name' => '__Wareneingang', 'parent' => '@pf', 'class' => 'Constant'],
     ['op' => 'create_node', 'ref' => 'pf_te', 'name' => '__Test', 'parent' => '@pf', 'class' => 'Constant'],
     ['op' => 'create_node', 'ref' => 'pf_kl', 'name' => '__Klärung', 'parent' => '@pf', 'class' => 'Constant'],
-    $field('pt_fn', (string) $ptNode, '__Platzfunktion', '@pf', 'aggregation', '0..1'),
+    $field('pt_fn', (string) $ptNode, '__Platzfunktion', '@pf', 'aggregation', '0..*'),
 ]]);
 $pf = is_array($pfRoh) ? (array) ($pfRoh['refs'] ?? []) : [];
 $opt = get_option('taxmod_stock_structure');

@@ -180,7 +180,7 @@ final class Structure
         // D-1169: a place type's fit calculation and how loudly a misfit is said.
         'fit_volume', 'fit_sides', 'fit_none', 'level_info', 'level_warning', 'level_error',
         // D-1528 (W6): the place functions; «Test» and «Klärung» are read since D-1503.
-        'function_storage', 'function_inbound', 'function_outbound', 'function_test', 'function_clarify',
+        'function_storage', 'function_inbound', 'function_outbound', 'function_test', 'function_clarify', 'function_pack',
         // D-1541: the one operator of a test filter built so far, «gleich».
         'operator_equals',
         // D-1425: where a part's price came from, and the unit the calculation's times are kept in.

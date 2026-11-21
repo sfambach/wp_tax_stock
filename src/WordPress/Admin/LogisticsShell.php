@@ -128,6 +128,8 @@ final class LogisticsShell
                 ...self::modules('settings'),
                 // D-1541: what needs a test after the goods receipt — the same rule technique as the print rules.
                 $item('test-rules', __('Testregeln', 'taxmod-stock'), Pages::TEST_RULES),
+                // D-1555 (his word 09:17 «eher eine Einstellungssache»): the Feldkatalog beside the rules.
+                $item('field-catalogue', __('Feldkatalog', 'taxmod-stock'), Pages::FIELD_CATALOGUE),
                 // His words 2026-11-03: «pack mal das menü drucken unter einstellungen», «warum hat das nur zwei ebenen», «kannst du
                 // das so bauen das es n ebenen zulässt» — an item's `path` puts it any depth below its area (D-1121).
                 // D-1296, his report 2026-11-18 «etiketten gibts jetzt zweimal als menüpunkt», «drucker auch»: labels, printers and

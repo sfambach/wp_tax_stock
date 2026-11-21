@@ -23,6 +23,7 @@ use TaxmodStock\WordPress\Admin\Pages;
 use TaxmodStock\WordPress\Admin\PurchasePage;
 use TaxmodStock\WordPress\Admin\SettingsPage;
 use TaxmodStock\WordPress\Admin\TestRulesPage;
+use TaxmodStock\WordPress\Admin\FieldCataloguePage;
 use TaxmodStock\WordPress\Admin\SettingsTab;
 use TaxmodStock\WordPress\Admin\StockPage;
 
@@ -36,7 +37,7 @@ final class Plugin
     public const MENU = Admin\Pages::INBOUND;
 
     /** The pages that draw the modeller's forms, choosers and dialogs — they get its stylesheet and scripts in the head. */
-    public const MODELLER_STYLED = [self::MENU, Pages::COCKPIT, Pages::STOCK, Pages::PURCHASE, Pages::SETTINGS, Pages::MODULE, Pages::INBOUND, Pages::CONTACTS, Pages::CHOICES, Pages::TEST_RULES];
+    public const MODELLER_STYLED = [self::MENU, Pages::COCKPIT, Pages::STOCK, Pages::PURCHASE, Pages::SETTINGS, Pages::MODULE, Pages::INBOUND, Pages::CONTACTS, Pages::CHOICES, Pages::TEST_RULES, Pages::FIELD_CATALOGUE];
 
     /** The modeller's menu, which every Taxmod module hangs its pages under (D-1028). */
     public const PARENT = 'taxmod';
@@ -1721,6 +1722,8 @@ final class Plugin
             add_submenu_page(self::PARENT, __('Auswahllisten', 'taxmod-stock'), __('Auswahllisten', 'taxmod-stock'), 'manage_options', Pages::CHOICES, $page(Pages::CHOICES, static fn (): string => (new ChoiceListsPage())->render())),
             // D-1541: Logistik › Einstellungen › Testregeln.
             add_submenu_page(self::PARENT, __('Testregeln', 'taxmod-stock'), __('Testregeln', 'taxmod-stock'), 'manage_options', Pages::TEST_RULES, $page(Pages::TEST_RULES, static fn (): string => (new TestRulesPage())->render())),
+            // D-1555: Logistik › Einstellungen › Feldkatalog.
+            add_submenu_page(self::PARENT, __('Feldkatalog', 'taxmod-stock'), __('Feldkatalog', 'taxmod-stock'), 'manage_options', Pages::FIELD_CATALOGUE, $page(Pages::FIELD_CATALOGUE, static fn (): string => (new FieldCataloguePage())->render())),
             // D-1085: Logistik › Einstellungen › Grundeinstellungen, inside the navigation.
             add_submenu_page(self::PARENT, __('Grundeinstellungen', 'taxmod-stock'), __('Grundeinstellungen', 'taxmod-stock'), 'manage_options', Pages::SETTINGS, $page(Pages::SETTINGS, static fn (): string => (new SettingsPage())->render())),
         ];

@@ -194,6 +194,16 @@ final class StockService
     {
     }
 
+    /**
+     * D-1555: the modeller's Feldkatalog, shown on Logistik › Einstellungen › Feldkatalog.
+     *
+     * @return list<array{id: int, name: string, parent: int, depth: int, role: string, uses: int}>
+     */
+    public function fieldCatalogue(): array
+    {
+        return $this->model->catalogue();
+    }
+
     public function structure(): Structure
     {
         // Once per service: it was parsed from the option and the bundled file on every call, dozens of times a page (D-1195).

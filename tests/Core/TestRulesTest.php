@@ -8,7 +8,7 @@ use TaxmodStock\Core\Structure;
 use TaxmodStock\Core\Table;
 use TaxmodStock\Core\TestRules;
 
-/** D-1541: the test rules handed to the modeller's rule book — node, position, filters «Feld · Operator · Wert». */
+/** D-1541: the test rules handed to the modeller's rule book — name (optional), node, position, filters «Feld · Operator · Wert». */
 final class TestRulesTest extends TestCase
 {
     #[Test]
@@ -17,7 +17,7 @@ final class TestRulesTest extends TestCase
         $s       = $this->structure();
         $f       = static fn (string $key): int => $s->field($key);
         $rules   = new Table([
-            70 => [$f('test_rule_node') => ['20'], $f('test_rule_position') => ['2'], $f('test_rule_filters') => ['80', '81']],
+            70 => [$f('label') => [' SMD prüfen '], $f('test_rule_node') => ['20'], $f('test_rule_position') => ['2'], $f('test_rule_filters') => ['80', '81']],
             71 => [$f('test_rule_position') => ['1']],
         ]);
         $filters = new Table([
@@ -27,13 +27,14 @@ final class TestRulesTest extends TestCase
         $book    = TestRules::fromTables($s, $rules, $filters);
 
         self::assertSame([
-            ['id' => 70, 'position' => 2, 'conditions' => [TestRules::NODE => 20], 'filters' => [
+            ['id' => 70, 'name' => 'SMD prüfen', 'position' => 2, 'conditions' => [TestRules::NODE => 20], 'filters' => [
                 ['field' => 555, 'value' => 'SMD', 'operator' => TestRules::EQUALS],
                 ['field' => 556, 'value' => '5', 'operator' => '601'],
             ]],
-            ['id' => 71, 'position' => 1, 'conditions' => [TestRules::NODE => 0], 'filters' => []],
+            ['id' => 71, 'name' => '', 'position' => 1, 'conditions' => [TestRules::NODE => 0], 'filters' => []],
         ], $book->book);
         self::assertSame([555, 556], $book->fields());
+        self::assertSame([70], array_column($book->holding(), 'id'), 'a rule without its node never holds');
         self::assertTrue(TestRules::isConfigured($s) && ! TestRules::isConfigured(Fixture::structure()));
         self::assertTrue(TestRules::none()->isEmpty());
     }

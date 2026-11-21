@@ -1703,7 +1703,7 @@ final class StockService
                 $own[$field] = array_map('strval', $values?->all($thing, $field) ?? []);
             }
 
-            $out[$thing] = $this->model->firstRule($rules->book, TestRules::context($nodes[$thing] ?? null, $parents), $own) !== null;
+            $out[$thing] = $this->model->firstRule($rules->holding(), TestRules::context($nodes[$thing] ?? null, $parents), $own) !== null;
         }
 
         return $out;

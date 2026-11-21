@@ -4187,34 +4187,43 @@ final class StockPage
         }
 
         $body  = '';
-        $count = 0;
         $depth = count($tree->lineOf($place));
-        $charges = $this->charges(array_values(array_unique(array_merge([], ...array_map(static fn (int $where): array => array_keys($byPlace[$where] ?? []), $tree->withAllBelow($place))))));
+        // Stefan 21.11.2026: «Wareneingang › AMZ-IMP» holds 1056 lots — drawn at once, three dialogs each, the page died. One page
+        // of rows at a time (D-1545), and only that page is read and drawn (CD-7).
+        $rows  = [];
 
-        $rowThings = array_map(static fn (int $lot): int => (int) $lots->first($lot, $s->field('lot_thing')), array_merge([], ...array_map(static fn (int $where): array => array_keys($byPlace[$where] ?? []), $tree->withAllBelow($place))));
+        foreach ($tree->withAllBelow($place) as $where) {
+            foreach ($byPlace[$where] ?? [] as $lot => $quantity) {
+                $rows[] = [$where, $lot, $quantity];
+            }
+        }
+
+        $count = count($rows);
+        $paged = absint($_GET['paged'] ?? 1);
+        $rows  = ListView::page($rows, $paged, self::PER_PAGE);
+        $charges = $this->charges(array_values(array_unique(array_column($rows, 1))));
+
+        $rowThings = array_map(static fn (int $lot): int => (int) $lots->first($lot, $s->field('lot_thing')), array_column($rows, 1));
         $this->prefetchRowFacts($rowThings);
         // D-1504: the unit each row's quantity is in, for the Umbuchen dialog a drop opens — shown only, never read back.
         $rowUnits = $this->stock->unitWords(array_values(array_unique($rowThings)));
 
-        foreach ($tree->withAllBelow($place) as $where) {
-            foreach ($byPlace[$where] ?? [] as $lot => $quantity) {
-                $thing = (int) $lots->first($lot, $s->field('lot_thing'));
-                $inner = $where === $place ? '' : implode(' › ', array_slice(explode(' › ', $tree->pathOf($where)), $depth));
-                $count++;
-                $body .= '<tr draggable="true" data-taxmod-stock-lot="' . esc_attr(implode(':', [$lot, $where, $this->plain($quantity), $thing])) . '" data-taxmod-stock-unit="' . esc_attr($rowUnits[$thing] ?? '') . '" style="cursor:grab">'
-                    . '<th scope="row" class="check-column">' . ListPage::field(InputKind::Tick, 'selected[]', $lot . ':' . $where . ':' . $thing, ['form' => self::PLACE_FORM, 'label' => __('Auswählen', 'taxmod-stock')]) . '</th>'
-                    // His question 2026-11-08: «müsste dann nicht eigentlich der Bestand angezeigt werden, anstatt das Material?» —
-                    // the row is a lot, so the lot stands first and leads to its own line in the material's Bestand.
-                    . '<td><a href="' . esc_url($this->lotUrl($thing, $lot)) . '">#' . esc_html((string) $lot) . '</a></td>'
-                    . '<td><a href="' . esc_url($this->lotUrl($thing, $lot)) . '">' . esc_html($things[$thing] ?? '#' . $thing) . '</a></td>'
-                    . '<td>' . esc_html($inner) . $this->reservedMark($where, $flags) . '</td>'
-                    . '<td>' . esc_html($this->number($quantity)) . '</td>'
-                    . '<td>' . ListPage::dateCell(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10)) . '</td>'
-                    . '<td style="text-align:right;white-space:nowrap">' . $this->transferDialog($thing, $lot, $where, $quantity, $places, $place)
-                    . ' ' . $this->bookOutDialog($thing, $lot, $where, $quantity)
-                    // His word 2026-11-08: «Massenfunktion ist da, aber das Drucken pro Posten».
-                    . ' ' . $this->lotLabel($thing, $lot, (string) ($things[$thing] ?? ''), $charges[$lot] ?? '') . '</td></tr>';
-            }
+        foreach ($rows as [$where, $lot, $quantity]) {
+            $thing = (int) $lots->first($lot, $s->field('lot_thing'));
+            $inner = $where === $place ? '' : implode(' › ', array_slice(explode(' › ', $tree->pathOf($where)), $depth));
+            $body .= '<tr draggable="true" data-taxmod-stock-lot="' . esc_attr(implode(':', [$lot, $where, $this->plain($quantity), $thing])) . '" data-taxmod-stock-unit="' . esc_attr($rowUnits[$thing] ?? '') . '" style="cursor:grab">'
+                . '<th scope="row" class="check-column">' . ListPage::field(InputKind::Tick, 'selected[]', $lot . ':' . $where . ':' . $thing, ['form' => self::PLACE_FORM, 'label' => __('Auswählen', 'taxmod-stock')]) . '</th>'
+                // His question 2026-11-08: «müsste dann nicht eigentlich der Bestand angezeigt werden, anstatt das Material?» —
+                // the row is a lot, so the lot stands first and leads to its own line in the material's Bestand.
+                . '<td><a href="' . esc_url($this->lotUrl($thing, $lot)) . '">#' . esc_html((string) $lot) . '</a></td>'
+                . '<td><a href="' . esc_url($this->lotUrl($thing, $lot)) . '">' . esc_html($things[$thing] ?? '#' . $thing) . '</a></td>'
+                . '<td>' . esc_html($inner) . $this->reservedMark($where, $flags) . '</td>'
+                . '<td>' . esc_html($this->number($quantity)) . '</td>'
+                . '<td>' . ListPage::dateCell(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10)) . '</td>'
+                . '<td style="text-align:right;white-space:nowrap">' . $this->transferDialog($thing, $lot, $where, $quantity, $places, $place)
+                . ' ' . $this->bookOutDialog($thing, $lot, $where, $quantity)
+                // His word 2026-11-08: «Massenfunktion ist da, aber das Drucken pro Posten».
+                . ' ' . $this->lotLabel($thing, $lot, (string) ($things[$thing] ?? ''), $charges[$lot] ?? '') . '</td></tr>';
         }
 
         $structure = add_query_arg(['page' => self::PAGE, 'tab' => 'lagerstruktur', 'ort' => $place], admin_url('admin.php'));
@@ -4226,7 +4235,8 @@ final class StockPage
             // His word 2026-11-14: «in Lagerplatzbestand … sieht irgendwie die Leiste oben noch anders aus als in anderen» — the
             // count stands in the list's bar like everywhere, and the bar stands also when nothing lies here.
             . $this->placeLotsBar($place, $count, '<a class="button" href="' . esc_url($structure) . '">' . esc_html__('Zur Layout-Sicht', 'taxmod-stock') . '</a>')
-            . ListPage::table([[__('Posten', 'taxmod-stock'), '6em'], [__('Material', 'taxmod-stock'), ''], [__('Unterort', 'taxmod-stock'), '12em'], [__('Menge', 'taxmod-stock'), '6em'], [__('Buchungsdatum', 'taxmod-stock'), '8em']], $body === '' ? $this->noItems(5) : $body);
+            . ListPage::table([[__('Posten', 'taxmod-stock'), '6em'], [__('Material', 'taxmod-stock'), ''], [__('Unterort', 'taxmod-stock'), '12em'], [__('Menge', 'taxmod-stock'), '6em'], [__('Buchungsdatum', 'taxmod-stock'), '8em']], $body === '' ? $this->noItems(5) : $body)
+            . ListPage::pagination($count, $paged, self::PER_PAGE, static fn (array $args): string => add_query_arg($args + ['page' => self::PAGE, 'tab' => 'lagerorte', 'ort' => $place], admin_url('admin.php')));
     }
 
     /**

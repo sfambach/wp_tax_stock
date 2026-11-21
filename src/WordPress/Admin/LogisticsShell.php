@@ -108,6 +108,9 @@ final class LogisticsShell
             // gleiche.» — what there is (material, contacts) apart from how much lies where; only the menu moves, every address stays.
             ['key' => 'masterdata', 'label' => __('Stammdaten', 'taxmod-stock'), 'items' => [
                 $item('material', __('Material', 'taxmod-stock'), Pages::STOCK, 'material'),
+                // D-1574, his words 21.11.2026: «was ist mit der materialgruppen pflege», «im grunde haben wir das ja schon du musst das
+                // halt nur auf den/die materilast/äste einschränken» — the modeller's node page, scoped to each branch «Material steht in».
+                ...self::materialGroupItems(),
                 // D-1474, his word 2026-11-19: «die Konstanten … Dass ich die auf eine gute Art pflegen kann, zum Beispiel eine Farbe hinzufügen».
                 $item('choice-lists', __('Auswahllisten', 'taxmod-stock'), Pages::CHOICES),
                 // D-1512, his word 2026-11-20: «lagerstruktur ist auch stammdaten oder» — the places and their kinds are what there is;
@@ -178,6 +181,33 @@ final class LogisticsShell
         }
 
         return $items;
+    }
+
+    /**
+     * One item for the material branch, or one per branch below «Materialgruppen» when «Material steht in» names several (D-1522).
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function materialGroupItems(): array
+    {
+        $group = __('Materialgruppen', 'taxmod-stock');
+
+        try {
+            $stock = new StockService();
+            $roots = $stock->materialRoots();
+            $tree  = $roots === [] ? [] : $stock->tree();
+        } catch (StockError) {
+            return [];
+        }
+
+        $scoped = static fn (int $root): string => add_query_arg(['page' => 'taxmod', 'taxmod_scope' => $root], admin_url('admin.php'));
+
+        if (count($roots) === 1) {
+            return [['key' => 'material-groups', 'label' => $group, 'page' => '', 'tab' => '', 'url' => $scoped($roots[0])]];
+        }
+
+        return array_map(static fn (int $root): array => ['key' => 'material-groups-' . $root, 'label' => (string) ($tree[$root]['name'] ?? '#' . $root),
+            'page' => '', 'tab' => '', 'url' => $scoped($root), 'path' => [$group]], $roots);
     }
 
     /**
@@ -384,10 +414,15 @@ final class LogisticsShell
     /**
      * The address of a navigation item: always a page of the stock interface (D-1085).
      *
-     * @param array{page: string, tab: string, module?: string} $item
+     * @param array{page: string, tab: string, module?: string, url?: string} $item
      */
     public static function url(array $item): string
     {
+        // D-1574: an item that is the modeller's own page names its address; every other item is a page of the stock interface.
+        if (($item['url'] ?? '') !== '') {
+            return $item['url'];
+        }
+
         return add_query_arg(array_filter(['page' => $item['page'], 'tab' => $item['tab'], 'module' => $item['module'] ?? '']), admin_url('admin.php'));
     }
 

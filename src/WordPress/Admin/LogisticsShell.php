@@ -136,11 +136,10 @@ final class LogisticsShell
                 // His words 2026-11-03: «pack mal das menü drucken unter einstellungen», «warum hat das nur zwei ebenen», «kannst du
                 // das so bauen das es n ebenen zulässt» — an item's `path` puts it any depth below its area (D-1121).
                 // D-1296, his report 2026-11-18 «etiketten gibts jetzt zweimal als menüpunkt», «drucker auch»: labels, printers and
-                // rolls are the labels module's pages; the stock keeps only its material labels by Bauform (D-1284).
+                // rolls are the labels module's pages; «Etiketten je Bauform» went with the old preselection (INF-137).
                 // His wish 2026-11-18: «Allgemein … Etiketten, Etiketten je Bauform. Dann Drucker, Druckermedium und am Schluss Aufträge» —
-                // the modules say their place by `position`, the stock's own page stands at 30.
+                // the modules say their place by `position`.
                 ...self::byPosition([
-                    ['path' => [__('Druck', 'taxmod-stock')], 'position' => 30] + $item('form-labels', __('Etiketten je Bauform', 'taxmod-stock'), Pages::STOCK, 'etikettenvorlagen'),
                     ...array_map(static fn (array $item): array => ['path' => [__('Druck', 'taxmod-stock'), ...$item['path']]] + $item, self::modules('print')),
                 ]),
                 // D-1232, his question 2026-11-08: «was ist eigentlich mit dem Benutzereinstellungen los? Die sind noch nicht sichtbar».

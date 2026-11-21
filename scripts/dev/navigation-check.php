@@ -118,7 +118,7 @@ $stammdaten = array_values(array_filter($navigation->areas(), static fn (array $
 $pruefe(array_filter($settings, static fn (array $item): bool => str_starts_with((string) $item['key'], 'contact')) === [], 'D-1472: Einstellungen holds no Kontakte');
 // Grenzlauf 2026-11-17 (modeller D-1427, PR-9): «Drucker» (D-1192) and «Benutzereinstellungen» (D-1232) stand there since; the list names them.
 // D-1512 (replaces the place D-1129 gave it, PR-9): Lagerstruktur left Einstellungen for Stammdaten.
-$pruefe(array_slice(array_column($settings, 'key'), 0, 2) === ['basics', 'module-__navcheck-dhl'] && array_filter(array_slice(array_column($settings, 'key'), 2), static fn (string $key): bool => ! str_starts_with($key, 'module-') && ! str_starts_with($key, 'rules-') && ! in_array($key, ['field-catalogue', 'form-labels', 'user'], true)) === [], 'Einstellungen: Grundeinstellungen, then the module — no Lagerstruktur any more (D-1512) (' . implode(', ', array_column($settings, 'key')) . ')');
+$pruefe(array_slice(array_column($settings, 'key'), 0, 2) === ['basics', 'module-__navcheck-dhl'] && array_filter(array_slice(array_column($settings, 'key'), 2), static fn (string $key): bool => ! str_starts_with($key, 'module-') && ! str_starts_with($key, 'rules-') && ! in_array($key, ['field-catalogue', 'user'], true)) === [], 'Einstellungen: Grundeinstellungen, then the module — no Lagerstruktur any more (D-1512) (' . implode(', ', array_column($settings, 'key')) . ')');
 $lagerstruktur = array_values(array_filter($stammdaten, static fn (array $item): bool => ($item['path'] ?? []) === ['Lagerstruktur']));
 $pruefe(array_column($lagerstruktur, 'key') === ['structure', 'place-types'] && ($lagerstruktur[1]['tab'] ?? '') === 'platzarten' && ($stammdaten[2]['key'] ?? '') === 'structure', 'D-1512: Layout and Platzarten stand in the group «Lagerstruktur» under Stammdaten, after Auswahllisten');
 // D-1558 (replaces D-1541's place, PR-9, visible change): Einstellungen › Regeln holds one item per rule type, each opening the one
@@ -153,9 +153,8 @@ $kontakt = array_values(array_filter(array_keys($stamm), static fn (int $k): boo
 $pruefe(($i = array_search('module-__navcheck-master', $stamm, true)) !== false && $i > array_search('place-types', $stamm, true) && $i < $kontakt && ! in_array('module-__navcheck-master', array_column($einstellungen, 'key'), true), 'D-1518: a master-data page of a module stands under Stammdaten between Lagerstruktur and Kontakte (' . implode(', ', $stamm) . ')');
 $pruefe($druck !== null && ($druck['path'] ?? []) === ['Druck'] && ! in_array('print', array_column($areas, 'key'), true), 'a page announced with area «print» stands under Einstellungen › Druck, not in an area of its own');
 // D-1296, his report 2026-11-18 «etiketten gibts jetzt zweimal als menüpunkt», «drucker auch»: labels, printers and rolls are the
-// labels module's; the stock keeps «Etiketten je Bauform» (replaces D-1165's «Druck › Etiketten» check, PR-9).
-$vorlagen = array_values(array_filter($einstellungen, static fn (array $item): bool => $item['key'] === 'form-labels'))[0] ?? null;
-$pruefe(($vorlagen['path'] ?? []) === ['Druck'] && ($vorlagen['label'] ?? '') === 'Etiketten je Bauform' && ($vorlagen['tab'] ?? '') === 'etikettenvorlagen' && ($vorlagen['page'] ?? '') === StockPage::PAGE, 'D-1296: Druck › Etiketten je Bauform opens the Lager tab of the Bauform labels');
+// labels module's. INF-137 (changes this check, PR-9): «Etiketten je Bauform» went with the old preselection.
+$pruefe(array_filter($einstellungen, static fn (array $item): bool => $item['key'] === 'form-labels') === [], 'INF-137: Druck has no «Etiketten je Bauform» any more');
 $pruefe(array_filter($einstellungen, static fn (array $item): bool => in_array($item['key'], ['label-templates', 'printers'], true)) === [], 'D-1296: the stock offers no «Etiketten» or «Drucker» of its own');
 $bestand = array_values(array_filter($areas, static fn (array $area): bool => $area['key'] === 'stock'))[0]['items'] ?? [];
 $platz   = array_values(array_filter($bestand, static fn (array $item): bool => $item['key'] === 'places'))[0] ?? null;

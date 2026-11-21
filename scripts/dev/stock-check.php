@@ -467,11 +467,8 @@ $html = (new StockPage())->render();
 $pruefe($above > 0 && $jaGewaehlt($html), 'D-1259: an own «Ja» equal to the one above still stands as its own, so saving keeps it');
 $above > 0 ? (new StockService())->setGroupProperty($above, StockService::TEST_PROPERTY, null) : null;
 (new StockService())->setGroupProperty($r['teile'], StockService::TEST_PROPERTY, null);
-// D-1266, his choice «Material- und Posten-Etikett»: the group's Lager view chooses both default labels from «Materialetiketten».
-$pruefeEtikett(str_contains($html, 'name="' . StockService::MATERIAL_LABEL_PROPERTY . '"') && str_contains($html, 'name="' . StockService::LOT_LABEL_PROPERTY . '"') && str_contains($html, '<option value="' . $r['etk40'] . '"'), 'D-1266: the group\'s Lager view offers «Standard-Etikett Material» and «Standard-Etikett Posten» from the label category');
-(new StockService())->setGroupProperty($r['teile'], StockService::MATERIAL_LABEL_PROPERTY, $r['etk40']);
-$pruefeEtikett((new StockService())->groupLabelOf($r['t1'], StockService::MATERIAL_LABEL_PROPERTY) === $r['etk40'] && (new StockService())->groupLabelOf($r['t1'], StockService::LOT_LABEL_PROPERTY) === 0, 'D-1266: a material reads its group\'s default label, the lot label stays unset');
-(new StockService())->setGroupProperty($r['teile'], StockService::MATERIAL_LABEL_PROPERTY, null);
+// INF-137 (changes D-1266, PR-9): the label is the print rules' alone — the group's Lager view offers no default labels any more.
+$pruefe(! str_contains($html, 'name="' . StockService::MATERIAL_LABEL_PROPERTY . '"') && ! str_contains($html, 'name="' . StockService::LOT_LABEL_PROPERTY . '"') && ! str_contains($html, 'Standard-Etikett'), 'INF-137: the group\'s Lager view has no «Standard-Etikett Material/Posten»');
 
 // D-1440, his words 2026-11-18 11:33/11:36: «Einbuchen» is no item of its own — booking is part of «Angekommen», one row per
 // purchase under its order's line, one bar, nothing to open. ⚠️ Changed with D-1440: the checks of the old order list with
@@ -676,7 +673,7 @@ $pruefe(str_contains($html, 'id="taxmod-stock-children"') && str_contains($html,
 $pruefe(str_contains($html, 'taxmod-stock-children-move') && str_contains($html, 'value="orteverschieben"') && (! has_filter('taxmod_label_formats') || str_contains($html, 'value="etiketten-pdf"')), 'Lagerstruktur: «Verschieben nach …» and «Etiketten drucken …» for the ticked Unterorte');
 // D-1380, his report 2026-11-15 «62x20 wird nicht angeboten … anstatt im text leer 2 oder 1 zu zeigen das sagt nix aus».
 $pruefe(! has_filter('taxmod_label_formats') || (preg_match('/<option value="vorlage-\d+"[^>]*>Material 40×30 · 40 × 30 mm<\/option>.*<option value="holder62"/s', $html) === 1 && ! str_contains($html, 'leer: 2 bei beweglichen, sonst 1')
-    && (str_contains($html, 'leer: je Ort die Anzahl seiner Platzart') || str_contains($html, 'wie bei der Platzart hinterlegt'))), 'D-1380: the Unterorte\'s «Etiketten drucken …» offers the label templates before the shipped formats, and the count says what the kinds hold');
+    && (str_contains($html, 'leer: je Ort die Anzahl seiner Druckregel') || str_contains($html, 'wie in der Druckregel'))), 'D-1380, INF-137: the Unterorte\'s «Etiketten drucken …» offers the label templates before the shipped formats, and the count says what the print rules hold');
 $parts = (new StockPage())->parts();
 $pruefe(str_contains($parts['side'], 'taxmod-record-tree') && str_contains($parts['side'], 'data-taxmod-drop-record="0"') && str_contains($parts['side'], 'for="taxmod-stock-new-place-0"') && ! str_contains($parts['main'], 'data-taxmod-pick=') && str_contains($parts['main'], 'id="taxmod-stock-new-place-0"'), 'D-1092: the tree goes under the navigation, the right side is only the place; «Neuer Lagerort» opens its dialog from there');
 $framed = LogisticsShell::wrap(StockPage::PAGE, $parts['main'], $parts['side']);
@@ -1153,11 +1150,7 @@ if (is_array($opt)) {
     $opt['fields']['thing_form'] = $bfFeld;
     update_option('taxmod_stock_structure', $opt);
 }
-(new StockService())->setGroupProperty($r['teile'], StockService::LOT_LABEL_PROPERTY, $r['etk40']);
-$pruefeEtikett((new StockService())->formRoot() === (int) $bf['root'] && (new StockService())->labelSourceOf($r['t1'], StockService::LOT_LABEL_PROPERTY) === [$r['etk40'], 'group', $r['teile']], 'D-1284: without a label at the Bauform the group\'s stands, and says so');
-(new StockService())->setGroupProperty((int) $bf['smd'], StockService::LOT_LABEL_PROPERTY, $r['etk40'] + 0);
-$quelle = (new StockService())->labelSourceOf($r['t1'], StockService::LOT_LABEL_PROPERTY);
-$pruefeEtikett($quelle === [$r['etk40'], 'form', (int) $bf['f0603']], 'D-1284: a label set at «SMD» is read for a material of «0603», before the group\'s');
+$pruefe((new StockService())->formRoot() === (int) $bf['root'], 'D-1284: the Bauform tree is found by «thing_form»');
 
 // Live 2026-11-20, «Im Test» 6,1 s / 207 MB: the label of each lot's material asked the material's whole group for its Bauform —
 // one read and one group in memory per group on the page. Now the Bauform of all rows comes in one read of just these records.
@@ -1175,30 +1168,23 @@ foreach (['a', 'b', 'c'] as $ast) {
 (new StockService())->bookInventory(array_map(static fn (int $thing): TaxmodStock\Core\InventoryRow => new TaxmodStock\Core\InventoryRow($thing, null, 'Bauform-Probe', '1', null, ''), array_values($inGruppe)), '2026-11-20', 'Bauform-Probe');
 $lesungen = static function (array $things) use ($wpdb): array {
     $lager = new StockService();
-    $lager->labelSourceOf(0, StockService::LOT_LABEL_PROPERTY);
-    $lager->formProperty(StockService::LOT_LABEL_PROPERTY);
-    $lager->groupProperty(StockService::LOT_LABEL_PROPERTY);
+    $lager->formTree();
     $lager->things();
     $vorher = $wpdb->num_queries;
     $lager->rememberForms($things);
     $eins   = $wpdb->num_queries - $vorher;
-    $quellen = array_map(static fn (int $thing): array => $lager->labelSourceOf($thing, StockService::LOT_LABEL_PROPERTY), $things);
+    $lager->rememberForms($things);
 
-    return [$eins, $wpdb->num_queries - $vorher, $quellen];
+    return [$eins, $wpdb->num_queries - $vorher];
 };
-[$fuerEins, $gesamtEins]          = $lesungen([$inGruppe['a']]);
-[$fuerDrei, $gesamtDrei, $quellen] = $lesungen(array_values($inGruppe));
-$pruefeEtikett($fuerDrei === $fuerEins && $gesamtDrei === $fuerDrei && $gesamtEins === $fuerEins,
-    "CD-7: the Bauform of materials from three groups costs the reads of one ({$fuerEins}/{$fuerDrei}), and asking each for its label none more ({$gesamtDrei})");
-$pruefeEtikett($quellen === array_fill(0, 3, [$r['etk40'], 'form', (int) $bf['f0603']]) && (new StockService())->labelSourceOf($inGruppe['b'], StockService::LOT_LABEL_PROPERTY) === [$r['etk40'], 'form', (int) $bf['f0603']],
-    'D-1284: read together or alone, each material names the label of its Bauform');
+[$fuerEins, $gesamtEins] = $lesungen([$inGruppe['a']]);
+[$fuerDrei, $gesamtDrei] = $lesungen(array_values($inGruppe));
+$pruefe($fuerDrei === $fuerEins && $gesamtDrei === $fuerDrei && $gesamtEins === $fuerEins,
+    "CD-7: the Bauform of materials from three groups costs the reads of one ({$fuerEins}/{$fuerDrei}), and asking again none more ({$gesamtDrei})");
+// INF-137 (changes D-1284, PR-9): «Etiketten je Bauform» is gone with the old preselection; the print rules choose.
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'etikettenvorlagen'];
 $html = (new StockPage())->render();
-$pruefeEtikett(str_contains($html, 'value="' . StockPage::FORM_LABELS . '"') && str_contains($html, '__0603') && preg_match('/name="' . StockService::LOT_LABEL_PROPERTY . '\[' . $bf['smd'] . '\]".{0,400}?value="' . $r['etk40'] . '" selected/s', $html) === 1,
-    'D-1284: «Etiketten je Bauform» lists the Bauformen with their own labels to choose');
-// D-1296: the label dialog left the modeller; that it names the preselection's origin is now the labels module's (PR-9, moved).
-(new StockService())->setGroupProperty((int) $bf['smd'], StockService::LOT_LABEL_PROPERTY, null);
-(new StockService())->setGroupProperty($r['teile'], StockService::LOT_LABEL_PROPERTY, null);
+$pruefe(! str_contains($html, 'Etikett nach Bauform') && ! str_contains($html, 'taxmod_stock_form_labels'), 'INF-137: there is no «Etiketten je Bauform» page any more');
 
 // His report 2026-11-09 «findet kostanten aber nicht jst-xh stecker»: the search in the tree dialog finds materials too.
 $pruefe(str_contains((string) file_get_contents(WP_PLUGIN_DIR . '/wp-taxonomy-modeler/assets/admin.js'), 'saetzeSuchen( dialog, this )')

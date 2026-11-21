@@ -182,9 +182,6 @@ final class StockService
     /** @var array<int, array{name: string, parent: int, class: string, hidden: bool}>|null D-1297 */
     private ?array $consumptionKinds = null;
 
-    /** @var array<string, array<int, bool|int|null>> D-1284: Bauform properties, read once per key */
-    private array $formProperties = [];
-
     private ?int $formRoot = null;
 
     /** @var array<int, array{name: string, parent: int, class: string, hidden: bool}>|null */
@@ -1852,46 +1849,11 @@ final class StockService
         return $this->groupProperties[$key] ??= $this->model->properties(array_keys($this->tree()), $key);
     }
 
-    /**
-     * D-1266: the label a thing's group asks for as its default (`MATERIAL_LABEL_PROPERTY` or `LOT_LABEL_PROPERTY`), 0 for
-     * none — read once for the whole material tree, so a list asks once (CD-7).
-     */
-    public function groupLabelOf(int $thing, string $key): int
-    {
-        return $this->labelSourceOf($thing, $key)[0];
-    }
-
-    /**
-     * D-1284, his word 2026-11-09 «smd is eine eigenschaft»: the label a thing starts with and where that comes from — its
-     * Bauform (the node itself or one above it, «SMD» for «0603»), else its group (D-1266), else none.
-     *
-     * @return array{0: int, 1: string, 2: int} label, `form`|`group`|'' and the node it was read at
-     */
-    public function labelSourceOf(int $thing, string $key): array
-    {
-        $node = $this->things()->nodeOf($thing);
-        if ($node === null) {
-            return [0, '', 0];
-        }
-        $s    = $this->structure();
-        $this->rememberForms([$thing]);
-        $form = $this->forms[$thing] ?? 0;
-        if ($form > 0) {
-            $label = $this->formProperty($key)[$form] ?? null;
-            if (is_int($label) && $label > 0) {
-                return [$label, 'form', $form];
-            }
-        }
-        $label = $this->groupProperty($key)[$node] ?? null;
-
-        return is_int($label) && $label > 0 ? [$label, 'group', $node] : [0, '', 0];
-    }
-
     /** @var array<int, int> material → its Bauform, 0 for none; filled by {@see rememberForms()} */
     private array $forms = [];
 
     /**
-     * The Bauform of these materials, for {@see labelSourceOf()}: groups already read answer from memory, the rest in one read
+     * The Bauform of these materials, for {@see labelRule()}: groups already read answer from memory, the rest in one read
      * of just these records. A list of lots from many groups asked each group whole for it — one read and the whole group in
      * memory per group on the page (CD-7; as {@see recordLabels()} names them, D-1195).
      *
@@ -1968,30 +1930,6 @@ final class StockService
         return $this->formTree ??= $root > 0 ? $this->model->tree($root) : [];
     }
 
-    /**
-     * D-1284: a label property for every Bauform, inherited, read once per key (CD-7).
-     *
-     * @return array<int, bool|int|null>
-     */
-    public function formProperty(string $key): array
-    {
-        $nodes = array_keys($this->formTree());
-
-        return $this->formProperties[$key] ??= $nodes === [] ? [] : $this->model->properties($nodes, $key);
-    }
-
-    /**
-     * D-1284: the label property each Bauform carries itself, without inheritance — one read.
-     *
-     * @return array<int, bool|int>
-     */
-    public function ownFormProperty(string $key): array
-    {
-        $nodes = array_keys($this->formTree());
-
-        return $nodes === [] ? [] : $this->model->ownProperties($nodes, $key);
-    }
-
     /** D-1259: the value set at this group itself, null when it inherits — what its form shows, so saving keeps it. */
     public function ownGroupProperty(int $group, string $key): bool|int|null
     {
@@ -2061,7 +1999,7 @@ final class StockService
     public function setGroupProperty(int $node, string $key, bool|int|null $value): void
     {
         $this->model->setProperty($node, $key, $value);
-        unset($this->groupProperties[$key], $this->formProperties[$key]);
+        unset($this->groupProperties[$key]);
     }
 
     /**
@@ -2433,18 +2371,6 @@ final class StockService
         $answer = apply_filters('taxmod_label_catalog', null);
 
         return $this->labelTemplates = $answer instanceof \TaxmodLabel\Core\LabelCatalog ? $answer : new NoLabels();
-    }
-
-    /**
-     * D-1152, D-1153: the label a place of this type gets, and how many.
-     *
-     * @return array{0: array<string, mixed>|null, 1: int}
-     */
-    public function labelForPlace(int $type, bool $movable): array
-    {
-        $labels = $this->labelTemplates();
-
-        return $this->placeTypes()->labelFor($type, $movable, static fn (int $id): ?array => $labels->get($id));
     }
 
     /**

@@ -66,6 +66,8 @@ final class Structure
         'lot_condition', 'lot_tested_on', 'lot_test_note',
         // D-1018: «Bezugsquellen» of the Lager view — firm and number — and the name of a firm.
         'lager_sources', 'source_firm', 'source_number', 'firm_name',
+        // D-1568: the other names of a material («DB9», «Sub-D 9»), which the material search also finds.
+        'thing_aliases',
         // D-1019: the base unit the Lager view counts in, and how much of it one pack of a source holds.
         'lager_unit', 'lager_prefix', 'source_content',
         // D-1022: shipping and fees of a purchase, from which the model calculates the landed price.

@@ -598,6 +598,8 @@ final class StockPage
         // «Material» read every lot, line and transaction to show an empty list.
         $ledger = $waits ? null : $this->stock->ledger();
         $lager  = $waits ? null : $this->stock->table('lager');
+        // D-1568: the search also finds a material by its other names («DB9», «Sub-D 9») — read once for all, never per row (CD-7).
+        $aliases = $waits ? [] : $this->stock->fieldWords(array_keys($all), ['thing_aliases'])['thing_aliases'] ?? [];
 
         foreach ($waits ? [] : array_keys($all) as $id) {
             $node = $things->nodeOf($id);
@@ -623,7 +625,7 @@ final class StockPage
                 $cells['f' . $relation] = implode(', ', (array) $data?->all($id, $relation));
             }
 
-            $rows[] = ['id' => $id, 'name' => $name, 'stock' => $stock, 'groupId' => $node ?? 0, 'placeIds' => $at, 'low' => $min !== null && $stock < (float) $min, 'words' => [],
+            $rows[] = ['id' => $id, 'name' => $name, 'stock' => $stock, 'groupId' => $node ?? 0, 'placeIds' => $at, 'low' => $min !== null && $stock < (float) $min, 'words' => isset($aliases[$id]) ? [$aliases[$id]] : [],
                 // Optional fields (Structure::OPTIONAL_FIELDS): a model without a base unit has none to group by.
                 'unit' => $record === null || ! $s->hasField('lager_unit') ? '' : $lager->first($record, $s->field('lager_unit')) . '/' . ($s->hasField('lager_prefix') ? $lager->first($record, $s->field('lager_prefix')) : ''),
                 'cells' => $cells + ['stock' => $this->number($stock) . (isset($packs[$id]) ? ' ' . $this->inPacks($packs[$id], $stock) : ''), 'min' => $min === null ? '' : (string) $min],

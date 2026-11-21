@@ -3,7 +3,7 @@
 namespace TaxmodStock\Core;
 
 /**
- * What a place is for (D-1528, W6): the place's own «Platzfunktionen», flags that can stand together — Lager, Wareneingang,
+ * What a place is for (D-1528, W6; on the place and as flags: D-1544): the place's own «Platzfunktionen», flags that can stand together — Lager, Wareneingang,
  * Warenausgang, Test, Klärung, Packplatz (Stefan 21.11. «packplatz als flag»). A place without one is a storage place. A place inside a place with a function has that function. Stefan 21.11.: «eher eine funktion
  * des platzes als der platzart, sonst müssten wir für alle platzarten auch eingangs und ausgangs plätze anlegen».
  *

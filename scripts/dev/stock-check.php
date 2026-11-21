@@ -1868,7 +1868,7 @@ $pruefe(! preg_match('/[.]submit\(\)/', $quellen) && substr_count($quellen, 'tax
 
 // D-1503: testing has its own places, read from the place functions (D-1528) — the goods receipt's test place, the nearest
 // «Klärung» for «defekt», «Einlagern» after OK to where the material is stored; the «Test» tab narrows to one test place.
-// Stefan 21.11. (PR-9, visible change): the function is the place's own field, no longer its type's.
+// D-1544 (PR-9, visible change): the function is the place's own field, as flags, no longer its type's.
 $ptNode = (new StockService())->structure()->node('location');
 $pfRoh = wp_get_ability("taxmod/apply")->execute(["changes" => [
     ['op' => 'create_node', 'ref' => 'pf', 'name' => '__Platzfunktionen', 'parent' => (string) $r['lo'], 'class' => 'Choice'],

@@ -18,6 +18,7 @@ use Taxmod\WordPress\Admin\Tiles;
 use Taxmod\WordPress\Printing\PrintService;
 use TaxmodStock\Core\FitLevel;
 use TaxmodStock\Core\GroupStock;
+use TaxmodStock\Core\TakeOver;
 use TaxmodStock\Core\InventoryRow;
 use TaxmodStock\Core\LagerInput;
 use TaxmodStock\Core\Pack;
@@ -84,6 +85,9 @@ final class StockPage
     private const LAST_LIST = 'taxmod_stock_last_list_';
     /** D-1574: the hosted list's way back, posted with its bulk form. */
     private const HOST_RETURN = 'host_return';
+
+    /** D-1579: the query key that opens «Aus <Elterngruppe> übernehmen» on the tab «Materialien». */
+    private const TAKE_OVER = 'uebernehmen';
     /** The address word of a search begun on the page «Bestand» ({@see self::asksStock()}). */
     public const ASKS_STOCK = 'bestand';
     /** D-1438: the Umbuchung held back by the question «Platz leer?», per user, until the page draws it. */
@@ -282,6 +286,7 @@ final class StockPage
                     $this->title(__('Umbuchung', 'taxmod-stock'), $today)
                 ),
                 'sammelvarianten' => $this->stock->makeVariants(array_values(array_filter(array_map('absint', (array) ($_POST['selected'] ?? []))))),
+                'uebernehmen' => $this->stock->takeOver(absint($_POST['group'] ?? 0), $this->takeOverRequest(absint($_POST['parent'] ?? 0)), TakeOver::skipped(self::ids('skip'), self::ids('shown'), self::ids('selected'))),
                 'sammelverschieben' => $this->stock->moveThingsToGroup(array_values(array_filter(array_map('absint', (array) ($_POST['selected'] ?? [])))), absint($_POST['group'] ?? 0)),
                 'gruppeanlegen' => $copy = $this->stock->createGroup(absint($_POST['group'] ?? 0), sanitize_text_field(wp_unslash((string) ($_POST['name'] ?? '')))),
                 'sammelumbuchen' => $this->stock->moveThings(
@@ -422,6 +427,7 @@ final class StockPage
                         ? __('Umgebucht; was am alten Platz noch liegt, ist dort per Inventur eingebucht. Ein Undo nimmt beides zurück.', 'taxmod-stock')
                             : __('Umgebucht: ein Vorgang «Umbuchung» mit Abgang am alten und Zugang am neuen Ort.', 'taxmod-stock')),
                 'sammelverschieben' => __('Verschoben: die gewählten Materialien stehen jetzt in der neuen Gruppe.', 'taxmod-stock'),
+                'uebernehmen'    => __('Übernommen: die gewählten Materialien stehen jetzt in dieser Gruppe.', 'taxmod-stock'),
                 'sammelvarianten' => __('Zusammengefasst: die gewählten Materialien sind jetzt Varianten eines neuen Materials; Nummern, Bestand und Etiketten bleiben.', 'taxmod-stock'),
                 'gruppeanlegen'  => __('Gruppe angelegt.', 'taxmod-stock'),
                 'sammelumbuchen' => __('Umgebucht: alle gewählten Materialien liegen jetzt am neuen Ort, als ein Vorgang «Umbuchung».', 'taxmod-stock'),
@@ -4692,8 +4698,138 @@ final class StockPage
     {
         $page       = clone $this;
         $page->host = array_filter($host, static fn (string $value): bool => $value !== '');
+        $parent     = $this->stock->groupParents()[$group] ?? 0;
 
-        return $page->materialList($page->listRequest(), true, $group);
+        // D-1579: only an empty group with a group above it takes materials over from there.
+        if (! TakeOver::offered($group, $this->stock->groupParents(), $this->stock->tree(), $this->stock->filledGroups())) {
+            return $page->materialList($page->listRequest(), true, $group);
+        }
+
+        if (($_GET[self::TAKE_OVER] ?? '') === '1') {
+            return $page->takeOverView($group, $parent);
+        }
+
+        $name = (string) ($this->stock->tree()[$parent]['name'] ?? '');
+
+        return '<p><a class="button" href="' . esc_url(add_query_arg($page->host + [self::TAKE_OVER => '1'], admin_url('admin.php'))) . '">'
+            /* translators: %s: name of the group above */
+            . esc_html(sprintf(__('Aus «%s» übernehmen …', 'taxmod-stock'), $name)) . '</a></p>'
+            . $page->materialList($page->listRequest(), true, $group);
+    }
+
+    /**
+     * D-1579: «Aus <Elterngruppe> übernehmen» — filter rows «Feld · Operator · Wert» over the parent's plain fields, the
+     * preview of what the rule book lets through with a tick each, paged (D-1545), and one act that moves the ticked.
+     */
+    private function takeOverView(int $group, int $parent): string
+    {
+        $offered = $this->technicalColumns($parent);
+        $take    = $this->takeOverRequest($parent);
+        $words   = array_intersect_key(\Taxmod\WordPress\Plugin::operatorWords(), array_flip(TakeOver::OPERATORS));
+        $back    = add_query_arg($this->host, admin_url('admin.php'));
+        $hidden  = '';
+
+        foreach ($this->host + [self::TAKE_OVER => '1'] as $key => $value) {
+            $hidden .= '<input type="hidden" name="' . esc_attr($key) . '" value="' . esc_attr($value) . '">';
+        }
+
+        $lines = '';
+        $given = array_values($take->filters);
+
+        for ($i = 0; $i < TakeOver::ROWS; $i++) {
+            $row    = $given[$i] ?? ['field' => 0, 'operator' => TakeOver::OPERATORS[0], 'value' => ''];
+            $lines .= '<tr><td>' . SelectMarkup::of('tf[' . $i . '][field]', $offered, $row['field'] > 0 ? (string) $row['field'] : null, nothingWord: __('— Feld —', 'taxmod-stock'), attributes: ['aria-label' => __('Feld', 'taxmod-stock')]) . '</td>'
+                . '<td>' . SelectMarkup::of('tf[' . $i . '][op]', $words, $row['operator'], false, attributes: ['aria-label' => __('Operator', 'taxmod-stock')]) . '</td>'
+                . '<td>' . ListPage::field(InputKind::Line, 'tf[' . $i . '][value]', $row['value'], ['label' => __('Wert', 'taxmod-stock')]) . '</td></tr>';
+        }
+
+        $name = (string) ($this->stock->tree()[$parent]['name'] ?? '');
+        $html = '<h2>' . esc_html(sprintf(
+            /* translators: %s: name of the group above */
+            __('Aus «%s» übernehmen', 'taxmod-stock'),
+            $name
+        )) . '</h2><p>' . esc_html__('Filter setzen, «Vorschau» drücken, Haken entfernen bei allem, was bleiben soll. Jeder gesetzte Filter muss passen; ohne Filter zählt alles aus der Gruppe darüber.', 'taxmod-stock') . '</p>'
+            . '<form method="get" action="' . esc_url(admin_url('admin.php')) . '">' . $hidden
+            . '<table class="widefat fixed taxmod-stock-takeover-filters"><thead><tr><th>' . esc_html__('Feld', 'taxmod-stock') . '</th><th>' . esc_html__('Operator', 'taxmod-stock') . '</th><th>' . esc_html__('Wert', 'taxmod-stock') . '</th></tr></thead><tbody>' . $lines . '</tbody></table>'
+            . '<p><button type="submit" class="button" name="vorschau" value="1">' . esc_html__('Vorschau', 'taxmod-stock') . '</button> <a class="button-link" href="' . esc_url($back) . '">' . esc_html__('Abbrechen', 'taxmod-stock') . '</a></p></form>';
+
+        if (($_GET['vorschau'] ?? '') !== '1') {
+            return $html;
+        }
+
+        try {
+            $matched = $this->stock->takeOverMatches($take);
+        } catch (StockError $e) {
+            return $html . '<div class="notice notice-error inline"><p>' . esc_html(Messages::of($e)) . '</p></div>';
+        }
+
+        if ($matched === []) {
+            return $html . '<p>' . esc_html__('Kein Material passt zu diesen Filtern.', 'taxmod-stock') . '</p>';
+        }
+
+        $skipped = TakeOver::skipped(self::queryIds('skip'), self::queryIds('shown'), self::queryIds('selected'));
+        $pages   = (int) ceil(count($matched) / self::PER_PAGE);
+        $paged   = min(max(1, absint($_GET['paged'] ?? 1)), $pages);
+        $shown   = array_slice($matched, ($paged - 1) * self::PER_PAGE, self::PER_PAGE);
+        $things  = $this->stock->things();
+        $carry   = $hidden . '<input type="hidden" name="vorschau" value="1"><input type="hidden" name="group" value="' . esc_attr((string) $group) . '"><input type="hidden" name="parent" value="' . esc_attr((string) $parent) . '">'
+            . '<input type="hidden" name="' . self::HOST_RETURN . '" value="' . esc_attr(rawurlencode($back)) . '">';
+
+        foreach ($take->filters as $i => $filter) {
+            $carry .= '<input type="hidden" name="tf[' . $i . '][field]" value="' . esc_attr((string) $filter['field']) . '"><input type="hidden" name="tf[' . $i . '][op]" value="' . esc_attr($filter['operator']) . '"><input type="hidden" name="tf[' . $i . '][value]" value="' . esc_attr($filter['value']) . '">';
+        }
+
+        foreach ($skipped as $thing) {
+            $carry .= '<input type="hidden" name="skip[]" value="' . esc_attr((string) $thing) . '">';
+        }
+
+        $body = '';
+
+        foreach ($shown as $thing) {
+            $carry .= '<input type="hidden" name="shown[]" value="' . esc_attr((string) $thing) . '">';
+            $body  .= '<tr><th scope="row" class="check-column">' . ListPage::field(InputKind::Tick, 'selected[]', (string) $thing, ['checked' => ! in_array($thing, $skipped, true), 'label' => $things->word($thing)]) . '</th><td>' . esc_html((string) $thing) . '</td><td>' . esc_html($things->word($thing)) . '</td></tr>';
+        }
+
+        $turn = static fn (int $to, string $word): string => '<button type="submit" class="button" name="paged" value="' . esc_attr((string) $to) . '">' . esc_html($word) . '</button> ';
+        $nav  = $pages < 2 ? '' : '<p>' . ($paged > 1 ? $turn($paged - 1, __('‹ Zurück', 'taxmod-stock')) : '')
+            /* translators: 1: page, 2: pages */
+            . esc_html(sprintf(__('Seite %1$d von %2$d', 'taxmod-stock'), $paged, $pages)) . ' ' . ($paged < $pages ? $turn($paged + 1, __('Weiter ›', 'taxmod-stock')) : '') . '</p>';
+        $act  = wp_nonce_url(add_query_arg('action', self::ACTION, admin_url('admin-post.php')), self::ACTION);
+
+        return $html . '<form method="get" action="' . esc_url(admin_url('admin.php')) . '">' . $carry
+            . '<p>' . esc_html(sprintf(
+                /* translators: %d: number of materials */
+                _n('%d Material passt; was angehakt bleibt, kommt in diese Gruppe — auch auf den Seiten, die nicht angesehen wurden.', '%d Materialien passen; was angehakt bleibt, kommt in diese Gruppe — auch auf den Seiten, die nicht angesehen wurden.', count($matched), 'taxmod-stock'),
+                count($matched)
+            )) . '</p>'
+            . '<table class="wp-list-table widefat fixed striped"><thead><tr><td class="manage-column check-column"></td><th style="width:5em">' . esc_html__('Nr.', 'taxmod-stock') . '</th><th>' . esc_html__('Material', 'taxmod-stock') . '</th></tr></thead><tbody>' . $body . '</tbody></table>'
+            . $nav . '<p><button type="submit" class="button button-primary" name="booking" value="uebernehmen" formmethod="post" formaction="' . esc_url($act) . '">' . esc_html__('Übernehmen', 'taxmod-stock') . '</button></p></form>';
+    }
+
+    /** D-1579: the take-over's filter rows from the request, sanitized; the parent's plain fields are the only ones offered. */
+    private function takeOverRequest(int $parent): TakeOver
+    {
+        $rows = [];
+
+        foreach (array_slice(is_array($_REQUEST['tf'] ?? null) ? $_REQUEST['tf'] : [], 0, TakeOver::ROWS) as $row) {
+            if (is_array($row)) {
+                $rows[] = ['field' => absint($row['field'] ?? 0), 'op' => sanitize_key((string) ($row['op'] ?? '')), 'value' => sanitize_text_field(wp_unslash((string) ($row['value'] ?? '')))];
+            }
+        }
+
+        return TakeOver::fromRows($parent, $rows, array_keys($this->technicalColumns($parent)));
+    }
+
+    /** @return list<int> ids posted under this name */
+    private static function ids(string $name): array
+    {
+        return array_values(array_filter(array_map('absint', (array) ($_POST[$name] ?? []))));
+    }
+
+    /** @return list<int> ids in the query under this name */
+    private static function queryIds(string $name): array
+    {
+        return array_values(array_filter(array_map('absint', (array) ($_GET[$name] ?? []))));
     }
 
     /** @return array<string, string> page and tab of a list's addresses: this page's tab, or the host page's own query (D-1574) */

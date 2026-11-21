@@ -131,7 +131,7 @@ decisions D-956, D-957, D-958, D-972, D-995, D-996, D-997, D-1001, D-1004.
 ## Development
 
 - `composer install`, then `vendor/bin/phpunit` (core, no WordPress).
-- `php scripts/dev/stock-check.php`, `php scripts/dev/inbound-check.php` and `php scripts/dev/navigation-check.php` against a local WordPress with the modeller active; nothing it writes survives. The first two run twice, with «Positionen» as aggregation and as composition (D-1097); `TAXMOD_STOCK_KIND=aggregation|composition` runs one.
+- `php scripts/dev/stock-check.php`, `php scripts/dev/inbound-check.php` and `php scripts/dev/navigation-check.php` against a local WordPress with the modeller active; nothing it writes survives. `php scripts/dev/takeover-check.php` checks «Aus <Elterngruppe> übernehmen» (D-1579) the same way. The first two run twice, with «Positionen» as aggregation and as composition (D-1097); `TAXMOD_STOCK_KIND=aggregation|composition` runs one.
 
 ## Authors
 

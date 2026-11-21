@@ -56,7 +56,7 @@ final class StockPage
     private const PURPOSE_LOT = 'bestand';
 
     /** The actions column of the material list: four icon squares (Lager 0.64.201). */
-    private const MATERIAL_ACTIONS = '13em';
+    private const MATERIAL_ACTIONS = '10.5em';
 
     /** Whether this page drew the lot-mode words already ({@see self::lotWords()}). */
     private bool $lotWordsDrawn = false;
@@ -573,12 +573,15 @@ final class StockPage
         // D-1204: a picture per row, unless the Configuration has pictures in lists off.
         $images    = ListPage::showsImages();
         // D-1462: a picture has nothing to filter by; stock and minimum filter by number (2, >2, <2, 2-10).
-        $columns   = [...($images ? [new ListColumn('image', __('Bild', 'taxmod-stock'), fixed: true, width: '56px', filterable: false)] : []),
-            new ListColumn('nr', __('Nr.', 'taxmod-stock'), fixed: true, width: '6em'), new ListColumn('name', __('Material', 'taxmod-stock'), fixed: true),
-            new ListColumn('group', __('Gruppe', 'taxmod-stock'), width: '15%')];
+        // Live-Check 7 (21.11.2026, 706 px beside the navigation): the picture gives way first where the list is narrow; under
+        // «Spalten» it can be kept. The flag exists from Modeller 0.2.226 on.
+        $narrow    = property_exists(ListColumn::class, 'secondary') ? ['secondary' => true] : [];
+        $columns   = [...($images ? [new ListColumn('image', __('Bild', 'taxmod-stock'), ...['width' => '56px', 'filterable' => false] + $narrow)] : []),
+            new ListColumn('nr', __('Nr.', 'taxmod-stock'), fixed: true, width: '5em'), new ListColumn('name', __('Material', 'taxmod-stock'), fixed: true),
+            new ListColumn('group', __('Gruppe', 'taxmod-stock'))];
         // D-1030: where it lies, by path and project — so a search for a project finds the parts in its box.
-        // His screenshot 2026-11-21 17:14: group and place a share each, the name takes the rest.
-        $columns[] = new ListColumn('places', __('Lagerort', 'taxmod-stock'), width: '15%');
+        // Live-Check 7: name, group and place share what the fixed columns leave — a share of their own overran 706 px.
+        $columns[] = new ListColumn('places', __('Lagerort', 'taxmod-stock'));
         $position  = 0;
 
         foreach ($technical as $relation => $name) {
@@ -586,8 +589,9 @@ final class StockPage
             $columns[] = new ListColumn('f' . $relation, $name, $position++ < 4);
         }
 
-        $columns[] = new ListColumn('stock', __('Bestand', 'taxmod-stock'), width: '7em', number: true);
-        $columns[] = new ListColumn('min', __('Mindestbestand', 'taxmod-stock'), width: '10.5em', number: true);
+        $columns[] = new ListColumn('stock', __('Bestand', 'taxmod-stock'), width: '5.5em', number: true);
+        // The head breaks «Mindest-bestand» at its syllables (modeller list style).
+        $columns[] = new ListColumn('min', __('Mindestbestand', 'taxmod-stock'), width: '6.5em', number: true);
         $listId    = ($branch ? 'stock-groupstock' : 'stock-material') . ($group > 0 ? '-' . $group : '');
         $view      = ListPage::view($listId, $columns, 'name');
         $groups    = [];
@@ -734,7 +738,8 @@ final class StockPage
         }
 
         // D-1462: every hit on this page — the head narrows and sorts it without asking again.
-        // His screenshot 2026-11-21 17:14: four icon squares at most (open details, Umbuchen, print, open), not the 21em default.
+        // His screenshot 2026-11-21 17:14: four icon squares at most (open details, Umbuchen, print, open), not the 21em default;
+        // Live-Check 7: all four are squares now, 10.5em holds them.
         return $html . ListPage::table(ListPage::heads($view, $url), $body, ListPage::filterRow(self::FILTER_FORM, $view), ! $waits && ListView::onePage(count($units), self::PER_PAGE), self::MATERIAL_ACTIONS)
             . ListPage::pagination(count($units), $paged, self::PER_PAGE, $url);
     }
@@ -1085,10 +1090,17 @@ final class StockPage
             }
         }
 
+        // His word 2026-11-21: «zwei felder und das untere kann ich nicht drucken» — each line names its lots and prints their
+        // label (P-<lot>), the row above prints the material's.
+        $charges = $lines === [] ? [] : $this->charges($ledger->lotsOf($thing));
+        $name    = $lines === [] ? '' : (string) ($this->stock->recordLabels([$thing])[$thing] ?? '');
+
         foreach ($lines as $line) {
             $html .= '<li>' . sprintf($line['text'], esc_html__('Rest', 'taxmod-stock') . ' ' . esc_html($this->number($line['quantity'])))
-                . ' · ' . esc_html($places[$line['place']] ?? '#' . $line['place'])
+                . ' · ' . esc_html(implode(', ', array_map(static fn (int $lot): string => '#' . $lot, $line['lots'])))
+                . ' · <a href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'lagerorte', 'ort' => $line['place']], admin_url('admin.php'))) . '">' . esc_html($places[$line['place']] ?? '#' . $line['place']) . '</a>'
                 . ($withTransfer ? ' ' . $this->transferDialog($thing, $line['lots'][0], $line['place'], $line['quantity'], $places, 0, true, $line['lots']) : '')
+                . implode('', array_map(fn (int $lot): string => ' ' . $this->lotLabel($thing, $lot, $name, $charges[$lot] ?? ''), $line['lots']))
                 . '</li>';
         }
 
@@ -1722,7 +1734,10 @@ final class StockPage
                 // D-1227: a lot's further places and its «Vorgänge» move with its first row when the list is sorted or grouped.
                 $rows .= '<tr' . ($first ? ' id="taxmod-stock-lot-' . esc_attr((string) $lot) . '"' : ' class="taxmod-list-more"') . '><th scope="row" class="check-column"></th><td>' . ($first ? '#' . esc_html((string) $lot) . (in_array($lot, $blocked, true) ? self::blockedMark() : '') . $this->fromSetMark($this->stock->setHeadOf($lot)) : '') . '</td>'
                     // His wish 2026-11-08: «Bitte auch das Material anzeigen hier in der Liste».
-                    . '<td>' . ($first ? esc_html($name) : '') . '</td><td>' . esc_html($places[$place] ?? '—') . $this->reservedMark($place, $flags) . '</td><td>' . esc_html($this->number($quantity)) . '</td>'
+                    // His word 2026-11-21: «kein absprung zum ort in item» — the place opens its own page, as in the material list.
+                    . '<td>' . ($first ? esc_html($name) : '') . '</td><td>'
+                    . ($place > 0 && isset($places[$place]) ? '<a href="' . esc_url(add_query_arg(['page' => self::PAGE, 'tab' => 'lagerorte', 'ort' => $place], admin_url('admin.php'))) . '">' . esc_html($places[$place]) . '</a>' : esc_html($places[$place] ?? '—'))
+                    . $this->reservedMark($place, $flags) . '</td><td>' . esc_html($this->number($quantity)) . '</td>'
                     . '<td>' . ($first ? esc_html($amount ?? '—') : '') . '</td>'
                     // D-1310, his wishes 2026-11-11 «Absprung zum Kauf … in einem neuen Tab», «link zur internen bestellung»: the purchase opens
                     // its order's view in the Wareneingang; without an order, its own view in «Einkauf».

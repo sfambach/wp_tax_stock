@@ -18,8 +18,11 @@ $red  = 0;
 
 foreach ([
     'the list does not name its narrow actions column'    => str_contains($page, 'ListView::onePage(count($units), self::PER_PAGE), self::MATERIAL_ACTIONS)'),
-    'group has no share of the width'                      => str_contains($page, "new ListColumn('group', __('Gruppe', 'taxmod-stock'), width: '15%')"),
-    'place has no share of the width'                      => str_contains($page, "new ListColumn('places', __('Lagerort', 'taxmod-stock'), width: '15%')"),
+    // Live-Check 7 (706 px): name, group and place share the rest; the picture gives way when narrow.
+    'group keeps a share of its own'                       => str_contains($page, "new ListColumn('group', __('Gruppe', 'taxmod-stock'))]"),
+    'place keeps a share of its own'                       => str_contains($page, "new ListColumn('places', __('Lagerort', 'taxmod-stock'));"),
+    'the picture does not give way when narrow'            => str_contains($page, "['width' => '56px', 'filterable' => false] + \$narrow)"),
+    'the actions column is wider than four squares'        => str_contains($page, "private const MATERIAL_ACTIONS = '10.5em';"),
     'several lots leave the Umbuchen square out'           => str_contains($page, "ListPage::iconButton(self::icon('ICON_TRANSFER'), __('Umbuchen', 'taxmod-stock'), disabled:"),
     // D-1568: the other names come in one read for the whole list (CD-7), and only where the structure names the field.
     'the search does not read the other names once for the list' => str_contains($page, "\$this->stock->fieldWords(array_keys(\$all), ['thing_aliases'])['thing_aliases'] ?? []"),

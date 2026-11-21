@@ -2730,7 +2730,8 @@ final class StockPage
             ['label' => __('Menge', 'taxmod-stock'), 'control' => $this->consumptionQuantity($controls['quantity'], $unit),
                 /* translators: %s: quantity at this place */
                 'hint' => sprintf(__('An diesem Ort liegen %s.', 'taxmod-stock'), ListPage::number($quantity))],
-            $this->purposeRow($place, $switch, true),
+            // Lagerorte 0.64.199: with the lot chooser in every row's dialog the Platzbestand did not finish loading (17:07).
+            $this->purposeRow($place, $switch),
         ];
 
         if ($controls['kind'] !== '') {

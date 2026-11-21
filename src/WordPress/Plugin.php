@@ -48,6 +48,9 @@ final class Plugin
     /** D-1146: the pick list reads where the things lie free, outside the order's box. */
     public const PLACES_OF = 'taxmod_stock_places_of';
 
+    /** Stefan 21.11. 15:08 «Mengenfeld schon wieder ohne Einheit»: the unit each material is counted in, for a module's quantity field. */
+    public const UNITS_OF = 'taxmod_stock_units_of';
+
     /** D-1146: the ticked lines of a pick list go into the box. */
     public const BOOK_PICK = 'taxmod_stock_book_pick';
 
@@ -235,6 +238,7 @@ final class Plugin
         add_filter(StockService::MATERIAL_ROOTS, static fn (mixed $roots): array => (new StockService())->materialRoots());
         add_filter(self::BOOK_BUILD, [self::class, 'bookBuild'], 10, 2);
         add_filter(self::PLACES_OF, [self::class, 'placesOf'], 10, 2);
+        add_filter(self::UNITS_OF, [self::class, 'unitsOf'], 10, 2);
         // D-1387: the material search as a building block for other modules' dialogs.
         add_filter(MaterialPicker::FILTER, [MaterialPicker::class, 'filter'], 10, 2);
         add_filter(self::BOOK_PICK, [self::class, 'bookPick'], 10, 2);
@@ -1306,6 +1310,33 @@ final class Plugin
             }
 
             Acts::deny($e->getMessage(), 409);
+        }
+    }
+
+    /**
+     * `apply_filters('taxmod_stock_units_of', null, ['things' => [ids]])` answers thing → the word of the unit the Lager counts it
+     * in (D-1298: «Stück» where none is set), all in one call — so a module's quantity field says its unit (Stefan 21.11. 15:08).
+     *
+     * @param mixed $previous an answer another callback gave already; `mixed`: whatever it handed on
+     * @param mixed $args     the request as the caller sends it; `mixed`: checked here
+     * @return array<int, string>|\WP_Error
+     */
+    public static function unitsOf(mixed $previous, mixed $args): array|\WP_Error
+    {
+        if (is_array($previous) || $previous instanceof \WP_Error) {
+            return $previous;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
+        }
+
+        $args = is_array($args) ? $args : [];
+
+        try {
+            return self::reading()->unitWords(array_values(array_unique(array_filter(array_map('absint', is_array($args['things'] ?? null) ? $args['things'] : [])))));
+        } catch (StockError $e) {
+            return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }
     }
 

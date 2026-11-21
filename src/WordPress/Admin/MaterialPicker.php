@@ -128,6 +128,8 @@ final class MaterialPicker
         $strips = $pieces > 0 ? $stock->stripsToOpen($thing, array_keys($free), $pieces, absint($_GET['piece'] ?? 0)) : [];
         $cut    = $pieces > 0 && $stock->packsOf([$thing]) !== [];
         // D-1500, Prüftor 20.11.: the unit is shown beside the quantity; the server books in the material's unit, never in this word.
+        // ⚠️ *Stefan 21.11. 15:08 «Mengenfeld schon wieder ohne Einheit, dafür Übernehmen dahinter»: with nothing free there is no row to
+        // carry the unit and nothing to take — the script hides «Menge … Übernehmen» then and only says where nothing lies.*
         $unit   = $stock->unitWords([$thing])[$thing] ?? '';
 
         wp_send_json_success(array_map(static fn (int $place, float $quantity): array => [
@@ -222,7 +224,7 @@ final class MaterialPicker
             . 'fetch(d.hits+"&term="+encodeURIComponent(t),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(r){if(me===ask&&r&&r.success){draw(r.data||[]);}}).catch(function(){});}'
             . 'function places(h){var ul=pick.querySelector("ul"),qty=pick.querySelector(".taxmod-material-search-qty");pick.hidden=false;pick.querySelector(".taxmod-material-search-chosen").textContent=h.word;ul.innerHTML="";'
             . 'fetch(d.places+"&thing="+encodeURIComponent(h.id),{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(r){var rows=r&&r.success?r.data:[];'
-            . 'if(!rows.length){ul.appendChild(el("li","",d.noPlace));return;}var cut=rows[0].strips!==undefined;pick.dataset.cut=cut?"1":"";pick.querySelector(".taxmod-material-search-qty-label").textContent=cut?d.piecesLabel:pick.dataset.qtyLabel;pick.querySelector(".taxmod-material-search-qty-unit").textContent=cut?"":(rows[0].unit||d.unit);'
+            . 'var line=qty.closest("p");line.hidden=!rows.length;if(!rows.length){ul.appendChild(el("li","",d.noPlace));return;}var cut=rows[0].strips!==undefined;pick.dataset.cut=cut?"1":"";pick.querySelector(".taxmod-material-search-qty-label").textContent=cut?d.piecesLabel:pick.dataset.qtyLabel;pick.querySelector(".taxmod-material-search-qty-unit").textContent=cut?"":(rows[0].unit||d.unit);'
             . 'rows.forEach(function(p,i){var li=el("li"),l=el("label"),c=document.createElement("input");c.type="radio";c.name=root.id+"-place";c.value=p.place;c.dataset.path=p.path;c.dataset.free=p.quantity;'
             . 'if(i===0){c.checked=true;}c.addEventListener("change",function(){if(!cut&&num(qty.value)>num(p.quantity)){qty.value=p.quantity;}});l.appendChild(c);l.appendChild(document.createTextNode(" "+p.path));l.appendChild(el("span","n",p.quantity+" "+(p.unit||d.unit)));if(cut){l.appendChild(el("span","n",p.strips>0?d.strips.replace("%d",p.strips):d.noFit));}li.appendChild(l);ul.appendChild(li);});'
             . 'qty.value=cut?num(d.pieces):(d.wanted&&num(d.wanted)>0?Math.min(num(d.wanted),num(rows[0].quantity)):rows[0].quantity);}).catch(function(){});}'

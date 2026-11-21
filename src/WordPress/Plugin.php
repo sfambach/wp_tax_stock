@@ -174,6 +174,8 @@ final class Plugin
         }
         // D-1209: the stock for a reader over MCP, in the modeller's category (registered by the modeller beforehand).
         add_action('wp_abilities_api_init', static fn () => (new StockAbility())->register());
+        // D-1558, INF-137: the open proposals of the old ways as one data job, read only.
+        add_action('wp_abilities_api_init', static fn () => (new RuleProposalsAbility())->register());
         add_action('wp_abilities_api_init', static fn () => (new CorrectionAbility())->register());
         add_action('wp_abilities_api_init', static fn () => (new TransferAbility())->register());
         // Only where a setting is saved (options.php) or read over REST: naming the options compiled the 100 KB stock service on every page view (D-1187).

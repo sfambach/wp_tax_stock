@@ -378,16 +378,15 @@ final class InboundService
     {
         $stock   = $this->stock;
         $ledger  = $stock->ledger();
-        $things  = $stock->things();
-        $nodes   = [];
-        $parents = $stock->groupParents();
+        $thingOf = [];
 
         foreach ($stock->table('lot')->ids() as $lot) {
-            $thing       = $ledger->thingOf($lot);
-            $nodes[$lot] = $thing === null ? null : $things->nodeOf($thing);
+            $thingOf[$lot] = (int) $ledger->thingOf($lot);
         }
 
-        $lots = $this->tests()->waiting($ledger, $stock->table('lot'), $nodes, $parents, $stock->testSettings(array_values(array_filter($nodes))));
+        // D-1541: one decision per material, read once for all lots (CD-7).
+        $required = $stock->testRequired(array_values($thingOf));
+        $lots     = $this->tests()->waiting($ledger, $stock->table('lot'), array_map(static fn (int $thing): bool => $required[$thing] ?? false, $thingOf));
         $date = $stock->structure()->field('lot_date');
         usort($lots, static fn (int $a, int $b): int => strcmp((string) $stock->table('lot')->first($b, $date), (string) $stock->table('lot')->first($a, $date)) ?: $b <=> $a);
 

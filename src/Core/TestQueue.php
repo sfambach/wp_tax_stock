@@ -5,14 +5,14 @@ namespace TaxmodStock\Core;
 /**
  * Which lots wait for their test after the goods receipt, and the change list that records a result (D-1002).
  *
- * A lot waits when its material lies in a tested branch, it has a rest, and its condition is empty or «ungetestet»: *his
+ * A lot waits when its material needs a test (D-1541: a test rule holds), it has a rest, and its condition is empty or «ungetestet»: *his
  * word: «wenn ich dieses woanders kaufe, gebraucht, muss auch getestet werden»* — so the platform does not matter, and
  * «neu» goes without a test. The result is the lot's condition («Zustand», the same choices as on a copy): one fact, not
  * a second field beside it that could say otherwise.
  *
  * ```mermaid
  * flowchart LR
- *   L["lot with rest"] --> B{"material in a tested branch?"}
+ *   L["lot with rest"] --> B{"a test rule holds for the material?"}
  *   B -->|no| X["no test"]
  *   B -->|yes| N{"condition new?"}
  *   N -->|yes| X
@@ -39,11 +39,11 @@ final class TestQueue
     }
 
     /**
-     * @param array<int, int|null> $nodeOfLot lot → the node its material lives in
-     * @param array<int, int>      $parents   node → parent, the tree of the groups
+     * @param array<int, bool> $requiredOfLot lot → whether its material needs a test (D-1541: a test rule holds; before the
+     *                                        rules, D-1259's group property)
      * @return list<int> the lots, in the order given
      */
-    public function waiting(Ledger $ledger, Table $lots, array $nodeOfLot, array $parents, TestSettings $settings): array
+    public function waiting(Ledger $ledger, Table $lots, array $requiredOfLot): array
     {
         if (! $this->isConfigured()) {
             return [];
@@ -53,7 +53,7 @@ final class TestQueue
         $out   = [];
 
         foreach ($lots->ids() as $lot) {
-            if ($ledger->restOf($lot) > 0.0 && $this->needsTest($nodeOfLot[$lot] ?? null, (string) ($lots->first($lot, $field) ?? ''), $parents, $settings)) {
+            if ($ledger->restOf($lot) > 0.0 && $this->needsTest($requiredOfLot[$lot] ?? false, (string) ($lots->first($lot, $field) ?? ''))) {
                 $out[] = $lot;
             }
         }
@@ -62,14 +62,14 @@ final class TestQueue
     }
 
     /**
-     * The one rule of D-1002, for a lot that is there and for one the goods receipt is about to make: the material lies in a
-     * tested branch, and the condition is empty or «ungetestet». D-1419: a lot marked «ungetestet» waits in any branch — the
-     * boards a build books in — so this list shows the lots {@see \TaxmodStock\WordPress\StockService::blockedLots()} blocks.
+     * The one rule of D-1002, for a lot that is there and for one the goods receipt is about to make: its material needs a
+     * test, and the condition is empty. D-1419: a lot marked «ungetestet» waits always — the boards a build books in — so this
+     * list shows the lots {@see \TaxmodStock\WordPress\StockService::blockedLots()} blocks.
      *
-     * @param string          $condition the condition's value id as stored, '' when none
-     * @param array<int, int> $parents   node → parent, the tree of the groups
+     * @param bool   $required  whether the material needs a test (D-1541; the default is «kein Test»)
+     * @param string $condition the condition's value id as stored, '' when none
      */
-    public function needsTest(?int $node, string $condition, array $parents, TestSettings $settings): bool
+    public function needsTest(bool $required, string $condition): bool
     {
         $s = $this->structure;
 
@@ -81,24 +81,22 @@ final class TestQueue
             return true;
         }
 
-        return $condition === '' && $node !== null && $settings->covers($node, $parents);
+        return $condition === '' && $required;
     }
 
     /**
-     * D-1111: the place the goods receipt proposes — «Lagerort für Test» for what will wait for its test, else the usual one.
+     * D-1111, D-1503: the place the goods receipt proposes — the test place for what will wait for its test, else the usual one.
      *
      * ```mermaid
      * flowchart LR
-     *   P["usual proposal"] --> T{"test place set and the lot needs a test?"}
+     *   P["usual proposal"] --> T{"test place known and the lot needs a test?"}
      *   T -->|yes| X["test place"]
      *   T -->|no| P2["usual proposal"]
      * ```
-     *
-     * @param array<int, int> $parents node → parent, the tree of the groups
      */
-    public function receiptPlace(int $usual, ?int $node, string $condition, array $parents, TestSettings $settings): int
+    public function receiptPlace(int $usual, bool $required, string $condition, ?int $testPlace): int
     {
-        return $settings->place !== null && $this->needsTest($node, $condition, $parents, $settings) ? $settings->place : $usual;
+        return $testPlace !== null && $this->needsTest($required, $condition) ? $testPlace : $usual;
     }
 
     /**

@@ -56,6 +56,7 @@ use TaxmodStock\Core\Structure;
 use TaxmodStock\Core\Table;
 use TaxmodStock\Core\TestQueue;
 use TaxmodStock\Core\TestResult;
+use TaxmodStock\Core\TestRules;
 use TaxmodStock\Core\TestSettings;
 use TaxmodStock\Core\Things;
 use TaxmodStock\Core\ViewSettings;
@@ -159,6 +160,8 @@ final class StockService
     private ?ReservedPlaces $reservedPlaces = null;
 
     private ?PlaceFunctions $placeFunctions = null;
+
+    private ?TestRules $testRules = null;
 
     /** @var array{0: Ledger, 1: Reservations}|null the reservations with the book they were read against */
     private ?array $reservations = null;
@@ -1634,6 +1637,144 @@ final class StockService
     }
 
     /**
+     * D-1541: the test rules, read once per request (CD-7); none while the model has no node «Testregeln» or the modeller
+     * no rule book.
+     */
+    public function testRules(): TestRules
+    {
+        if ($this->testRules !== null) {
+            return $this->testRules;
+        }
+
+        $s = $this->structure();
+
+        if (! TestRules::isConfigured($s) || ! $this->model->knowsRules()) {
+            return $this->testRules = TestRules::none();
+        }
+
+        return $this->testRules = TestRules::fromTables($s, $this->table('test_rule'), $s->hasNode('test_rule_filter') ? $this->table('test_rule_filter') : null);
+    }
+
+    /**
+     * Whether each material needs a test after the goods receipt. D-1541: a test rule holds — the default is «kein Test».
+     * Until the first rule exists D-1259's group property «Test nach Wareneingang» still decides, so nothing tested today stops
+     * being tested between the new node and the carry-over of the groups.
+     *
+     * ```mermaid
+     * flowchart LR
+     *   M["material"] --> R{"test rules exist?"}
+     *   R -->|yes| B["ModelDoor::firstRule: a rule holds → Test nötig"]
+     *   R -->|no| G["group property D-1259"]
+     * ```
+     *
+     * @param list<int> $things
+     * @return array<int, bool> material → Test nötig
+     */
+    public function testRequired(array $things): array
+    {
+        $things = array_values(array_unique(array_filter(array_map('intval', $things))));
+
+        if ($things === []) {
+            return [];
+        }
+
+        $nodes   = $this->model->nodesOf($things);
+        $rules   = $this->testRules();
+        $parents = $this->groupParents();
+        $out     = [];
+
+        if ($rules->isEmpty()) {
+            $settings = $this->testSettings(array_values($nodes));
+
+            foreach ($things as $thing) {
+                $out[$thing] = isset($nodes[$thing]) && $settings->covers((int) $nodes[$thing], $parents);
+            }
+
+            return $out;
+        }
+
+        $fields = $rules->fields();
+        $values = $fields === [] ? null : $this->model->records($things);
+
+        foreach ($things as $thing) {
+            $own = [];
+
+            foreach ($fields as $field) {
+                $own[$field] = array_map('strval', $values?->all($thing, $field) ?? []);
+            }
+
+            $out[$thing] = $this->model->firstRule($rules->book, TestRules::context($nodes[$thing] ?? null, $parents), $own) !== null;
+        }
+
+        return $out;
+    }
+
+    /** D-1541 «Neue Regel»: a rule behind the others, without node or filter yet — the record editor fills it. */
+    public function createTestRule(): int
+    {
+        $s = $this->structure();
+
+        if (! TestRules::isConfigured($s)) {
+            throw StockError::notConfigured('nodes.test_rule, fields.test_rule_node');
+        }
+
+        $answer = $this->model->write([['op' => 'create_record', 'ref' => 'regel', 'node' => (string) $s->node('test_rule'),
+            'values' => $s->hasField('test_rule_position') ? [(string) $s->field('test_rule_position') => (string) $this->nextTestRulePosition()] : []]]);
+        $this->testRules = null;
+
+        return (int) ($answer['refs']['regel'] ?? 0);
+    }
+
+    /**
+     * D-1541: the groups marked «Nach Wareneingang testen» themselves (D-1259) that are no test rule's node yet — what the
+     * carry-over writes, shown before it writes (his order of the print rules, D-1519 R2). Inherited marks need no rule of
+     * their own: the group above holds for them.
+     *
+     * @return list<int> the groups, in the order of the tree
+     */
+    public function testRuleProposals(): array
+    {
+        $groups = array_map('intval', array_keys($this->groupParents()));
+        $own    = array_keys(array_filter($this->model->ownProperties($groups, self::TEST_PROPERTY), static fn (bool|int $on): bool => $on === true));
+        $taken  = array_map(static fn (array $rule): int => $rule['conditions'][TestRules::NODE] ?? 0, $this->testRules()->book);
+
+        return array_values(array_filter($groups, static fn (int $g): bool => in_array($g, $own, true) && ! in_array($g, $taken, true)));
+    }
+
+    /** D-1541: every proposal becomes a rule behind the others, in one act (D-1410); the number written. */
+    public function takeOverTestRules(): int
+    {
+        $s    = $this->structure();
+        $open = $this->testRuleProposals();
+
+        if ($open === []) {
+            return 0;
+        }
+
+        if (! TestRules::isConfigured($s)) {
+            throw StockError::notConfigured('nodes.test_rule, fields.test_rule_node');
+        }
+
+        $next    = $this->nextTestRulePosition();
+        $changes = [];
+
+        foreach ($open as $i => $group) {
+            $changes[] = ['op' => 'create_record', 'ref' => 'regel' . $i, 'node' => (string) $s->node('test_rule'), 'values' => [(string) $s->field('test_rule_node') => (string) $group]
+                + ($s->hasField('test_rule_position') ? [(string) $s->field('test_rule_position') => (string) ($next + $i)] : [])];
+        }
+
+        $this->model->write($changes);
+        $this->testRules = null;
+
+        return count($open);
+    }
+
+    private function nextTestRulePosition(): int
+    {
+        return max([0, ...array_map(static fn (array $rule): int => $rule['position'], $this->testRules()->book)]) + 1;
+    }
+
+    /**
      * D-972 the place for purchases without material from the option; D-1259 the place of each group, own or inherited.
      *
      * @param list<int>|null $nodes the groups asked about; null for every group of the material tree
@@ -1923,14 +2064,11 @@ final class StockService
         $things   = $this->things();
         $out      = [];
         $planned  = $this->plannedPlaces();
-        $tests    = $this->testSettings(array_values($nodes));
-        // A test place that is no place any more proposes nothing; the tree is read only when there is one.
-        // D-1503: the test place inside the goods receipt, else D-1111's «Lagerort für Test».
-        $testAt   = $this->receiptTestPlace($tests);
-        $testing  = $testAt !== null;
-        $tests    = $testing ? TestSettings::fromArray(['place' => $testAt] + $tests->toArray()) : $tests;
+        // D-1503: the test place inside the goods receipt, else D-1111's «Lagerort für Test» (none when it is no place any
+        // more); D-1541: what a test rule asks for, read only when there is a test place.
+        $testAt   = $this->receiptTestPlace($this->testSettings([]));
+        $required = $testAt !== null ? $this->testRequired($models) : [];
         $queue    = new TestQueue($s);
-        $parents  = $testing ? $this->groupParents() : [];
 
         foreach ($plan as $purchase => $row) {
             $thing  = $row['model'];
@@ -1940,7 +2078,7 @@ final class StockService
             $usual  = $rules->propose($own > 0 ? $own : null, $node);
 
             // The lot is made by this receipt, so it has no condition yet: '' — new goods would carry «neu» (D-1002).
-            $proposed = $testing ? $queue->receiptPlace($usual, $node ?: null, '', $parents, $tests) : $usual;
+            $proposed = $queue->receiptPlace($usual, $thing !== null && ($required[$thing] ?? false), '', $testAt);
             // D-1361: a saved place is his choice and stays — unless it is only what the group proposed before the material
             // had a place of its own (his report 2026-11-14: «übernimmt er immer noch nicht den Lagerort … im Material»).
             $before   = $own > 0 ? $rules->propose(null, $node) : null;
@@ -6492,13 +6630,11 @@ final class StockService
         if ($empty !== []) {
             $ledger   = $this->ledger();
             $things   = array_values(array_filter(array_map(static fn (int $lot): int => (int) $ledger->thingOf($lot), $empty)));
-            $nodes    = $things === [] ? [] : $this->nodesOf($things);
-            $settings = $this->testSettings(array_values($nodes));
-            $parents  = $settings->branches === [] ? [] : $this->groupParents();
+            $required = $this->testRequired($things);
             $queue    = new TestQueue($s);
 
             foreach ($empty as $lot) {
-                if ($queue->needsTest($nodes[(int) $ledger->thingOf($lot)] ?? null, '', $parents, $settings)) {
+                if ($queue->needsTest($required[(int) $ledger->thingOf($lot)] ?? false, '')) {
                     $out[] = $lot;
                 }
             }

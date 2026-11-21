@@ -48,7 +48,9 @@ final class Structure
         // is the former name of «lager» (FORMER_KEYS), and an old pasted structure holding it would read as another site.
         'material_root',
         // D-1425: the frozen price calculation of a completion, its parts and its scrap.
-        'calculation', 'calculation_part', 'calculation_scrap'];
+        'calculation', 'calculation_part', 'calculation_scrap',
+        // D-1541: the test rules and their filters «Feld · Operator · Wert».
+        'test_rule', 'test_rule_filter'];
 
     /** Fields the module uses when they are there and leaves out when they are not. */
     /** D-1303: the stages a lot from production runs through, in this order; «In Reparatur» and «Verschrottet» step aside. */
@@ -134,6 +136,8 @@ final class Structure
         'type_fit_rule', 'type_fit_level',
         // D-1528 (W6): what a place type is for — Lager, Wareneingang, Warenausgang, Test, Klärung.
         'place_function',
+        // D-1541: a test rule's position, node and filters; a filter's field, operator and value.
+        'test_rule_position', 'test_rule_node', 'test_rule_filters', 'test_filter_field', 'test_filter_operator', 'test_filter_value',
         // D-1178: a material handled in packs — the pack's name, how many pieces it holds, and the pieces lost per cut.
         'lager_pack_name', 'lager_pack_content', 'lager_cut_loss',
         // D-1328: what makes two strips the same kind, and how many poles a strip has.
@@ -175,8 +179,10 @@ final class Structure
         ...self::STAGES,
         // D-1169: a place type's fit calculation and how loudly a misfit is said.
         'fit_volume', 'fit_sides', 'fit_none', 'level_info', 'level_warning', 'level_error',
-        // D-1528 (W6): the place functions; «Test» and «Klärung» wait for D-1503 and are not read yet.
+        // D-1528 (W6): the place functions; «Test» and «Klärung» are read since D-1503.
         'function_storage', 'function_inbound', 'function_outbound', 'function_test', 'function_clarify',
+        // D-1541: the one operator of a test filter built so far, «gleich».
+        'operator_equals',
         // D-1425: where a part's price came from, and the unit the calculation's times are kept in.
         'price_source_lot', 'price_source_last_purchase', 'unit_second',
         // D-1535 (P4): «Rundkontakt» in «Kontaktarten».

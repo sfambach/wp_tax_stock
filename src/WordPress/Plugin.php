@@ -22,6 +22,7 @@ use TaxmodStock\WordPress\Admin\ModulePage;
 use TaxmodStock\WordPress\Admin\Pages;
 use TaxmodStock\WordPress\Admin\PurchasePage;
 use TaxmodStock\WordPress\Admin\SettingsPage;
+use TaxmodStock\WordPress\Admin\TestRulesPage;
 use TaxmodStock\WordPress\Admin\SettingsTab;
 use TaxmodStock\WordPress\Admin\StockPage;
 
@@ -210,6 +211,8 @@ final class Plugin
             add_action('admin_post_' . ContactsPage::ACTION, static fn () => Acts::run(static fn () => (new ContactsPage())->handle()));
             // D-1474: Stammdaten › Auswahllisten.
             add_action('admin_post_' . ChoiceListsPage::ACTION, static fn () => Acts::run(static fn () => (new ChoiceListsPage())->handle()));
+            // D-1541: Einstellungen › Testregeln.
+            add_action('admin_post_' . TestRulesPage::ACTION, static fn () => Acts::run(static fn () => (new TestRulesPage())->handle()));
             add_action('admin_post_' . SettingsPage::ACTION, static fn () => Acts::run(static fn () => (new SettingsPage())->handle()));
             add_action('admin_post_' . SettingsPage::USER_ACTION, static fn () => Acts::run(static fn () => (new SettingsPage())->handleUser()));
             add_action('admin_post_' . LogisticsShell::FULLSCREEN_ACTION, static fn () => Acts::run([LogisticsShell::class, 'switchFullscreen']));
@@ -1711,6 +1714,8 @@ final class Plugin
             add_submenu_page(self::PARENT, __('Kontakte', 'taxmod-stock'), __('Kontakte', 'taxmod-stock'), 'manage_options', Pages::CONTACTS, $page(Pages::CONTACTS, static fn (): array => (new ContactsPage())->render())),
             // D-1474: Logistik › Stammdaten › Auswahllisten, the model's choice lists.
             add_submenu_page(self::PARENT, __('Auswahllisten', 'taxmod-stock'), __('Auswahllisten', 'taxmod-stock'), 'manage_options', Pages::CHOICES, $page(Pages::CHOICES, static fn (): string => (new ChoiceListsPage())->render())),
+            // D-1541: Logistik › Einstellungen › Testregeln.
+            add_submenu_page(self::PARENT, __('Testregeln', 'taxmod-stock'), __('Testregeln', 'taxmod-stock'), 'manage_options', Pages::TEST_RULES, $page(Pages::TEST_RULES, static fn (): string => (new TestRulesPage())->render())),
             // D-1085: Logistik › Einstellungen › Grundeinstellungen, inside the navigation.
             add_submenu_page(self::PARENT, __('Grundeinstellungen', 'taxmod-stock'), __('Grundeinstellungen', 'taxmod-stock'), 'manage_options', Pages::SETTINGS, $page(Pages::SETTINGS, static fn (): string => (new SettingsPage())->render())),
         ];

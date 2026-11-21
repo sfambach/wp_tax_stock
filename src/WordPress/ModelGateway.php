@@ -248,6 +248,24 @@ final class ModelGateway
         return method_exists($this->door, 'referrers') ? $this->door->referrers($records, $relation) : null;
     }
 
+    /** D-1541: whether the modeller has the one rule book (0.2.194). */
+    public function knowsRules(): bool
+    {
+        return method_exists($this->door, 'firstRule');
+    }
+
+    /**
+     * D-1541: the first rule that holds, decided by the modeller's rule book; null: none holds — the caller's default.
+     *
+     * @param list<array{id: int, position: int, conditions: array<int, int>, filters: list<array{field: int, value: string, operator: string}>}> $rules
+     * @param array<int, list<int>>    $context
+     * @param array<int, list<string>> $values
+     */
+    public function firstRule(array $rules, array $context, array $values): ?int
+    {
+        return $this->door->firstRule($rules, $context, $values);
+    }
+
     /** @param list<int> $records */
     public function records(array $records): ?Table
     {

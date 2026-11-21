@@ -334,7 +334,7 @@ final class InboundPage
 
         $rows = $rows !== '' ? $rows : '<tr class="no-items"><td class="colspanchange" colspan="7">' . esc_html__('Nichts zu testen.', 'taxmod-stock') . '</td></tr>';
 
-        return '<p>' . esc_html__('Bestandsposten aus Warengruppen mit Test (Configuration › Lager), noch ohne Ergebnis. Neuware geht ohne Test durch. Ungetestet wird nicht verkauft.', 'taxmod-stock') . '</p>'
+        return '<p>' . esc_html__('Bestandsposten, für die eine Testregel passt (Einstellungen › Testregeln), noch ohne Ergebnis, und alles «ungetestet». Neuware geht ohne Test durch. Ungetestet wird nicht verkauft.', 'taxmod-stock') . '</p>'
             // His word 2026-11-20 «massen aktionen fehlen»: the ticked lots get one result together (D-1403: in the bulk choice).
             . $this->testBulkBar(count($lots), $choices, $place, $search)
             . ListPage::table([[__('Material', 'taxmod-stock'), ''], [__('Bestellung', 'taxmod-stock'), ''], [__('Eingegangen am', 'taxmod-stock'), '9em'],

@@ -38,17 +38,18 @@ final class TestQueueTest extends TestCase
             16 => [$f('line_lot') => ['5'], $f('line_quantity') => ['-1']],
             17 => [$f('line_lot') => ['6'], $f('line_quantity') => ['1']],
         ]);
-        $nodes   = [1 => 30, 2 => 30, 3 => 30, 4 => 30, 5 => 30, 6 => 40];
-        $parents = [30 => 20, 20 => 10, 40 => 10];
+        // Changed with D-1541: whether a material needs a test is the rule book's answer, handed in per lot (1–5 yes, 6 no).
+        $required = [1 => true, 2 => true, 3 => true, 4 => true, 5 => true, 6 => false];
+        $none     = array_map(static fn (): bool => false, $required);
 
-        $waiting = (new TestQueue($s))->waiting(new Ledger($s, $lots, $lines), $lots, $nodes, $parents, TestSettings::fromArray(['branches' => [20]]));
+        $waiting = (new TestQueue($s))->waiting(new Ledger($s, $lots, $lines), $lots, $required);
 
-        self::assertSame([1, 4], $waiting, '2 has a result, 3 is new, 5 is gone, 6 is in an untested group; 4 is «ungetestet»');
-        // D-1419: a lot marked «ungetestet» waits whatever the branch — the queue shows what StockService::blockedLots blocks.
-        self::assertSame([4], (new TestQueue($s))->waiting(new Ledger($s, $lots, $lines), $lots, $nodes, $parents, TestSettings::fromArray([])), 'no tested branch: only the lot marked «ungetestet» waits');
+        self::assertSame([1, 4], $waiting, '2 has a result, 3 is new, 5 is gone, 6 needs no test; 4 is «ungetestet»');
+        // D-1419: a lot marked «ungetestet» waits whatever the rules say — the queue shows what StockService::blockedLots blocks.
+        self::assertSame([4], (new TestQueue($s))->waiting(new Ledger($s, $lots, $lines), $lots, $none), 'no rule holds («kein Test»): only the lot marked «ungetestet» waits');
         $lots6 = new Table([6 => [$f('lot_thing') => ['506'], $f('lot_condition') => ['401']]]);
-        self::assertSame([6], (new TestQueue($s))->waiting(new Ledger($s, $lots6, $lines), $lots6, $nodes, $parents, TestSettings::fromArray(['branches' => [20]])), 'D-1419: «ungetestet» outside the tested branch waits too');
-        self::assertSame([], (new TestQueue(Fixture::structure()))->waiting(new Ledger($s, $lots, $lines), $lots, $nodes, $parents, TestSettings::fromArray(['branches' => [20]])), 'without the fields in the structure there is no test');
+        self::assertSame([6], (new TestQueue($s))->waiting(new Ledger($s, $lots6, $lines), $lots6, $required), 'D-1419: «ungetestet» without a rule waits too');
+        self::assertSame([], (new TestQueue(Fixture::structure()))->waiting(new Ledger($s, $lots, $lines), $lots, $required), 'without the fields in the structure there is no test');
     }
 
     #[Test]
@@ -91,20 +92,17 @@ final class TestQueueTest extends TestCase
     #[Test]
     public function the_receipt_proposes_the_test_place_for_what_will_wait_for_its_test(): void
     {
-        // D-1111: the same rule as «Zu testen» (D-1002) — node 30 lies below the tested 20, node 40 does not.
-        $q        = new TestQueue($this->structure());
-        $parents  = [30 => 20, 20 => 10, 40 => 10];
-        $settings = TestSettings::fromArray(['branches' => [20], 'place' => 9001]);
+        // D-1111, D-1503: the same rule as «Zu testen» (D-1002); changed with D-1541: «needs a test» is handed in.
+        $q = new TestQueue($this->structure());
 
-        self::assertSame(9001, $q->receiptPlace(77, 30, '', $parents, $settings), 'used goods in a tested branch go to the test place');
-        self::assertSame(9001, $q->receiptPlace(77, 20, '401', $parents, $settings), '«ungetestet» in the branch itself too');
-        self::assertSame(77, $q->receiptPlace(77, 30, '400', $parents, $settings), 'new goods keep the usual proposal');
-        self::assertSame(77, $q->receiptPlace(77, 30, '301', $parents, $settings), 'a lot with a result keeps it');
-        self::assertSame(77, $q->receiptPlace(77, 40, '', $parents, $settings), 'an untested branch keeps it');
-        self::assertSame(77, $q->receiptPlace(77, null, '', $parents, $settings), 'a purchase without material keeps it');
-        self::assertSame(77, $q->receiptPlace(77, 30, '', $parents, TestSettings::fromArray(['branches' => [20]])), 'no test place set: as before');
-        self::assertSame(77, (new TestQueue(Fixture::structure()))->receiptPlace(77, 30, '', $parents, $settings), 'without the test fields in the structure there is no test');
-        self::assertTrue($q->needsTest(30, '', $parents, $settings) && ! $q->needsTest(30, '400', $parents, $settings), 'one rule for the queue and the proposal');
+        self::assertSame(9001, $q->receiptPlace(77, true, '', 9001), 'used goods a rule asks a test for go to the test place');
+        self::assertSame(9001, $q->receiptPlace(77, false, '401', 9001), '«ungetestet» always');
+        self::assertSame(77, $q->receiptPlace(77, true, '400', 9001), 'new goods keep the usual proposal');
+        self::assertSame(77, $q->receiptPlace(77, true, '301', 9001), 'a lot with a result keeps it');
+        self::assertSame(77, $q->receiptPlace(77, false, '', 9001), 'no rule holds: «kein Test», it keeps it');
+        self::assertSame(77, $q->receiptPlace(77, true, '', null), 'no test place: as before');
+        self::assertSame(77, (new TestQueue(Fixture::structure()))->receiptPlace(77, true, '', 9001), 'without the test fields in the structure there is no test');
+        self::assertTrue($q->needsTest(true, '') && ! $q->needsTest(true, '400') && ! $q->needsTest(false, ''), 'one rule for the queue and the proposal');
     }
 
     #[Test]

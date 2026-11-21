@@ -18,5 +18,7 @@ final class Pages
     public const CONTACTS = 'taxmod-lager-kontakte';
     public const CHOICES  = 'taxmod-lager-auswahllisten';
     public const SETTINGS = 'taxmod-lager-einstellungen';
+    /** D-1541: Einstellungen › Testregeln. */
+    public const TEST_RULES = 'taxmod-lager-testregeln';
     public const MODULE   = 'taxmod-lager-modul';
 }

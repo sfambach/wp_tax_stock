@@ -2334,11 +2334,11 @@ final class StockService
 
     /**
      * D-1519: the print rule that holds for this label — of a material (`material`), of a lot of it (`lot`), of a place (`location`,
-     * `$record` its place type) — or null: no rule holds, or the labels module asks none (an older one answers no rules at all).
+     * `$record` the place, `$placeType` its type, D-1563) — or null: no rule holds, or the labels module asks none (an older one answers no rules at all).
      *
      * @return array{id: int, name: string, label: int, copies: int|null, printer: int}|null
      */
-    public function labelRule(string $kind, int $record): ?array
+    public function labelRule(string $kind, int $record, int $placeType = 0): ?array
     {
         $labels = $this->labelTemplates();
         if (! method_exists($labels, 'ruleFor')) {
@@ -2346,7 +2346,13 @@ final class StockService
         }
         $s = $this->structure();
         if ($kind === 'location') {
-            return $labels->ruleFor(LabelQuestion::forPlace($s->node('location'), $record));
+            $tree  = $this->locationTree();
+            $above = [];
+            for ($at = $tree->parentOf($record); $at > 0 && ! in_array($at, $above, true) && $at !== $record; $at = $tree->parentOf($at)) {
+                $above[] = $at;
+            }
+
+            return $labels->ruleFor(LabelQuestion::forPlace($s->node('location'), $placeType, $record, $above));
         }
         $this->rememberForms([$record]);
         $group = (int) ($this->things()->nodeOf($record) ?? 0);

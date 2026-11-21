@@ -42,10 +42,19 @@ final class LabelQuestion
         return ['nodes' => [$lotNode]] + self::forMaterial($groups, $group, $forms, $form);
     }
 
-    /** @return array{nodes: list<int>, place_type: int} */
-    public static function forPlace(int $locationNode, int $type): array
+    /**
+     * D-1563 (2): the place rides along as the record, so a rule's field filters read the place's own values; its branch in the
+     * storage structure — the place, the places above it, then the node «Lagerorte» — is what a rule's node is asked against, as
+     * a material's group path is (Prüftor 21.11.). The place type stays a filter's matter, never the node's.
+     *
+     * @param list<int> $above the places above `$place`, nearest first
+     * @return array{nodes: list<int>, place_type: int, record?: int, groups?: list<int>}
+     */
+    public static function forPlace(int $locationNode, int $type, int $place = 0, array $above = []): array
     {
-        return ['nodes' => [$locationNode], 'place_type' => $type];
+        $out = ['nodes' => [$locationNode], 'place_type' => $type];
+
+        return $place > 0 ? $out + ['record' => $place, 'groups' => [$place, ...$above, $locationNode]] : $out;
     }
 
     /**

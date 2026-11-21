@@ -53,11 +53,12 @@ final class TestRulesPage
 
         foreach ($rules as $rule) {
             if ($rule['id'] === $chosen) {
-                // His answer 21.11.2026 07:19: «Es muss ein Knoten ausgewählt werden» — the record editor saves it, so the error stands here until one is chosen.
-                $missing = ($rule['conditions'][TestRules::NODE] ?? 0) > 0 ? '' : '<div class="notice notice-error inline"><p>' . esc_html__('Es muss ein Knoten ausgewählt werden. Ohne Knoten greift die Regel nicht.', 'taxmod-stock') . '</p></div>';
+                // His answer 21.11.2026 07:19: «Es muss ein Knoten ausgewählt werden» — the record editor saves it, so the error stands here after the save until one is chosen.
+                // His word 08:21: not already when a rule is created — only once it was saved without a node.
+                $missing = ($rule['conditions'][TestRules::NODE] ?? 0) > 0 || empty($_GET['gespeichert']) ? '' : '<div class="notice notice-error inline"><p>' . esc_html__('Es muss ein Knoten ausgewählt werden. Ohne Knoten greift die Regel nicht.', 'taxmod-stock') . '</p></div>';
 
                 return $page($missing . ListPage::recordHead(__('Testregel', 'taxmod-stock'), $this->ruleWord($rule), self::url(), __('Testregeln', 'taxmod-stock'), $explain)
-                    . (string) apply_filters('taxmod_record_editor', '', $chosen, self::url(['satz' => $chosen]), [], $this->roots()));
+                    . (string) apply_filters('taxmod_record_editor', '', $chosen, self::url(['satz' => $chosen, 'gespeichert' => 1]), [], $this->roots()));
             }
         }
 

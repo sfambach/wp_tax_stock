@@ -2359,6 +2359,63 @@ final class StockService
     }
 
     /**
+     * D-1558 (INF-137): the groups marked «Nach Wareneingang testen» themselves (D-1259) that are no test rule's node yet — taken
+     * over once by a data job, then the group property no longer counts. Inherited marks need no rule of their own.
+     *
+     * @return list<int> the groups, in the order of the tree
+     */
+    public function testRuleProposals(): array
+    {
+        $groups = array_map('intval', array_keys($this->groupParents()));
+        $own    = array_keys(array_filter($this->model->ownProperties($groups, self::TEST_PROPERTY), static fn (bool|int $on): bool => $on === true));
+        $taken  = array_map(static fn (array $rule): int => $rule['conditions'][TestRules::NODE] ?? 0, $this->testRules()->book);
+
+        return array_values(array_filter($groups, static fn (int $g): bool => in_array($g, $own, true) && ! in_array($g, $taken, true)));
+    }
+
+    /**
+     * D-1519 R2, D-1558 (INF-137): today's preselections as print rules, for the one-time takeover — Bauform before group, as the
+     * way of today decides, the deeper node before the one above it, then the place types. Read once each (CD-7).
+     *
+     * @return list<array{name: string, for: int, form?: int, group?: int, place_type?: int, label: int, copies?: int|null}>
+     */
+    public function labelRuleProposals(): array
+    {
+        $s      = $this->structure();
+        $out    = [];
+        $kinds  = [];
+        if ($s->hasNode('material_root')) {
+            $kinds[] = [self::MATERIAL_LABEL_PROPERTY, $s->node('material_root'), __('Material', 'taxmod-stock')];
+        }
+        $kinds[] = [self::LOT_LABEL_PROPERTY, $s->node('lot'), __('Posten', 'taxmod-stock')];
+        foreach ([['form', $this->formTree(), __('Bauform', 'taxmod-stock')], ['group', $this->tree(), __('Gruppe', 'taxmod-stock')]] as [$condition, $tree, $word]) {
+            $deepFirst = array_keys($tree);
+            usort($deepFirst, static fn (int $a, int $b): int => count(LabelQuestion::path($tree, $b)) <=> count(LabelQuestion::path($tree, $a)) ?: $a <=> $b);
+            foreach ($kinds as [$key, $for, $kind]) {
+                $own = $deepFirst === [] ? [] : $this->model->ownProperties($deepFirst, $key);
+                foreach ($deepFirst as $node) {
+                    $label = $own[$node] ?? null;
+                    if (is_int($label) && $label > 0) {
+                        $out[] = ['name' => sprintf('%s · %s %s', $kind, $word, (string) ($tree[$node]['name'] ?? '#' . $node)), 'for' => $for, $condition => $node, 'label' => $label];
+                    }
+                }
+            }
+        }
+        if ($s->hasField('location_place_type')) {
+            $types = $this->placeTypes();
+            foreach ($types->names() as $type => $name) {
+                $label = $types->labelTemplateOf($type);
+                if ($label > 0) {
+                    $copies = $types->labelCopiesOf($type);
+                    $out[]  = ['name' => sprintf('%s · %s', __('Platzart', 'taxmod-stock'), $name), 'for' => $s->node('location'), 'place_type' => $type, 'label' => $label, 'copies' => $copies > 0 ? $copies : null];
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * D-1153, D-1159: the labels with their printers, as the labels module answers them (D-1296: the stock keeps no copy).
      * Without the module, or while the model has no labels, there are none.
      */

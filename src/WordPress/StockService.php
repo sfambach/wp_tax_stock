@@ -1714,145 +1714,114 @@ final class StockService
             return $out;
         }
 
-        $fields = $rules->fields();
-        $values = $fields === [] ? null : $this->model->records($things);
-
-        foreach ($things as $thing) {
-            $own = [];
-
-            foreach ($fields as $field) {
-                $own[$field] = array_map('strval', $values?->all($thing, $field) ?? []);
-            }
-
-            $out[$thing] = $this->model->firstRule($rules->holding(), TestRules::context($nodes[$thing] ?? null, $parents), $own) !== null;
-        }
-
-        return $out;
+        return $this->rulesHold(array_combine($things, array_map(static fn (int $thing): array => [$thing], $things)), $nodes, $rules, $parents);
     }
 
-    /** D-1541 «Neue Regel»: a rule behind the others, without node or filter yet — the record editor fills it. */
-    public function createTestRule(): int
+    /**
+     * D-1552: per lot — a filter reads the values of the material, the lot, the lot's purchase and the process that made the lot,
+     * each field by its own relation id, so «Art» only says where the person chose the field. Before the first rule the
+     * group property decides as in {@see self::testRequired()}.
+     *
+     * @param list<int> $lots
+     * @return array<int, bool> lot → Test nötig
+     */
+    public function testRequiredForLots(array $lots): array
+    {
+        $lots   = array_values(array_unique(array_filter(array_map('intval', $lots))));
+        $ledger = $this->ledger();
+        $thingOf = [];
+
+        foreach ($lots as $lot) {
+            $thingOf[$lot] = (int) $ledger->thingOf($lot);
+        }
+
+        $rules = $this->testRules();
+
+        if ($rules->isEmpty() || $rules->fields() === []) {
+            $byThing = $this->testRequired(array_values(array_filter($thingOf)));
+
+            return array_map(static fn (int $thing): bool => $byThing[$thing] ?? false, $thingOf);
+        }
+
+        $s        = $this->structure();
+        $lotTable = $this->table('lot');
+        $made     = $this->processesOf($lots);
+        $subjects = [];
+
+        foreach ($thingOf as $lot => $thing) {
+            $purchase        = $s->hasField('lot_purchase') ? (int) $lotTable->first($lot, $s->field('lot_purchase')) : 0;
+            $subjects[$lot]  = array_values(array_filter([$thing, $lot, $purchase, $made[$lot] ?? 0]));
+        }
+
+        return $this->rulesHold($subjects, $this->model->nodesOf(array_values(array_filter($thingOf))), $rules, $this->groupParents());
+    }
+
+    /**
+     * The process that made each lot: the first transaction with a line on it (D-1552 «Woher komme ich?»).
+     *
+     * @param list<int> $lots
+     * @return array<int, int> lot → transaction
+     */
+    private function processesOf(array $lots): array
     {
         $s = $this->structure();
 
-        if (! TestRules::isConfigured($s)) {
-            throw StockError::notConfigured('nodes.test_rule, fields.test_rule_node');
+        if ($lots === [] || ! $s->hasField('transaction_lines') || ! $s->hasField('line_lot')) {
+            return [];
         }
 
-        $answer = $this->model->write([['op' => 'create_record', 'ref' => 'regel', 'node' => (string) $s->node('test_rule'),
-            'values' => $s->hasField('test_rule_position') ? [(string) $s->field('test_rule_position') => (string) $this->nextTestRulePosition()] : []]]);
-        $this->testRules = null;
+        $wanted = array_flip($lots);
+        $lines  = $this->table('line');
+        $deals  = $this->table('transaction');
+        $out    = [];
+        $ids    = $deals->ids();
+        sort($ids);
 
-        return (int) ($answer['refs']['regel'] ?? 0);
-    }
+        foreach ($ids as $deal) {
+            foreach ($deals->all($deal, $s->field('transaction_lines')) as $line) {
+                $lot = (int) $lines->first((int) $line, $s->field('line_lot'));
 
-    /**
-     * His word 21.11.2026 08:52 «Das Löschen von Testregeln hast du wohl vergessen»: the ticked rules go, in one act of the modeller
-     * (undo by its number, D-1410). Only records of the test-rule node — any other id is refused before anything is written.
-     *
-     * @param list<int> $rules
-     * @return int the act
-     */
-    public function removeTestRules(array $rules): int
-    {
-        $known = array_column($this->testRules()->book, 'id');
-        $rules = array_values(array_unique(array_filter($rules, static fn (int $id): bool => $id > 0)));
-
-        if ($rules === [] || array_diff($rules, $known) !== []) {
-            throw StockError::nothingToBook();
-        }
-
-        $answer = $this->model->write(array_map(static fn (int $id): array => ['op' => 'remove_record', 'record' => $id], $rules));
-        $this->testRules = null;
-
-        return (int) ($answer['act'] ?? 0);
-    }
-
-    /**
-     * D-1541: the groups marked «Nach Wareneingang testen» themselves (D-1259) that are no test rule's node yet — what the
-     * carry-over writes, shown before it writes (his order of the print rules, D-1519 R2). Inherited marks need no rule of
-     * their own: the group above holds for them.
-     *
-     * @return list<int> the groups, in the order of the tree
-     */
-    public function testRuleProposals(): array
-    {
-        $groups = array_map('intval', array_keys($this->groupParents()));
-        $own    = array_keys(array_filter($this->model->ownProperties($groups, self::TEST_PROPERTY), static fn (bool|int $on): bool => $on === true));
-        $taken  = array_map(static fn (array $rule): int => $rule['conditions'][TestRules::NODE] ?? 0, $this->testRules()->book);
-
-        return array_values(array_filter($groups, static fn (int $g): bool => in_array($g, $own, true) && ! in_array($g, $taken, true)));
-    }
-
-    /**
-     * The names of the groups below each of these, in the order of the tree, at most `$limit` each — one read of the tree.
-     *
-     * @param list<int> $groups
-     * @return array<int, list<string>> group → the names below it
-     */
-    public function groupsBelow(array $groups, int $limit = 40): array
-    {
-        $tree     = $this->tree();
-        $children = [];
-
-        foreach ($tree as $node => $row) {
-            $children[(int) $row['parent']][] = (int) $node;
-        }
-
-        $out = [];
-
-        foreach ($groups as $group) {
-            $names = [];
-
-            for ($todo = $children[$group] ?? [], $seen = []; $todo !== [] && count($names) < $limit;) {
-                $node = array_shift($todo);
-
-                if (isset($seen[$node])) {
-                    continue;
+                if (isset($wanted[$lot]) && ! isset($out[$lot])) {
+                    $out[$lot] = (int) $deal;
                 }
-
-                $seen[$node] = true;
-                $names[]     = (string) $tree[$node]['name'];
-                $todo        = [...$todo, ...($children[$node] ?? [])];
             }
-
-            $out[$group] = array_diff($todo, array_keys($seen)) === [] ? $names : [...$names, '…'];
         }
 
         return $out;
     }
 
-    /** D-1541: every proposal becomes a rule behind the others, in one act (D-1410); the number written. */
-    public function takeOverTestRules(): int
+    /**
+     * Whether a rule holds for each subject: its first record is the material (the node that counts), every record's values
+     * count for the filters — read in one go (CD-7).
+     *
+     * @param array<int, list<int>> $subjects key → records, the material first
+     * @param array<int, int>       $nodes    material → node
+     * @param array<int, int>       $parents
+     * @return array<int, bool>
+     */
+    private function rulesHold(array $subjects, array $nodes, TestRules $rules, array $parents): array
     {
-        $s    = $this->structure();
-        $open = $this->testRuleProposals();
+        $fields = $rules->fields();
+        $all    = array_values(array_unique(array_merge([], ...array_values($subjects))));
+        $values = $fields === [] || $all === [] ? null : $this->model->records($all);
+        $out    = [];
 
-        if ($open === []) {
-            return 0;
+        foreach ($subjects as $key => $records) {
+            $own = [];
+
+            foreach ($fields as $field) {
+                $own[$field] = [];
+
+                foreach ($records as $record) {
+                    array_push($own[$field], ...array_map('strval', $values?->all($record, $field) ?? []));
+                }
+            }
+
+            $thing     = (int) ($records[0] ?? 0);
+            $out[$key] = $thing > 0 && $this->model->firstRule($rules->holding(), TestRules::context($nodes[$thing] ?? null, $parents), $own) !== null;
         }
 
-        if (! TestRules::isConfigured($s)) {
-            throw StockError::notConfigured('nodes.test_rule, fields.test_rule_node');
-        }
-
-        $next    = $this->nextTestRulePosition();
-        $changes = [];
-
-        foreach ($open as $i => $group) {
-            $changes[] = ['op' => 'create_record', 'ref' => 'regel' . $i, 'node' => (string) $s->node('test_rule'), 'values' => [(string) $s->field('test_rule_node') => (string) $group]
-                + ($s->hasField('test_rule_position') ? [(string) $s->field('test_rule_position') => (string) ($next + $i)] : [])];
-        }
-
-        $this->model->write($changes);
-        $this->testRules = null;
-
-        return count($open);
-    }
-
-    private function nextTestRulePosition(): int
-    {
-        return max([0, ...array_map(static fn (array $rule): int => $rule['position'], $this->testRules()->book)]) + 1;
+        return $out;
     }
 
     /**
@@ -2387,49 +2356,6 @@ final class StockService
         return $labels->ruleFor(['record' => $record] + ($kind === 'lot'
             ? LabelQuestion::forLot($s->node('lot'), $this->tree(), $group, $this->formTree(), $form)
             : LabelQuestion::forMaterial($this->tree(), $group, $this->formTree(), $form)));
-    }
-
-    /**
-     * D-1519 R2: today's preselections as print rules for the labels module to take over (filter `taxmod_label_rule_proposals`) —
-     * Bauform before group, as the way of today decides, the deeper node before the one above it, then the place types. Read
-     * once each: the trees, the own properties of all their nodes, the place types (CD-7).
-     *
-     * @return list<array{name: string, for: int, form?: int, group?: int, place_type?: int, label: int, copies?: int|null}>
-     */
-    public function labelRuleProposals(): array
-    {
-        $s      = $this->structure();
-        $out    = [];
-        $kinds  = [];
-        if ($s->hasNode('material_root')) {
-            $kinds[] = [self::MATERIAL_LABEL_PROPERTY, $s->node('material_root'), __('Material', 'taxmod-stock')];
-        }
-        $kinds[] = [self::LOT_LABEL_PROPERTY, $s->node('lot'), __('Posten', 'taxmod-stock')];
-        foreach ([['form', $this->formTree(), __('Bauform', 'taxmod-stock')], ['group', $this->tree(), __('Gruppe', 'taxmod-stock')]] as [$condition, $tree, $word]) {
-            $deepFirst = array_keys($tree);
-            usort($deepFirst, static fn (int $a, int $b): int => count(LabelQuestion::path($tree, $b)) <=> count(LabelQuestion::path($tree, $a)) ?: $a <=> $b);
-            foreach ($kinds as [$key, $for, $kind]) {
-                $own = $deepFirst === [] ? [] : $this->model->ownProperties($deepFirst, $key);
-                foreach ($deepFirst as $node) {
-                    $label = $own[$node] ?? null;
-                    if (is_int($label) && $label > 0) {
-                        $out[] = ['name' => sprintf('%s · %s %s', $kind, $word, (string) ($tree[$node]['name'] ?? '#' . $node)), 'for' => $for, $condition => $node, 'label' => $label];
-                    }
-                }
-            }
-        }
-        if ($s->hasField('location_place_type')) {
-            $types = $this->placeTypes();
-            foreach ($types->names() as $type => $name) {
-                $label = $types->labelTemplateOf($type);
-                if ($label > 0) {
-                    $copies = $types->labelCopiesOf($type);
-                    $out[]  = ['name' => sprintf('%s · %s', __('Platzart', 'taxmod-stock'), $name), 'for' => $s->node('location'), 'place_type' => $type, 'label' => $label, 'copies' => $copies > 0 ? $copies : null];
-                }
-            }
-        }
-
-        return $out;
     }
 
     /**
@@ -6702,13 +6628,12 @@ final class StockService
         $out       = array_values(array_filter($lots, static fn (int $lot): bool => $untested !== null && $condition($lot) === $untested));
 
         if ($empty !== []) {
-            $ledger   = $this->ledger();
-            $things   = array_values(array_filter(array_map(static fn (int $lot): int => (int) $ledger->thingOf($lot), $empty)));
-            $required = $this->testRequired($things);
+            // D-1552: per lot, so a filter on the lot, its purchase or its process counts.
+            $required = $this->testRequiredForLots($empty);
             $queue    = new TestQueue($s);
 
             foreach ($empty as $lot) {
-                if ($queue->needsTest($required[(int) $ledger->thingOf($lot)] ?? false, '')) {
+                if ($queue->needsTest($required[$lot] ?? false, '')) {
                     $out[] = $lot;
                 }
             }

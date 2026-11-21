@@ -20,6 +20,8 @@ final class Pages
     public const SETTINGS = 'taxmod-lager-einstellungen';
     /** D-1541: Einstellungen › Testregeln. */
     public const TEST_RULES = 'taxmod-lager-testregeln';
+    /** D-1558: the one rules page, the modeller's building block — the old test rules address leads there. */
+    public const RULES = \Taxmod\WordPress\Admin\RulesPage::SLUG;
     /** D-1555: Einstellungen › Feldkatalog, the modeller's branch «Data Types» shown, no copy. */
     public const FIELD_CATALOGUE = 'taxmod-lager-feldkatalog';
     public const MODULE   = 'taxmod-lager-modul';

@@ -22,7 +22,7 @@ use TaxmodStock\WordPress\Admin\ModulePage;
 use TaxmodStock\WordPress\Admin\Pages;
 use TaxmodStock\WordPress\Admin\PurchasePage;
 use TaxmodStock\WordPress\Admin\SettingsPage;
-use TaxmodStock\WordPress\Admin\TestRulesPage;
+use TaxmodStock\WordPress\Admin\RulesSetup;
 use TaxmodStock\WordPress\Admin\FieldCataloguePage;
 use TaxmodStock\WordPress\Admin\SettingsTab;
 use TaxmodStock\WordPress\Admin\StockPage;
@@ -37,7 +37,7 @@ final class Plugin
     public const MENU = Admin\Pages::INBOUND;
 
     /** The pages that draw the modeller's forms, choosers and dialogs — they get its stylesheet and scripts in the head. */
-    public const MODELLER_STYLED = [self::MENU, Pages::COCKPIT, Pages::STOCK, Pages::PURCHASE, Pages::SETTINGS, Pages::MODULE, Pages::INBOUND, Pages::CONTACTS, Pages::CHOICES, Pages::TEST_RULES, Pages::FIELD_CATALOGUE];
+    public const MODELLER_STYLED = [self::MENU, Pages::COCKPIT, Pages::STOCK, Pages::PURCHASE, Pages::SETTINGS, Pages::MODULE, Pages::INBOUND, Pages::CONTACTS, Pages::CHOICES, Pages::RULES, Pages::FIELD_CATALOGUE];
 
     /** The modeller's menu, which every Taxmod module hangs its pages under (D-1028). */
     public const PARENT = 'taxmod';
@@ -149,10 +149,10 @@ final class Plugin
         // *The one door into the model and the shared confirm dialog (D-1186) came with the modeller 0.1.175; the Ausbuchen form needs the narrowed choosers of 0.2.64 (D-1298), every form the toolbar of 0.2.67 (D-1308), the view dialog of 0.2.68 and its script of 0.2.69 (D-1309; the 0.2.69 release still says 0.2.68 in its header, so the gate asks 0.2.68); ListPage::grid of 0.2.120 (D-1409); ListPage::number of 0.2.130 (D-1423); ModelDoor::remembering of 0.2.132 (D-1186, G5); DialogNumber at the edge of 0.2.133 (D-1431); number columns, the complete answer and the searched texts of a row of 0.2.146 (D-1462); listBar, iconButton, date, dateCell, money of 0.2.172 (D-1500); an older one is named
         // rather than failing on a page.*
         // Asked by version, not by loading the classes: method_exists() compiled the 43 KB list page on every page view (D-1187).
-        // D-1501/D-1504: the fields go through ListPage::field; Tick and Choice came with the modeller 0.2.175. D-1546: the test rules' node chooses under several roots since 0.2.200.
-        if (! class_exists(\Taxmod\WordPress\Plugin::class, false) || version_compare(\Taxmod\WordPress\Plugin::VERSION, '0.2.200', '<')) {
+        // D-1501/D-1504: the fields go through ListPage::field; Tick and Choice came with the modeller 0.2.175. D-1546: the test rules' node chooses under several roots since 0.2.200; D-1558: the one rules page since 0.2.206.
+        if (! class_exists(\Taxmod\WordPress\Plugin::class, false) || version_compare(\Taxmod\WordPress\Plugin::VERSION, '0.2.206', '<')) {
             add_action('admin_notices', static function (): void {
-                echo '<div class="notice notice-error"><p>' . esc_html__('Taxmod Stock braucht den aktiven Taxonomy Modeller ab 0.2.200.', 'taxmod-stock') . '</p></div>';
+                echo '<div class="notice notice-error"><p>' . esc_html__('Taxmod Stock braucht den aktiven Taxonomy Modeller ab 0.2.206.', 'taxmod-stock') . '</p></div>';
             });
 
             return;
@@ -215,12 +215,12 @@ final class Plugin
             add_action('admin_post_' . ContactsPage::ACTION, static fn () => Acts::run(static fn () => (new ContactsPage())->handle()));
             // D-1474: Stammdaten › Auswahllisten.
             add_action('admin_post_' . ChoiceListsPage::ACTION, static fn () => Acts::run(static fn () => (new ChoiceListsPage())->handle()));
-            // D-1541: Einstellungen › Testregeln.
-            add_action('admin_post_' . TestRulesPage::ACTION, static fn () => Acts::run(static fn () => (new TestRulesPage())->handle()));
             add_action('admin_post_' . SettingsPage::ACTION, static fn () => Acts::run(static fn () => (new SettingsPage())->handle()));
             add_action('admin_post_' . SettingsPage::USER_ACTION, static fn () => Acts::run(static fn () => (new SettingsPage())->handleUser()));
             add_action('admin_post_' . LogisticsShell::FULLSCREEN_ACTION, static fn () => Acts::run([LogisticsShell::class, 'switchFullscreen']));
         }
+        // D-1558: the Lager registers the one rules page and says its own rule type.
+        RulesSetup::boot();
         // D-1235, D-1238: the print thread asks for one material, lot or place label, as the dialog would build it.
         add_filter('taxmod_label_for', static fn (?array $found, string $prefix, int $id, int $template, int $printer): ?array => $found ?? (in_array($prefix, StockPage::LABEL_PREFIXES, true) ? (new StockPage())->labelFor($prefix, $id, $template, $printer) : null), 10, 5);
         // D-1259: what a group of material carries for the stock, inherited down the tree and set in its Lager view.
@@ -230,8 +230,6 @@ final class Plugin
             StockService::MATERIAL_LABEL_PROPERTY => ['label' => __('Standard-Etikett Material', 'taxmod-stock'), 'type' => 'id'],
             StockService::LOT_LABEL_PROPERTY      => ['label' => __('Standard-Etikett Posten', 'taxmod-stock'), 'type' => 'id'],
         ]);
-        // D-1519 R2: the preselections of Bauform, group and place type, offered to the labels module as print rules.
-        add_filter('taxmod_label_rule_proposals', static fn (mixed $proposals): array => array_merge(is_array($proposals) ? $proposals : [], (new StockService())->labelRuleProposals()));
         // D-1546, D-1548: where material lies, as «Material steht in» says (D-1522) — the roots of a rule's node in other modules.
         add_filter(StockService::MATERIAL_ROOTS, static fn (mixed $roots): array => (new StockService())->materialRoots());
         add_filter(self::BOOK_BUILD, [self::class, 'bookBuild'], 10, 2);
@@ -1720,8 +1718,9 @@ final class Plugin
             add_submenu_page(self::PARENT, __('Kontakte', 'taxmod-stock'), __('Kontakte', 'taxmod-stock'), 'manage_options', Pages::CONTACTS, $page(Pages::CONTACTS, static fn (): array => (new ContactsPage())->render())),
             // D-1474: Logistik › Stammdaten › Auswahllisten, the model's choice lists.
             add_submenu_page(self::PARENT, __('Auswahllisten', 'taxmod-stock'), __('Auswahllisten', 'taxmod-stock'), 'manage_options', Pages::CHOICES, $page(Pages::CHOICES, static fn (): string => (new ChoiceListsPage())->render())),
-            // D-1541: Logistik › Einstellungen › Testregeln.
-            add_submenu_page(self::PARENT, __('Testregeln', 'taxmod-stock'), __('Testregeln', 'taxmod-stock'), 'manage_options', Pages::TEST_RULES, $page(Pages::TEST_RULES, static fn (): string => (new TestRulesPage())->render())),
+            // D-1558: the one rules page (the modeller's building block), Einstellungen › Regeln › one item per type.
+            add_submenu_page(self::PARENT, __('Regeln', 'taxmod-stock'), __('Regeln', 'taxmod-stock'), 'manage_options', Pages::RULES, $page(Pages::RULES, static fn (): string => \Taxmod\WordPress\Admin\RulesPage::fromSetup()?->render()
+                ?? \Taxmod\WordPress\Admin\ListPage::page(__('Regeln', 'taxmod-stock'), [], [['html' => '<div class="notice notice-warning inline"><p>' . esc_html__('Im Modell ist noch kein Knoten «Regeln» eingerichtet.', 'taxmod-stock') . '</p></div>']], (string) TAXMOD_STOCK_VERSION))),
             // D-1555: Logistik › Einstellungen › Feldkatalog.
             add_submenu_page(self::PARENT, __('Feldkatalog', 'taxmod-stock'), __('Feldkatalog', 'taxmod-stock'), 'manage_options', Pages::FIELD_CATALOGUE, $page(Pages::FIELD_CATALOGUE, static fn (): string => (new FieldCataloguePage())->render())),
             // D-1085: Logistik › Einstellungen › Grundeinstellungen, inside the navigation.
@@ -1736,6 +1735,14 @@ final class Plugin
             add_action('load-' . $moduleHook, [ModulePage::class, 'load'], 20);
         }
 
+        // The old address of the test rules leads to their tab on the one page (D-1558).
+        $oldTestRules = add_submenu_page(self::PARENT, __('Testregeln', 'taxmod-stock'), __('Testregeln', 'taxmod-stock'), 'manage_options', Pages::TEST_RULES, static function (): void {
+        });
+        add_action('load-' . (string) $oldTestRules, static function (): void {
+            wp_safe_redirect(\Taxmod\WordPress\Admin\RulesPage::url((int) RulesSetup::testRulesTab()));
+            exit;
+        });
+
         // Notices of other plugins do not show inside the stock interface (design 7.3); its own stand inside the page.
         foreach (array_filter($hooks) as $hook) {
             add_action('load-' . $hook, static function (): void {
@@ -1747,7 +1754,7 @@ final class Plugin
         // Removed only when the menu is drawn: WordPress checks access to a page against the submenu, so removing them here
         // would lock the pages. D-1085: the modules' entries go too — the menu keeps Modeller, Logistik, maintenance, Configuration.
         add_action('admin_head', static function (): void {
-            foreach ([self::MENU, Pages::STOCK, Pages::PURCHASE, Pages::SETTINGS, Pages::CONTACTS, Pages::CHOICES, Pages::MODULE, ...ModulePage::menuEntries()] as $hidden) {
+            foreach ([self::MENU, Pages::STOCK, Pages::PURCHASE, Pages::SETTINGS, Pages::CONTACTS, Pages::CHOICES, Pages::RULES, Pages::TEST_RULES, Pages::MODULE, ...ModulePage::menuEntries()] as $hidden) {
                 remove_submenu_page(self::PARENT, $hidden);
             }
         });

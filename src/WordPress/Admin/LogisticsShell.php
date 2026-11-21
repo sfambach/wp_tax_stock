@@ -117,6 +117,9 @@ final class LogisticsShell
                 // D-1502 Stufe 3, his word 2026-11-20: «ein Arbeitsplatz ist ein Stammdatum» — the modules' master data (the labels module's workplaces).
                 ...self::modules('masterdata'),
                 ...self::contactItems(),
+                // D-1558, his words 21.11.2026: «Den Menüpunkt Test kannst du ja schon mal anlegen … in Stammdaten», «als einziger
+                // Unterpunkt ist dann Testregeln aktuell» — test scripts and checklists are open (entry sheet).
+                ['path' => [__('Test', 'taxmod-stock')]] + $item('test-rules', __('Testregeln', 'taxmod-stock'), Pages::RULES, RulesSetup::testRulesTab()),
             ]],
             // D-1184, his word 2026-11-05: «kontakt ast in logistik menü einbauen» — firms, suppliers, manufacturers, persons.
             // D-1185, his word 2026-11-06: «kontakte hat doch schon unter knoten die bitte im kontakte knoten an zueigen und der kontakte knoten
@@ -126,8 +129,8 @@ final class LogisticsShell
                 // D-1085: the business settings inside the navigation; the technical structure stays on the modeller's Configuration.
                 $item('basics', __('Grundeinstellungen', 'taxmod-stock'), Pages::SETTINGS),
                 ...self::modules('settings'),
-                // D-1541: what needs a test after the goods receipt — the same rule technique as the print rules.
-                $item('test-rules', __('Testregeln', 'taxmod-stock'), Pages::TEST_RULES),
+                // D-1558, his word 21.11.2026: «in Einstellungen einen Regeln … Punkt … darunter dann die unterschiedlichen Regeln».
+                ...RulesSetup::menuItems(),
                 // D-1555 (his word 09:17 «eher eine Einstellungssache»): the Feldkatalog beside the rules.
                 $item('field-catalogue', __('Feldkatalog', 'taxmod-stock'), Pages::FIELD_CATALOGUE),
                 // His words 2026-11-03: «pack mal das menü drucken unter einstellungen», «warum hat das nur zwei ebenen», «kannst du

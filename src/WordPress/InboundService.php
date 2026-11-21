@@ -384,9 +384,9 @@ final class InboundService
             $thingOf[$lot] = (int) $ledger->thingOf($lot);
         }
 
-        // D-1541: one decision per material, read once for all lots (CD-7).
-        $required = $stock->testRequired(array_values($thingOf));
-        $lots     = $this->tests()->waiting($ledger, $stock->table('lot'), array_map(static fn (int $thing): bool => $required[$thing] ?? false, $thingOf));
+        // D-1541, D-1552: one decision per lot — its material, itself, its purchase, its process — read once for all (CD-7).
+        $required = $stock->testRequiredForLots(array_keys($thingOf));
+        $lots     = $this->tests()->waiting($ledger, $stock->table('lot'), $required);
         $date = $stock->structure()->field('lot_date');
         usort($lots, static fn (int $a, int $b): int => strcmp((string) $stock->table('lot')->first($b, $date), (string) $stock->table('lot')->first($a, $date)) ?: $b <=> $a);
 

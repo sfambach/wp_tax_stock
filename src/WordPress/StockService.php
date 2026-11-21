@@ -4463,7 +4463,9 @@ final class StockService
             throw StockError::noLot($thing);
         }
 
-        if ($purpose->subject > 0 && ! in_array($purpose->subject, array_merge(...array_map('array_keys', array_values($this->purposes()))), true)) {
+        // D-1567: a Bestandsposten is a Bezug too.
+        if ($purpose->subject > 0 && $ledger->thingOf($purpose->subject) === null
+            && ! in_array($purpose->subject, array_merge(...array_map('array_keys', array_values($this->purposes()))), true)) {
             throw StockError::noSubject();
         }
 
@@ -5564,6 +5566,50 @@ final class StockService
         }
 
         return $out;
+    }
+
+    /** @var array<int, int>|null lot → the order whose receipt brought it in */
+    private ?array $produced = null;
+
+    /**
+     * The lots a production brought in (D-1143: a receipt naming its order in «Bezug»), lot → order — read once per request
+     * for all lots (CD-7). ⚠️ *Stefan 21.11. 15:08: «Bei den ISA-Risern steht auch Kauf, Inventur. Das müsste ja eigentlich
+     * Produktion sein» — a lot without a purchase was called «Inventur» even when an order built it.*
+     *
+     * @return array<int, int>
+     */
+    public function producedLots(): array
+    {
+        if ($this->produced !== null) {
+            return $this->produced;
+        }
+
+        $s = $this->structure();
+
+        if (! $s->hasField('transaction_reference') || ! $s->hasValue('kind_receipt')) {
+            return $this->produced = [];
+        }
+
+        $deals = $this->table('transaction');
+        $lines = $this->table('line');
+        $out   = [];
+
+        foreach ($deals->ids() as $deal) {
+            $reference = (int) $deals->first($deal, $s->field('transaction_reference'));
+
+            if ($reference <= 0 || (int) $deals->first($deal, $s->field('transaction_kind')) !== $s->value('kind_receipt')) {
+                continue;
+            }
+
+            foreach ($deals->all($deal, $s->field('transaction_lines')) as $line) {
+                $lot = (int) $lines->first((int) $line, $s->field('line_lot'));
+                $out[$lot] ??= $reference;
+            }
+        }
+
+        unset($out[0]);
+
+        return $this->produced = $out;
     }
 
     /**

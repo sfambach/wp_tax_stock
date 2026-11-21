@@ -52,6 +52,9 @@ final class StockPage
     /** D-1223: the layout field that prints a lot's batch number. */
     public const CHARGE_FIELD = 'Charge';
 
+    /** D-1567: the Bezug choice that names a Bestandsposten. */
+    private const PURPOSE_LOT = 'bestand';
+
     /** The codes «print-label» may ask this page for (D-1235, D-1238): material, lot, place, box. */
     public const LABEL_PREFIXES = ['M', 'P', 'O', 'K'];
 
@@ -388,7 +391,7 @@ final class StockPage
                     $thing,
                     absint($_POST['lot'] ?? 0) ?: null,
                     $consumption['quantity'] !== '' ? $consumption['quantity'] : sanitize_text_field(wp_unslash((string) ($_POST['quantity'] ?? ''))),
-                    $this->purpose(sanitize_key(wp_unslash((string) ($_POST['purpose'] ?? '')))),
+                    $this->purpose(sanitize_key(wp_unslash((string) ($_POST['purpose'] ?? ''))), absint($_POST['purpose_lot'] ?? 0)),
                     $today,
                     $this->title(__('Verbrauch', 'taxmod-stock'), $today),
                     absint($_POST['place'] ?? 0) ?: null,
@@ -1081,8 +1084,11 @@ final class StockPage
             $value    = $lots->first($lot, $s->field('lot_value'));
             $amount   = $value === null ? null : $money->first((int) $value, $s->field('money_amount'));
             $purchase = $lots->first($lot, $s->field('lot_purchase'));
+            $built    = $purchase === null ? ($this->stock->producedLots()[$lot] ?? 0) : 0;
+            // Stefan 21.11. 15:08: a lot an order built says «Produktion», not «Inventur».
             $origin   = ($amount === null ? '' : ' · ' . esc_html($amount) . ' ' . esc_html__('je Stück', 'taxmod-stock'))
-                . ($purchase === null ? ' · ' . esc_html__('Inventur', 'taxmod-stock') : ' · ' . esc_html__('Kauf', 'taxmod-stock') . ' #' . esc_html($purchase));
+                . ($purchase !== null ? ' · ' . esc_html__('Kauf', 'taxmod-stock') . ' #' . esc_html($purchase)
+                    : ($built > 0 ? ' · ' . esc_html__('Produktion', 'taxmod-stock') . ' #' . esc_html((string) $built) : ' · ' . esc_html__('Inventur', 'taxmod-stock')));
             // A list item is no table cell: the date as the site writes it, without the sort span.
             $date     = esc_html(ListPage::date(substr((string) $lots->first($lot, $s->field('lot_date')), 0, 10)));
             $at       = array_filter($ledger->placesOf($lot), static fn (float $q): bool => $q > 0.0);
@@ -4749,7 +4755,7 @@ final class StockPage
             ] : [
                 ['label' => __('Menge', 'taxmod-stock'), 'control' => $this->consumptionQuantity($controls['quantity'], $unit)],
             ]),
-            $this->purposeRow($presetPlace),
+            $this->purposeRow($presetPlace, '', true),
         ];
         // D-1297, D-1298: the kind, from the modeller's chooser narrowed to the leaves under «Verbrauch»; required there.
         if ($controls['kind'] !== '') {
@@ -4796,9 +4802,12 @@ final class StockPage
      * D-1088: the purpose of a consumption — a subject, «für Produktion», or none. Taken from a reserved place, its Bezug
      * is preselected: reserved goods go only for exactly that purpose. One row of the shared form block.
      *
+     * D-1567: where the page carries the lot chooser (`$lots`), the group «Bestand» names a Bestandsposten as the Bezug,
+     * picked with the record chooser (D-1488); Fertigung and Reparatur stay no Bezug.
+     *
      * @return array{label: string, control: string, hint: string, for: string}
      */
-    private function purposeRow(int $place, string $idSuffix = ''): array
+    private function purposeRow(int $place, string $idSuffix = '', bool $lots = false): array
     {
         $field    = 'taxmod-stock-consumption-purpose' . ($idSuffix === '' ? '' : '-' . $idSuffix);
         $preset   = $this->stock->purposeAt($place);
@@ -4810,16 +4819,29 @@ final class StockPage
                 $choices[$id] = $group . ' · ' . $label;
             }
         }
+        if ($lots) {
+            $choices[self::PURPOSE_LOT] = __('Bestand', 'taxmod-stock') . ' · ' . __('Bestandsposten wählen …', 'taxmod-stock');
+        }
+        $control = SelectMarkup::of('purpose', $choices, $selected, attributes: ['id' => $field], nothingWord: __('— kein Bezug —', 'taxmod-stock'));
+        if ($lots) {
+            $box      = $field . '-lot';
+            $control .= '<span id="' . esc_attr($box) . '" hidden> ' . $this->recordPicker('purpose_lot', null, '', null, __('Bestandsposten suchen …', 'taxmod-stock')) . '</span>'
+                . '<script>(function(){var s=document.getElementById(' . wp_json_encode($field) . '),b=document.getElementById(' . wp_json_encode($box) . ');'
+                . 'if(!s||!b){return;}function f(){b.hidden=s.value!==' . wp_json_encode(self::PURPOSE_LOT) . ';}s.addEventListener("change",f);f();})();</script>';
+        }
 
-        return ['label' => __('Bezug', 'taxmod-stock'), 'for' => $field,
-            'control' => SelectMarkup::of('purpose', $choices, $selected, attributes: ['id' => $field], nothingWord: __('— kein Bezug —', 'taxmod-stock')),
+        return ['label' => __('Bezug', 'taxmod-stock'), 'for' => $field, 'control' => $control,
             'hint' => __('Reservierte Ware darf nur für genau ihren Bezug verbraucht werden; der Verbrauch mindert dann die offene Reservierung. Für jeden anderen Zweck erst aus dem reservierten Bereich umbuchen.', 'taxmod-stock')];
     }
 
-    /** D-1088: «produktion», a record id, or nothing — as the form sends it. */
-    private function purpose(string $value): Purpose
+    /** D-1088: «produktion», a record id, or nothing — as the form sends it; D-1567: «bestand» with the lot picked. */
+    private function purpose(string $value, int $lot = 0): Purpose
     {
-        return $value === 'produktion' ? Purpose::production() : Purpose::subject(absint($value));
+        return match (true) {
+            $value === 'produktion'       => Purpose::production(),
+            $value === self::PURPOSE_LOT  => $lot > 0 ? Purpose::subject($lot) : throw StockError::noSubject(),
+            default                       => Purpose::subject(absint($value)),
+        };
     }
 
     /**

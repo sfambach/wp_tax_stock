@@ -3357,7 +3357,7 @@ final class StockService
 
         $s = $this->structure();
 
-        if (! $s->hasField('place_function') || ! $s->hasField('location_place_type') || ! $s->hasNode('location_type')) {
+        if (! $s->hasField('place_function')) {
             return $this->placeFunctions = PlaceFunctions::none();
         }
 
@@ -3370,21 +3370,13 @@ final class StockService
         }
 
         $places     = $this->table('location');
-        $types      = $this->table('location_type');
-        $typeOf     = [];
         $functionOf = [];
 
         foreach ($places->ids() as $place) {
-            $typeOf[$place] = (int) $places->first($place, $s->field('location_place_type'));
+            $functionOf[$place] = (int) $places->first($place, $s->field('place_function'));
         }
 
-        foreach ($types->ids() as $type) {
-            $functionOf[$type] = (int) $types->first($type, $s->field('place_function'));
-        }
-
-        $tree = $this->locationTree();
-
-        return $this->placeFunctions = PlaceFunctions::from($typeOf, $functionOf, $keyOf, $tree->withAllBelow(...));
+        return $this->placeFunctions = PlaceFunctions::from($functionOf, $keyOf, $this->locationTree()->withAllBelow(...));
     }
 
     /**

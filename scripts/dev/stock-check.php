@@ -1868,7 +1868,8 @@ $pruefe(! preg_match('/[.]submit\(\)/', $quellen) && substr_count($quellen, 'tax
 
 // D-1503: testing has its own places, read from the place functions (D-1528) — the goods receipt's test place, the nearest
 // «Klärung» for «defekt», «Einlagern» after OK to where the material is stored; the «Test» tab narrows to one test place.
-$ptNode = (new StockService())->structure()->node('location_type');
+// Stefan 21.11. (PR-9, visible change): the function is the place's own field, no longer its type's.
+$ptNode = (new StockService())->structure()->node('location');
 $pfRoh = wp_get_ability("taxmod/apply")->execute(["changes" => [
     ['op' => 'create_node', 'ref' => 'pf', 'name' => '__Platzfunktionen', 'parent' => (string) $r['lo'], 'class' => 'Choice'],
     ['op' => 'create_node', 'ref' => 'pf_we', 'name' => '__Wareneingang', 'parent' => '@pf', 'class' => 'Constant'],
@@ -1883,16 +1884,19 @@ if (is_array($opt) && isset($pf['pt_fn'])) {
     $opt['values'] += ['function_inbound' => (int) $pf['pf_we'], 'function_test' => (int) $pf['pf_te'], 'function_clarify' => (int) $pf['pf_kl']];
     update_option('taxmod_stock_structure', $opt);
 }
-$pfArten = isset($pf['pt_fn']) ? (array) ($apply([
-    ['op' => 'create_record', 'ref' => 'a_we', 'node' => (string) $ptNode, 'values' => [$lbl => '__WE-Bereich', (string) $pf['pt_fn'] => (string) $pf['pf_we']]],
-    ['op' => 'create_record', 'ref' => 'a_te', 'node' => (string) $ptNode, 'values' => [$lbl => '__Testplatz', (string) $pf['pt_fn'] => (string) $pf['pf_te']]],
-    ['op' => 'create_record', 'ref' => 'a_kl', 'node' => (string) $ptNode, 'values' => [$lbl => '__Klärplatz', (string) $pf['pt_fn'] => (string) $pf['pf_kl']]],
-])['refs'] ?? []) : [];
-$platz  = static fn (string $name, int $parent, int $type): int => (int) ((new StockService())->createPlace($name, $parent, false, 0, false, $type)['refs']['ort'] ?? 0);
-$weB    = $platz('__WE-Bereich', 0, (int) ($pfArten['a_we'] ?? 0));
-$weT    = $platz('__WE-Test', $weB, (int) ($pfArten['a_te'] ?? 0));
-$weK    = $platz('__WE-Klärung', $weB, (int) ($pfArten['a_kl'] ?? 0));
-$prT    = $platz('__Prod-Test', 0, (int) ($pfArten['a_te'] ?? 0));
+$platz  = static function (string $name, int $parent, string $function) use ($apply, $pf): int {
+    $ort = (int) ((new StockService())->createPlace($name, $parent, false, 0, false, 0)['refs']['ort'] ?? 0);
+
+    if ($ort > 0 && isset($pf['pt_fn'], $pf[$function])) {
+        $apply([['op' => 'set_values', 'record' => (string) $ort, 'values' => [(string) $pf['pt_fn'] => (string) $pf[$function]]]]);
+    }
+
+    return $ort;
+};
+$weB    = $platz('__WE-Bereich', 0, 'pf_we');
+$weT    = $platz('__WE-Test', $weB, 'pf_te');
+$weK    = $platz('__WE-Klärung', $weB, 'pf_kl');
+$prT    = $platz('__Prod-Test', 0, 'pf_te');
 $s      = new StockService();
 $pruefe($weT > 0 && $s->receiptTestPlace($s->testSettings([])) === $weT && in_array($weT, $s->testPlaces(), true) && in_array($prT, $s->testPlaces(), true),
     'D-1503: the goods receipt proposes its own test place «Wareneingang › Test»; both test places are choices of the «Test» tab');

@@ -2,6 +2,7 @@
 
 namespace TaxmodStock\WordPress\Admin;
 
+use Taxmod\WordPress\Admin\ListPage;
 use TaxmodStock\Core\StockList;
 
 /**

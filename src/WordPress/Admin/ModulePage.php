@@ -139,7 +139,9 @@ final class ModulePage
         foreach ((array) ($submenu[Plugin::PARENT] ?? []) as $entry) {
             $slug = (string) ($entry[2] ?? '');
 
-            if ($slug === '' || in_array($slug, self::NOT_MODULES, true) || str_contains($slug, 'cleanup') || str_contains($slug, 'backup') || str_contains($slug, 'inbox') || str_contains($slug, '.php')) {
+            // Stefan 22.11.: a page with an empty menu title is reached from a button only (Platinenmaterial, JLCPCB-Nachbestellung);
+            // it is no module and gets no empty line under Einstellungen.
+            if ($slug === '' || trim(wp_strip_all_tags((string) ($entry[0] ?? ''))) === '' || in_array($slug, self::NOT_MODULES, true) || str_contains($slug, 'cleanup') || str_contains($slug, 'backup') || str_contains($slug, 'inbox') || str_contains($slug, '.php')) {
                 continue;
             }
 

@@ -435,6 +435,31 @@ final class Reservations
         return $out;
     }
 
+    /**
+     * D-1582 for a whole box hung elsewhere (Prüftor 22.11.: «ganze Kiste umhängen»): what it carries out of its reserved
+     * area ends there as if moved out lot by lot ({@see endedBy()}); an area inside the box goes along and ends nothing.
+     *
+     * @param list<int> $inside the box and every place in it
+     * @return array<int, array<int, array{thing: int, lot: int|null, quantity: float}>> reservation → line → what to cancel
+     */
+    public function endedByHang(array $inside, int $parent, Ledger $ledger, ReservedPlaces $places): array
+    {
+        $set   = array_flip($inside);
+        $moves = [];
+
+        foreach ($ledger->stockByPlace() as $lot => $at) {
+            foreach (array_intersect_key($at, $set) as $place => $quantity) {
+                $area = $places->reservingPlaceOf($place);
+
+                if ($area !== null && ! isset($set[$area]) && $quantity > self::NOTHING) {
+                    $moves[] = new TransferRow($lot, $place, $parent, (string) $quantity);
+                }
+            }
+        }
+
+        return $this->endedBy($moves, $ledger, $places);
+    }
+
     public function subjectOf(int $deal): int
     {
         return $this->heads[$deal]['subject'] ?? 0;

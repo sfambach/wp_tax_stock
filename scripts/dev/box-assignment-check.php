@@ -76,6 +76,9 @@ $changes = (new Bookings($s, '2026-11-22'))->transfer([new TransferRow(60, 3, 4,
 $kinds   = array_values(array_filter(array_map(static fn (array $c): ?string => $c['values'][(string) $s->field('transaction_kind')] ?? null, $changes)));
 $check($kinds === ['209', '210'], 'the Umbuchung writes its Storno in the same write');
 $check($list->endedBy([new TransferRow(60, 3, 3, '10')], $ledger, $box) === [], 'moving within the box ends nothing');
+$check(($list->endedByHang([3], 4, $ledger, $box)[90][81]['quantity'] ?? 0.0) === 0.0, 'a box that is the area itself takes its flag along: hanging it ends nothing');
+$area = new ReservedPlaces(new LocationTree([2 => 'Bereich', 3 => 'Kiste', 4 => 'Regal'], [2 => 0, 3 => 2, 4 => 0], [], [], [2 => 700]), [2 => true]);
+$check(($list->endedByHang([3], 4, $ledger, $area)[90][81]['quantity'] ?? 0.0) === 3.0, 'a box hung out of its area ends the order\'s 3');
 
 echo "4. Fremder Auftrag gesperrt\n";
 $check($refused(static fn () => $list->check([new ReservationRow(30, '8', 60)], $ledger, $box, 700)), 'another order cannot be given what 500 holds (8 > 7 free)');

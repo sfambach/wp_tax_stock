@@ -189,6 +189,18 @@ final class ReservationsTest extends TestCase
         self::assertSame([(string) Fixture::structure()->value('kind_transfer'), (string) Fixture::structure()->value('kind_reservation')], $kinds, 'the Umbuchung and its Storno in one write');
     }
 
+    /** D-1582: hanging the whole box out of its area ends the assignment; hung within the area, or with the flag on the box itself, nothing ends. */
+    #[Test]
+    public function hanging_the_box_out_of_its_area_ends_the_assignment(): void
+    {
+        $list = $this->reservations();
+        $tree = new LocationTree([2 => 'Bereich', 3 => 'Kiste', 4 => 'Regal', 5 => 'Platz'], [2 => 0, 3 => 2, 4 => 0, 5 => 2], [], [], [2 => 700]);
+
+        self::assertSame([90 => [81 => ['quantity' => 3.0, 'thing' => 30, 'lot' => 60]]], $list->endedByHang([3], 4, $this->ledger(), new ReservedPlaces($tree, [2 => true])));
+        self::assertSame([], $list->endedByHang([3], 5, $this->ledger(), new ReservedPlaces($tree, [2 => true])), 'within the area');
+        self::assertSame([], $list->endedByHang([3], 4, $this->ledger(), new ReservedPlaces($tree, [3 => true])), 'the flag goes along with the box');
+    }
+
     /** What lies in a box and is named by an order's reservation counts once, not twice. */
     #[Test]
     public function a_reservation_inside_a_reserved_box_counts_once(): void

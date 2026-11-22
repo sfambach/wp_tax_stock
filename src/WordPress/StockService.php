@@ -3025,7 +3025,7 @@ final class StockService
         $ledger   = $this->ledger();
         $bookings = new Bookings($this->structureWithKinds(), $today);
         $rules    = new LocationChanges($s);
-        $changes  = $plan['lots'] === [] ? [] : $bookings->transfer($plan['lots'], $title, $ledger, '', $this->reservedPlaces(), $this->boundLots());
+        $changes  = $plan['lots'] === [] ? [] : $bookings->transfer($plan['lots'], $title, $ledger, '', $this->reservedPlaces(), $this->boundLots(), 0, $this->reservations());
 
         $this->guardFit($plan['children'], 0, $parent);
 
@@ -3151,7 +3151,7 @@ final class StockService
         }
 
         $bookings = new Bookings($this->structureWithKinds(), $today);
-        $changes  = $rows === [] ? [] : $bookings->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $this->boundLots());
+        $changes  = $rows === [] ? [] : $bookings->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $this->boundLots(), 0, $this->reservations());
 
         // A box put into an old place moves on to its new one, with what is in it (D-1091).
         foreach ($gone as $old) {
@@ -6856,7 +6856,7 @@ final class StockService
     private function writeTransfer(array $rows, string $today, string $title, Ledger $ledger, bool $emptySource, string $found = ''): array
     {
         $bookings = new Bookings($this->structureWithKinds(), $today);
-        $changes  = $bookings->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $this->boundLots());
+        $changes  = $bookings->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $this->boundLots(), 0, $this->reservations());
 
         $foundQuantity = $emptySource ? 0.0 : (float) str_replace(',', '.', $found);
 

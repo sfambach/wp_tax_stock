@@ -200,7 +200,11 @@ $own = [\TaxmodStock\WordPress\Admin\CockpitPage::PAGE, \TaxmodStock\WordPress\A
 $twice = array_values(array_intersect($own, array_column(\TaxmodStock\WordPress\Admin\ModulePage::all(), 'slug')));
 $pruefe($twice === [], 'no page of the stock is framed twice as a connection module' . ($twice === [] ? '' : ': ' . implode(', ', $twice)));
 $fertigung = array_values(array_filter($areas, static fn (array $area): bool => $area['key'] === 'production'))[0]['items'] ?? [];
-$pruefe(array_column($fertigung, 'key') === ['project-boxes', 'module-__navcheck-production'], 'D-1142: a page announced with area «production» stands under Fertigung, after Projekt-Gebinde');
+// D-1301 (changes this check, PR-9; Grenzlauf 22.11. red with the manufacturing active): with the manufacturing module its own
+// pages show the project boxes and the stock's «Projekt-Gebinde» is gone; without it that page stands first.
+$fertigungKeys = array_column($fertigung, 'key');
+$pruefe(in_array('project-boxes', $fertigungKeys, true) === (StockPage::boxesInModule() === null) && (StockPage::boxesInModule() !== null || $fertigungKeys[0] === 'project-boxes') && end($fertigungKeys) === 'module-__navcheck-production',
+    'D-1142: a page announced with area «production» stands under Fertigung, after Projekt-Gebinde where the stock still shows it (' . implode(', ', $fertigungKeys) . ')');
 $_GET = ['page' => ModulePage::PAGE, 'module' => '__navcheck-deep'];
 $tief = LogisticsShell::wrap(ModulePage::PAGE, '<p>x</p>');
 $pruefe(substr_count($tief, 'taxmod-shell-group is-open') === 2 && str_contains($tief, '>Ebene B</a><ul><li><a') && str_contains($tief, 'aria-current="page">Tief</a>'), 'a page with a path of two groups stands three levels deep, its groups open (n levels)');
@@ -355,6 +359,21 @@ delete_option(StockService::MATERIAL_IN);
 $pruefe(get_option(StockService::INBOUND_SINCE) === '2026-01-02' && (int) get_option(StockService::INBOUND_ARCHIVE_DAYS) === 9, 'goods receipt since and archive days');
 $pruefe(get_option(StockService::TESTS) === ['place' => null], 'D-1259: the test settings hold the test place only; the tested groups are a group property');
 $pruefe((new StockService())->viewSettings()->expanded('material'), 'the view of the tabs');
+// His word 2026-11-22 «mach sie schaltbar und nimm sie standardmäßig raus»: the lock between reserved areas is a setting, off unless set.
+delete_option(StockService::AREA_LOCK);
+$aus = (new StockService())->locksBetweenAreas();
+update_option(StockService::AREA_LOCK, '1', false);
+$pruefe(! $aus && (new StockService())->locksBetweenAreas() && str_contains((new SettingsPage())->render(), 'name="' . StockService::AREA_LOCK . '"'), 'the lock between reserved areas: off by default, a tick in the settings');
+delete_option(StockService::AREA_LOCK);
+
+// D-1581, Live-Check 29 2026-11-22: the search begun on «Bestand» marked «Stammdaten › Material» — it stays in «Bestand».
+$_GET    = ['page' => StockPage::PAGE, 'tab' => 'material', 'filter' => 'instock', StockPage::ASKS_STOCK => '1', 's' => 'x'];
+$bestand = LogisticsShell::wrap(StockPage::PAGE, '<p>x</p>');
+$_GET    = ['page' => StockPage::PAGE, 'tab' => 'material'];
+$stamm   = LogisticsShell::wrap(StockPage::PAGE, '<p>x</p>');
+$offen   = static fn (string $html, string $label): bool => preg_match('/<li class="taxmod-shell-area is-open"><a [^>]*>' . $label . '<\/a>/', $html) === 1;
+$pruefe($offen($bestand, 'Bestand') && ! $offen($bestand, 'Stammdaten') && ! str_contains($bestand, 'aria-current') && $offen($stamm, 'Stammdaten'),
+    'D-1581: a search from «Bestand» marks «Bestand» in the menu, the material list itself «Stammdaten»');
 
 $tab = new TaxmodStock\WordPress\Admin\SettingsTab();
 $pruefe(str_contains($tab->render(), 'taxmod_stock_structure') && ! str_contains($tab->render(), 'taxmod_stock_not_material'), 'the Configuration tab «Lager» keeps only the technical structure');
@@ -368,8 +387,11 @@ add_filter(ModulePage::FILTER, static fn (array $pages): array => [...$pages,
 ModulePage::capture();
 $_GET = ['page' => CockpitPage::PAGE];
 $kopf = LogisticsShell::wrap(CockpitPage::PAGE, '<p>x</p>');
-$pruefe(preg_match('/<a href="[^"]*module=__navcheck-head-1[^"]*">Fertigung<\/a>/', $kopf) === 1 && preg_match('/<a href="[^"]*area=stock[^"]*">Bestand<\/a>/', $kopf) === 1,
-    'D-1372: Fertigung opens the page its module marks (the first of two), Bestand still its overview');
+// Grenzlauf 22.11. (changes this check, PR-9): an active manufacturing module marks its own page first — the head is the first
+// page marked, whichever module it is; of the two marked here the second never wins.
+$ersterKopf = (string) (array_values(array_filter(ModulePage::all(), static fn (array $m): bool => $m['area'] === 'production' && $m['opens_area']))[0]['slug'] ?? '');
+$pruefe($ersterKopf !== '__navcheck-head-2' && preg_match('/<a href="[^"]*module=' . preg_quote($ersterKopf, '/') . '[^"]*">Fertigung<\/a>/', $kopf) === 1 && preg_match('/<a href="[^"]*area=stock[^"]*">Bestand<\/a>/', $kopf) === 1,
+    'D-1372: Fertigung opens the page its module marks (the first of two: ' . $ersterKopf . '), Bestand still its overview');
 
 // D-1483: a record this module keeps opens on its page wherever the modeller links to it — by its own node, and from a node above.
 $heim  = new StockService();

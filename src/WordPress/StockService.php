@@ -128,6 +128,8 @@ final class StockService
 
     /** D-1375, his wish 2026-11-15: the price warning's share, in percent. */
     public const PRICE_WARN_PERCENT = 'taxmod_stock_price_warn_percent';
+    /** Stefan 2026-11-22: whether goods may not go straight from one reserved area (a project box) into another; default no. */
+    public const AREA_LOCK = 'taxmod_stock_area_lock';
 
     /** His word: «nach einem Monat oder so». */
     public const INBOUND_ARCHIVE_DAYS_DEFAULT = 30;
@@ -3229,12 +3231,14 @@ final class StockService
         $changes = (new LocationChanges($this->structure()))->move($place, $parent, $tree, $this->table('location'));
         $this->reservedPlaces()->checkHang($place, $parent, $this->ledger(), $this->boundLots());
 
+        $bookings = new Bookings($this->structureWithKinds(), $today === '' ? current_time('Y-m-d') : $today);
+
         // D-1091: a box that moves is a Vorgang «Umlagerung» in the same step; a fixed place is a change of the structure only.
         if ($this->relocates() && $tree->isMovable($place) && $tree->parentOf($place) !== $parent) {
-            $changes = [...$changes, ...(new Bookings($this->structureWithKinds(), $today === '' ? current_time('Y-m-d') : $today))->relocate($place, $tree->parentOf($place), $parent, $title === '' ? 'Umlagerung' : $title)];
+            $changes = [...$changes, ...$bookings->relocate($place, $tree->parentOf($place), $parent, $title === '' ? 'Umlagerung' : $title)];
         }
 
-        return $this->model->write($changes);
+        return $this->model->write([...$changes, ...$this->endedByHang([$place], $parent, $bookings, $title === '' ? 'Umlagerung' : $title)]);
     }
 
     /**
@@ -3256,6 +3260,7 @@ final class StockService
         $relocate = $this->relocates();
         $bookings = $relocate ? new Bookings($this->structureWithKinds(), $today === '' ? current_time('Y-m-d') : $today) : null;
         $changes  = [];
+        $moved    = [];
 
         foreach (array_values(array_unique($places)) as $place) {
             if ($tree->parentOf($place) === $parent && $table->has($place)) {
@@ -3268,13 +3273,38 @@ final class StockService
             if ($bookings !== null && $tree->isMovable($place)) {
                 $changes = [...$changes, ...$bookings->relocate($place, $tree->parentOf($place), $parent, $title === '' ? 'Umlagerung' : $title)];
             }
+
+            $moved[] = $place;
         }
 
         if ($changes === []) {
             throw StockError::nothingToBook();
         }
 
-        return $this->model->write($changes);
+        $bookings ??= new Bookings($this->structureWithKinds(), $today === '' ? current_time('Y-m-d') : $today);
+
+        return $this->model->write([...$changes, ...$this->endedByHang($moved, $parent, $bookings, $title === '' ? 'Umlagerung' : $title)]);
+    }
+
+    /**
+     * D-1582 (Prüftor 22.11. «ganze Kiste umhängen»): a box hung out of its reserved area ends what its orders were given
+     * there — a Storno each, written with the move; the same Bookings keeps the references apart.
+     *
+     * @param list<int> $places the places hung under `$parent`
+     * @return list<array<string, mixed>>
+     */
+    private function endedByHang(array $places, int $parent, Bookings $bookings, string $title): array
+    {
+        $tree    = $this->locationTree();
+        $inside  = array_merge([], ...array_map($tree->withAllBelow(...), $places));
+        $list    = $this->reservations();
+        $changes = [];
+
+        foreach ($inside === [] ? [] : $list->endedByHang($inside, $parent, $this->ledger(), $this->reservedPlaces()) as $deal => $positions) {
+            $changes = [...$changes, ...$bookings->cancelReservation($list->subjectOf($deal), $positions, $title, '')];
+        }
+
+        return $changes;
     }
 
     /** D-1091: whether the model knows the Vorgang «Umlagerung» (its kind and the field for the box). */
@@ -3322,9 +3352,15 @@ final class StockService
 
     /** D-1082: the places reserved for production, computed from the tree read once. */
     /** Built once per service, like the place tree it rests on (review 2026-11-17, Befund 2: 24 callers). */
+    /** Whether an Umbuchung from one reserved area straight into another is refused ({@see self::AREA_LOCK}). */
+    public function locksBetweenAreas(): bool
+    {
+        return (string) get_option(self::AREA_LOCK, '0') === '1';
+    }
+
     public function reservedPlaces(): ReservedPlaces
     {
-        return $this->reservedPlaces ??= ReservedPlaces::from($this->structure(), $this->table('location'), $this->locationTree());
+        return $this->reservedPlaces ??= ReservedPlaces::from($this->structure(), $this->table('location'), $this->locationTree(), $this->locksBetweenAreas());
     }
 
     /**
@@ -5439,7 +5475,16 @@ final class StockService
             throw StockError::nothingToBook();
         }
 
-        return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', null, [], $reference)));
+        // D-1582: what leaves a reserved box ends its assignment there; the way back itself is not checked (D-1528).
+        $bookings = new Bookings($this->structureWithKinds(), $today);
+        $changes  = $bookings->transfer($rows, $title, $ledger, '', null, [], $reference);
+        $list     = $this->reservations();
+
+        foreach ($list->endedBy($rows, $ledger, $this->reservedPlaces()) as $deal => $positions) {
+            $changes = [...$changes, ...$bookings->cancelReservation($list->subjectOf($deal), $positions, $title, '')];
+        }
+
+        return $this->dealOf($this->model->write($changes));
     }
 
     /**

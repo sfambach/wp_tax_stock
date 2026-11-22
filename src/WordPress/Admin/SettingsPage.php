@@ -197,7 +197,10 @@ final class SettingsPage
 
         return '<h2>' . esc_html__('Einlagerung', 'taxmod-stock') . '</h2><input type="hidden" name="taxmod_stock_places_sent" value="1">'
             . ListPage::settings([['label' => __('Lagerort für Käufe ohne Material', 'taxmod-stock'), 'control' => $stock->placeChooser('taxmod_stock_unreferenced', (int) $stock->locationSettings()->unreferenced),
-                'hint' => __('Der Wareneingang schlägt den Lagerort des Materials vor, sonst den Standard-Lagerort seiner Gruppe (gesetzt in der Lager-Ansicht der Gruppe, vererbt nach unten), sonst den Standard-Ort der Struktur, sonst diesen.', 'taxmod-stock')]]);
+                'hint' => __('Der Wareneingang schlägt den Lagerort des Materials vor, sonst den Standard-Lagerort seiner Gruppe (gesetzt in der Lager-Ansicht der Gruppe, vererbt nach unten), sonst den Standard-Ort der Struktur, sonst diesen.', 'taxmod-stock')],
+                // His word 2026-11-22: «mach sie schaltbar und nimm sie standardmäßig raus».
+                ['label' => __('Umbuchen zwischen reservierten Bereichen sperren', 'taxmod-stock'), 'control' => ListPage::field(InputKind::Tick, 'taxmod_stock_area_lock', '1', ['checked' => $stock->locksBetweenAreas()]),
+                'hint' => __('Angehakt: Ware aus einem reservierten Bereich (z. B. einem Projektgebinde) geht nicht direkt in einen anderen, nur über einen freien Platz. Reservierte Posten bleiben immer gesperrt.', 'taxmod-stock')]]);
     }
 
     /**
@@ -274,6 +277,7 @@ final class SettingsPage
         if (! empty($post['taxmod_stock_places_sent'])) {
             $settings = LocationSettings::fromArray(['unreferenced' => absint($post['taxmod_stock_unreferenced'] ?? 0)]);
             update_option(StockService::LOCATIONS, ['unreferenced' => $settings->unreferenced], false);
+            update_option(StockService::AREA_LOCK, empty($post['taxmod_stock_area_lock']) ? '0' : '1', false);
         }
 
         if (! empty($post['taxmod_stock_material_in_sent'])) {

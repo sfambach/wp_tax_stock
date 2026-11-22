@@ -361,6 +361,10 @@ $pruefe(str_contains($suche, 'name="' . StockPage::ASKS_STOCK . '" value="1"') &
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', ListPage::SHOW_ALL => '1', 'filter' => 'instock', StockPage::ASKS_STOCK => '1'];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, StockPage::ASKS_STOCK . '=1') && str_contains($html, 'name="' . StockPage::ASKS_STOCK . '" value="1"'), 'a search from «Bestand» stays one: its addresses and the list\'s own search keep it');
+// D-1581, Live-Check 29 2026-11-22: «MCEBlaster» found once from «Bestand» stayed the list — a single hit there opens its stock.
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'filter' => 'instock', StockPage::ASKS_STOCK => '1', 's' => 'LM2930T'];
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'nav-tab-active">Bestand') && str_contains($html, 'Zur Liste'), 'D-1581: a single hit of a search from «Bestand» opens its stock, whatever «Einzeltreffer öffnen» says');
 try {
     (new StockService())->moveThings([$r['lm']], $von, '2026-11-02', 'nichts');
     $pruefe(false, 'a bulk Umbuchung with nothing left to move is refused');
@@ -629,7 +633,11 @@ $pruefe($bill?->revisions === [(int) ($b['r2'] ?? 0)] && ! isset($rows[$r['lm']]
 $pruefe(($rows[$bc]['present'] ?? null) === $menge && ($rows[$bc]['missing'] ?? null) === 1.0 && ($rows[$r['t2']]['missing'] ?? null) === 1.0, 'what lies in the box inside the Schrank counts; one piece short and one part missing');
 $_GET  = ['page' => StockPage::PAGE, 'tab' => 'fertigung'];
 $seite = implode('', (new StockPage())->parts());
-$pruefe(str_contains($seite, '__Testkarte') && str_contains($seite, '2 Teile fehlen') && str_contains($seite, 'Stückliste aus: Rev 1.1'), 'Fertigung › Projekt-Gebinde shows the box, its project and what is missing');
+// D-1301 (changes this check, PR-9; Grenzlauf 22.11. red with the manufacturing active): with the manufacturing module the
+// tab leads there; the list itself is still the stock's and is checked directly.
+$liste = (new ReflectionMethod(StockPage::class, 'projectBoxList'))->invoke(new StockPage());
+$pruefe(str_contains($liste, '__Testkarte') && str_contains($liste, '2 Teile fehlen') && str_contains($liste, 'Stückliste aus: Rev 1.1'), 'Fertigung › Projekt-Gebinde shows the box, its project and what is missing');
+$pruefe(StockPage::boxesInModule() === null ? str_contains($seite, '__Testkarte') : str_contains($seite, 'Projekt-Gebinde in der Fertigung öffnen'), 'D-1301: the tab shows the list, or with the manufacturing module leads to its project boxes');
 $summary = apply_filters('taxmod_stock_project_boxes', null, []);
 $pruefe(is_array($summary) && ($summary[$schrank]['project'] ?? 0) === (int) ($b['pj'] ?? 0) && ($summary[$schrank]['pieces'] ?? null) === array_sum($s->presentIn($schrank)) && ($summary[$schrank]['label'] ?? '') === $s->locationTree()->pathOf($schrank), 'D-1301: project_boxes answers each box with its project, its path and the pieces in it and below it');
 $_GET  = [];

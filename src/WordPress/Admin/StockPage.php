@@ -2328,11 +2328,14 @@ final class StockPage
                 . esc_html(sprintf(/* translators: %s: the subject of the reservation */ __('Reservierung für %s', 'taxmod-stock'), $subjects[$subject] ?? '#' . $subject)) . '</a></li>';
         }
 
+        $named = $list->boundLots();
+
         foreach ($flags->holdings($ledger) as $holder => $lots) {
             $quantity = 0.0;
 
+            // D-1582: what an order was given there is listed with its reservation above, once.
             foreach ($lots as $lot => $at) {
-                $quantity += $ledger->thingOf($lot) === $thing ? array_sum($at) : 0.0;
+                $quantity += $ledger->thingOf($lot) === $thing ? max(0.0, array_sum($at) - ($named[$lot] ?? 0.0)) : 0.0;
             }
 
             if ($quantity > 0.0) {
@@ -2497,20 +2500,47 @@ final class StockPage
             ));
         }
 
+        // D-1582: what an order of the box was given, per lot — the box's reservation made more exact, not a second one.
+        $given = [];
+
+        foreach ($open as $deal => $head) {
+            foreach ($head['positions'] as $position) {
+                if ($position['lot'] !== null) {
+                    $given[$position['lot']][$deal] = ($given[$position['lot']][$deal] ?? 0.0) + $position['quantity'];
+                }
+            }
+        }
+
         foreach ($flags->holdings($ledger) + array_fill_keys($flags->flagged(), []) as $holder => $lots) {
-            $lines = '';
+            $lines   = '';
+            $project = $tree->projectOf($holder) ?? __('Produktion', 'taxmod-stock');
 
             foreach ($lots as $lot => $at) {
                 foreach ($at as $place => $quantity) {
                     $lines .= '<li>' . $name((int) $ledger->thingOf($lot)) . ' · ' . esc_html($this->number($quantity)) . ' · ' . esc_html__('Posten', 'taxmod-stock') . ' #' . esc_html((string) $lot)
                         . ' · ' . esc_html($places[$place] ?? $this->stock->locationTree()->pathOf($place)) . '</li>';
                 }
+
+                $here  = array_sum($at);
+                $split = '';
+
+                foreach ($given[$lot] ?? [] as $deal => $pieces) {
+                    $pieces = min($pieces, $here);
+                    $here  -= $pieces;
+                    $split .= '<li>' . esc_html($this->number($pieces)) . ' → <a href="' . esc_url($this->reservationUrl('r' . $deal)) . '">'
+                        . esc_html($subjects[$open[$deal]['subject']] ?? '#' . $open[$deal]['subject']) . '</a></li>';
+                }
+
+                if ($split !== '') {
+                    $lines .= '<li style="list-style:none"><ul style="margin:0 0 0 1.5em">' . $split
+                        . '<li>' . esc_html($this->number(max(0.0, $here))) . ' → ' . esc_html(sprintf(/* translators: %s: the project of the box */ __('frei für %s', 'taxmod-stock'), $project)) . '</li></ul></li>';
+                }
             }
 
             $body .= str_replace('<tr>', '<tr id="taxmod-stock-o' . esc_attr((string) $holder) . '">', ListPage::row(
                 self::BULK_FORM,
                 'o' . $holder,
-                [esc_html(sprintf(/* translators: %s: the reserved place, by its path */ __('Ort %s', 'taxmod-stock'), $tree->pathOf($holder))), esc_html($tree->projectOf($holder) ?? __('Produktion', 'taxmod-stock')), '', '—', esc_html((string) count($lots))],
+                [esc_html(sprintf(/* translators: %s: the reserved place, by its path */ __('Ort %s', 'taxmod-stock'), $tree->pathOf($holder))), esc_html($project), '', '—', esc_html((string) count($lots))],
                 '<span class="description">' . esc_html__('nur lesbar, aus dem Ort gerechnet', 'taxmod-stock') . '</span>',
                 $lines === '' ? '<p class="description">' . esc_html__('Dort liegt nichts.', 'taxmod-stock') . '</p>' : '<ul style="margin:0">' . $lines . '</ul>'
             ));

@@ -28,15 +28,16 @@ final class BuildPlan
      * @param list<int>                      $places the box and every place in it
      * @param array<int, array<int, float>>  $taken  thing → lot → pieces this order took so far
      * @param array<int, list<array{lot: int|null, quantity: float}>> $reserved thing → the open positions of the order's reservation
+     * @param array<int, float>              $others D-1582: lot → what other subjects' reservations name of it, left in the box
      * @return list<array{lot: int, place: int, quantity: float}> signed: negative is taken
      */
-    public static function rows(Ledger $ledger, int $box, array $places, array $lines, array $taken, array $reserved = []): array
+    public static function rows(Ledger $ledger, int $box, array $places, array $lines, array $taken, array $reserved = [], array $others = []): array
     {
         $rows = [];
 
         foreach ($lines as $thing => $quantity) {
             if ($quantity > self::NOTHING) {
-                $rows = [...$rows, ...self::take($ledger, $places, $thing, $quantity, $reserved[$thing] ?? [])];
+                $rows = [...$rows, ...self::take($ledger, $places, $thing, $quantity, $reserved[$thing] ?? [], $others)];
             } elseif ($quantity < -self::NOTHING) {
                 $rows = [...$rows, ...self::giveBack($box, $thing, -$quantity, $taken[$thing] ?? [])];
             }
@@ -52,16 +53,19 @@ final class BuildPlan
     /**
      * @param list<int> $places
      * @param list<array{lot: int|null, quantity: float}> $reserved
+     * @param array<int, float> $others lot → given to other subjects
      * @return list<array{lot: int, place: int, quantity: float}>
      */
-    private static function take(Ledger $ledger, array $places, int $thing, float $quantity, array $reserved): array
+    private static function take(Ledger $ledger, array $places, int $thing, float $quantity, array $reserved, array $others): array
     {
         $rows = [];
         $left = $quantity;
 
         foreach ($ledger->lotsOf($thing) as $lot) {
             foreach ($places as $place) {
-                $there = $ledger->restAt($lot, $place);
+                $kept           = min($others[$lot] ?? 0.0, $ledger->restAt($lot, $place));
+                $others[$lot]   = ($others[$lot] ?? 0.0) - $kept;
+                $there          = $ledger->restAt($lot, $place) - $kept;
 
                 if ($left <= self::NOTHING || $there <= self::NOTHING) {
                     continue;

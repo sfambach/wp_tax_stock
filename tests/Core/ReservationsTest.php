@@ -125,6 +125,53 @@ final class ReservationsTest extends TestCase
         $this->reservations()->toCancel(90, 999);
     }
 
+    /**
+     * Stefan 22.11. «der Auftrag, der kommt und dem ich das zuweise, der kriegt das auch … da ist nur noch einen frei»:
+     * inside a box reserved for project 700, a reservation for one of its orders may name a lot lying there; the 3 left
+     * free of lot 60 (10 − 4 − 3 bound) in box 3 go to it, any other subject still gets nothing out of the box.
+     */
+    #[Test]
+    public function an_order_of_the_box_project_may_name_a_lot_lying_in_the_box(): void
+    {
+        $list   = $this->reservations();
+        $places = new ReservedPlaces(new LocationTree([3 => 'Kiste'], [3 => 0], [], [], [3 => 700]), [3 => true]);
+
+        $list->check([new ReservationRow(30, '7', 60)], $this->ledger(), $places, 700);
+        self::assertTrue(true, '10 − 3 bound = 7 for an order of project 700');
+
+        foreach ([700, 0, 701] as $within) {
+            try {
+                $list->check([new ReservationRow(30, $within === 700 ? '8' : '1', 60)], $this->ledger(), $places, $within);
+                self::fail('refused for ' . $within);
+            } catch (StockError $e) {
+                self::assertSame('not_enough_free', $e->reason);
+            }
+        }
+    }
+
+    /** What lies in a box and is named by an order's reservation counts once, not twice. */
+    #[Test]
+    public function a_reservation_inside_a_reserved_box_counts_once(): void
+    {
+        $places = new ReservedPlaces(new LocationTree([3 => 'Kiste'], [3 => 0], [], [], [3 => 700]), [3 => true]);
+
+        self::assertSame([30 => 7.0], $places->reservedByThing($this->ledger(), $this->reservations()->boundLots()));
+        self::assertSame([30 => 10.0], $places->reservedByThing($this->ledger()));
+    }
+
+    /** Inside the box a consumption for the project takes only what no order was given (10 − 3 = 7). */
+    #[Test]
+    public function inside_the_box_what_an_order_was_given_is_not_consumed_for_another(): void
+    {
+        $list   = $this->reservations();
+        $places = new ReservedPlaces(new LocationTree([3 => 'Kiste'], [3 => 0], [], [], [3 => 700]), [3 => true]);
+
+        $list->checkConsumption(60, '7', 3, \TaxmodStock\Core\Purpose::subject(700), $this->ledger(), $places);
+        $list->checkConsumption(60, '10', 3, \TaxmodStock\Core\Purpose::subject(500), $this->ledger(), $places);
+        $this->expectException(StockError::class);
+        $list->checkConsumption(60, '8', 3, \TaxmodStock\Core\Purpose::subject(700), $this->ledger(), $places);
+    }
+
     private function lots(): Table
     {
         $s = Fixture::structure();

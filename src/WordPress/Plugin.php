@@ -599,7 +599,8 @@ final class Plugin
     /**
      * D-1301: `apply_filters('taxmod_stock_reserve', null, ['subject' => id, 'rows' => [['thing' => id, 'quantity' => n,
      * 'lot' => id|0, 'place' => id|0, 'position' => bill-of-materials position|0], …], 'deadline' => Y-m-d|'', 'date' => Y-m-d, 'title' => …])` — all rows into the subject's open
-     * reservation, in one act. Answers the modeller's answer.
+     * reservation, in one act. Answers the modeller's answer. D-1582: `'project' => id` names the project the subject is an
+     * order of — then a lot in that project's box may be named, and the box's reservation becomes the order's.
      */
     public static function reserve(mixed $previous, mixed $args): array|\WP_Error
     {
@@ -636,7 +637,7 @@ final class Plugin
         }
 
         try {
-            return self::writing()->reserveRows(absint($args['subject'] ?? 0), $deadline, $rows, $date, sanitize_text_field((string) ($args['title'] ?? __('Reservierung', 'taxmod-stock'))), $places);
+            return self::writing()->reserveRows(absint($args['subject'] ?? 0), $deadline, $rows, $date, sanitize_text_field((string) ($args['title'] ?? __('Reservierung', 'taxmod-stock'))), $places, absint($args['project'] ?? 0));
         } catch (StockError $e) {
             return new \WP_Error('taxmod_stock_' . $e->reason, Messages::of($e));
         }

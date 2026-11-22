@@ -62,6 +62,20 @@ final class ReservedPlacesTest extends TestCase
         }
     }
 
+    /** D-1582: what an order of the box was given moves within the box, and a box holding it moves within its area. */
+    #[Test]
+    public function what_an_order_was_given_moves_within_its_area(): void
+    {
+        $places = $this->places();
+
+        $places->checkTransfer(60, 4, 3, true);
+        $places->checkHang(4, 3, $this->ledger(), [60 => true]);
+        self::assertTrue(true, 'within area 2');
+
+        $this->expectException(StockError::class);
+        $places->checkHang(4, 6, $this->ledger(), [60 => true]);
+    }
+
     #[Test]
     public function the_umbuchung_checks_the_reservation(): void
     {

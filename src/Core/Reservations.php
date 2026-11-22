@@ -261,7 +261,18 @@ final class Reservations
         $amount = (float) Quantity::positive($quantity);
         $bound  = $this->boundLots()[$lot] ?? 0.0;
 
-        if ($bound <= self::NOTHING || $places->reservingPlaceOf($place) !== null) {
+        if ($bound <= self::NOTHING) {
+            return;
+        }
+
+        // D-1582: inside a box what one of its orders was given is not consumed for anyone else.
+        if ($places->reservingPlaceOf($place) !== null) {
+            $others = $bound - ($this->boundLotsOf($purpose->subject)[$lot] ?? 0.0);
+
+            if ($amount > max(0.0, $ledger->restAt($lot, $place) - $others) + self::NOTHING) {
+                throw StockError::reservedForOther($lot);
+            }
+
             return;
         }
 
@@ -299,12 +310,15 @@ final class Reservations
      * reserved area, not named by another reservation. A position without a lot may reserve more than there is: the
      * available stock then goes below zero and shows what is missing (INFERRED).
      *
+     * D-1582: for an order of project `$within` the boxes reserved for that project give what lies in them, so the
+     * reservation of the place becomes more exact (project → order) instead of a second one.
+     *
      * @param list<ReservationRow> $rows
      */
-    public function check(array $rows, Ledger $ledger, ReservedPlaces $places): void
+    public function check(array $rows, Ledger $ledger, ReservedPlaces $places, int $within = 0): void
     {
         $bound = $this->boundLots();
-        $held  = $places->holdings($ledger);
+        $held  = array_filter($places->holdings($ledger), static fn (int $area): bool => $within <= 0 || $places->subjectAt($area) !== $within, ARRAY_FILTER_USE_KEY);
         $asked = [];
 
         foreach ($rows as $row) {

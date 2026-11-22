@@ -51,7 +51,9 @@ final class MaterialPicker
      * the quantity asked is pieces, `{name}[quantity]` carries their pins, `{name}[pieces]` and `{name}[piece]` travel too,
      * and each place says how many strips the cut opens.
      *
-     * @param array{key?: string, name?: string, term?: string, preferred?: list<int>, except?: int, quantity?: float|int|string, piece?: int, pieces?: int} $args
+     * D-1582: `within` (the project of an order) also offers that project's boxes, with what no order was given there.
+     *
+     * @param array{key?: string, name?: string, term?: string, preferred?: list<int>, except?: int, within?: int, quantity?: float|int|string, piece?: int, pieces?: int} $args
      */
     public static function picker(array $args): string
     {
@@ -64,7 +66,7 @@ final class MaterialPicker
         $pieces    = $piece > 0 ? absint($args['pieces'] ?? 0) : 0;
 
         return '<div class="taxmod-material-search is-picker" id="' . esc_attr($id) . '" data-mode="pick" data-key="' . esc_attr($key) . '"'
-            . self::data($preferred) . ' data-places="' . esc_url(add_query_arg(['action' => self::PLACES, '_ajax_nonce' => wp_create_nonce(self::PLACES), 'except' => absint($args['except'] ?? 0)] + ($pieces > 0 ? ['piece' => $piece, 'pieces' => $pieces] : []), admin_url('admin-post.php'))) . '"'
+            . self::data($preferred) . ' data-places="' . esc_url(add_query_arg(['action' => self::PLACES, '_ajax_nonce' => wp_create_nonce(self::PLACES), 'except' => absint($args['except'] ?? 0), 'within' => absint($args['within'] ?? 0)] + ($pieces > 0 ? ['piece' => $piece, 'pieces' => $pieces] : []), admin_url('admin-post.php'))) . '"'
             . ' data-wanted="' . esc_attr($wanted) . '" data-piece="' . esc_attr((string) $piece) . '" data-pieces="' . esc_attr((string) $pieces) . '"'
             /* translators: %d: pins per piece */
             . ' data-pieces-label="' . esc_attr(sprintf(__('Stücke à %d Pins', 'taxmod-stock'), $piece)) . '"'
@@ -120,7 +122,7 @@ final class MaterialPicker
         }
 
         $stock  = new \TaxmodStock\WordPress\StockService();
-        $free   = $stock->freeStockByPlace([$thing], absint($_GET['except'] ?? 0))[$thing] ?? [];
+        $free   = $stock->freeStockByPlace([$thing], absint($_GET['except'] ?? 0), absint($_GET['within'] ?? 0))[$thing] ?? [];
         $places = $stock->places();
         arsort($free);
         // D-1398: pieces of a strip counted in pins — per place the strips the cut opens; a place they do not fit says so.

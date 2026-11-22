@@ -3475,7 +3475,7 @@ final class StockService
      * A row without a lot that names a place (`$places`, row index → place) takes the free lots lying there, oldest first,
      * so the goods stay where they are and the reservation names them.
      *
-     * D-NEU: `$within` is the project the subject belongs to (an order of it): its boxes give what lies in them.
+     * D-1582: `$within` is the project the subject belongs to (an order of it): its boxes give what lies in them.
      *
      * @param list<ReservationRow> $rows
      * @param array<int, int>      $places
@@ -3492,6 +3492,11 @@ final class StockService
 
         if ($subject <= 0 || $this->model->nodesOf([$subject]) === []) {
             throw StockError::noSubject();
+        }
+
+        if ($within > 0) {
+            $member = fn (string $node): array => $s->hasNode($node) ? array_fill_keys(array_intersect([$subject, $within], $this->table($node)->ids()), true) : [];
+            Reservations::checkRefinement($subject, $within, $member('project'), $member('sale'));
         }
 
         $this->checkThings(array_values(array_unique(array_map(static fn (ReservationRow $row): int => $row->thing, $rows))));
@@ -3525,7 +3530,7 @@ final class StockService
             $left = (float) $row->quantity;
 
             foreach ($ledger->lotsOf($row->thing) as $lot) {
-                // D-NEU: in a box of its project an order takes what no other order was given of a lot.
+                // D-1582: in a box of its project an order takes what no other order was given of a lot.
                 $there = $within > 0 ? max(0.0, $ledger->restAt($lot, $place) - ($named[$lot] ?? 0.0)) : (isset($bound[$lot]) ? 0.0 : $ledger->restAt($lot, $place));
 
                 if ($left > 0.000001 && $there > 0.000001) {
@@ -4636,7 +4641,7 @@ final class StockService
             $reserved[$position['thing']][] = ['lot' => $position['lot'], 'quantity' => $position['quantity']];
         }
 
-        // D-NEU: what the box's other orders were given stays for them.
+        // D-1582: what the box's other orders were given stays for them.
         $list   = $this->reservations();
         $own    = $list->boundLotsOf($reference);
         $others = [];
@@ -4990,7 +4995,7 @@ final class StockService
      * D-1146, the pick list of a build order: where the things lie free — not in the box `$except` or below it, not in a
      * reserved area (D-1082), not in a lot a reservation names (D-1083).
      *
-     * D-NEU: with `$within` (the project of an order) its boxes count too, with what no order was given there.
+     * D-1582: with `$within` (the project of an order) its boxes count too, with what no order was given there.
      *
      * @param list<int> $things
      * @return array<int, array<int, float>> thing → place → pieces, only more than nothing
@@ -5100,7 +5105,7 @@ final class StockService
         $deal = $cuts === [] ? 0 : $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->cut($cuts, $reference, $title, [], __('Schnittrest unter 2 Pins', 'taxmod-stock'))));
 
         if ($rows !== []) {
-            $deal = $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $bound, $reference)));
+            $deal = $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $bound, $reference, $this->reservations())));
         }
 
         $redeem = [];
@@ -5391,7 +5396,7 @@ final class StockService
             }
         }
 
-        return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), [], $reference)));
+        return $this->dealOf($this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), [], $reference, $this->reservations())));
     }
 
     /**
@@ -6504,7 +6509,7 @@ final class StockService
             throw StockError::nothingToBook();
         }
 
-        $moves = $rows === [] ? [] : (new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $this->boundLots(), $reference);
+        $moves = $rows === [] ? [] : (new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $this->boundLots(), $reference, $this->reservations());
 
         return $this->model->write([...$tests, ...$moves]);
     }
@@ -6572,7 +6577,7 @@ final class StockService
             }
         }
 
-        $moves = $rows === [] ? [] : (new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, $note, $this->reservedPlaces(), $this->boundLots());
+        $moves = $rows === [] ? [] : (new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, $note, $this->reservedPlaces(), $this->boundLots(), 0, $this->reservations());
 
         return $this->model->write([...$tests, ...$moves]);
     }
@@ -6653,7 +6658,7 @@ final class StockService
             throw StockError::nothingToBook();
         }
 
-        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $this->boundLots()));
+        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $this->boundLots(), 0, $this->reservations()));
     }
 
     /**
@@ -6980,7 +6985,7 @@ final class StockService
             throw StockError::nothingToBook();
         }
 
-        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $this->boundLots()));
+        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $this->boundLots(), 0, $this->reservations()));
     }
 
     /**
@@ -7010,7 +7015,7 @@ final class StockService
 
         $this->guardUnblocked(array_map(static fn (TransferRow $move): int => $move->lot, $moves));
 
-        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($moves, 'Umbuchung: ' . $note, $ledger, '', $this->reservedPlaces(), $this->boundLots()));
+        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($moves, 'Umbuchung: ' . $note, $ledger, '', $this->reservedPlaces(), $this->boundLots(), 0, $this->reservations()));
     }
 
     /**
@@ -7045,7 +7050,7 @@ final class StockService
 
         $this->guardUnblocked(array_map(static fn (TransferRow $row): int => $row->lot, $rows));
 
-        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $this->boundLots()));
+        return $this->model->write((new Bookings($this->structureWithKinds(), $today))->transfer($rows, $title, $ledger, '', $this->reservedPlaces(), $this->boundLots(), 0, $this->reservations()));
     }
 
     /**
@@ -7063,7 +7068,7 @@ final class StockService
         $title = sprintf(__('Storno: %s', 'taxmod-stock'), (string) ($deals->first($deal, $s->field('label')) ?? '#' . $deal));
 
         // The way back is an Umbuchung too: it may not carry reserved goods into a reserved area (D-1082).
-        return $this->model->write((new Bookings($this->structureWithKinds(), $now))->transfer($rows, $title, $this->ledger(), $who . ', ' . $now, $this->reservedPlaces(), $this->boundLots()));
+        return $this->model->write((new Bookings($this->structureWithKinds(), $now))->transfer($rows, $title, $this->ledger(), $who . ', ' . $now, $this->reservedPlaces(), $this->boundLots(), 0, $this->reservations()));
     }
 
     /** D-1027: purchasing — demand, source, order per supplier. */

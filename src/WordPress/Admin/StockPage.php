@@ -2333,7 +2333,7 @@ final class StockPage
         foreach ($flags->holdings($ledger) as $holder => $lots) {
             $quantity = 0.0;
 
-            // D-NEU: what an order was given there is listed with its reservation above, once.
+            // D-1582: what an order was given there is listed with its reservation above, once.
             foreach ($lots as $lot => $at) {
                 $quantity += $ledger->thingOf($lot) === $thing ? max(0.0, array_sum($at) - ($named[$lot] ?? 0.0)) : 0.0;
             }
@@ -2500,7 +2500,7 @@ final class StockPage
             ));
         }
 
-        // D-NEU: what an order of the box was given, per lot — the box's reservation made more exact, not a second one.
+        // D-1582: what an order of the box was given, per lot — the box's reservation made more exact, not a second one.
         $given = [];
 
         foreach ($open as $deal => $head) {

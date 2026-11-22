@@ -149,6 +149,46 @@ final class ReservationsTest extends TestCase
         }
     }
 
+    /** D-1582: only an order of the project — not the project itself, another project, a sale, or for no project. */
+    #[Test]
+    public function only_an_order_of_the_project_refines_the_box(): void
+    {
+        $projects = [700 => true, 702 => true];
+        $sales    = [701 => true];
+        Reservations::checkRefinement(500, 700, $projects, $sales);
+        Reservations::checkRefinement(701, 0, $projects, $sales);
+        self::assertTrue(true, 'an order of project 700; no box asked');
+
+        foreach ([[700, 700], [702, 700], [701, 700], [500, 701], [500, 999], [0, 700]] as [$subject, $within]) {
+            try {
+                Reservations::checkRefinement($subject, $within, $projects, $sales);
+                self::fail('refused: ' . $subject . ' in ' . $within);
+            } catch (StockError $e) {
+                self::assertSame('not_an_order_of_project', $e->reason);
+            }
+        }
+    }
+
+    /**
+     * D-1582: moving out of the box ends what an order was given there — first the free part goes, then the given one.
+     * Box 3 holds 10 of lot 60, 3 of it given to 500: moving 7 out ends nothing, moving 9 ends 2.
+     */
+    #[Test]
+    public function moving_out_of_the_box_ends_the_assignment(): void
+    {
+        $list   = $this->reservations();
+        $places = new ReservedPlaces(new LocationTree([3 => 'Kiste', 4 => 'Regal'], [3 => 0, 4 => 0], [], [], [3 => 700]), [3 => true]);
+        $out    = static fn (string $q): array => [new \TaxmodStock\Core\TransferRow(60, 3, 4, $q)];
+
+        self::assertSame([], $list->endedBy($out('7'), $this->ledger(), $places));
+        self::assertSame([90 => [81 => ['quantity' => 2.0, 'thing' => 30, 'lot' => 60]]], $list->endedBy($out('9'), $this->ledger(), $places));
+        self::assertSame([], $list->endedBy([new \TaxmodStock\Core\TransferRow(60, 3, 3, '9')], $this->ledger(), $places), 'within the box nothing ends');
+
+        $changes = (new Bookings(Fixture::structure(), '2026-11-22'))->transfer($out('10'), 'U', $this->ledger(), '', $places, [60 => true], 0, $list);
+        $kinds   = array_values(array_filter(array_map(static fn (array $c): ?string => $c['values'][(string) Fixture::structure()->field('transaction_kind')] ?? null, $changes)));
+        self::assertSame([(string) Fixture::structure()->value('kind_transfer'), (string) Fixture::structure()->value('kind_reservation')], $kinds, 'the Umbuchung and its Storno in one write');
+    }
+
     /** What lies in a box and is named by an order's reservation counts once, not twice. */
     #[Test]
     public function a_reservation_inside_a_reserved_box_counts_once(): void

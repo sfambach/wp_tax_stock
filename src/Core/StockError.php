@@ -359,6 +359,12 @@ final class StockError extends \RuntimeException
         return new self('not_enough_free', (string) $lot);
     }
 
+    /** D-1582: only an order of a project is given what lies in that project's box. */
+    public static function notAnOrderOfProject(int $subject): self
+    {
+        return new self('not_an_order_of_project', (string) $subject);
+    }
+
     /** D-1083: a reservation needs its subject — a project or a sale (D-1088: build runs and repairs are no Bezug). */
     /** D-1260: a sale takes no more from a lot than it holds; the detail is the lot. */
     public static function saleTooLarge(int $lot): self

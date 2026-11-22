@@ -62,7 +62,7 @@ final class ReservedPlacesTest extends TestCase
         }
     }
 
-    /** D-NEU: what an order of the box was given moves within the box, and a box holding it moves within its area. */
+    /** D-1582: what an order of the box was given moves within the box, and a box holding it moves within its area. */
     #[Test]
     public function what_an_order_was_given_moves_within_its_area(): void
     {

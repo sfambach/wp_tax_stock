@@ -89,7 +89,7 @@ final class ReservedPlaces
 
         $source = $this->reservingPlaceOf($from);
 
-        // D-NEU: what an order of the box was given moves within the box like the rest.
+        // D-1582: what an order of the box was given moves within the box like the rest.
         if ($source !== $target && ($bound || $source !== null)) {
             throw StockError::alreadyReserved($lot);
         }
@@ -189,7 +189,7 @@ final class ReservedPlaces
     }
 
     /**
-     * How much of each thing lies in reserved areas — D-NEU less what a reservation names there, which that reservation
+     * How much of each thing lies in reserved areas — D-1582 less what a reservation names there, which that reservation
      * already counts (one reservation per piece).
      *
      * @param array<int, float> $bound lot → quantity a reservation names

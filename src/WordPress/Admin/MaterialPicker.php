@@ -51,7 +51,7 @@ final class MaterialPicker
      * the quantity asked is pieces, `{name}[quantity]` carries their pins, `{name}[pieces]` and `{name}[piece]` travel too,
      * and each place says how many strips the cut opens.
      *
-     * D-NEU: `within` (the project of an order) also offers that project's boxes, with what no order was given there.
+     * D-1582: `within` (the project of an order) also offers that project's boxes, with what no order was given there.
      *
      * @param array{key?: string, name?: string, term?: string, preferred?: list<int>, except?: int, within?: int, quantity?: float|int|string, piece?: int, pieces?: int} $args
      */

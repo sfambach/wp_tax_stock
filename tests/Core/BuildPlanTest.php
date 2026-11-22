@@ -41,7 +41,7 @@ final class BuildPlanTest extends TestCase
         BuildPlan::rows($this->ledger(), 3, [3, 4], [30 => 8.0], [], [30 => [['lot' => 62, 'quantity' => 0.5]]]);
     }
 
-    /** D-NEU: what another order of the box was given stays in the box — 2 of lot 60 are for someone else. */
+    /** D-1582: what another order of the box was given stays in the box — 2 of lot 60 are for someone else. */
     #[Test]
     public function what_another_order_was_given_is_not_taken(): void
     {

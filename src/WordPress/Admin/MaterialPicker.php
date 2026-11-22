@@ -3,6 +3,7 @@
 namespace TaxmodStock\WordPress\Admin;
 
 use TaxmodStock\Core\StockList;
+use Taxmod\WordPress\Admin\ListPage;
 
 /**
  * The material search of the stock (D-1385): on the page «Bestand» opens it jumps to a material's stock; as a building block

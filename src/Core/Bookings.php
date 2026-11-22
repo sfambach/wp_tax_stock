@@ -743,11 +743,14 @@ final class Bookings
      * D-1082: with `$reserved`, nothing reserved goes into a reserved area; `$bound` are the lots a reservation names.
      * D-1146: a pick for a build order names the order as its Bezug (`$reference`).
      *
+     * D-1582: with `$reservations`, what leaves a reserved area ends the reservations naming it there — a Storno each, in
+     * the same write ({@see Reservations::endedBy()}).
+     *
      * @param list<TransferRow> $rows
      * @param array<int, true>  $bound
      * @return list<array<string, mixed>>
      */
-    public function transfer(array $rows, string $title, Ledger $ledger, string $note = '', ?ReservedPlaces $reserved = null, array $bound = [], int $reference = 0): array
+    public function transfer(array $rows, string $title, Ledger $ledger, string $note = '', ?ReservedPlaces $reserved = null, array $bound = [], int $reference = 0, ?Reservations $reservations = null): array
     {
         $s = $this->structure;
 
@@ -784,7 +787,13 @@ final class Bookings
             $extra[(string) $s->field('transaction_reference')] = (string) $reference;
         }
 
-        return $this->finish($title, 'kind_transfer', $extra);
+        $changes = $this->finish($title, 'kind_transfer', $extra);
+
+        foreach ($reserved === null || $reservations === null ? [] : $reservations->endedBy($rows, $ledger, $reserved) as $deal => $positions) {
+            $changes = [...$changes, ...$this->cancelReservation($reservations->subjectOf($deal), $positions, $title, $note)];
+        }
+
+        return $changes;
     }
 
     /**

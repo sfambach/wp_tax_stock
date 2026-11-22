@@ -347,6 +347,20 @@ final class Reservations
     }
 
     /**
+     * D-1582: the box of project `$within` gives only to an order of it — a subject that is neither a project nor a sale,
+     * refining the box's Bezug project → order. Every other case is refused, before {@see check()} looks at the box.
+     *
+     * @param array<int, true> $projects the project records
+     * @param array<int, true> $sales    the sale records
+     */
+    public static function checkRefinement(int $subject, int $within, array $projects, array $sales): void
+    {
+        if ($within > 0 && ($subject <= 0 || ! isset($projects[$within]) || isset($projects[$subject]) || isset($sales[$subject]))) {
+            throw StockError::notAnOrderOfProject($subject);
+        }
+    }
+
+    /**
      * The Storno of a reservation: every open position, or only `$line`, with what is left of it.
      *
      * @return array<int, array{thing: int, lot: int|null, quantity: float}> line → what to cancel
@@ -364,6 +378,61 @@ final class Reservations
         }
 
         return $positions === [] ? throw StockError::alreadyCancelled($deal) : $positions;
+    }
+
+    /**
+     * D-1582 (Stefan 22.11. «Nimmst du die Teile aus dem Gebinde, endet die Reservierung», D-1082): what an Umbuchung
+     * moves out of a reserved area ends the positions naming it there — first what lay free in the area, then the newest
+     * reservation's (INFERRED: the order in which given pieces go is not decided).
+     *
+     * @param list<TransferRow> $moves
+     * @return array<int, array<int, array{thing: int, lot: int|null, quantity: float}>> reservation → line → what to cancel
+     */
+    public function endedBy(array $moves, Ledger $ledger, ReservedPlaces $places): array
+    {
+        $out = [];
+        $gone = [];
+        $held = $places->holdings($ledger);
+
+        foreach ($moves as $move) {
+            $area = $places->reservingPlaceOf($move->from);
+
+            if ($area !== null && $places->reservingPlaceOf($move->to) !== $area) {
+                $gone[$area][$move->lot] = ($gone[$area][$move->lot] ?? 0.0) + (float) $move->quantity;
+            }
+        }
+
+        $heads = $this->heads;
+        krsort($heads);
+
+        foreach ($gone as $area => $lots) {
+            foreach ($lots as $lot => $moved) {
+                $rest  = array_sum($held[$area][$lot] ?? []) - $moved;
+                $given = 0.0;
+
+                foreach ($heads as $head) {
+                    foreach ($head['positions'] as $position) {
+                        $given += $position['lot'] === $lot ? $position['quantity'] : 0.0;
+                    }
+                }
+
+                $ended = $given - max(0.0, $rest);
+
+                foreach ($heads as $deal => $head) {
+                    foreach ($head['positions'] as $line => $position) {
+                        if ($ended <= self::NOTHING || $position['lot'] !== $lot) {
+                            continue;
+                        }
+
+                        $part              = min($ended, $position['quantity']);
+                        $out[$deal][$line] = ['quantity' => $part] + $position;
+                        $ended            -= $part;
+                    }
+                }
+            }
+        }
+
+        return $out;
     }
 
     public function subjectOf(int $deal): int

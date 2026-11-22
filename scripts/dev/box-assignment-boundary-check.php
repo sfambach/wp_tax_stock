@@ -8,6 +8,9 @@
  *
  * Builds the small structure of lib/struktur.php, a project, two orders and a box reserved for the project holding 3
  * pieces. Uses the modeller's no-write bracket: nothing survives the run (WP_ROOT, TAXMOD_ROOT).
+ *
+ * Prüftor 22.11.: where the structure it needs cannot be set up on this database, it says «nichts geprüft» with the reason
+ * and exits 2 — never a red that is only the set-up, never a green that checked nothing.
  */
 
 $kind      = 'composition';
@@ -35,9 +38,14 @@ $pruefe = static function (bool $gut, string $was) use (&$fehler): void {
     $fehler += $gut ? 0 : 1;
 };
 
+$nichtsGeprueft = static function (string $warum): never {
+    echo "NICHTS GEPRÜFT: {$warum}\n";
+    exit(2);
+};
+
 require __DIR__ . '/lib/struktur.php';
 
-$extra = $apply([
+$extra = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'create_node', 'ref' => 'proj', 'name' => '__Projekte', 'parent' => $r['stock']],
     ['op' => 'create_node', 'ref' => 'auf', 'name' => '__Aufträge', 'parent' => $r['stock']],
     $field('lo_proj', $r['lo'], 'Projekt', '@proj', 'aggregation', '0..1'),
@@ -50,24 +58,65 @@ $extra = $apply([
     ['op' => 'set_values', 'record' => '@a1', 'values' => [(string) $r['label'] => '__Auftrag 1']],
     ['op' => 'create_record', 'ref' => 'a2', 'node' => '@auf'],
     ['op' => 'set_values', 'record' => '@a2', 'values' => [(string) $r['label'] => '__Auftrag 2']],
-]);
-$x = (array) ($extra['refs'] ?? []);
-$pruefe(isset($x['atari'], $x['a1'], $x['a2'], $x['lo_res']), 'a project, another project, two orders and the flag «reserviert für Produktion» are set up');
+]]);
 
-$struktur['nodes']  += ['project' => $x['proj'] ?? 0];
-$struktur['fields'] += ['location_project' => $x['lo_proj'] ?? 0, 'location_reserved' => $x['lo_res'] ?? 0];
+if (is_wp_error($extra)) {
+    $nichtsGeprueft('project, orders and the flag could not be set up — ' . $extra->get_error_message());
+}
+
+$x = (array) ($extra['refs'] ?? []);
+
+foreach (['proj', 'lo_proj', 'lo_res', 'atari', 'andere', 'a1', 'a2'] as $ref) {
+    if ((int) ($x[$ref] ?? 0) <= 0) {
+        $nichtsGeprueft("the set-up gave no «{$ref}»");
+    }
+}
+
+// The roles go in by key, over whatever an older stored structure named for them (Prüftor 22.11.: role mismatch on a test database).
+$struktur['nodes']['project']            = (int) $x['proj'];
+$struktur['fields']['location_project']  = (int) $x['lo_proj'];
+$struktur['fields']['location_reserved'] = (int) $x['lo_res'];
 update_option(StockService::OPTION, $struktur);
+$gelesen = (new StockService())->structure();
+
+foreach (['location_project', 'location_reserved', 'location_parent', 'location_movable', 'transaction_reference', 'line_reverses', 'line_thing'] as $role) {
+    if (! $gelesen->hasField($role) || $gelesen->field($role) !== (int) $struktur['fields'][$role]) {
+        $nichtsGeprueft("the stock does not read the field role «{$role}» as set up here");
+    }
+}
+
+foreach (['project', 'location', 'transaction', 'line', 'lot'] as $role) {
+    if (! $gelesen->hasNode($role) || $gelesen->node($role) !== (int) $struktur['nodes'][$role]) {
+        $nichtsGeprueft("the stock does not read the node role «{$role}» as set up here");
+    }
+}
+
+if (! $gelesen->hasValue('kind_reservation') || ! $gelesen->hasValue('kind_transfer')) {
+    $nichtsGeprueft('the stock knows no kind «Reservierung» or «Umbuchung»');
+}
 
 [$atari, $andere, $a1, $a2] = [(int) ($x['atari'] ?? 0), (int) ($x['andere'] ?? 0), (int) ($x['a1'] ?? 0), (int) ($x['a2'] ?? 0)];
-$box   = (int) ((new StockService())->createPlace('__Gebinde Atari', $r['lager'], true, $atari, true)['refs']['ort'] ?? 0);
-$neu   = (new StockService())->bookInventory([new InventoryRow(null, new NewThing($r['teile'], '__Buchsenleiste 1x12'), '__Buchsenleiste 1x12', '3', null, '')], '2026-11-22', 'Inventur');
-$thing = (int) ($neu['refs']['d1'] ?? 0);
+try {
+    $box   = (int) ((new StockService())->createPlace('__Gebinde Atari', $r['lager'], true, $atari, true)['refs']['ort'] ?? 0);
+    $neu   = (new StockService())->bookInventory([new InventoryRow(null, new NewThing($r['teile'], '__Buchsenleiste 1x12'), '__Buchsenleiste 1x12', '3', null, '')], '2026-11-22', 'Inventur');
+    $thing = (int) ($neu['refs']['d1'] ?? 0);
+    $s     = new StockService();
+    $lot   = (int) ($s->ledger()->lotsOf($thing)[0] ?? 0);
+    $from  = (int) array_key_first($s->ledger()->placesOf($lot));
+    $s->moveLot($lot, $from, $box, '3', '2026-11-22', 'Umbuchung ins Gebinde');
+} catch (StockError $e) {
+    $nichtsGeprueft('the box could not be set up — ' . $e->reason . ' ' . $e->getMessage());
+} catch (\Throwable $e) {
+    $nichtsGeprueft('the box could not be set up — ' . $e->getMessage());
+}
+
 $s     = new StockService();
-$lot   = (int) ($s->ledger()->lotsOf($thing)[0] ?? 0);
-$from  = (int) array_key_first($s->ledger()->placesOf($lot));
-$s->moveLot($lot, $from, $box, '3', '2026-11-22', 'Umbuchung ins Gebinde');
-$s     = new StockService();
-$pruefe($box > 0 && $s->reservedPlaces()->reservingPlaceOf($box) === $box && $s->ledger()->restAt($lot, $box) === 3.0, '3 pieces lie in the box reserved for __Atari');
+
+if ($box <= 0 || $thing <= 0 || $lot <= 0) {
+    $nichtsGeprueft('the box or its 3 pieces could not be set up');
+}
+
+$pruefe($s->reservedPlaces()->reservingPlaceOf($box) === $box && $s->ledger()->restAt($lot, $box) === 3.0, '3 pieces lie in the box reserved for __Atari');
 
 foreach ([Plugin::RESERVE => 'reserve', Plugin::RESERVATIONS_OF => 'reservationsOf', Plugin::RELEASE => 'release', Plugin::BOOK_BUILD => 'bookBuild'] as $hook => $method) {
     add_filter($hook, [Plugin::class, $method], 10, 2);

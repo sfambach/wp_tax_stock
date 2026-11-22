@@ -49,7 +49,7 @@ $extra = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'create_node', 'ref' => 'proj', 'name' => '__Projekte', 'parent' => $r['stock']],
     ['op' => 'create_node', 'ref' => 'auf', 'name' => '__Aufträge', 'parent' => $r['stock']],
     $field('lo_proj', $r['lo'], 'Projekt', '@proj', 'aggregation', '0..1'),
-    $field('lo_res', $r['lo'], 'reserviert für Produktion', $bool, 'composition', '0..1'),
+    $field('lo_res', $r['lo'], 'reserviert für Produktion', $bool, 'composition', '1..1'),
     ['op' => 'create_record', 'ref' => 'atari', 'node' => '@proj'],
     ['op' => 'set_values', 'record' => '@atari', 'values' => [(string) $r['label'] => '__Atari']],
     ['op' => 'create_record', 'ref' => 'andere', 'node' => '@proj'],
@@ -150,7 +150,12 @@ $pruefe(($s->reservedByThing()[$thing] ?? 0.0) === 0.0, 'outside the box nothing
 echo "4. Fremder Auftrag gesperrt\n";
 (new StockService())->moveLot($lot, $r['lager'], $box, '3', '2026-11-22', 'Umbuchung ins Gebinde');
 $reserve($a1, 2.0, $atari);
-$pruefe($code($reserve($a2, 2.0, $atari)) === 'taxmod_stock_not_enough_free' && $given($a2) === 0.0, 'order 2 cannot be given what order 1 holds (only 1 free)');
+// Prüftor 22.11.: a row naming the box (no lot) is refused while the stock picks the lots there — «not enough to pick»; a row
+// naming the lot is refused by the check — «not enough free». Either is a refusal; the code is printed so a red says which.
+$mehr = $reserve($a2, 2.0, $atari);
+$pruefe(in_array($code($mehr), ['taxmod_stock_not_enough_to_pick', 'taxmod_stock_not_enough_free'], true) && $given($a2) === 0.0, 'order 2 cannot be given what order 1 holds (only 1 free) — ' . ($code($mehr) ?: 'accepted') . ', order 2 holds ' . $given($a2));
+$lotRow = apply_filters(Plugin::RESERVE, null, ['subject' => $a2, 'rows' => [['thing' => $thing, 'quantity' => 2.0, 'lot' => $lot]], 'date' => '2026-11-22', 'title' => 'Zuweisung', 'project' => $atari]);
+$pruefe($code($lotRow) === 'taxmod_stock_not_enough_free' && $given($a2) === 0.0, 'naming the lot itself, order 2 is refused too — ' . ($code($lotRow) ?: 'accepted'));
 $pruefe(is_array($reserve($a2, 1.0, $atari)) && $given($a2) === 1.0, 'order 2 is given the 1 left');
 
 try {

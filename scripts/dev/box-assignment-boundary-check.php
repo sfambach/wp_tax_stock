@@ -49,7 +49,7 @@ $extra = wp_get_ability('taxmod/apply')->execute(['changes' => [
     ['op' => 'create_node', 'ref' => 'proj', 'name' => '__Projekte', 'parent' => $r['stock']],
     ['op' => 'create_node', 'ref' => 'auf', 'name' => '__Aufträge', 'parent' => $r['stock']],
     $field('lo_proj', $r['lo'], 'Projekt', '@proj', 'aggregation', '0..1'),
-    $field('lo_res', $r['lo'], 'reserviert für Produktion', $bool, 'composition', '0..1'),
+    $field('lo_res', $r['lo'], 'reserviert für Produktion', $bool, 'composition', '1..1'),
     ['op' => 'create_record', 'ref' => 'atari', 'node' => '@proj'],
     ['op' => 'set_values', 'record' => '@atari', 'values' => [(string) $r['label'] => '__Atari']],
     ['op' => 'create_record', 'ref' => 'andere', 'node' => '@proj'],

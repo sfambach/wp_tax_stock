@@ -672,7 +672,9 @@ final class StockPage
         $shown   = self::variantsBeneath($view->apply((new StockList('', $list->filter))->apply($rows)), $parentOf);
 
         $visible = $view->visible();
-        $open    = $this->stock->viewSettings()->expanded('material') || self::asksStock();
+        // His word 2026-11-22: «wenn ich im filter suche werden die positionen alle aufgeklappt» — a search keeps the rows closed;
+        // only the setting «Automatisch aufklappen» opens them, and a single hit still opens its stock (self::asksStock()).
+        $open    = $this->stock->viewSettings()->expanded('material');
         $url     = fn (array $change): string => $this->listUrl($tab, $list, $change + ['group' => $group > 0 ? (string) $group : '', ListPage::SHOW_ALL => ListPage::showsAll() ? '1' : '', 'f' => $view->filters(), 'orderby' => $view->orderBy === 'name' ? '' : $view->orderBy, 'order' => $view->descending ? 'desc' : '']);
 
         // «← Zur Liste» in the material view comes back to exactly this list (design 7.3) — kept before a single hit opens, so
@@ -5523,7 +5525,8 @@ final class StockPage
 
     /**
      * His word 2026-11-20 20:23: «Wenn ich im Bestand suche, springt er in die Materialübersicht … ich möchte den Bestand wissen» —
-     * a search started on the page «Bestand» keeps to what is in stock, shows each row's lots open, and a single hit opens its stock.
+     * a search started on the page «Bestand» keeps to what is in stock and a single hit opens its stock; the rows stay closed
+     * (his word 2026-11-22).
      */
     public static function asksStock(): bool
     {

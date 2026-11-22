@@ -3475,7 +3475,7 @@ final class StockService
      * A row without a lot that names a place (`$places`, row index → place) takes the free lots lying there, oldest first,
      * so the goods stay where they are and the reservation names them.
      *
-     * D-NEU: `$within` is the project the subject belongs to (an order of it): its boxes give what lies in them.
+     * D-1582: `$within` is the project the subject belongs to (an order of it): its boxes give what lies in them.
      *
      * @param list<ReservationRow> $rows
      * @param array<int, int>      $places
@@ -3525,7 +3525,7 @@ final class StockService
             $left = (float) $row->quantity;
 
             foreach ($ledger->lotsOf($row->thing) as $lot) {
-                // D-NEU: in a box of its project an order takes what no other order was given of a lot.
+                // D-1582: in a box of its project an order takes what no other order was given of a lot.
                 $there = $within > 0 ? max(0.0, $ledger->restAt($lot, $place) - ($named[$lot] ?? 0.0)) : (isset($bound[$lot]) ? 0.0 : $ledger->restAt($lot, $place));
 
                 if ($left > 0.000001 && $there > 0.000001) {
@@ -4636,7 +4636,7 @@ final class StockService
             $reserved[$position['thing']][] = ['lot' => $position['lot'], 'quantity' => $position['quantity']];
         }
 
-        // D-NEU: what the box's other orders were given stays for them.
+        // D-1582: what the box's other orders were given stays for them.
         $list   = $this->reservations();
         $own    = $list->boundLotsOf($reference);
         $others = [];
@@ -4990,7 +4990,7 @@ final class StockService
      * D-1146, the pick list of a build order: where the things lie free — not in the box `$except` or below it, not in a
      * reserved area (D-1082), not in a lot a reservation names (D-1083).
      *
-     * D-NEU: with `$within` (the project of an order) its boxes count too, with what no order was given there.
+     * D-1582: with `$within` (the project of an order) its boxes count too, with what no order was given there.
      *
      * @param list<int> $things
      * @return array<int, array<int, float>> thing → place → pieces, only more than nothing

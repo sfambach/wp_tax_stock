@@ -28,7 +28,7 @@ final class BuildPlan
      * @param list<int>                      $places the box and every place in it
      * @param array<int, array<int, float>>  $taken  thing → lot → pieces this order took so far
      * @param array<int, list<array{lot: int|null, quantity: float}>> $reserved thing → the open positions of the order's reservation
-     * @param array<int, float>              $others D-NEU: lot → what other subjects' reservations name of it, left in the box
+     * @param array<int, float>              $others D-1582: lot → what other subjects' reservations name of it, left in the box
      * @return list<array{lot: int, place: int, quantity: float}> signed: negative is taken
      */
     public static function rows(Ledger $ledger, int $box, array $places, array $lines, array $taken, array $reserved = [], array $others = []): array

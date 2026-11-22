@@ -265,7 +265,7 @@ final class Reservations
             return;
         }
 
-        // D-NEU: inside a box what one of its orders was given is not consumed for anyone else.
+        // D-1582: inside a box what one of its orders was given is not consumed for anyone else.
         if ($places->reservingPlaceOf($place) !== null) {
             $others = $bound - ($this->boundLotsOf($purpose->subject)[$lot] ?? 0.0);
 
@@ -310,7 +310,7 @@ final class Reservations
      * reserved area, not named by another reservation. A position without a lot may reserve more than there is: the
      * available stock then goes below zero and shows what is missing (INFERRED).
      *
-     * D-NEU: for an order of project `$within` the boxes reserved for that project give what lies in them, so the
+     * D-1582: for an order of project `$within` the boxes reserved for that project give what lies in them, so the
      * reservation of the place becomes more exact (project → order) instead of a second one.
      *
      * @param list<ReservationRow> $rows

@@ -23,12 +23,17 @@ final class ReservedPlaces
     /** @var array<int, int|null> place → its reserving place, computed once per place */
     private array $reservingOf = [];
 
-    /** @param array<int, true> $flagged the places carrying the flag themselves */
-    public function __construct(private readonly LocationTree $tree, private readonly array $flagged)
+    /**
+     * @param array<int, true> $flagged the places carrying the flag themselves
+     * @param bool $locksBetweenAreas whether goods of one reserved area may not go straight into another — off by default, his word
+     *                                2026-11-22: «nett gedacht, die Sperre, aber ich konnte es dann rausbuchen … und dann wieder aufs
+     *                                Gebinde buchen … mach sie schaltbar und nimm sie standardmäßig raus»
+     */
+    public function __construct(private readonly LocationTree $tree, private readonly array $flagged, private readonly bool $locksBetweenAreas = false)
     {
     }
 
-    public static function from(Structure $s, Table $places, LocationTree $tree): self
+    public static function from(Structure $s, Table $places, LocationTree $tree, bool $locksBetweenAreas = false): self
     {
         $flagged = [];
 
@@ -40,7 +45,7 @@ final class ReservedPlaces
             }
         }
 
-        return new self($tree, $flagged);
+        return new self($tree, $flagged, $locksBetweenAreas);
     }
 
     public function isFlagged(int $place): bool
@@ -76,8 +81,8 @@ final class ReservedPlaces
     }
 
     /**
-     * An Umbuchung into a reserved area takes only goods not reserved yet: neither by another area nor by a reservation
-     * naming the lot. Within one area, and out of it, goods move freely.
+     * An Umbuchung into a reserved area takes no lot a reservation names. Goods of another area go straight in unless the
+     * setting locks it ({@see self::__construct()}); within one area, and out of it, goods move freely.
      */
     public function checkTransfer(int $lot, int $from, int $to, bool $bound): void
     {
@@ -89,7 +94,7 @@ final class ReservedPlaces
 
         $source = $this->reservingPlaceOf($from);
 
-        if ($bound || ($source !== null && $source !== $target)) {
+        if ($bound || ($this->locksBetweenAreas && $source !== null && $source !== $target)) {
             throw StockError::alreadyReserved($lot);
         }
     }

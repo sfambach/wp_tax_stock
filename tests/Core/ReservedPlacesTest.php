@@ -63,6 +63,21 @@ final class ReservedPlacesTest extends TestCase
     }
 
     #[Test]
+    public function goods_go_straight_from_one_area_into_another_unless_the_setting_locks_it(): void
+    {
+        $open = $this->places(false);
+        $open->checkTransfer(60, 4, 6, false);
+        self::assertTrue(true, 'Stefan 2026-11-22: the lock is off by default');
+
+        try {
+            $open->checkTransfer(61, 5, 6, true);
+            self::fail('a lot a reservation names stays refused');
+        } catch (StockError $e) {
+            self::assertSame('already_reserved', $e->reason);
+        }
+    }
+
+    #[Test]
     public function the_umbuchung_checks_the_reservation(): void
     {
         $this->expectException(StockError::class);
@@ -114,11 +129,12 @@ final class ReservedPlacesTest extends TestCase
         self::assertSame(2, $places->reservingPlaceOf(3));
     }
 
-    private function places(): ReservedPlaces
+    private function places(bool $locksBetweenAreas = true): ReservedPlaces
     {
         return new ReservedPlaces(
             new LocationTree([1 => 'Lager', 2 => 'Produktion', 3 => 'Platz', 4 => 'Kiste', 5 => 'Regal', 6 => 'Montage'], [1 => 0, 2 => 1, 3 => 2, 4 => 3, 5 => 1, 6 => 1]),
             [2 => true, 6 => true],
+            $locksBetweenAreas,
         );
     }
 

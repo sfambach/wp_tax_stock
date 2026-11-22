@@ -361,6 +361,10 @@ $pruefe(str_contains($suche, 'name="' . StockPage::ASKS_STOCK . '" value="1"') &
 $_GET = ['page' => StockPage::PAGE, 'tab' => 'material', ListPage::SHOW_ALL => '1', 'filter' => 'instock', StockPage::ASKS_STOCK => '1'];
 $html = (new StockPage())->render();
 $pruefe(str_contains($html, StockPage::ASKS_STOCK . '=1') && str_contains($html, 'name="' . StockPage::ASKS_STOCK . '" value="1"'), 'a search from «Bestand» stays one: its addresses and the list\'s own search keep it');
+// D-1581, Live-Check 29 2026-11-22: «MCEBlaster» found once from «Bestand» stayed the list — a single hit there opens its stock.
+$_GET = ['page' => StockPage::PAGE, 'tab' => 'material', 'filter' => 'instock', StockPage::ASKS_STOCK => '1', 's' => 'LM2930T'];
+$html = (new StockPage())->render();
+$pruefe(str_contains($html, 'nav-tab-active">Bestand') && str_contains($html, 'Zur Liste'), 'D-1581: a single hit of a search from «Bestand» opens its stock, whatever «Einzeltreffer öffnen» says');
 try {
     (new StockService())->moveThings([$r['lm']], $von, '2026-11-02', 'nichts');
     $pruefe(false, 'a bulk Umbuchung with nothing left to move is refused');

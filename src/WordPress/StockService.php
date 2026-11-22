@@ -128,6 +128,8 @@ final class StockService
 
     /** D-1375, his wish 2026-11-15: the price warning's share, in percent. */
     public const PRICE_WARN_PERCENT = 'taxmod_stock_price_warn_percent';
+    /** Stefan 2026-11-22: whether goods may not go straight from one reserved area (a project box) into another; default no. */
+    public const AREA_LOCK = 'taxmod_stock_area_lock';
 
     /** His word: «nach einem Monat oder so». */
     public const INBOUND_ARCHIVE_DAYS_DEFAULT = 30;
@@ -3350,9 +3352,15 @@ final class StockService
 
     /** D-1082: the places reserved for production, computed from the tree read once. */
     /** Built once per service, like the place tree it rests on (review 2026-11-17, Befund 2: 24 callers). */
+    /** Whether an Umbuchung from one reserved area straight into another is refused ({@see self::AREA_LOCK}). */
+    public function locksBetweenAreas(): bool
+    {
+        return (string) get_option(self::AREA_LOCK, '0') === '1';
+    }
+
     public function reservedPlaces(): ReservedPlaces
     {
-        return $this->reservedPlaces ??= ReservedPlaces::from($this->structure(), $this->table('location'), $this->locationTree());
+        return $this->reservedPlaces ??= ReservedPlaces::from($this->structure(), $this->table('location'), $this->locationTree(), $this->locksBetweenAreas());
     }
 
     /**

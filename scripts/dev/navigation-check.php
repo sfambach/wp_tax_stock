@@ -359,6 +359,21 @@ delete_option(StockService::MATERIAL_IN);
 $pruefe(get_option(StockService::INBOUND_SINCE) === '2026-01-02' && (int) get_option(StockService::INBOUND_ARCHIVE_DAYS) === 9, 'goods receipt since and archive days');
 $pruefe(get_option(StockService::TESTS) === ['place' => null], 'D-1259: the test settings hold the test place only; the tested groups are a group property');
 $pruefe((new StockService())->viewSettings()->expanded('material'), 'the view of the tabs');
+// His word 2026-11-22 «mach sie schaltbar und nimm sie standardmäßig raus»: the lock between reserved areas is a setting, off unless set.
+delete_option(StockService::AREA_LOCK);
+$aus = (new StockService())->locksBetweenAreas();
+update_option(StockService::AREA_LOCK, '1', false);
+$pruefe(! $aus && (new StockService())->locksBetweenAreas() && str_contains((new SettingsPage())->render(), 'name="' . StockService::AREA_LOCK . '"'), 'the lock between reserved areas: off by default, a tick in the settings');
+delete_option(StockService::AREA_LOCK);
+
+// D-1581, Live-Check 29 2026-11-22: the search begun on «Bestand» marked «Stammdaten › Material» — it stays in «Bestand».
+$_GET    = ['page' => StockPage::PAGE, 'tab' => 'material', 'filter' => 'instock', StockPage::ASKS_STOCK => '1', 's' => 'x'];
+$bestand = LogisticsShell::wrap(StockPage::PAGE, '<p>x</p>');
+$_GET    = ['page' => StockPage::PAGE, 'tab' => 'material'];
+$stamm   = LogisticsShell::wrap(StockPage::PAGE, '<p>x</p>');
+$offen   = static fn (string $html, string $label): bool => preg_match('/<li class="taxmod-shell-area is-open"><a [^>]*>' . $label . '<\/a>/', $html) === 1;
+$pruefe($offen($bestand, 'Bestand') && ! $offen($bestand, 'Stammdaten') && ! str_contains($bestand, 'aria-current') && $offen($stamm, 'Stammdaten'),
+    'D-1581: a search from «Bestand» marks «Bestand» in the menu, the material list itself «Stammdaten»');
 
 $tab = new TaxmodStock\WordPress\Admin\SettingsTab();
 $pruefe(str_contains($tab->render(), 'taxmod_stock_structure') && ! str_contains($tab->render(), 'taxmod_stock_not_material'), 'the Configuration tab «Lager» keeps only the technical structure');

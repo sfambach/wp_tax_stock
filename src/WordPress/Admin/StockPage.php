@@ -682,9 +682,10 @@ final class StockPage
         set_transient(self::LAST_LIST . get_current_user_id(), $url(['paged' => absint($_GET['paged'] ?? 0) > 1 ? (string) absint($_GET['paged']) : '']), DAY_IN_SECONDS);
 
         // D-1329, changed by D-1468: a search with exactly one hit opens that material only where it is chosen — in the
-        // Grundeinstellungen, or by the person, whose choice wins. Otherwise the list stays with its one row.
+        // Grundeinstellungen, or by the person, whose choice wins. Otherwise the list stays with its one row. A search begun on
+        // «Bestand» opens its single hit always (D-1581, his word 2026-11-20 20:23: «ich möchte den Bestand wissen»).
         if (! $branch && trim($list->search) !== '' && count($shown) === 1
-            && $this->stock->viewSettings()->opensSingleHit('material', SettingsPage::ownSingleHit())) {
+            && (self::asksStock() || $this->stock->viewSettings()->opensSingleHit('material', SettingsPage::ownSingleHit()))) {
             $one = (int) reset($shown)['id'];
 
             return (new self($this->stock->scopedTo($one)))->thingView($one);

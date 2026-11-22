@@ -251,6 +251,10 @@ final class LogisticsShell
         // D-1128: an area's overview opens its area in the navigation, no item marked; D-1134: a group's overview opens the group.
         $group      = $overview === '' ? '' : sanitize_text_field(wp_unslash((string) ($_GET[CockpitPage::GROUP] ?? '')));
         $active     = $overview !== '' && $overview !== 'cockpit' ? ['area' => $overview, 'item' => '', 'group' => $group] : $navigation->active($page, $tab, $page === Pages::MODULE ? ModulePage::requested() : '');
+        // D-1581: a search begun on «Bestand» stays in «Bestand» — its list is the material tab, but the menu marks the area it came from.
+        if ($page === Pages::STOCK && $tab === 'material' && StockPage::asksStock()) {
+            $active = ['area' => 'stock', 'item' => '', 'group' => ''];
+        }
 
         if ($active === null) {
             return $side . $html;

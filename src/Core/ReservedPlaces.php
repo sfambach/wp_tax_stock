@@ -89,7 +89,8 @@ final class ReservedPlaces
 
         $source = $this->reservingPlaceOf($from);
 
-        if ($bound || ($source !== null && $source !== $target)) {
+        // D-NEU: what an order of the box was given moves within the box like the rest.
+        if ($source !== $target && ($bound || $source !== null)) {
             throw StockError::alreadyReserved($lot);
         }
     }
@@ -142,7 +143,7 @@ final class ReservedPlaces
 
                 $holder = $this->reservingPlaceOf($at);
 
-                if (isset($bound[$lot]) || ($holder !== null && ! isset($inside[$holder]) && $holder !== $target)) {
+                if ((isset($bound[$lot]) && $holder !== $target) || ($holder !== null && ! isset($inside[$holder]) && $holder !== $target)) {
                     throw StockError::alreadyReserved($lot);
                 }
             }
@@ -188,18 +189,23 @@ final class ReservedPlaces
     }
 
     /**
-     * How much of each thing lies in reserved areas.
+     * How much of each thing lies in reserved areas — D-NEU less what a reservation names there, which that reservation
+     * already counts (one reservation per piece).
      *
+     * @param array<int, float> $bound lot → quantity a reservation names
      * @return array<int, float> thing → quantity
      */
-    public function reservedByThing(Ledger $ledger): array
+    public function reservedByThing(Ledger $ledger, array $bound = []): array
     {
         $out = [];
 
         foreach ($this->holdings($ledger) as $lots) {
             foreach ($lots as $lot => $places) {
-                $thing       = (int) $ledger->thingOf($lot);
-                $out[$thing] = ($out[$thing] ?? 0.0) + array_sum($places);
+                $here          = array_sum($places);
+                $named         = min($here, $bound[$lot] ?? 0.0);
+                $bound[$lot]   = ($bound[$lot] ?? 0.0) - $named;
+                $thing         = (int) $ledger->thingOf($lot);
+                $out[$thing]   = ($out[$thing] ?? 0.0) + $here - $named;
             }
         }
 

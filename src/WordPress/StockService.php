@@ -3378,7 +3378,7 @@ final class StockService
         $out    = $this->reservations()->reservedByThing();
         $ledger = $this->ledger();
 
-        foreach ($this->reservedPlaces()->reservedByThing($ledger) as $thing => $quantity) {
+        foreach ($this->reservedPlaces()->reservedByThing($ledger, $this->reservations()->boundLots()) as $thing => $quantity) {
             $out[$thing] = ($out[$thing] ?? 0.0) + $quantity;
         }
 
@@ -3475,13 +3475,15 @@ final class StockService
      * A row without a lot that names a place (`$places`, row index → place) takes the free lots lying there, oldest first,
      * so the goods stay where they are and the reservation names them.
      *
+     * D-NEU: `$within` is the project the subject belongs to (an order of it): its boxes give what lies in them.
+     *
      * @param list<ReservationRow> $rows
      * @param array<int, int>      $places
      * @return array<string, mixed> the modeller's answer
      */
-    public function reserveRows(int $subject, string $deadline, array $rows, string $today, string $title, array $places = []): array
+    public function reserveRows(int $subject, string $deadline, array $rows, string $today, string $title, array $places = [], int $within = 0): array
     {
-        $rows = $places === [] ? $rows : $this->lotsAtPlaces($rows, $places);
+        $rows = $places === [] ? $rows : $this->lotsAtPlaces($rows, $places, $within);
         $s = $this->structure();
 
         if (! $s->hasValue('kind_reservation')) {
@@ -3495,7 +3497,7 @@ final class StockService
         $this->checkThings(array_values(array_unique(array_map(static fn (ReservationRow $row): int => $row->thing, $rows))));
         $this->guardUnblocked(array_values(array_filter(array_map(static fn (ReservationRow $row): int => (int) $row->lot, $rows))));
         $reservations = $this->reservations();
-        $reservations->check($rows, $this->ledger(), $this->reservedPlaces());
+        $reservations->check($rows, $this->ledger(), $this->reservedPlaces(), $within);
 
         return $this->model->write((new Bookings($this->structureWithKinds(), $today))->reserve($subject, $deadline, $rows, $reservations->forSubject($subject), $this->table('transaction'), $title));
     }
@@ -3505,10 +3507,11 @@ final class StockService
      * @param array<int, int>      $places row index → place
      * @return list<ReservationRow>
      */
-    private function lotsAtPlaces(array $rows, array $places): array
+    private function lotsAtPlaces(array $rows, array $places, int $within = 0): array
     {
         $ledger = $this->ledger();
         $bound  = $this->boundLots();
+        $named  = $this->reservations()->boundLots();
         $out    = [];
 
         foreach ($rows as $index => $row) {
@@ -3522,7 +3525,8 @@ final class StockService
             $left = (float) $row->quantity;
 
             foreach ($ledger->lotsOf($row->thing) as $lot) {
-                $there = isset($bound[$lot]) ? 0.0 : $ledger->restAt($lot, $place);
+                // D-NEU: in a box of its project an order takes what no other order was given of a lot.
+                $there = $within > 0 ? max(0.0, $ledger->restAt($lot, $place) - ($named[$lot] ?? 0.0)) : (isset($bound[$lot]) ? 0.0 : $ledger->restAt($lot, $place));
 
                 if ($left > 0.000001 && $there > 0.000001) {
                     $part  = min($there, $left);
@@ -4632,7 +4636,16 @@ final class StockService
             $reserved[$position['thing']][] = ['lot' => $position['lot'], 'quantity' => $position['quantity']];
         }
 
-        return BuildPlan::rows($this->ledger(), $place, $this->locationTree()->withAllBelow($place), $lines, $this->takenFor($reference), $reserved);
+        // D-NEU: what the box's other orders were given stays for them.
+        $list   = $this->reservations();
+        $own    = $list->boundLotsOf($reference);
+        $others = [];
+
+        foreach ($list->boundLots() as $lot => $quantity) {
+            $others[$lot] = max(0.0, $quantity - ($own[$lot] ?? 0.0));
+        }
+
+        return BuildPlan::rows($this->ledger(), $place, $this->locationTree()->withAllBelow($place), $lines, $this->takenFor($reference), $reserved, $others);
     }
 
     /**
@@ -4977,10 +4990,12 @@ final class StockService
      * D-1146, the pick list of a build order: where the things lie free — not in the box `$except` or below it, not in a
      * reserved area (D-1082), not in a lot a reservation names (D-1083).
      *
+     * D-NEU: with `$within` (the project of an order) its boxes count too, with what no order was given there.
+     *
      * @param list<int> $things
      * @return array<int, array<int, float>> thing → place → pieces, only more than nothing
      */
-    public function freeStockByPlace(array $things, int $except = 0): array
+    public function freeStockByPlace(array $things, int $except = 0, int $within = 0): array
     {
         $wanted   = array_flip($things);
         // D-1528 (W6): what lies on a Warenausgang place is provided for a sale, not free to pick.
@@ -4988,17 +5003,34 @@ final class StockService
         $ledger   = $this->ledger();
         $reserved = $this->reservedPlaces();
         $bound    = $this->boundLots();
+        $named    = $within > 0 ? $this->reservations()->boundLots() : [];
         $out      = [];
 
         foreach ($ledger->stockByPlace() as $lot => $at) {
             $thing = $ledger->thingOf($lot);
 
-            if ($thing === null || ! isset($wanted[$thing]) || isset($bound[$lot])) {
+            if ($thing === null || ! isset($wanted[$thing])) {
                 continue;
             }
 
+            $given = $named[$lot] ?? 0.0;
+
             foreach ($at as $place => $quantity) {
-                if (! isset($skip[$place]) && $reserved->reservingPlaceOf($place) === null) {
+                $area = $reserved->reservingPlaceOf($place);
+
+                if (isset($skip[$place])) {
+                    continue;
+                }
+
+                if ($within > 0 && ($area === null || $reserved->subjectAt($area) === $within)) {
+                    $kept     = min($given, $quantity);
+                    $given   -= $kept;
+                    $quantity -= $kept;
+                } elseif (isset($bound[$lot]) || $area !== null) {
+                    continue;
+                }
+
+                if ($quantity > 0.000001) {
                     $out[$thing][$place] = ($out[$thing][$place] ?? 0.0) + $quantity;
                 }
             }

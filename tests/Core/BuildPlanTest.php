@@ -41,6 +41,18 @@ final class BuildPlanTest extends TestCase
         BuildPlan::rows($this->ledger(), 3, [3, 4], [30 => 8.0], [], [30 => [['lot' => 62, 'quantity' => 0.5]]]);
     }
 
+    /** D-NEU: what another order of the box was given stays in the box — 2 of lot 60 are for someone else. */
+    #[Test]
+    public function what_another_order_was_given_is_not_taken(): void
+    {
+        $rows = BuildPlan::rows($this->ledger(), 3, [3, 4], [30 => 5.0], [], [], [60 => 2.0]);
+
+        self::assertSame([['lot' => 61, 'place' => 4, 'quantity' => -5.0]], $rows);
+
+        $this->expectException(StockError::class);
+        BuildPlan::rows($this->ledger(), 3, [3, 4], [30 => 6.0], [], [], [60 => 2.0]);
+    }
+
     #[Test]
     public function giving_back_returns_to_the_box_what_the_order_took_newest_lot_first(): void
     {

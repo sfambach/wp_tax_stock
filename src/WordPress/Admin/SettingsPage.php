@@ -40,7 +40,8 @@ final class SettingsPage
 
     public function render(): string
     {
-        if (sanitize_key((string) ($_GET['tab'] ?? '')) === self::USER_TAB) {
+        // D-1585: the business settings are configuration; whoever may not change them sees their own settings here.
+        if (sanitize_key((string) ($_GET['tab'] ?? '')) === self::USER_TAB || ! current_user_can(\Taxmod\WordPress\Rights::CONFIGURE)) {
             return $this->userSettings();
         }
 
@@ -57,7 +58,7 @@ final class SettingsPage
     /** admin-post: capability → nonce → validate and sanitize per field (in {@see save()}) → keep → back to the page. */
     public function handle(): void
     {
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::CONFIGURE)) {
             Acts::deny(__('Keine Berechtigung.', 'taxmod-stock'));
         }
 
@@ -139,7 +140,7 @@ final class SettingsPage
     /** admin-post for Benutzereinstellungen: logged in with access to the stock → nonce → keep for this user → back. */
     public function handleUser(): void
     {
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             Acts::deny(__('Keine Berechtigung.', 'taxmod-stock'));
         }
 

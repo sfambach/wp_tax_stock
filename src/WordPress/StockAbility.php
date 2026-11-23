@@ -38,7 +38,7 @@ final class StockAbility
                 'additionalProperties' => false,
             ],
             'execute_callback'    => fn (mixed $input = null): array|\WP_Error => $this->answer(is_array($input) ? $input : []),
-            'permission_callback' => static fn (): bool => current_user_can('manage_options'),
+            'permission_callback' => static fn (): bool => current_user_can(\Taxmod\WordPress\Rights::VIEW),
             'meta'                => ['public' => true, 'annotations' => ['readonly' => true, 'destructive' => false, 'idempotent' => true]],
         ]);
     }

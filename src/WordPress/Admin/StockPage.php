@@ -171,6 +171,12 @@ final class StockPage
     {
         $tab  = sanitize_key((string) ($_GET['tab'] ?? self::TABS[0]));
         $tab  = in_array($tab, self::TABS, true) ? $tab : self::TABS[0];
+
+        // D-1586: a tab without its right is not drawn — the navigation hides it, an address typed by hand gets this.
+        if (! current_user_can(StockRights::ofTab($tab))) {
+            return ListPage::page(__('Lager', 'taxmod-stock'), [], [['html' => '<div class="notice notice-warning inline"><p>' . esc_html__('Keine Berechtigung.', 'taxmod-stock') . '</p></div>']], (string) TAXMOD_STOCK_VERSION);
+        }
+
         $list = $this->listRequest();
         $html = Notice::take(self::NOTICE, true);
         // His word 2026-11-21: «die null durchgangs abfrage dialog ist immer hinter dem umbuchen dialog» — the question is
@@ -208,7 +214,7 @@ final class StockPage
     /** admin-post handler: capability → nonce → validate → sanitize → act → back to the page with a notice. */
     public function handle(): void
     {
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             Acts::deny(__('Keine Berechtigung.', 'taxmod-stock'));
         }
 
@@ -218,6 +224,11 @@ final class StockPage
         // D-1058: the row buttons carry their purchase in the value, «nichteinlagern-<id>» and «einlagern-<id>».
         $rowPurchase = preg_match('/^(positioneinlagern|nichteinlagern|einlagern|bilduebernehmen|umhaengen|reservieren|freigeben|ortkopieren|ortloeschen|artkopieren|unterplaetze|artwechsel|kurzzeichen)-(\d+)$/', $kind, $m) === 1 ? (int) $m[2] : 0;
         $kind        = $rowPurchase > 0 ? $m[1] : $kind;
+
+        // D-1585 step 3: each kind of booking asks its own right, the same one its tab and button are drawn with.
+        if (! current_user_can(StockRights::ofKind($kind))) {
+            Acts::deny(__('Keine Berechtigung.', 'taxmod-stock'));
+        }
         // D-1440: the one table of «Angekommen» holds the purchases of several orders; each row names its own.
         $multi       = ($_POST['multi'] ?? '') === '1';
 
@@ -943,7 +954,7 @@ final class StockPage
     /** D-1259: admin-post — set the group's own values; «wie darüber» and an empty place let it inherit again. */
     public function saveGroupProperties(): never
     {
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::CONFIGURE)) {
             Acts::deny(__('Keine Berechtigung.', 'taxmod-stock'));
         }
 
@@ -995,7 +1006,7 @@ final class StockPage
      */
     public function listDetails(?string $html, string $source, array $args): ?string
     {
-        if ($source !== self::DETAILS_MATERIAL || ! current_user_can('manage_options')) {
+        if ($source !== self::DETAILS_MATERIAL || ! current_user_can(\Taxmod\WordPress\Rights::STOCK_BOOK)) {
             return $html;
         }
 
@@ -2992,7 +3003,7 @@ final class StockPage
     /** ajax: the manufacturer control of one group (D-1256), or nothing. */
     public function maker(): void
     {
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             wp_send_json_error(['html' => ''], 403);
         }
 
@@ -3084,7 +3095,7 @@ final class StockPage
     /** admin-post handler for the material search of {@see self::recordPicker()}: capability → nonce → validate → act. */
     public function thingSearch(): void
     {
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             wp_send_json_error([], 403);
         }
 
@@ -3112,7 +3123,7 @@ final class StockPage
     /** D-1504: admin-post handler for the unit word of one material: capability → nonce → validate → act. */
     public function thingUnit(): void
     {
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             wp_send_json_error([], 403);
         }
 
@@ -3132,7 +3143,7 @@ final class StockPage
     /** admin-post handler for the groups of the tree beside the material search (D-1011): capability → nonce → act. */
     public function thingNodes(): void
     {
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             wp_send_json_error([], 403);
         }
 
@@ -3148,7 +3159,7 @@ final class StockPage
     /** admin-post handler for the things of one group in that tree: capability → nonce → validate → act. */
     public function thingBranch(): void
     {
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             wp_send_json_error([], 403);
         }
 
@@ -3164,7 +3175,7 @@ final class StockPage
     /** D-1299: admin-post handler for the lot search of the Ausbuchen chooser: capability → nonce → validate → act. */
     public function lotSearch(): void
     {
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             wp_send_json_error([], 403);
         }
 
@@ -3180,7 +3191,7 @@ final class StockPage
     /** D-1299: admin-post handler for the lots of one group in the Ausbuchen tree: capability → nonce → validate → act. */
     public function lotBranch(): void
     {
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             wp_send_json_error([], 403);
         }
 
@@ -3196,7 +3207,7 @@ final class StockPage
     /** admin-post handler for one order's purchases, fetched when he opens the order: capability → nonce → validate → act. */
     public function positions(): void
     {
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             wp_send_json_error(['html' => esc_html__('Keine Berechtigung.', 'taxmod-stock')], 403);
         }
 
@@ -3220,7 +3231,7 @@ final class StockPage
      */
     public function assign(): void
     {
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::STOCK_BOOK)) {
             wp_send_json_error(['message' => __('Keine Berechtigung.', 'taxmod-stock')], 403);
         }
 

@@ -149,7 +149,7 @@ final class ModulePage
                 'slug'       => $slug,
                 'label'      => wp_strip_all_tags((string) ($entry[0] ?? $slug)),
                 'area'       => in_array($slug, self::OUTBOUND, true) ? 'outbound' : 'settings',
-                'capability' => (string) ($entry[1] ?? 'manage_options'),
+                'capability' => (string) ($entry[1] ?? \Taxmod\WordPress\Rights::MODEL),
                 'render'     => null,
                 'menu'       => true,
                 'path'       => [],
@@ -170,7 +170,7 @@ final class ModulePage
                 'slug'       => $slug,
                 'label'      => wp_strip_all_tags((string) ($page['label'] ?? $known['label'] ?? $slug)),
                 'area'       => in_array($page['area'] ?? null, self::AREAS, true) ? (string) $page['area'] : ($known['area'] ?? 'settings'),
-                'capability' => is_string($page['capability'] ?? null) && $page['capability'] !== '' ? $page['capability'] : ($known['capability'] ?? 'manage_options'),
+                'capability' => is_string($page['capability'] ?? null) && $page['capability'] !== '' ? $page['capability'] : ($known['capability'] ?? \Taxmod\WordPress\Rights::MODEL),
                 'render'     => is_callable($page['render'] ?? null) ? $page['render'] : null,
                 'menu'       => $known !== null,
                 // The groups above the page in the navigation, any depth (D-1121).

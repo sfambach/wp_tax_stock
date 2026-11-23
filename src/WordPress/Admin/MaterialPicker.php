@@ -103,7 +103,7 @@ final class MaterialPicker
             return $previous;
         }
 
-        return current_user_can('manage_options') ? self::picker(is_array($args) ? $args : []) : '';
+        return current_user_can(\Taxmod\WordPress\Rights::VIEW) ? self::picker(is_array($args) ? $args : []) : '';
     }
 
     /**
@@ -111,7 +111,7 @@ final class MaterialPicker
      */
     public static function placesAnswer(): void
     {
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             wp_send_json_error([], 403);
         }
 

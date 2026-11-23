@@ -222,7 +222,16 @@ final class Plugin
             add_action('admin_post_' . ChoiceListsPage::ACTION, static fn () => Acts::run(static fn () => (new ChoiceListsPage())->handle()));
             add_action('admin_post_' . SettingsPage::ACTION, static fn () => Acts::run(static fn () => (new SettingsPage())->handle()));
             add_action('admin_post_' . SettingsPage::USER_ACTION, static fn () => Acts::run(static fn () => (new SettingsPage())->handleUser()));
-            add_action('admin_post_' . LogisticsShell::FULLSCREEN_ACTION, static fn () => Acts::run([LogisticsShell::class, 'switchFullscreen']));
+        }
+        // D-1585 step 2: the start pages of the stock's rights, and where a person's own settings stand.
+        // ⚠️ *Needs the modeller of D-1585 step 2; against an older one the stock keeps working without these two.*
+        if (class_exists(\Taxmod\WordPress\Admin\TaxmodUser::class)) {
+            add_filter(\Taxmod\WordPress\Admin\TaxmodUser::START_PAGES_FILTER, static fn (array $pages): array => [...$pages,
+                ['right' => \Taxmod\WordPress\Rights::STOCK_BOOK, 'page' => Pages::STOCK],
+                ['right' => \Taxmod\WordPress\Rights::PURCHASE, 'page' => Pages::PURCHASE],
+                ['right' => \Taxmod\WordPress\Rights::VIEW, 'page' => Pages::COCKPIT],
+            ]);
+            add_filter(\Taxmod\WordPress\Admin\FullScreen::SETTINGS_URL_FILTER, static fn (string $url): string => $url !== '' ? $url : admin_url('admin.php?page=' . Pages::SETTINGS));
         }
         // D-1558: the Lager registers the one rules page and says its own rule type.
         RulesSetup::boot();

@@ -17,10 +17,8 @@ use TaxmodStock\WordPress\StockService;
 final class LogisticsShell
 {
     /** admin-post action switching the user's view between integrated and full screen (design 1, 7.9). */
-    public const FULLSCREEN_ACTION = 'taxmod_stock_fullscreen';
 
     /** User meta: '1' when the user works in full screen. */
-    private const FULLSCREEN_META = 'taxmod_stock_fullscreen';
 
     /**
      * D-1179, the convention for every module: a link that jumps elsewhere carries where it comes from — path and query of
@@ -39,27 +37,15 @@ final class LogisticsShell
     /** D-1232: the same switch, set from Benutzereinstellungen. */
     public static function setFullscreen(bool $on): void
     {
-        update_user_meta(get_current_user_id(), self::FULLSCREEN_META, $on ? '1' : '0');
+        \Taxmod\WordPress\Admin\FullScreen::set($on);
     }
 
     public static function isFullscreen(): bool
     {
-        return get_user_meta(get_current_user_id(), self::FULLSCREEN_META, true) === '1';
+        // D-1585 step 2: the modeller owns the one full-screen switch for every taxmod page; the stock reads it.
+        return class_exists(\Taxmod\WordPress\Admin\FullScreen::class) && \Taxmod\WordPress\Admin\FullScreen::isOn();
     }
 
-    /** admin-post: capability → nonce → validate → keep the user's choice → back to the page. */
-    public static function switchFullscreen(): void
-    {
-        if (! current_user_can('manage_options')) {
-            Acts::deny(__('Keine Berechtigung.', 'taxmod-stock'));
-        }
-
-        Acts::nonce(self::FULLSCREEN_ACTION);
-
-        update_user_meta(get_current_user_id(), self::FULLSCREEN_META, self::isFullscreen() ? '0' : '1');
-        wp_safe_redirect(wp_validate_redirect(esc_url_raw(wp_unslash((string) ($_POST['return'] ?? ''))), admin_url('admin.php?page=' . Pages::COCKPIT)));
-        exit;
-    }
     public static function navigation(): Navigation
     {
         $item = static fn (string $key, string $label, string $page, string $tab = ''): array => ['key' => $key, 'label' => $label, 'page' => $page, 'tab' => $tab];
@@ -345,11 +331,11 @@ final class LogisticsShell
             $html .= '</li>';
         }
 
-        return $html . '</ul><form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" class="taxmod-shell-mode">'
-            . wp_nonce_field(self::FULLSCREEN_ACTION, '_wpnonce', true, false) . '<input type="hidden" name="action" value="' . esc_attr(self::FULLSCREEN_ACTION) . '">'
-            . '<input type="hidden" name="return" value="' . esc_attr($back) . '"><button type="submit" class="button-link">'
-            . ($full ? esc_html__('Mit WordPress-Leisten', 'taxmod-stock') : esc_html__('Vollbild', 'taxmod-stock')) . '</button></form>'
-            . ($full ? '<p class="taxmod-shell-mode"><a href="' . esc_url(admin_url()) . '">' . esc_html__('Zu WordPress', 'taxmod-stock') . '</a></p>' : '');
+        // D-1585 step 2: the modeller's switch; a taxmod user has neither the switch nor a way to WordPress.
+        $appOnly = current_user_can(\Taxmod\WordPress\Rights::APP_ONLY);
+
+        return $html . '</ul>' . ($appOnly || ! class_exists(\Taxmod\WordPress\Admin\FullScreen::class) ? '' : '<div class="taxmod-shell-mode">' . \Taxmod\WordPress\Admin\FullScreen::switchForm($back) . '</div>')
+            . ($full && ! $appOnly ? '<p class="taxmod-shell-mode"><a href="' . esc_url(admin_url()) . '">' . esc_html__('Zu WordPress', 'taxmod-stock') . '</a></p>' : '');
     }
 
     /**
@@ -407,11 +393,10 @@ final class LogisticsShell
         return $html . '</ul>';
     }
 
-    /** Full screen: the WordPress bars go, the stock interface fills the window; login and rights stay WordPress's. */
+    /** Full screen: the modeller hides the WordPress bars (D-1585 step 2); the shell only moves up into the room they leave. */
     private static function fullscreenStyle(): string
     {
-        return '<style>#wpadminbar,#adminmenumain,#wpfooter{display:none}html.wp-toolbar{padding-top:0}#wpcontent,#wpfooter{margin-left:0}'
-            . '#wpcontent{padding-left:20px}.taxmod-shell-column{top:10px}.taxmod-shell.has-side .taxmod-shell-column{height:auto;min-height:calc(100vh - 20px)}</style>';
+        return '<style>.taxmod-shell-column{top:10px}.taxmod-shell.has-side .taxmod-shell-column{height:auto;min-height:calc(100vh - 20px)}</style>';
     }
 
     /**

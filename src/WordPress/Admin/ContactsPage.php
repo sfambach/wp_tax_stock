@@ -75,7 +75,7 @@ final class ContactsPage
     /** admin-post: capability → nonce → validate → sanitize → act → back to the list with a notice. */
     public function handle(): void
     {
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::WRITE_DATA)) {
             Acts::deny(__('Keine Berechtigung.', 'taxmod-stock'));
         }
 
@@ -125,7 +125,7 @@ final class ContactsPage
      */
     public function listDetails(?string $html, string $source, array $args): ?string
     {
-        if ($source !== self::DETAILS || ! current_user_can('manage_options')) {
+        if ($source !== self::DETAILS || ! current_user_can(\Taxmod\WordPress\Rights::WRITE_DATA)) {
             return $html;
         }
 

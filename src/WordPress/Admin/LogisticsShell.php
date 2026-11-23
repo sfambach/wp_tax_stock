@@ -50,7 +50,7 @@ final class LogisticsShell
     {
         $item = static fn (string $key, string $label, string $page, string $tab = ''): array => ['key' => $key, 'label' => $label, 'page' => $page, 'tab' => $tab];
 
-        return new Navigation([
+        return new Navigation(self::allowed([
             // D-1241, his word 2026-11-09: «… unter Cockpit angezeigt werden. Und auch das Zeitraum würde ich einfach unten drunter
             // packen … Sodass wir nur noch Cockpit haben.» — one item, what is due and the period on one page.
             ['key' => 'cockpit', 'label' => __('Cockpit', 'taxmod-stock'), 'items' => [
@@ -116,7 +116,8 @@ final class LogisticsShell
             // His word 2026-11-01: «einen Punkt Einstellung … die API-Konfiguration, die Grundeinstellung und ja, die Lagerstruktur».
             ['key' => 'settings', 'label' => __('Einstellungen', 'taxmod-stock'), 'items' => [
                 // D-1085: the business settings inside the navigation; the technical structure stays on the modeller's Configuration.
-                $item('basics', __('Grundeinstellungen', 'taxmod-stock'), Pages::SETTINGS),
+                // D-1585: the page also holds each person's own settings; its business settings are configuration.
+                ['right' => \Taxmod\WordPress\Rights::CONFIGURE] + $item('basics', __('Grundeinstellungen', 'taxmod-stock'), Pages::SETTINGS),
                 ...self::modules('settings'),
                 // D-1558, his word 21.11.2026: «in Einstellungen einen Regeln … Punkt … darunter dann die unterschiedlichen Regeln».
                 ...RulesSetup::menuItems(),
@@ -134,7 +135,7 @@ final class LogisticsShell
                 // D-1232, his question 2026-11-08: «was ist eigentlich mit dem Benutzereinstellungen los? Die sind noch nicht sichtbar».
                 $item('user', __('Benutzereinstellungen', 'taxmod-stock'), Pages::SETTINGS, SettingsPage::USER_TAB),
             ]],
-        ]);
+        ]));
     }
 
     /**
@@ -223,6 +224,30 @@ final class LogisticsShell
         }
 
         return $items;
+    }
+
+    /**
+     * D-1586: only the items a person may open — the right an item names, else its tab's, else its page's menu entry or module.
+     *
+     * @param list<array{key: string, label: string, items: list<array<string, mixed>>}> $areas
+     * @return list<array{key: string, label: string, items: list<array<string, mixed>>}>
+     */
+    private static function allowed(array $areas): array
+    {
+        // WordPress lists a page under the menu only for whoever may open it; a page not listed is one this person may not open.
+        $pages   = \Taxmod\WordPress\Admin\FullScreen::pages();
+        $modules = ModulePage::all();
+        $right   = static fn (array $item): string => (string) ($item['right'] ?? match (true) {
+            ($item['module'] ?? '') !== '' => $modules[$item['module']]['capability'] ?? \Taxmod\WordPress\Rights::MODEL,
+            $item['page'] === Pages::STOCK => StockRights::ofTab((string) $item['tab']),
+            default                        => $pages[$item['page']] ?? '',
+        });
+
+        foreach ($areas as $at => $area) {
+            $areas[$at]['items'] = array_values(array_filter($area['items'], static fn (array $item): bool => $right($item) !== '' && current_user_can($right($item))));
+        }
+
+        return $areas;
     }
 
     /**

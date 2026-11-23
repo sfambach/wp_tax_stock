@@ -153,15 +153,17 @@ final class Plugin
         // *The one door into the model and the shared confirm dialog (D-1186) came with the modeller 0.1.175; the Ausbuchen form needs the narrowed choosers of 0.2.64 (D-1298), every form the toolbar of 0.2.67 (D-1308), the view dialog of 0.2.68 and its script of 0.2.69 (D-1309; the 0.2.69 release still says 0.2.68 in its header, so the gate asks 0.2.68); ListPage::grid of 0.2.120 (D-1409); ListPage::number of 0.2.130 (D-1423); ModelDoor::remembering of 0.2.132 (D-1186, G5); DialogNumber at the edge of 0.2.133 (D-1431); number columns, the complete answer and the searched texts of a row of 0.2.146 (D-1462); listBar, iconButton, date, dateCell, money of 0.2.172 (D-1500); an older one is named
         // rather than failing on a page.*
         // Asked by version, not by loading the classes: method_exists() compiled the 43 KB list page on every page view (D-1187).
-        // D-1501/D-1504: the fields go through ListPage::field; Tick and Choice came with the modeller 0.2.175. D-1546: the test rules' node chooses under several roots since 0.2.200; D-1558: the one rules page since 0.2.206.
-        if (! class_exists(\Taxmod\WordPress\Plugin::class, false) || version_compare(\Taxmod\WordPress\Plugin::VERSION, '0.2.206', '<')) {
+        // D-1501/D-1504: the fields go through ListPage::field; Tick and Choice came with the modeller 0.2.175. D-1546: the test rules' node chooses under several roots since 0.2.200; D-1558: the one rules page since 0.2.206. D-1585: the rights table, full screen and the taxmod user since 0.2.238.
+        if (! class_exists(\Taxmod\WordPress\Plugin::class, false) || version_compare(\Taxmod\WordPress\Plugin::VERSION, '0.2.238', '<')) {
             add_action('admin_notices', static function (): void {
-                echo '<div class="notice notice-error"><p>' . esc_html__('Taxmod Stock braucht den aktiven Taxonomy Modeller ab 0.2.206.', 'taxmod-stock') . '</p></div>';
+                echo '<div class="notice notice-error"><p>' . esc_html__('Taxmod Stock braucht den aktiven Taxonomy Modeller ab 0.2.238.', 'taxmod-stock') . '</p></div>';
             });
 
             return;
         }
 
+        // D-1585 step 3: the stock's own right «Wareneingang», derived from purchasing or booking stock.
+        \TaxmodStock\WordPress\Admin\StockRights::boot();
         add_filter('taxmod_config_tabs', [SettingsTab::class, 'register']);
         // D-1480: a merged material takes its doubled Lager record to the trash, or the merge is vetoed — applied by the modeller.
         // D-1499: on the modeller's core dispatcher (`taxmod_listen`, D-1498) where it has one; the filter only for an older modeller.
@@ -189,13 +191,13 @@ final class Plugin
             add_action('admin_init', static function (): void {
                 $tab = sanitize_key((string) ($_GET['tab'] ?? ''));
 
-                if (sanitize_key((string) ($_GET['page'] ?? '')) === Pages::STOCK && in_array($tab, ['', 'wareneingang'], true) && absint($_GET['split'] ?? 0) === 0 && current_user_can('manage_options')) {
+                if (sanitize_key((string) ($_GET['page'] ?? '')) === Pages::STOCK && in_array($tab, ['', 'wareneingang'], true) && absint($_GET['split'] ?? 0) === 0 && current_user_can(\TaxmodStock\WordPress\Admin\StockRights::INBOUND)) {
                     wp_safe_redirect(InboundPage::url(array_filter(['tab' => InboundStage::Arrived->value, 's' => sanitize_text_field(wp_unslash((string) ($_GET['s'] ?? '')))])));
                     exit;
                 }
             });
             // D-1259: the old branch rows move to the groups once, as soon as the modeller can hold them.
-            add_action('admin_init', static fn () => current_user_can('manage_options') ? (new StockService())->moveBranchSettingsToGroups() : null);
+            add_action('admin_init', static fn () => current_user_can(\Taxmod\WordPress\Rights::CONFIGURE) ? (new StockService())->moveBranchSettingsToGroups() : null);
         }
         add_action('rest_api_init', [$this, 'registerSettings']);
         // After the modeller (priority 10) has created its menu.
@@ -231,7 +233,7 @@ final class Plugin
                 ['right' => \Taxmod\WordPress\Rights::PURCHASE, 'page' => Pages::PURCHASE],
                 ['right' => \Taxmod\WordPress\Rights::VIEW, 'page' => Pages::COCKPIT],
             ]);
-            add_filter(\Taxmod\WordPress\Admin\FullScreen::SETTINGS_URL_FILTER, static fn (string $url): string => $url !== '' ? $url : admin_url('admin.php?page=' . Pages::SETTINGS));
+            add_filter(\Taxmod\WordPress\Admin\FullScreen::SETTINGS_URL_FILTER, static fn (string $url): string => $url !== '' ? $url : add_query_arg(['page' => Pages::SETTINGS, 'tab' => SettingsPage::USER_TAB], admin_url('admin.php')));
         }
         // D-1558: the Lager registers the one rules page and says its own rule type.
         RulesSetup::boot();
@@ -451,7 +453,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! (current_user_can(\Taxmod\WordPress\Rights::STOCK_BOOK) || current_user_can(\Taxmod\WordPress\Rights::MANUFACTURE))) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -489,7 +491,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -523,7 +525,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! (current_user_can(\Taxmod\WordPress\Rights::STOCK_BOOK) || current_user_can(\Taxmod\WordPress\Rights::MANUFACTURE))) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -551,7 +553,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! (current_user_can(\Taxmod\WordPress\Rights::STOCK_BOOK) || current_user_can(\Taxmod\WordPress\Rights::MANUFACTURE))) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -594,7 +596,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -617,7 +619,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! (current_user_can(\Taxmod\WordPress\Rights::STOCK_BOOK) || current_user_can(\Taxmod\WordPress\Rights::SELL) || current_user_can(\Taxmod\WordPress\Rights::SHIP))) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -662,7 +664,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -686,7 +688,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! (current_user_can(\Taxmod\WordPress\Rights::STOCK_BOOK) || current_user_can(\Taxmod\WordPress\Rights::SELL) || current_user_can(\Taxmod\WordPress\Rights::SHIP))) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -710,7 +712,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! (current_user_can(\Taxmod\WordPress\Rights::STOCK_BOOK) || current_user_can(\Taxmod\WordPress\Rights::MANUFACTURE))) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -741,7 +743,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! (current_user_can(\Taxmod\WordPress\Rights::STOCK_BOOK) || current_user_can(\Taxmod\WordPress\Rights::SELL) || current_user_can(\Taxmod\WordPress\Rights::SHIP))) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -773,7 +775,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -800,7 +802,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! (current_user_can(\Taxmod\WordPress\Rights::STOCK_BOOK) || current_user_can(\Taxmod\WordPress\Rights::MANUFACTURE))) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -836,7 +838,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -865,7 +867,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! (current_user_can(\Taxmod\WordPress\Rights::STOCK_BOOK) || current_user_can(\Taxmod\WordPress\Rights::MANUFACTURE))) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -920,7 +922,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! (current_user_can(\Taxmod\WordPress\Rights::STOCK_BOOK) || current_user_can(\Taxmod\WordPress\Rights::MANUFACTURE))) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -958,7 +960,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             return '';
         }
 
@@ -994,7 +996,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! (current_user_can(\Taxmod\WordPress\Rights::STOCK_BOOK) || current_user_can(\Taxmod\WordPress\Rights::MANUFACTURE))) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -1041,7 +1043,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -1073,7 +1075,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -1109,7 +1111,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -1136,7 +1138,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! (current_user_can(\Taxmod\WordPress\Rights::STOCK_BOOK) || current_user_can(\Taxmod\WordPress\Rights::MANUFACTURE))) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -1205,7 +1207,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! (current_user_can(\Taxmod\WordPress\Rights::STOCK_BOOK) || current_user_can(\Taxmod\WordPress\Rights::MANUFACTURE))) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -1261,7 +1263,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! (current_user_can(\Taxmod\WordPress\Rights::STOCK_BOOK) || current_user_can(\Taxmod\WordPress\Rights::MANUFACTURE))) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -1309,7 +1311,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::WRITE_DATA)) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -1358,7 +1360,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -1385,7 +1387,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -1412,7 +1414,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -1451,7 +1453,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             return [];
         }
 
@@ -1476,7 +1478,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::STOCK_BOOK)) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -1515,7 +1517,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! (current_user_can(\Taxmod\WordPress\Rights::STOCK_BOOK) || current_user_can(\Taxmod\WordPress\Rights::SELL) || current_user_can(\Taxmod\WordPress\Rights::SHIP))) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -1556,7 +1558,7 @@ final class Plugin
             return self::cancelLoss($previous, $args);
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! (current_user_can(\Taxmod\WordPress\Rights::STOCK_BOOK) || current_user_can(\Taxmod\WordPress\Rights::SELL) || current_user_can(\Taxmod\WordPress\Rights::SHIP))) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -1581,7 +1583,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! (current_user_can(\Taxmod\WordPress\Rights::STOCK_BOOK) || current_user_can(\Taxmod\WordPress\Rights::MANUFACTURE))) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -1622,7 +1624,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::VIEW)) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -1648,7 +1650,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::STOCK_BOOK)) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -1667,7 +1669,7 @@ final class Plugin
             return $previous;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! (current_user_can(\Taxmod\WordPress\Rights::STOCK_BOOK) || current_user_can(\Taxmod\WordPress\Rights::SELL) || current_user_can(\Taxmod\WordPress\Rights::SHIP))) {
             return new \WP_Error('taxmod_stock_forbidden', __('Keine Berechtigung für Lagerbuchungen.', 'taxmod-stock'));
         }
 
@@ -1772,28 +1774,28 @@ final class Plugin
         };
 
         $hooks = [
-            add_submenu_page(self::PARENT, __('Logistik', 'taxmod-stock'), __('Logistik', 'taxmod-stock'), 'manage_options', Pages::COCKPIT, $page(Pages::COCKPIT, static fn (): string => (new CockpitPage())->render())),
+            add_submenu_page(self::PARENT, __('Logistik', 'taxmod-stock'), __('Logistik', 'taxmod-stock'), \Taxmod\WordPress\Rights::VIEW, Pages::COCKPIT, $page(Pages::COCKPIT, static fn (): string => (new CockpitPage())->render())),
             // D-1027: demand, source, order per supplier — he orders at the shop himself.
-            add_submenu_page(self::PARENT, __('Einkauf', 'taxmod-stock'), __('Einkauf', 'taxmod-stock'), 'manage_options', Pages::PURCHASE, $page(Pages::PURCHASE, static fn (): string => (new PurchasePage())->render())),
-            add_submenu_page(self::PARENT, __('Wareneingang', 'taxmod-stock'), __('Wareneingang', 'taxmod-stock'), 'manage_options', self::MENU, $page(self::MENU, static fn (): string => (new InboundPage())->render())),
-            add_submenu_page(self::PARENT, __('Lager', 'taxmod-stock'), __('Lager', 'taxmod-stock'), 'manage_options', Pages::STOCK, $page(Pages::STOCK, static fn (): array => (new StockPage())->parts())),
+            add_submenu_page(self::PARENT, __('Einkauf', 'taxmod-stock'), __('Einkauf', 'taxmod-stock'), \Taxmod\WordPress\Rights::PURCHASE, Pages::PURCHASE, $page(Pages::PURCHASE, static fn (): string => (new PurchasePage())->render())),
+            add_submenu_page(self::PARENT, __('Wareneingang', 'taxmod-stock'), __('Wareneingang', 'taxmod-stock'), \TaxmodStock\WordPress\Admin\StockRights::INBOUND, self::MENU, $page(self::MENU, static fn (): string => (new InboundPage())->render())),
+            add_submenu_page(self::PARENT, __('Lager', 'taxmod-stock'), __('Lager', 'taxmod-stock'), \Taxmod\WordPress\Rights::STOCK_BOOK, Pages::STOCK, $page(Pages::STOCK, static fn (): array => (new StockPage())->parts())),
             // D-1184: Logistik › Kontakte, the model's contact branch.
-            add_submenu_page(self::PARENT, __('Kontakte', 'taxmod-stock'), __('Kontakte', 'taxmod-stock'), 'manage_options', Pages::CONTACTS, $page(Pages::CONTACTS, static fn (): array => (new ContactsPage())->render())),
+            add_submenu_page(self::PARENT, __('Kontakte', 'taxmod-stock'), __('Kontakte', 'taxmod-stock'), \Taxmod\WordPress\Rights::WRITE_DATA, Pages::CONTACTS, $page(Pages::CONTACTS, static fn (): array => (new ContactsPage())->render())),
             // D-1474: Logistik › Stammdaten › Auswahllisten, the model's choice lists.
-            add_submenu_page(self::PARENT, __('Auswahllisten', 'taxmod-stock'), __('Auswahllisten', 'taxmod-stock'), 'manage_options', Pages::CHOICES, $page(Pages::CHOICES, static fn (): string => (new ChoiceListsPage())->render())),
+            add_submenu_page(self::PARENT, __('Auswahllisten', 'taxmod-stock'), __('Auswahllisten', 'taxmod-stock'), \Taxmod\WordPress\Rights::CONFIGURE, Pages::CHOICES, $page(Pages::CHOICES, static fn (): string => (new ChoiceListsPage())->render())),
             // D-1574, Live-Check 15: Logistik › Stammdaten › Materialgruppen, the modeller's node page in this template.
-            add_submenu_page(self::PARENT, __('Materialgruppen', 'taxmod-stock'), __('Materialgruppen', 'taxmod-stock'), 'manage_options', Pages::MATERIAL_GROUPS, $page(Pages::MATERIAL_GROUPS, static fn (): string => (new MaterialGroupsPage())->render())),
+            add_submenu_page(self::PARENT, __('Materialgruppen', 'taxmod-stock'), __('Materialgruppen', 'taxmod-stock'), \Taxmod\WordPress\Rights::MODEL, Pages::MATERIAL_GROUPS, $page(Pages::MATERIAL_GROUPS, static fn (): string => (new MaterialGroupsPage())->render())),
             // D-1558: the one rules page (the modeller's building block), Einstellungen › Regeln › one item per type.
-            add_submenu_page(self::PARENT, __('Regeln', 'taxmod-stock'), __('Regeln', 'taxmod-stock'), 'manage_options', Pages::RULES, $page(Pages::RULES, static fn (): string => \Taxmod\WordPress\Admin\RulesPage::fromSetup()?->render()
+            add_submenu_page(self::PARENT, __('Regeln', 'taxmod-stock'), __('Regeln', 'taxmod-stock'), \Taxmod\WordPress\Rights::CONFIGURE, Pages::RULES, $page(Pages::RULES, static fn (): string => \Taxmod\WordPress\Admin\RulesPage::fromSetup()?->render()
                 ?? \Taxmod\WordPress\Admin\ListPage::page(__('Regeln', 'taxmod-stock'), [], [['html' => '<div class="notice notice-warning inline"><p>' . esc_html__('Im Modell ist noch kein Knoten «Regeln» eingerichtet.', 'taxmod-stock') . '</p></div>']], (string) TAXMOD_STOCK_VERSION))),
             // D-1555: Logistik › Einstellungen › Feldkatalog.
-            add_submenu_page(self::PARENT, __('Feldkatalog', 'taxmod-stock'), __('Feldkatalog', 'taxmod-stock'), 'manage_options', Pages::FIELD_CATALOGUE, $page(Pages::FIELD_CATALOGUE, static fn (): string => (new FieldCataloguePage())->render())),
+            add_submenu_page(self::PARENT, __('Feldkatalog', 'taxmod-stock'), __('Feldkatalog', 'taxmod-stock'), \Taxmod\WordPress\Rights::MODEL, Pages::FIELD_CATALOGUE, $page(Pages::FIELD_CATALOGUE, static fn (): string => (new FieldCataloguePage())->render())),
             // D-1085: Logistik › Einstellungen › Grundeinstellungen, inside the navigation.
-            add_submenu_page(self::PARENT, __('Grundeinstellungen', 'taxmod-stock'), __('Grundeinstellungen', 'taxmod-stock'), 'manage_options', Pages::SETTINGS, $page(Pages::SETTINGS, static fn (): string => (new SettingsPage())->render())),
+            add_submenu_page(self::PARENT, __('Grundeinstellungen', 'taxmod-stock'), __('Grundeinstellungen', 'taxmod-stock'), \Taxmod\WordPress\Rights::VIEW, Pages::SETTINGS, $page(Pages::SETTINGS, static fn (): string => (new SettingsPage())->render())),
         ];
 
         // D-1085: a connection module's page inside the navigation; one address for all of them, the module named in the query.
-        $moduleHook = add_submenu_page(self::PARENT, __('Logistik', 'taxmod-stock'), __('Logistik', 'taxmod-stock'), 'manage_options', Pages::MODULE, $page(Pages::MODULE, static fn (): string => (new ModulePage())->render(ModulePage::requested())));
+        $moduleHook = add_submenu_page(self::PARENT, __('Logistik', 'taxmod-stock'), __('Logistik', 'taxmod-stock'), \Taxmod\WordPress\Rights::VIEW, Pages::MODULE, $page(Pages::MODULE, static fn (): string => (new ModulePage())->render(ModulePage::requested())));
         $hooks[]    = $moduleHook;
 
         if (is_string($moduleHook) && $moduleHook !== '') {
@@ -1801,7 +1803,7 @@ final class Plugin
         }
 
         // The old address of the test rules leads to their tab on the one page (D-1558).
-        $oldTestRules = add_submenu_page(self::PARENT, __('Testregeln', 'taxmod-stock'), __('Testregeln', 'taxmod-stock'), 'manage_options', Pages::TEST_RULES, static function (): void {
+        $oldTestRules = add_submenu_page(self::PARENT, __('Testregeln', 'taxmod-stock'), __('Testregeln', 'taxmod-stock'), \Taxmod\WordPress\Rights::CONFIGURE, Pages::TEST_RULES, static function (): void {
         });
         add_action('load-' . (string) $oldTestRules, static function (): void {
             wp_safe_redirect(\Taxmod\WordPress\Admin\RulesPage::url((int) RulesSetup::testRulesTab()));

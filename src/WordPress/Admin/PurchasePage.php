@@ -77,7 +77,7 @@ final class PurchasePage
     /** admin-post handler: capability → nonce → validate → sanitize → act → back to the tab with a notice. */
     public function handle(): void
     {
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::PURCHASE)) {
             Acts::deny(__('Keine Berechtigung.', 'taxmod-stock'));
         }
 

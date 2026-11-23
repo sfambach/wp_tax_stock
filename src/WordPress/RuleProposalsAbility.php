@@ -39,7 +39,7 @@ final class RuleProposalsAbility
             'category'            => 'taxmod',
             'input_schema'        => ['type' => 'object', 'properties' => new \stdClass(), 'additionalProperties' => false],
             'execute_callback'    => fn (mixed $input = null): array|\WP_Error => $this->answer(),
-            'permission_callback' => static fn (): bool => current_user_can('manage_options'),
+            'permission_callback' => static fn (): bool => current_user_can(\Taxmod\WordPress\Rights::CONFIGURE),
             'meta'                => ['public' => true, 'annotations' => ['readonly' => true, 'destructive' => false, 'idempotent' => true]],
         ]);
     }

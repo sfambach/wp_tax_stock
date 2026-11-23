@@ -44,7 +44,7 @@ final class TransferAbility
             ],
             'execute_callback'    => fn (mixed $input = null): array|\WP_Error => $this->book(is_array($input) ? $input : []),
             // The same right as book-correction and a booking in the Lager's screens.
-            'permission_callback' => static fn (): bool => current_user_can('manage_options'),
+            'permission_callback' => static fn (): bool => current_user_can(\Taxmod\WordPress\Rights::STOCK_BOOK),
             'meta'                => ['public' => true, 'annotations' => ['readonly' => false, 'destructive' => false, 'idempotent' => false]],
         ]);
     }

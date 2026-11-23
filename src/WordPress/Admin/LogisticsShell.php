@@ -234,17 +234,15 @@ final class LogisticsShell
      */
     private static function allowed(array $areas): array
     {
-        // WordPress lists a page under the menu only for whoever may open it; a page not listed is one this person may not open.
-        $pages   = \Taxmod\WordPress\Admin\FullScreen::pages();
         $modules = ModulePage::all();
         $right   = static fn (array $item): string => (string) ($item['right'] ?? match (true) {
             ($item['module'] ?? '') !== '' => $modules[$item['module']]['capability'] ?? \Taxmod\WordPress\Rights::MODEL,
             $item['page'] === Pages::STOCK => StockRights::ofTab((string) $item['tab']),
-            default                        => $pages[$item['page']] ?? '',
+            default                        => StockRights::ofPage((string) $item['page']),
         });
 
         foreach ($areas as $at => $area) {
-            $areas[$at]['items'] = array_values(array_filter($area['items'], static fn (array $item): bool => $right($item) !== '' && current_user_can($right($item))));
+            $areas[$at]['items'] = array_values(array_filter($area['items'], static fn (array $item): bool => current_user_can($right($item))));
         }
 
         return $areas;

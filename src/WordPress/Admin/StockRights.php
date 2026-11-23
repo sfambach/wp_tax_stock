@@ -32,6 +32,22 @@ final class StockRights
         self::INBOUND => ['positioneinlagern', 'wareneingang', 'aufteilen', 'nichteinlagern', 'einlagern', 'sammelnichteinlagern', 'wareneingangzurueck', 'angekommen', 'nichtangekommen', 'umhaengen'],
     ];
 
+    /** The right of each page of the stock interface; its menu entry and its navigation item both read it from here. */
+    private const PAGES = [
+        Pages::COCKPIT         => Rights::VIEW,
+        Pages::PURCHASE        => Rights::PURCHASE,
+        Pages::INBOUND         => self::INBOUND,
+        Pages::STOCK           => Rights::STOCK_BOOK,
+        Pages::CONTACTS        => Rights::WRITE_DATA,
+        Pages::CHOICES         => Rights::CONFIGURE,
+        Pages::MATERIAL_GROUPS => Rights::MODEL,
+        Pages::RULES           => Rights::CONFIGURE,
+        Pages::FIELD_CATALOGUE => Rights::MODEL,
+        Pages::SETTINGS        => Rights::VIEW,
+        Pages::MODULE          => Rights::VIEW,
+        Pages::TEST_RULES      => Rights::CONFIGURE,
+    ];
+
     public static function boot(): void
     {
         add_filter(Rights::FILTER, static fn (array $rights): array => $rights + [self::INBOUND => __('Wareneingang', 'taxmod-stock')]);
@@ -62,6 +78,12 @@ final class StockRights
         }
 
         return Rights::STOCK_BOOK;
+    }
+
+    /** A page of another module hung into the navigation asks for what its menu entry asks; one nobody listed, for the model's right. */
+    public static function ofPage(string $page): string
+    {
+        return self::PAGES[$page] ?? \Taxmod\WordPress\Admin\FullScreen::pages()[$page] ?? Rights::MODEL;
     }
 
     public static function ofTab(string $tab): string

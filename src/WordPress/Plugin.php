@@ -1774,28 +1774,28 @@ final class Plugin
         };
 
         $hooks = [
-            add_submenu_page(self::PARENT, __('Logistik', 'taxmod-stock'), __('Logistik', 'taxmod-stock'), \Taxmod\WordPress\Rights::VIEW, Pages::COCKPIT, $page(Pages::COCKPIT, static fn (): string => (new CockpitPage())->render())),
+            add_submenu_page(self::PARENT, __('Logistik', 'taxmod-stock'), __('Logistik', 'taxmod-stock'), \TaxmodStock\WordPress\Admin\StockRights::ofPage(Pages::COCKPIT), Pages::COCKPIT, $page(Pages::COCKPIT, static fn (): string => (new CockpitPage())->render())),
             // D-1027: demand, source, order per supplier — he orders at the shop himself.
-            add_submenu_page(self::PARENT, __('Einkauf', 'taxmod-stock'), __('Einkauf', 'taxmod-stock'), \Taxmod\WordPress\Rights::PURCHASE, Pages::PURCHASE, $page(Pages::PURCHASE, static fn (): string => (new PurchasePage())->render())),
-            add_submenu_page(self::PARENT, __('Wareneingang', 'taxmod-stock'), __('Wareneingang', 'taxmod-stock'), \TaxmodStock\WordPress\Admin\StockRights::INBOUND, self::MENU, $page(self::MENU, static fn (): string => (new InboundPage())->render())),
-            add_submenu_page(self::PARENT, __('Lager', 'taxmod-stock'), __('Lager', 'taxmod-stock'), \Taxmod\WordPress\Rights::STOCK_BOOK, Pages::STOCK, $page(Pages::STOCK, static fn (): array => (new StockPage())->parts())),
+            add_submenu_page(self::PARENT, __('Einkauf', 'taxmod-stock'), __('Einkauf', 'taxmod-stock'), \TaxmodStock\WordPress\Admin\StockRights::ofPage(Pages::PURCHASE), Pages::PURCHASE, $page(Pages::PURCHASE, static fn (): string => (new PurchasePage())->render())),
+            add_submenu_page(self::PARENT, __('Wareneingang', 'taxmod-stock'), __('Wareneingang', 'taxmod-stock'), \TaxmodStock\WordPress\Admin\StockRights::ofPage(self::MENU), self::MENU, $page(self::MENU, static fn (): string => (new InboundPage())->render())),
+            add_submenu_page(self::PARENT, __('Lager', 'taxmod-stock'), __('Lager', 'taxmod-stock'), \TaxmodStock\WordPress\Admin\StockRights::ofPage(Pages::STOCK), Pages::STOCK, $page(Pages::STOCK, static fn (): array => (new StockPage())->parts())),
             // D-1184: Logistik › Kontakte, the model's contact branch.
-            add_submenu_page(self::PARENT, __('Kontakte', 'taxmod-stock'), __('Kontakte', 'taxmod-stock'), \Taxmod\WordPress\Rights::WRITE_DATA, Pages::CONTACTS, $page(Pages::CONTACTS, static fn (): array => (new ContactsPage())->render())),
+            add_submenu_page(self::PARENT, __('Kontakte', 'taxmod-stock'), __('Kontakte', 'taxmod-stock'), \TaxmodStock\WordPress\Admin\StockRights::ofPage(Pages::CONTACTS), Pages::CONTACTS, $page(Pages::CONTACTS, static fn (): array => (new ContactsPage())->render())),
             // D-1474: Logistik › Stammdaten › Auswahllisten, the model's choice lists.
-            add_submenu_page(self::PARENT, __('Auswahllisten', 'taxmod-stock'), __('Auswahllisten', 'taxmod-stock'), \Taxmod\WordPress\Rights::CONFIGURE, Pages::CHOICES, $page(Pages::CHOICES, static fn (): string => (new ChoiceListsPage())->render())),
+            add_submenu_page(self::PARENT, __('Auswahllisten', 'taxmod-stock'), __('Auswahllisten', 'taxmod-stock'), \TaxmodStock\WordPress\Admin\StockRights::ofPage(Pages::CHOICES), Pages::CHOICES, $page(Pages::CHOICES, static fn (): string => (new ChoiceListsPage())->render())),
             // D-1574, Live-Check 15: Logistik › Stammdaten › Materialgruppen, the modeller's node page in this template.
-            add_submenu_page(self::PARENT, __('Materialgruppen', 'taxmod-stock'), __('Materialgruppen', 'taxmod-stock'), \Taxmod\WordPress\Rights::MODEL, Pages::MATERIAL_GROUPS, $page(Pages::MATERIAL_GROUPS, static fn (): string => (new MaterialGroupsPage())->render())),
+            add_submenu_page(self::PARENT, __('Materialgruppen', 'taxmod-stock'), __('Materialgruppen', 'taxmod-stock'), \TaxmodStock\WordPress\Admin\StockRights::ofPage(Pages::MATERIAL_GROUPS), Pages::MATERIAL_GROUPS, $page(Pages::MATERIAL_GROUPS, static fn (): string => (new MaterialGroupsPage())->render())),
             // D-1558: the one rules page (the modeller's building block), Einstellungen › Regeln › one item per type.
-            add_submenu_page(self::PARENT, __('Regeln', 'taxmod-stock'), __('Regeln', 'taxmod-stock'), \Taxmod\WordPress\Rights::CONFIGURE, Pages::RULES, $page(Pages::RULES, static fn (): string => \Taxmod\WordPress\Admin\RulesPage::fromSetup()?->render()
+            add_submenu_page(self::PARENT, __('Regeln', 'taxmod-stock'), __('Regeln', 'taxmod-stock'), \TaxmodStock\WordPress\Admin\StockRights::ofPage(Pages::RULES), Pages::RULES, $page(Pages::RULES, static fn (): string => \Taxmod\WordPress\Admin\RulesPage::fromSetup()?->render()
                 ?? \Taxmod\WordPress\Admin\ListPage::page(__('Regeln', 'taxmod-stock'), [], [['html' => '<div class="notice notice-warning inline"><p>' . esc_html__('Im Modell ist noch kein Knoten «Regeln» eingerichtet.', 'taxmod-stock') . '</p></div>']], (string) TAXMOD_STOCK_VERSION))),
             // D-1555: Logistik › Einstellungen › Feldkatalog.
-            add_submenu_page(self::PARENT, __('Feldkatalog', 'taxmod-stock'), __('Feldkatalog', 'taxmod-stock'), \Taxmod\WordPress\Rights::MODEL, Pages::FIELD_CATALOGUE, $page(Pages::FIELD_CATALOGUE, static fn (): string => (new FieldCataloguePage())->render())),
+            add_submenu_page(self::PARENT, __('Feldkatalog', 'taxmod-stock'), __('Feldkatalog', 'taxmod-stock'), \TaxmodStock\WordPress\Admin\StockRights::ofPage(Pages::FIELD_CATALOGUE), Pages::FIELD_CATALOGUE, $page(Pages::FIELD_CATALOGUE, static fn (): string => (new FieldCataloguePage())->render())),
             // D-1085: Logistik › Einstellungen › Grundeinstellungen, inside the navigation.
-            add_submenu_page(self::PARENT, __('Grundeinstellungen', 'taxmod-stock'), __('Grundeinstellungen', 'taxmod-stock'), \Taxmod\WordPress\Rights::VIEW, Pages::SETTINGS, $page(Pages::SETTINGS, static fn (): string => (new SettingsPage())->render())),
+            add_submenu_page(self::PARENT, __('Grundeinstellungen', 'taxmod-stock'), __('Grundeinstellungen', 'taxmod-stock'), \TaxmodStock\WordPress\Admin\StockRights::ofPage(Pages::SETTINGS), Pages::SETTINGS, $page(Pages::SETTINGS, static fn (): string => (new SettingsPage())->render())),
         ];
 
         // D-1085: a connection module's page inside the navigation; one address for all of them, the module named in the query.
-        $moduleHook = add_submenu_page(self::PARENT, __('Logistik', 'taxmod-stock'), __('Logistik', 'taxmod-stock'), \Taxmod\WordPress\Rights::VIEW, Pages::MODULE, $page(Pages::MODULE, static fn (): string => (new ModulePage())->render(ModulePage::requested())));
+        $moduleHook = add_submenu_page(self::PARENT, __('Logistik', 'taxmod-stock'), __('Logistik', 'taxmod-stock'), \TaxmodStock\WordPress\Admin\StockRights::ofPage(Pages::MODULE), Pages::MODULE, $page(Pages::MODULE, static fn (): string => (new ModulePage())->render(ModulePage::requested())));
         $hooks[]    = $moduleHook;
 
         if (is_string($moduleHook) && $moduleHook !== '') {
@@ -1803,7 +1803,7 @@ final class Plugin
         }
 
         // The old address of the test rules leads to their tab on the one page (D-1558).
-        $oldTestRules = add_submenu_page(self::PARENT, __('Testregeln', 'taxmod-stock'), __('Testregeln', 'taxmod-stock'), \Taxmod\WordPress\Rights::CONFIGURE, Pages::TEST_RULES, static function (): void {
+        $oldTestRules = add_submenu_page(self::PARENT, __('Testregeln', 'taxmod-stock'), __('Testregeln', 'taxmod-stock'), \TaxmodStock\WordPress\Admin\StockRights::ofPage(Pages::TEST_RULES), Pages::TEST_RULES, static function (): void {
         });
         add_action('load-' . (string) $oldTestRules, static function (): void {
             wp_safe_redirect(\Taxmod\WordPress\Admin\RulesPage::url((int) RulesSetup::testRulesTab()));

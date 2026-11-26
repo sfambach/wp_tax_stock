@@ -327,7 +327,7 @@ final class Plugin
         // D-1203: the modeller's scanner test page opens a scanned place, box or material here.
         add_filter('taxmod_scan_links', [self::class, 'scanLinks'], 10, 3);
         // D-1483: a record this module keeps opens on its page wherever the modeller links to it.
-        add_filter('taxmod_record_home', [self::class, 'recordHome'], 10, 3);
+        add_filter('taxmod_record_home', [self::class, 'recordHome'], 10, 4);
     }
 
     /** @var array<string, array<int, true>>|null The branches whose records open here, read once per request: key → node ids. */
@@ -336,8 +336,11 @@ final class Plugin
     /**
      * D-1483: orders open in logistics, materials and lots at their stock, places and boxes in the storage structure, sales in
      * the sales module. The node the modeller names is tried first; only a node above every branch asks for the record's own.
+     *
+     * The modeller hands over the record's own node where it has read it (`$own`, else 0), so a list of rows does not ask once per
+     * row (CD-7) — measured 2026-11-26: 33 single reads for the parts list of one revision.
      */
-    public static function recordHome(?string $url, int $record, int $node): ?string
+    public static function recordHome(?string $url, int $record, int $node, int $own = 0): ?string
     {
         if ($url !== null && $url !== '' || $record <= 0) {
             return $url;
@@ -346,7 +349,7 @@ final class Plugin
         $stock = self::reading();
 
         try {
-            $key = self::homeOf($node, $stock) ?? self::homeOf($stock->nodesOf([$record])[$record] ?? 0, $stock);
+            $key = self::homeOf($node, $stock) ?? self::homeOf($own > 0 ? $own : ($stock->nodesOf([$record])[$record] ?? 0), $stock);
         } catch (StockError) {
             return $url;
         }

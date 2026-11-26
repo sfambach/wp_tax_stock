@@ -408,6 +408,16 @@ foreach (['order' => 'page=taxmod-logistik&order=', 'location' => 'tab=lagerstru
     $mitKnoten = (string) apply_filters('taxmod_record_home', null, $id, $heim->nodesOf([$id])[$id] ?? 0);
     $ohne      = (string) apply_filters('taxmod_record_home', null, $id, 402);
     $pruefe(str_contains($mitKnoten, $erwartet) && $mitKnoten === $ohne, "D-1483: {$key} #{$id} opens at {$erwartet}… (by its node and from above)");
+
+    // CD-7, measured 2026-11-26 (33 single reads for one parts list): the modeller hands over the record's own node, so none is read.
+    global $wpdb;
+    $vorher   = $wpdb->num_queries;
+    $gereicht = (string) apply_filters('taxmod_record_home', null, $id, 402, $heim->nodesOf([$id])[$id] ?? 0);
+    $mit      = $wpdb->num_queries - $vorher - 1;
+    $vorher   = $wpdb->num_queries;
+    apply_filters('taxmod_record_home', null, $id, 402);
+    $einzeln  = $wpdb->num_queries - $vorher;
+    $pruefe($gereicht === $ohne && $mit < $einzeln, "CD-7: {$key} #{$id} from above with its own node handed over: same address, one read fewer ({$mit} instead of {$einzeln})");
 }
 
 $pruefe(apply_filters('taxmod_record_home', 'https://x.test/', 1, 0) === 'https://x.test/', 'D-1483: an address another module gave stays');
